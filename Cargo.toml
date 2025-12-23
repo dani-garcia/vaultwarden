@@ -91,7 +91,7 @@ serde_json = "1.0.145"
 diesel = { version = "2.3.5", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.3.1"
 
-derive_more = { version = "2.1.0", features = ["from", "into", "as_ref", "deref", "display"] }
+derive_more = { version = "2.1.1", features = ["from", "into", "as_ref", "deref", "display"] }
 diesel-derive-newtype = "2.1.2"
 
 # Bundled/Static SQLite
@@ -144,7 +144,7 @@ email_address = "0.2.9"
 handlebars = { version = "6.3.2", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.26", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
+reqwest = { version = "0.12.28", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
 hickory-resolver = "0.25.2"
 
 # Favicon extraction libraries
