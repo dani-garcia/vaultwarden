@@ -790,7 +790,7 @@ async fn delete_config(_token: AdminToken) -> EmptyResult {
 #[post("/config/backup_db", format = "application/json")]
 fn backup_db(_token: AdminToken) -> ApiResult<String> {
     if *CAN_BACKUP {
-        match backup_sqlite() {
+        match backup_sqlite(None) {
             Ok(f) => Ok(format!("Backup to '{f}' was successful")),
             Err(e) => err!(format!("Backup was unsuccessful {e}")),
         }

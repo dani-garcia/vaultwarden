@@ -384,8 +384,13 @@ pub mod models;
 
 /// Creates a back-up of the sqlite database
 /// MySQL/MariaDB and PostgreSQL are not supported.
+///
+/// # Arguments
+///
+/// * `backup_dir` - Optional custom directory path where the backup file will be created.
+///                  If `None`, the backup will be created in the same directory as the database file.
 #[cfg(sqlite)]
-pub fn backup_sqlite() -> Result<String, Error> {
+pub fn backup_sqlite(backup_dir: Option<String>) -> Result<String, Error> {
     use diesel::Connection;
     use std::{fs::File, io::Write};
 
@@ -395,8 +400,21 @@ pub fn backup_sqlite() -> Result<String, Error> {
         // This way we can set a readonly flag on the opening mode without issues.
         let mut conn = diesel::sqlite::SqliteConnection::establish(&format!("sqlite://{db_url}?mode=ro"))?;
 
-        let db_path = std::path::Path::new(&db_url).parent().unwrap();
-        let backup_file = db_path
+        let backup_path = match backup_dir {
+            Some(dir) => {
+                let path = std::path::Path::new(dir.as_str()).to_path_buf();
+            
+                // Ensure the backup directory exists
+                if let Err(e) = std::fs::create_dir_all(&path) {
+                    err_silent!(format!("Unable to create backup directory: {e:?}"))
+                }
+
+                path
+            },
+            None => std::path::Path::new(&db_url).parent().unwrap().to_path_buf(),
+        };
+
+        let backup_file = backup_path
             .join(format!("db_{}.sqlite3", chrono::Utc::now().format("%Y%m%d_%H%M%S")))
             .to_string_lossy()
             .into_owned();
@@ -417,7 +435,7 @@ pub fn backup_sqlite() -> Result<String, Error> {
 }
 
 #[cfg(not(sqlite))]
-pub fn backup_sqlite() -> Result<String, Error> {
+pub fn backup_sqlite(_backup_dir: Option<&str>) -> Result<String, Error> {
     err_silent!("The database type is not SQLite. Backups only works for SQLite databases")
 }
 
