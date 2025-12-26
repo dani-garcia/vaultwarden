@@ -19,9 +19,7 @@ use crate::{
         encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
         generate_verify_email_claims,
     },
-    db::models::{
-        Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId, XOAuth2,
-    },
+    db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId, XOAuth2},
     error::Error,
     CONFIG,
 };

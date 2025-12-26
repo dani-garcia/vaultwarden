@@ -1,7 +1,7 @@
-use crate::db::DbConn;
 use crate::api::EmptyResult;
-use crate::error::MapResult;
 use crate::db::schema::xoauth2;
+use crate::db::DbConn;
+use crate::error::MapResult;
 use diesel::prelude::*;
 
 #[derive(Debug, Identifiable, Queryable, Insertable, AsChangeset)]
@@ -14,7 +14,10 @@ pub struct XOAuth2 {
 
 impl XOAuth2 {
     pub fn new(id: String, refresh_token: String) -> Self {
-        Self { id, refresh_token }
+        Self {
+            id,
+            refresh_token
+        }
     }
 
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
