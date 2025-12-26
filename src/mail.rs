@@ -19,7 +19,9 @@ use crate::{
         encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
         generate_verify_email_claims,
     },
-    db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId},
+    db::models::{
+        Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId, XOAuth2,
+    },
     error::Error,
     CONFIG,
 };
@@ -44,9 +46,15 @@ struct TokenRefreshResponse {
 }
 
 pub async fn refresh_oauth2_token() -> Result<OAuth2Token, Error> {
+    let conn = crate::db::get_conn().await?;
+    let refresh_token = if let Some(x) = XOAuth2::find_by_id("smtp".to_string(), &conn).await {
+        x.refresh_token
+    } else {
+        CONFIG.smtp_oauth2_refresh_token().ok_or("OAuth2 Refresh Token not configured")?
+    };
+
     let client_id = CONFIG.smtp_oauth2_client_id().ok_or("OAuth2 Client ID not configured")?;
     let client_secret = CONFIG.smtp_oauth2_client_secret().ok_or("OAuth2 Client Secret not configured")?;
-    let refresh_token = CONFIG.smtp_oauth2_refresh_token().ok_or("OAuth2 Refresh Token not configured")?;
     let token_url = CONFIG.smtp_oauth2_token_url().ok_or("OAuth2 Token URL not configured")?;
 
     let form_params = [
@@ -76,12 +84,18 @@ pub async fn refresh_oauth2_token() -> Result<OAuth2Token, Error> {
         .expires_in
         .map(|expires_in| SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + expires_in);
 
-    Ok(OAuth2Token {
+    let new_token = OAuth2Token {
         access_token: token_response.access_token,
         refresh_token: token_response.refresh_token.or(Some(refresh_token)),
         expires_at,
         token_type: token_response.token_type,
-    })
+    };
+
+    if let Some(ref new_refresh) = new_token.refresh_token {
+        XOAuth2::new("smtp".to_string(), new_refresh.clone()).save(&conn).await?;
+    }
+
+    Ok(new_token)
 }
 
 async fn get_valid_oauth2_token() -> Result<OAuth2Token, Error> {

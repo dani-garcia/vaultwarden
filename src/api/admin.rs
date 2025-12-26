@@ -28,7 +28,7 @@ use crate::{
         backup_sqlite, get_sql_server_version,
         models::{
             Attachment, Cipher, Collection, Device, Event, EventType, Group, Invitation, Membership, MembershipId,
-            MembershipType, OrgPolicy, Organization, OrganizationId, SsoUser, TwoFactor, User, UserId,
+            MembershipType, OrgPolicy, Organization, OrganizationId, SsoUser, TwoFactor, User, UserId, XOAuth2,
         },
         DbConn, DbConnType, ACTIVE_DB_TYPE,
     },
@@ -413,7 +413,7 @@ struct OAuth2CallbackParams {
 }
 
 #[get("/oauth2/callback?<params..>")]
-async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, Error> {
+async fn oauth2_callback(params: OAuth2CallbackParams, conn: DbConn) -> Result<Html<String>, Error> {
     // Check for errors from OAuth2 provider
     if let Some(error) = params.error {
         let description = params.error_description.unwrap_or_else(|| "Unknown error".to_string());
@@ -472,14 +472,8 @@ async fn oauth2_callback(params: OAuth2CallbackParams) -> Result<Html<String>, E
     let refresh_token =
         token_response.get("refresh_token").and_then(|v| v.as_str()).ok_or("No refresh_token in response")?;
 
-    // Save refresh_token to configuration
-    let config_builder: ConfigBuilder = match serde_json::from_value(json!({
-        "smtp_oauth2_refresh_token": refresh_token
-    })) {
-        Ok(builder) => builder,
-        Err(e) => err!(format!("ConfigBuilder serialization error: {e}")),
-    };
-    CONFIG.update_config_partial(config_builder).await?;
+    // Save refresh_token to database
+    XOAuth2::new("smtp".to_string(), refresh_token.to_string()).save(&conn).await?;
 
     // Return success page via template
     let json = json!({

@@ -85,6 +85,7 @@ async fn main() -> Result<(), Error> {
     create_dir(&CONFIG.tmp_folder(), "tmp folder");
 
     let pool = create_db_pool().await;
+    db::DB_POOL.set(pool.clone()).ok();
     schedule_jobs(pool.clone());
     db::models::TwoFactor::migrate_u2f_to_webauthn(&pool.get().await.unwrap()).await.unwrap();
     db::models::TwoFactor::migrate_credential_to_passkey(&pool.get().await.unwrap()).await.unwrap();

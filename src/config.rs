@@ -429,6 +429,9 @@ macro_rules! make_config {
                     "sso_authority",
                     "sso_callback_path",
                     "sso_client_id",
+                    "smtp_oauth2_client_id",
+                    "smtp_oauth2_auth_url",
+                    "smtp_oauth2_token_url",
                 ];
 
                 let cfg = {
