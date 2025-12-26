@@ -1,0 +1,4 @@
+CREATE TABLE xoauth2 (
+  id VARCHAR(255) NOT NULL PRIMARY KEY,
+  refresh_token TEXT NOT NULL
+);
