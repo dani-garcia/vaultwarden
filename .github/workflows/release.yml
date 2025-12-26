@@ -313,45 +313,43 @@ jobs:
       # Determine Base Tags
       - name: Determine Base Tags
         env:
+          BASE_IMAGE_TAG: "${{ matrix.base_image != 'debian' && format('-{0}', matrix.base_image) || '' }}"
           REF_TYPE: ${{ github.ref_type }}
         run: |
           # Check which main tag we are going to build determined by ref_type
           if [[ "${REF_TYPE}" == "tag" ]]; then
-            echo "BASE_TAGS=latest,${GITHUB_REF#refs/*/}" | tee -a "${GITHUB_ENV}"
+            echo "BASE_TAGS=latest${BASE_IMAGE_TAG},${GITHUB_REF#refs/*/}${BASE_IMAGE_TAG}${BASE_IMAGE_TAG//-/,}" | tee -a "${GITHUB_ENV}"
           elif [[ "${REF_TYPE}" == "branch" ]]; then
-            echo "BASE_TAGS=testing" | tee -a "${GITHUB_ENV}"
+            echo "BASE_TAGS=testing${BASE_IMAGE_TAG}" | tee -a "${GITHUB_ENV}"
           fi
 
       - name: Create manifest list, push it and extract digest SHA
         working-directory: ${{ runner.temp }}/digests
         env:
-          BASE_IMAGE_TAG: "${{ matrix.base_image != 'debian' && format('-{0}', matrix.base_image) || '' }}"
           BASE_TAGS: "${{ env.BASE_TAGS }}"
           CONTAINER_REGISTRIES: "${{ env.CONTAINER_REGISTRIES }}"
         run: |
-          set +e
           IFS=',' read -ra IMAGES <<< "${CONTAINER_REGISTRIES}"
           IFS=',' read -ra TAGS <<< "${BASE_TAGS}"
+
+          TAG_ARGS=()
           for img in "${IMAGES[@]}"; do
             for tag in "${TAGS[@]}"; do
-              echo "Creating manifest for ${img}:${tag}${BASE_IMAGE_TAG}"
-
-              OUTPUT=$(docker buildx imagetools create \
-                -t "${img}:${tag}${BASE_IMAGE_TAG}" \
-                $(printf "${img}@sha256:%s " *) 2>&1)
-              STATUS=$?
-
-              if [ ${STATUS} -ne 0 ]; then
-                echo "Manifest creation failed for ${img}:${tag}${BASE_IMAGE_TAG}"
-                echo "${OUTPUT}"
-              exit ${STATUS}
-              fi
-
-              echo "Manifest created for ${img}:${tag}${BASE_IMAGE_TAG}"
-              echo "${OUTPUT}"
+              TAG_ARGS+=("-t" "${img}:${tag}")
             done
           done
-          set -e
+
+          echo "Creating manifest"
+          if ! OUTPUT=$(docker buildx imagetools create \
+                          "${TAG_ARGS[@]}" \
+                          $(printf "${IMAGES[0]}@sha256:%s " *) 2>&1); then
+            echo "Manifest creation failed"
+            echo "${OUTPUT}"
+            exit 1
+          fi
+
+          echo "Manifest created successfully"
+          echo "${OUTPUT}"
 
           # Extract digest SHA for subsequent steps
           GET_DIGEST_SHA="$(echo "${OUTPUT}" | grep -oE 'sha256:[a-f0-9]{64}' | tail -1)"
