@@ -16,7 +16,7 @@ impl XOAuth2 {
     pub fn new(id: String, refresh_token: String) -> Self {
         Self {
             id,
-            refresh_token
+            refresh_token,
         }
     }
 
