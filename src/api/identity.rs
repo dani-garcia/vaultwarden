@@ -472,7 +472,10 @@ async fn authenticated_response(
                 "Memory": user.client_kdf_memory,
                 "Parallelism": user.client_kdf_parallelism
             },
+            // This field is named inconsistently and will be removed and replaced by the "wrapped" variant in the apps.
+            // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "MasterKeyEncryptedUserKey": user.akey,
+            "MasterKeyWrappedUserKey": user.akey,
             "Salt": user.email
         })
     } else {
