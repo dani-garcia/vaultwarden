@@ -12,6 +12,7 @@ use serde_json::Value;
 use crate::{
     api::{core::now, ApiResult, EmptyResult},
     auth::decode_file_download,
+    config::CachedConfigOperation,
     db::models::{AttachmentId, CipherId},
     error::Error,
     util::Cached,
@@ -52,19 +53,18 @@ fn not_found() -> ApiResult<Html<String>> {
     Ok(Html(text))
 }
 
-#[get("/css/vaultwarden.css")]
-fn vaultwarden_css() -> Cached<Css<String>> {
+static VAULTWARDEN_CSS_CACHE: CachedConfigOperation<String> = CachedConfigOperation::new(|config| {
     let css_options = json!({
-        "emergency_access_allowed": CONFIG.emergency_access_allowed(),
+        "emergency_access_allowed": config.emergency_access_allowed(),
         "load_user_scss": true,
-        "mail_2fa_enabled": CONFIG._enable_email_2fa(),
-        "mail_enabled": CONFIG.mail_enabled(),
-        "sends_allowed": CONFIG.sends_allowed(),
-        "signup_disabled": CONFIG.is_signup_disabled(),
-        "sso_enabled": CONFIG.sso_enabled(),
-        "sso_only": CONFIG.sso_enabled() && CONFIG.sso_only(),
-        "yubico_enabled": CONFIG._enable_yubico() && CONFIG.yubico_client_id().is_some() && CONFIG.yubico_secret_key().is_some(),
-        "webauthn_2fa_supported": CONFIG.is_webauthn_2fa_supported(),
+        "mail_2fa_enabled": config._enable_email_2fa(),
+        "mail_enabled": config.mail_enabled(),
+        "sends_allowed": config.sends_allowed(),
+        "signup_disabled": config.is_signup_disabled(),
+        "sso_enabled": config.sso_enabled(),
+        "sso_only": config.sso_enabled() && config.sso_only(),
+        "yubico_enabled": config._enable_yubico() && config.yubico_client_id().is_some() && config.yubico_secret_key().is_some(),
+        "webauthn_2fa_supported": config.is_webauthn_2fa_supported(),
     });
 
     let scss = match CONFIG.render_template("scss/vaultwarden.scss", &css_options) {
@@ -78,7 +78,7 @@ fn vaultwarden_css() -> Cached<Css<String>> {
         }
     };
 
-    let css = match grass_compiler::from_string(
+    match grass_compiler::from_string(
         scss,
         &grass_compiler::Options::default().style(grass_compiler::OutputStyle::Compressed),
     ) {
@@ -97,10 +97,12 @@ fn vaultwarden_css() -> Cached<Css<String>> {
             )
             .expect("SCSS to compile")
         }
-    };
+    }
+});
 
-    // Cache for one day should be enough and not too much
-    Cached::ttl(Css(css), 86_400, false)
+#[get("/css/vaultwarden.css")]
+fn vaultwarden_css() -> Css<String> {
+    Css(CONFIG.cached_operation(&VAULTWARDEN_CSS_CACHE))
 }
 
 #[get("/")]

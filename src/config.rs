@@ -3,7 +3,7 @@ use std::{
     fmt,
     process::exit,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         LazyLock, RwLock,
     },
 };
@@ -103,6 +103,7 @@ macro_rules! make_config {
 
         struct Inner {
             rocket_shutdown_handle: Option<rocket::Shutdown>,
+            revision: usize,
 
             templates: Handlebars<'static>,
             config: ConfigItems,
@@ -322,7 +323,7 @@ macro_rules! make_config {
         }
 
         #[derive(Clone, Default)]
-        struct ConfigItems { $($( $name: make_config! {@type $ty, $none_action}, )+)+ }
+        struct ConfigItems { $($( pub $name: make_config! {@type $ty, $none_action}, )+)+ }
 
         #[derive(Serialize)]
         struct ElementDoc {
@@ -1467,6 +1468,23 @@ pub enum PathType {
     RsaKey,
 }
 
+pub struct CachedConfigOperation<T: Clone> {
+    generator: fn(&Config) -> T,
+    value_cache: RwLock<Option<T>>,
+    revision: AtomicUsize,
+}
+
+impl<T: Clone> CachedConfigOperation<T> {
+    #[allow(private_interfaces)]
+    pub const fn new(generator: fn(&Config) -> T) -> Self {
+        CachedConfigOperation {
+            generator,
+            value_cache: RwLock::new(None),
+            revision: AtomicUsize::new(0),
+        }
+    }
+}
+
 impl Config {
     pub async fn load() -> Result<Self, Error> {
         // Loading from env and file
@@ -1486,6 +1504,7 @@ impl Config {
         Ok(Config {
             inner: RwLock::new(Inner {
                 rocket_shutdown_handle: None,
+                revision: 1,
                 templates: load_templates(&config.templates_folder),
                 config,
                 _env,
@@ -1524,6 +1543,7 @@ impl Config {
             writer.config = config;
             writer._usr = builder;
             writer._overrides = overrides;
+            writer.revision += 1;
         }
 
         //Save to file
@@ -1540,6 +1560,51 @@ impl Config {
             usr.merge(&other, false, &mut _overrides)
         };
         self.update_config(builder, false).await
+    }
+
+    pub async fn delete_user_config(&self) -> Result<(), Error> {
+        let operator = opendal_operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
+        operator.delete(&CONFIG_FILENAME).await?;
+
+        // Empty user config
+        let usr = ConfigBuilder::default();
+
+        // Config now is env + defaults
+        let config = {
+            let env = &self.inner.read().unwrap()._env;
+            env.build()
+        };
+
+        // Save configs
+        {
+            let mut writer = self.inner.write().unwrap();
+            writer.config = config;
+            writer._usr = usr;
+            writer._overrides = Vec::new();
+            writer.revision += 1;
+        }
+
+        Ok(())
+    }
+
+    pub fn cached_operation<T: Clone>(&self, operation: &CachedConfigOperation<T>) -> T {
+        let config_revision = self.inner.read().unwrap().revision;
+        let cache_revision = operation.revision.load(Ordering::Relaxed);
+
+        // If the current revision matches the cached revision, return the cached value
+        if cache_revision == config_revision {
+            let reader = operation.value_cache.read().unwrap();
+            return reader.as_ref().unwrap().clone();
+        }
+
+        // Otherwise, compute the value, update the cache and revision, and return the new value
+        let value = (operation.generator)(&CONFIG);
+        {
+            let mut writer = operation.value_cache.write().unwrap();
+            *writer = Some(value.clone());
+            operation.revision.store(config_revision, Ordering::Relaxed);
+        }
+        value
     }
 
     /// Tests whether an email's domain is allowed. A domain is allowed if it
@@ -1591,33 +1656,10 @@ impl Config {
         }
     }
 
-    pub async fn delete_user_config(&self) -> Result<(), Error> {
-        let operator = opendal_operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
-        operator.delete(&CONFIG_FILENAME).await?;
-
-        // Empty user config
-        let usr = ConfigBuilder::default();
-
-        // Config now is env + defaults
-        let config = {
-            let env = &self.inner.read().unwrap()._env;
-            env.build()
-        };
-
-        // Save configs
-        {
-            let mut writer = self.inner.write().unwrap();
-            writer.config = config;
-            writer._usr = usr;
-            writer._overrides = Vec::new();
-        }
-
-        Ok(())
-    }
-
     pub fn private_rsa_key(&self) -> String {
         format!("{}.pem", self.rsa_key_filename())
     }
+
     pub fn mail_enabled(&self) -> bool {
         let inner = &self.inner.read().unwrap().config;
         inner._enable_smtp && (inner.smtp_host.is_some() || inner.use_sendmail)
