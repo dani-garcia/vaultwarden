@@ -19,15 +19,15 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2025.12.0
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2025.12.0
-#     [docker.io/vaultwarden/web-vault@sha256:bb7303efafdb7e2b41bee2c772e14f67676ae2c9047bd7bba80d3544d4162613]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2025.12.1
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2025.12.1
+#     [docker.io/vaultwarden/web-vault@sha256:dc718ffec13eccab8a849d65dd436b38730577b9b46be4672d97debc88e2c0ad]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:bb7303efafdb7e2b41bee2c772e14f67676ae2c9047bd7bba80d3544d4162613
-#     [docker.io/vaultwarden/web-vault:v2025.12.0]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:dc718ffec13eccab8a849d65dd436b38730577b9b46be4672d97debc88e2c0ad
+#     [docker.io/vaultwarden/web-vault:v2025.12.1]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:bb7303efafdb7e2b41bee2c772e14f67676ae2c9047bd7bba80d3544d4162613 AS vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:dc718ffec13eccab8a849d65dd436b38730577b9b46be4672d97debc88e2c0ad AS vault
 
 ########################## Cross Compile Docker Helper Scripts ##########################
 ## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
