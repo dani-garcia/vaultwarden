@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       manual_trigger:
-        description: "Manual trigger buildcache cleanup"
+        description: "Manual trigger cleanup"
         required: false
         default: ""
 
@@ -13,18 +13,21 @@ on:
     - cron: '0 1 * * FRI'
 
 jobs:
-  releasecache-cleanup:
-    name: Releasecache Cleanup
+  cleanup:
+    name: Cleanup
     permissions:
       packages: write # To be able to cleanup old caches
     runs-on: ubuntu-24.04
     continue-on-error: true
     timeout-minutes: 30
+    strategy:
+      matrix:
+        package: ["vaultwarden-buildache", "vaultwarden-dryrun"]
     steps:
-      - name: Delete vaultwarden-buildcache containers
+      - name: Delete ${{ matrix.package }} containers
         uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
         with:
-          package-name: 'vaultwarden-buildcache'
+          package-name: '${{ matrix.package }}'
           package-type: 'container'
           min-versions-to-keep: 0
           delete-only-untagged-versions: 'false'
