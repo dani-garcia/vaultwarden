@@ -919,6 +919,7 @@ struct RegisterVerificationData {
 
 #[derive(rocket::Responder)]
 enum RegisterVerificationResponse {
+    #[response(status = 204)]
     NoContent(()),
     Token(Json<String>),
 }
