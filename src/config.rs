@@ -1330,7 +1330,9 @@ fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
 }
 
 fn generate_sso_callback_path(domain: &str) -> String {
-    format!("{domain}/identity/connect/oidc-signin")
+    // normalize base_url
+    let base_url = domain.trim_end_matches('/');
+    format!("{base_url}/identity/connect/oidc-signin")
 }
 
 /// Generate the correct URL for the icon service.
