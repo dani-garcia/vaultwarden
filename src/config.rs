@@ -1325,7 +1325,9 @@ fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
     if embed_images {
         "cid:".to_string()
     } else {
-        format!("{domain}/vw_static/")
+        // normalize base_url
+        let base_url = domain.trim_end_matches('/');
+        format!("{base_url}/vw_static/")
     }
 }
 
