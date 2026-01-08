@@ -14,7 +14,7 @@ use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 
 use crate::{
     error::Error,
-    util::{get_env, get_env_bool, get_web_vault_version, is_valid_email, parse_experimental_client_feature_flags},
+    util::{get_active_web_release, get_env, get_env_bool, is_valid_email, parse_experimental_client_feature_flags},
 };
 
 static CONFIG_FILE: LazyLock<String> = LazyLock::new(|| {
@@ -1849,7 +1849,7 @@ fn to_json<'reg, 'rc>(
 // Configure the web-vault version as an integer so it can be used as a comparison smaller or greater then.
 // The default is based upon the version since this feature is added.
 static WEB_VAULT_VERSION: LazyLock<semver::Version> = LazyLock::new(|| {
-    let vault_version = get_web_vault_version();
+    let vault_version = get_active_web_release();
     // Use a single regex capture to extract version components
     let re = regex::Regex::new(r"(\d{4})\.(\d{1,2})\.(\d{1,2})").unwrap();
     re.captures(&vault_version)

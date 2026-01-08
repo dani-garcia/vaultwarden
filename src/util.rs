@@ -531,7 +531,7 @@ struct WebVaultVersion {
     version: String,
 }
 
-pub fn get_web_vault_version() -> String {
+pub fn get_active_web_release() -> String {
     let version_files = [
         format!("{}/vw-version.json", CONFIG.web_vault_folder()),
         format!("{}/version.json", CONFIG.web_vault_folder()),

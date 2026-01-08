@@ -27,13 +27,13 @@
                         <span class="badge bg-info text-dark d-none abbr-badge" id="web-prerelease" title="You seem to be using a pre-release version.">Pre-Release</span>
                     </dt>
                     <dd class="col-sm-7">
-                        <span id="web-installed">{{page_data.web_vault_version}}</span>
+                        <span id="web-installed">{{page_data.active_web_release}}</span>
                     </dd>
                     <dt class="col-sm-5">Web Latest
                         <span class="badge bg-secondary d-none abbr-badge" id="web-failed" title="Unable to determine latest version.">Unknown</span>
                     </dt>
                     <dd class="col-sm-7">
-                        <span id="web-latest">{{page_data.latest_web_build}}</span>
+                        <span id="web-latest">{{page_data.latest_web_release}}</span>
                     </dd>
                     {{/if}}
                     {{#unless page_data.web_vault_enabled}}

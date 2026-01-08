@@ -126,7 +126,7 @@ fn parse_args() {
         exit(0);
     } else if pargs.contains(["-v", "--version"]) {
         config::SKIP_CONFIG_VALIDATION.store(true, Ordering::Relaxed);
-        let web_vault_version = util::get_web_vault_version();
+        let web_vault_version = util::get_active_web_release();
         println!("Vaultwarden {version}");
         println!("Web-Vault {web_vault_version}");
         exit(0);
