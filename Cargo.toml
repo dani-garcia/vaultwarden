@@ -37,6 +37,8 @@ vendored_openssl = ["openssl/vendored"]
 # Enable MiMalloc memory allocator to replace the default malloc
 # This can improve performance for Alpine builds
 enable_mimalloc = ["dep:mimalloc"]
+# Enable Prometheus metrics endpoint
+enable_metrics = ["dep:prometheus"]
 s3 = ["opendal/services-s3", "dep:aws-config", "dep:aws-credential-types", "dep:aws-smithy-runtime-api", "dep:anyhow", "dep:http", "dep:reqsign"]
 
 # OIDC specific features
@@ -76,6 +78,9 @@ rmpv = "1.3.1" # MessagePack library
 
 # Concurrent HashMap used for WebSocket messaging and favicons
 dashmap = "6.1.0"
+
+# Lazy static initialization
+once_cell = "1.20.2"
 
 # Async futures
 futures = "0.3.31"
@@ -181,6 +186,9 @@ semver = "1.0.27"
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.48", features = ["secure"], default-features = false, optional = true }
+
+# Prometheus metrics
+prometheus = { version = "0.13.1", default-features = false, optional = true }
 
 which = "8.0.0"
 

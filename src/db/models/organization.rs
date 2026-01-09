@@ -403,6 +403,16 @@ impl Organization {
         }}
     }
 
+    pub async fn count(conn: &DbConn) -> i64 {
+        db_run! { conn: {
+            organizations::table
+                .count()
+                .first::<i64>(conn)
+                .ok()
+                .unwrap_or(0)
+        }}
+    }
+
     pub async fn get_all(conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             organizations::table
