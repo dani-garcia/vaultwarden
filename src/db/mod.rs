@@ -197,15 +197,15 @@ impl DbPool {
         match conn_type {
             #[cfg(mysql)]
             DbConnType::Mysql => {
-                mysql_migrations::run_migrations(&db_url)?;
+                mysql_migrations::run_migrations(&db_url, &conn_type)?;
             }
             #[cfg(postgresql)]
             DbConnType::Postgresql => {
-                postgresql_migrations::run_migrations(&db_url)?;
+                postgresql_migrations::run_migrations(&db_url, &conn_type)?;
             }
             #[cfg(sqlite)]
             DbConnType::Sqlite => {
-                sqlite_migrations::run_migrations(&db_url)?;
+                sqlite_migrations::run_migrations(&db_url, &conn_type)?;
             }
         }
 
@@ -294,7 +294,7 @@ impl DbConnType {
     pub fn default_init_stmts(&self) -> String {
         match self {
             #[cfg(mysql)]
-            Self::Mysql => String::new(),
+            Self::Mysql => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;".to_string(),
             #[cfg(postgresql)]
             Self::Postgresql => String::new(),
             #[cfg(sqlite)]
@@ -460,16 +460,24 @@ impl<'r> FromRequest<'r> for DbConn {
 // https://docs.rs/diesel_migrations/*/diesel_migrations/macro.embed_migrations.html
 #[cfg(sqlite)]
 mod sqlite_migrations {
+    use super::DbConnType;
     use diesel::{Connection, RunQueryDsl};
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/sqlite");
 
-    pub fn run_migrations(db_url: &str) -> Result<(), super::Error> {
+    pub fn run_migrations(db_url: &str, conn_type: &DbConnType) -> Result<(), super::Error> {
         // Establish a connection to the sqlite database (this will create a new one, if it does
         // not exist, and exit if there is an error).
         let mut connection = diesel::sqlite::SqliteConnection::establish(db_url)?;
 
         // Run the migrations after successfully establishing a connection
+        // First run any init statement
+        let init_stmts = conn_type.get_init_stmts();
+        if !init_stmts.is_empty() {
+            diesel::sql_query(init_stmts)
+                .execute(&mut connection)
+                .expect("Failed execute init statements during migrations");
+        }
         // Disable Foreign Key Checks during migration
         // Scoped to a connection.
         diesel::sql_query("PRAGMA foreign_keys = OFF")
@@ -488,14 +496,23 @@ mod sqlite_migrations {
 
 #[cfg(mysql)]
 mod mysql_migrations {
+    use super::DbConnType;
     use diesel::{Connection, RunQueryDsl};
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/mysql");
 
-    pub fn run_migrations(db_url: &str) -> Result<(), super::Error> {
+    pub fn run_migrations(db_url: &str, conn_type: &DbConnType) -> Result<(), super::Error> {
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
         let mut connection = diesel::mysql::MysqlConnection::establish(db_url)?;
 
+        // Run the migrations after successfully establishing a connection
+        // First run any init statement
+        let init_stmts = conn_type.get_init_stmts();
+        if !init_stmts.is_empty() {
+            diesel::sql_query(init_stmts)
+                .execute(&mut connection)
+                .expect("Failed execute init statements during migrations");
+        }
         // Disable Foreign Key Checks during migration
         // Scoped to a connection/session.
         diesel::sql_query("SET FOREIGN_KEY_CHECKS = 0")
@@ -509,13 +526,23 @@ mod mysql_migrations {
 
 #[cfg(postgresql)]
 mod postgresql_migrations {
-    use diesel::Connection;
+    use super::DbConnType;
+    use diesel::{Connection, RunQueryDsl};
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/postgresql");
 
-    pub fn run_migrations(db_url: &str) -> Result<(), super::Error> {
+    pub fn run_migrations(db_url: &str, conn_type: &DbConnType) -> Result<(), super::Error> {
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
         let mut connection = diesel::pg::PgConnection::establish(db_url)?;
+
+        // Run the migrations after successfully establishing a connection
+        // First run any init statement
+        let init_stmts = conn_type.get_init_stmts();
+        if !init_stmts.is_empty() {
+            diesel::sql_query(init_stmts)
+                .execute(&mut connection)
+                .expect("Failed execute init statements during migrations");
+        }
 
         connection.run_pending_migrations(MIGRATIONS).expect("Error running migrations");
         Ok(())
