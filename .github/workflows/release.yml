@@ -1,4 +1,5 @@
 name: Release
+run-name: ${{ github.event_name == 'workflow_dispatch' && 'Release (dry run)' || '' }}
 permissions: {}
 
 on:
@@ -9,6 +10,14 @@ on:
     tags:
       # https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#filter-pattern-cheat-sheet
       - '[1-2].[0-9]+.[0-9]+'
+
+  workflow_dispatch:
+    inputs:
+      test_tag:
+        description: "Simulate a release tag (e.g. 1.2.3)"
+        default: "1.0.0"
+        required: true
+        type: string
 
 concurrency:
   # Apply concurrency control only on the upstream repo
@@ -21,6 +30,8 @@ defaults:
     shell: bash
 
 env:
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
+  REGISTRY_SUFFIX: ${{ github.event_name == 'workflow_dispatch' && '-dryrun' || '' }}
   # The *_REPO variables need to be configured as repository variables
   # Append `/settings/variables/actions` to your repo url
   # DOCKERHUB_REPO needs to be 'index.docker.io/<user>/<repo>'
@@ -106,10 +117,10 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' }}
+        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && env.DRY_RUN != 'true' }}
 
       - name: Add registry for DockerHub
-        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' }}
+        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && env.DRY_RUN != 'true' }}
         env:
           DOCKERHUB_REPO: ${{ vars.DOCKERHUB_REPO }}
         run: |
@@ -129,7 +140,7 @@ jobs:
         env:
           GHCR_REPO: ${{ vars.GHCR_REPO }}
         run: |
-          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${GHCR_REPO}" | tee -a "${GITHUB_ENV}"
+          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${GHCR_REPO}${REGISTRY_SUFFIX}" | tee -a "${GITHUB_ENV}"
 
       # Login to Quay.io
       - name: Login to Quay.io
@@ -138,10 +149,10 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_TOKEN }}
-        if: ${{ env.HAVE_QUAY_LOGIN == 'true' }}
+        if: ${{ env.HAVE_QUAY_LOGIN == 'true' && env.DRY_RUN != 'true' }}
 
       - name: Add registry for Quay.io
-        if: ${{ env.HAVE_QUAY_LOGIN == 'true' }}
+        if: ${{ env.HAVE_QUAY_LOGIN == 'true' && env.DRY_RUN != 'true' }}
         env:
           QUAY_REPO: ${{ vars.QUAY_REPO }}
         run: |
@@ -269,10 +280,10 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' }}
+        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && env.DRY_RUN != 'true' }}
 
       - name: Add registry for DockerHub
-        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' }}
+        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && env.DRY_RUN != 'true' }}
         env:
           DOCKERHUB_REPO: ${{ vars.DOCKERHUB_REPO }}
         run: |
@@ -292,7 +303,7 @@ jobs:
         env:
           GHCR_REPO: ${{ vars.GHCR_REPO }}
         run: |
-          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${GHCR_REPO}" | tee -a "${GITHUB_ENV}"
+          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${GHCR_REPO}${REGISTRY_SUFFIX}" | tee -a "${GITHUB_ENV}"
 
       # Login to Quay.io
       - name: Login to Quay.io
@@ -301,10 +312,10 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_TOKEN }}
-        if: ${{ env.HAVE_QUAY_LOGIN == 'true' }}
+        if: ${{ env.HAVE_QUAY_LOGIN == 'true' && env.DRY_RUN != 'true' }}
 
       - name: Add registry for Quay.io
-        if: ${{ env.HAVE_QUAY_LOGIN == 'true' }}
+        if: ${{ env.HAVE_QUAY_LOGIN == 'true' && env.DRY_RUN != 'true' }}
         env:
           QUAY_REPO: ${{ vars.QUAY_REPO }}
         run: |
@@ -314,11 +325,12 @@ jobs:
       - name: Determine Base Tags
         env:
           BASE_IMAGE_TAG: "${{ matrix.base_image != 'debian' && format('-{0}', matrix.base_image) || '' }}"
-          REF_TYPE: ${{ github.ref_type }}
+          REF_TYPE: ${{ env.DRY_RUN == 'true' && 'tag' || github.ref_type }}
+          REF_NAME: ${{ env.DRY_RUN == 'true' && inputs.test_tag || github.ref_name }}
         run: |
           # Check which main tag we are going to build determined by ref_type
           if [[ "${REF_TYPE}" == "tag" ]]; then
-            echo "BASE_TAGS=latest${BASE_IMAGE_TAG},${GITHUB_REF#refs/*/}${BASE_IMAGE_TAG}${BASE_IMAGE_TAG//-/,}" | tee -a "${GITHUB_ENV}"
+            echo "BASE_TAGS=latest${BASE_IMAGE_TAG},${REF_NAME}${BASE_IMAGE_TAG}${BASE_IMAGE_TAG//-/,}" | tee -a "${GITHUB_ENV}"
           elif [[ "${REF_TYPE}" == "branch" ]]; then
             echo "BASE_TAGS=testing${BASE_IMAGE_TAG}" | tee -a "${GITHUB_ENV}"
           fi
@@ -357,7 +369,7 @@ jobs:
 
       # Attest container images
       - name: Attest - docker.io - ${{ matrix.base_image }}
-        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && env.DIGEST_SHA != ''}}
+        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && env.DIGEST_SHA != '' && env.DRY_RUN != 'true' }}
         uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
         with:
           subject-name: ${{ vars.DOCKERHUB_REPO }}
@@ -368,12 +380,12 @@ jobs:
         if: ${{ env.HAVE_GHCR_LOGIN == 'true' && env.DIGEST_SHA != ''}}
         uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
         with:
-          subject-name: ${{ vars.GHCR_REPO }}
+          subject-name: ${{ vars.GHCR_REPO }}${{ env.REGISTRY_SUFFIX }}
           subject-digest: ${{ env.DIGEST_SHA }}
           push-to-registry: true
 
       - name: Attest - quay.io - ${{ matrix.base_image }}
-        if: ${{ env.HAVE_QUAY_LOGIN == 'true' && env.DIGEST_SHA != ''}}
+        if: ${{ env.HAVE_QUAY_LOGIN == 'true' && env.DIGEST_SHA != '' && env.DRY_RUN != 'true' }}
         uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
         with:
           subject-name: ${{ vars.QUAY_REPO }}
