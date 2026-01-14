@@ -610,6 +610,25 @@ async fn _user_api_key_login(
 
     info!("User {} logged in successfully via API key. IP: {}", user.email, ip.ip);
 
+    let has_master_password = !user.password_hash.is_empty();
+    let master_password_unlock = if has_master_password {
+        json!({
+            "Kdf": {
+                "KdfType": user.client_kdf_type,
+                "Iterations": user.client_kdf_iter,
+                "Memory": user.client_kdf_memory,
+                "Parallelism": user.client_kdf_parallelism
+            },
+            // This field is named inconsistently and will be removed and replaced by the "wrapped" variant in the apps.
+            // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
+            "MasterKeyEncryptedUserKey": user.akey,
+            "MasterKeyWrappedUserKey": user.akey,
+            "Salt": user.email
+        })
+    } else {
+        Value::Null
+    };
+
     // Note: No refresh_token is returned. The CLI just repeats the
     // client_credentials login flow when the existing token expires.
     let result = json!({
@@ -625,6 +644,11 @@ async fn _user_api_key_login(
         "KdfParallelism": user.client_kdf_parallelism,
         "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
         "scope": AuthMethod::UserApiKey.scope(),
+        "UserDecryptionOptions": {
+            "HasMasterPassword": has_master_password,
+            "MasterPasswordUnlock": master_password_unlock,
+            "Object": "userDecryptionOptions"
+        },
     });
 
     Ok(Json(result))
