@@ -31,7 +31,7 @@ use crate::http_client::make_http_request;
 pub struct OAuth2Token {
     access_token: String,
     refresh_token: Option<String>,
-    expires_at: Option<u64>,
+    expires_at: Option<i64>,
     token_type: String,
 }
 
@@ -39,7 +39,7 @@ pub struct OAuth2Token {
 struct TokenRefreshResponse {
     access_token: String,
     refresh_token: Option<String>,
-    expires_in: Option<u64>,
+    expires_in: Option<i64>,
     token_type: String,
 }
 
@@ -78,11 +78,7 @@ pub async fn refresh_oauth2_token() -> Result<OAuth2Token, Error> {
         Err(e) => err!(format!("OAuth2 Token Parse Error: {e}")),
     };
 
-    let expires_at = token_response.expires_in.map(|expires_in| {
-        // Multiple calls to Utc::now().timestamp() can return a negative value if the system time is set before the UNIX epoch.
-        // While extremely rare in practice, we handle this by using unwrap_or_default() to prevent huge values when casting to u64.
-        u64::try_from(Utc::now().timestamp()).unwrap_or_default() + expires_in
-    });
+    let expires_at = token_response.expires_in.map(|expires_in| Utc::now().timestamp() + expires_in);
 
     let new_token = OAuth2Token {
         access_token: token_response.access_token,
@@ -106,7 +102,7 @@ async fn get_valid_oauth2_token() -> Result<OAuth2Token, Error> {
         if let Some(token) = token_cache.as_ref() {
             // Check if token is still valid (with 5 min buffer)
             if let Some(expires_at) = token.expires_at {
-                let now = u64::try_from(Utc::now().timestamp()).unwrap_or_default();
+                let now = Utc::now().timestamp();
                 if now + 300 < expires_at {
                     return Ok(token.clone());
                 }
@@ -120,7 +116,7 @@ async fn get_valid_oauth2_token() -> Result<OAuth2Token, Error> {
     // Double check
     if let Some(token) = token_cache.as_ref() {
         if let Some(expires_at) = token.expires_at {
-            let now = u64::try_from(Utc::now().timestamp()).unwrap_or_default();
+            let now = Utc::now().timestamp();
             if now + 300 < expires_at {
                 return Ok(token.clone());
             }

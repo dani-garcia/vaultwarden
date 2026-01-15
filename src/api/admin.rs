@@ -106,7 +106,7 @@ static CAN_BACKUP: LazyLock<bool> =
 static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| false);
 
 // OAuth2 state storage for CSRF protection (state -> expiration timestamp)
-static OAUTH2_STATES: LazyLock<RwLock<HashMap<String, u64>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
+static OAUTH2_STATES: LazyLock<RwLock<HashMap<String, i64>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
 
 #[get("/")]
 fn admin_disabled() -> &'static str {
@@ -372,9 +372,7 @@ fn oauth2_authorize(_token: AdminToken) -> Result<Redirect, Error> {
     let state = crate::crypto::encode_random_bytes::<32>(&BASE64URL_NOPAD);
 
     // Store state with expiration (10 minutes from now)
-    // Multiple calls to Utc::now().timestamp() can return a negative value if the system time is set before the UNIX epoch.
-    // While extremely rare in practice, we handle this by using unwrap_or_default() to prevent huge values when casting to u64.
-    let now = u64::try_from(Utc::now().timestamp()).unwrap_or_default();
+    let now = Utc::now().timestamp();
     let expiration = now + 600;
 
     OAUTH2_STATES.write().unwrap().insert(state.clone(), expiration);
@@ -433,7 +431,7 @@ async fn oauth2_callback(
     // Validate state token
     let valid_state = {
         let states = OAUTH2_STATES.read().unwrap();
-        let now = u64::try_from(Utc::now().timestamp()).unwrap_or_default();
+        let now = Utc::now().timestamp();
         states.get(&state).is_some_and(|&exp| exp > now)
     };
 
