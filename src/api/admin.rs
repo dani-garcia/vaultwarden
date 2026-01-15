@@ -418,7 +418,7 @@ struct OAuth2CallbackParams {
 async fn oauth2_callback(
     _token: AdminToken,
     params: OAuth2CallbackParams,
-    conn: DbConn
+    conn: DbConn,
 ) -> Result<Html<String>, Error> {
     // Check for errors from OAuth2 provider
     if let Some(error) = params.error {
