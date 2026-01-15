@@ -1,9 +1,9 @@
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Utc};
 use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use serde::{Deserialize, Serialize};
-use std::sync::{LazyLock, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::LazyLock;
 use std::{env::consts::EXE_SUFFIX, str::FromStr};
+use tokio::sync::RwLock;
 
 use lettre::{
     message::{Attachment, Body, Mailbox, Message, MultiPart, SinglePart},
@@ -78,9 +78,11 @@ pub async fn refresh_oauth2_token() -> Result<OAuth2Token, Error> {
         Err(e) => err!(format!("OAuth2 Token Parse Error: {e}")),
     };
 
-    let expires_at = token_response
-        .expires_in
-        .map(|expires_in| SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + expires_in);
+    let expires_at = token_response.expires_in.map(|expires_in| {
+        // Multiple calls to Utc::now().timestamp() can return a negative value if the system time is set before the UNIX epoch.
+        // While extremely rare in practice, we handle this by using unwrap_or_default() to prevent huge values when casting to u64.
+        u64::try_from(Utc::now().timestamp()).unwrap_or_default() + expires_in
+    });
 
     let new_token = OAuth2Token {
         access_token: token_response.access_token,
@@ -99,21 +101,34 @@ pub async fn refresh_oauth2_token() -> Result<OAuth2Token, Error> {
 async fn get_valid_oauth2_token() -> Result<OAuth2Token, Error> {
     static TOKEN_CACHE: LazyLock<RwLock<Option<OAuth2Token>>> = LazyLock::new(|| RwLock::new(None));
 
-    let cached_token = TOKEN_CACHE.read().unwrap().clone();
-
-    if let Some(token) = cached_token {
-        // Check if token is still valid (with 5 min buffer)
-        if let Some(expires_at) = token.expires_at {
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-            if now + 300 < expires_at {
-                return Ok(token);
+    {
+        let token_cache = TOKEN_CACHE.read().await;
+        if let Some(token) = token_cache.as_ref() {
+            // Check if token is still valid (with 5 min buffer)
+            if let Some(expires_at) = token.expires_at {
+                let now = u64::try_from(Utc::now().timestamp()).unwrap_or_default();
+                if now + 300 < expires_at {
+                    return Ok(token.clone());
+                }
             }
         }
     }
 
     // Refresh token
+    let mut token_cache = TOKEN_CACHE.write().await;
+
+    // Double check
+    if let Some(token) = token_cache.as_ref() {
+        if let Some(expires_at) = token.expires_at {
+            let now = u64::try_from(Utc::now().timestamp()).unwrap_or_default();
+            if now + 300 < expires_at {
+                return Ok(token.clone());
+            }
+        }
+    }
+
     let new_token = refresh_oauth2_token().await?;
-    *TOKEN_CACHE.write().unwrap() = Some(new_token.clone());
+    *token_cache = Some(new_token.clone());
 
     Ok(new_token)
 }
@@ -164,8 +179,8 @@ async fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
             // OAuth2 authentication
             match get_valid_oauth2_token().await {
                 Ok(token) => {
-                    // Pass the access token directly as password - lettre's Xoauth2 mechanism
-                    // will format it correctly as: user={user}\x01auth=Bearer {token}\x01\x01
+                    // Pass the access token directly as the password.
+                    // Note: This requires the Xoauth2 mechanism to be enabled for lettre to format it correctly.
                     smtp_client.credentials(Credentials::new(user, token.access_token))
                 }
                 Err(e) => {

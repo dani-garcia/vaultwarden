@@ -1,7 +1,7 @@
+use chrono::Utc;
 use data_encoding::BASE64URL_NOPAD;
 use std::collections::HashMap;
 use std::sync::RwLock;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, sync::LazyLock};
 use url::Url;
 
@@ -372,12 +372,14 @@ fn oauth2_authorize(_token: AdminToken) -> Result<Redirect, Error> {
     let state = crate::crypto::encode_random_bytes::<32>(&BASE64URL_NOPAD);
 
     // Store state with expiration (10 minutes from now)
-    let expiration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + 600;
+    // Multiple calls to Utc::now().timestamp() can return a negative value if the system time is set before the UNIX epoch.
+    // While extremely rare in practice, we handle this by using unwrap_or_default() to prevent huge values when casting to u64.
+    let now = u64::try_from(Utc::now().timestamp()).unwrap_or_default();
+    let expiration = now + 600;
 
     OAUTH2_STATES.write().unwrap().insert(state.clone(), expiration);
 
     // Clean up expired states
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     OAUTH2_STATES.write().unwrap().retain(|_, &mut exp| exp > now);
 
     // Construct redirect URI
@@ -413,7 +415,7 @@ struct OAuth2CallbackParams {
 }
 
 #[get("/oauth2/callback?<params..>")]
-async fn oauth2_callback(params: OAuth2CallbackParams, conn: DbConn) -> Result<Html<String>, Error> {
+async fn oauth2_callback(_token: AdminToken, params: OAuth2CallbackParams, conn: DbConn) -> Result<Html<String>, Error> {
     // Check for errors from OAuth2 provider
     if let Some(error) = params.error {
         let description = params.error_description.unwrap_or_else(|| "Unknown error".to_string());
@@ -427,7 +429,7 @@ async fn oauth2_callback(params: OAuth2CallbackParams, conn: DbConn) -> Result<H
     // Validate state token
     let valid_state = {
         let states = OAUTH2_STATES.read().unwrap();
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = u64::try_from(Utc::now().timestamp()).unwrap_or_default();
         states.get(&state).is_some_and(|&exp| exp > now)
     };
 

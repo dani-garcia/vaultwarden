@@ -1288,15 +1288,34 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
         // Validate that auth URL is a valid URL
         if let Some(ref auth_url) = cfg.smtp_oauth2_auth_url {
-            if !auth_url.starts_with("http://") && !auth_url.starts_with("https://") {
-                err!("`SMTP_OAUTH2_AUTH_URL` must be a valid URL starting with http:// or https://");
+            match Url::parse(auth_url) {
+                Ok(parsed) => {
+                    let scheme = parsed.scheme();
+                    if scheme != "https" {
+                        err!("`SMTP_OAUTH2_AUTH_URL` must be a valid URL with https scheme");
+                    }
+                }
+                Err(e) => {
+                    err!(format!(
+                        "`SMTP_OAUTH2_AUTH_URL` must be a valid URL: '{e}'"
+                    ));
+                }
             }
         }
-
         // Validate that token URL is a valid URL
         if let Some(ref token_url) = cfg.smtp_oauth2_token_url {
-            if !token_url.starts_with("http://") && !token_url.starts_with("https://") {
-                err!("`SMTP_OAUTH2_TOKEN_URL` must be a valid URL starting with http:// or https://");
+            match Url::parse(token_url) {
+                Ok(parsed) => {
+                    let scheme = parsed.scheme();
+                    if scheme != "https" {
+                        err!("`SMTP_OAUTH2_TOKEN_URL` must be a valid URL with https scheme");
+                    }
+                }
+                Err(e) => {
+                    err!(format!(
+                        "`SMTP_OAUTH2_TOKEN_URL` must be a valid URL: '{e}'"
+                    ));
+                }
             }
         }
     }
