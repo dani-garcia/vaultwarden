@@ -135,6 +135,24 @@ use crate::db::DbConn;
 use crate::api::EmptyResult;
 use crate::error::MapResult;
 
+#[derive(QueryableByName)]
+struct CipherCount {
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    atype: i32,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    count: i64,
+}
+
+#[derive(QueryableByName)]
+struct CipherOrgCount {
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    atype: i32,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    organization_uuid: String,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    count: i64,
+}
+
 /// Database methods
 impl Cipher {
     pub async fn to_json(
@@ -962,6 +980,56 @@ impl Cipher {
         db_run! { conn: {
             ciphers::table
                 .filter(ciphers::deleted_at.lt(dt))
+                .load::<Self>(conn)
+                .expect("Error loading ciphers")
+        }}
+    }
+
+    pub async fn count_by_type_and_org(conn: &DbConn) -> std::collections::HashMap<(String, String), i64> {
+        use std::collections::HashMap;
+        db_run! { conn: {
+            // Count personal ciphers (organization_uuid IS NULL)
+            let personal_results: Vec<CipherCount> = diesel::sql_query(
+                "SELECT atype, COUNT(*) as count FROM ciphers WHERE deleted_at IS NULL AND organization_uuid IS NULL GROUP BY atype"
+            )
+            .load(conn)
+            .expect("Error counting personal ciphers");
+
+            // Count organization ciphers (organization_uuid IS NOT NULL)
+            let org_results: Vec<CipherOrgCount> = diesel::sql_query(
+                "SELECT atype, organization_uuid, COUNT(*) as count FROM ciphers WHERE deleted_at IS NULL AND organization_uuid IS NOT NULL GROUP BY atype, organization_uuid"
+            )
+            .load(conn)
+            .expect("Error counting organization ciphers");
+
+            let mut counts = HashMap::new();
+            for result in personal_results {
+                let cipher_type = match result.atype {
+                    1 => "login",
+                    2 => "note",
+                    3 => "card",
+                    4 => "identity",
+                    _ => "unknown",
+                };
+                counts.insert((cipher_type.to_string(), "personal".to_string()), result.count);
+            }
+            for result in org_results {
+                let cipher_type = match result.atype {
+                    1 => "login",
+                    2 => "note",
+                    3 => "card",
+                    4 => "identity",
+                    _ => "unknown",
+                };
+                counts.insert((cipher_type.to_string(), result.organization_uuid), result.count);
+            }
+            counts
+        }}
+    }
+
+    pub async fn find_all(conn: &DbConn) -> Vec<Self> {
+        db_run! { conn: {
+            ciphers::table
                 .load::<Self>(conn)
                 .expect("Error loading ciphers")
         }}

@@ -52,6 +52,7 @@ A nearly complete implementation of the Bitwarden Client API is provided, includ
      [Duo](https://bitwarden.com/help/setup-two-step-login-duo/)
  * [Emergency Access](https://bitwarden.com/help/emergency-access/)
  * [Vaultwarden Admin Backend](https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page)
+ * [Prometheus Metrics](https://github.com/dani-garcia/vaultwarden/wiki/Metrics) - Optional monitoring and observability with secure endpoint
  * [Modified Web Vault client](https://github.com/dani-garcia/bw_web_builds) (Bundled within our containers)
 
 <br>
