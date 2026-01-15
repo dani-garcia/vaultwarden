@@ -30,7 +30,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Upload SARIF results to GitHub Code Scanning (best-effort)
-        uses: github/code-scanning-action/upload-sarif@v2
+          uses: github/codeql-action/upload-sarif@v2
         continue-on-error: true
         with:
           sarif_file: 'trivy-results.sarif'
