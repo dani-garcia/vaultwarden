@@ -1296,9 +1296,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
                     }
                 }
                 Err(e) => {
-                    err!(format!(
-                        "`SMTP_OAUTH2_AUTH_URL` must be a valid URL: '{e}'"
-                    ));
+                    err!(format!("`SMTP_OAUTH2_AUTH_URL` must be a valid URL: '{e}'"));
                 }
             }
         }
@@ -1312,9 +1310,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
                     }
                 }
                 Err(e) => {
-                    err!(format!(
-                        "`SMTP_OAUTH2_TOKEN_URL` must be a valid URL: '{e}'"
-                    ));
+                    err!(format!("`SMTP_OAUTH2_TOKEN_URL` must be a valid URL: '{e}'"));
                 }
             }
         }
