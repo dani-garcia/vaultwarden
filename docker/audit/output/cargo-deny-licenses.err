@@ -1,0 +1,2 @@
+{"fields":{"level":"ERROR","message":"failed to fetch crates: failed to run cargo: No such file or directory (os error 2)","timestamp":"2025-11-09T08:15:15.498450874Z"},"type":"log"}
+{"fields":{"level":"ERROR","message":"failed to start `cargo metadata`: No such file or directory (os error 2): No such file or directory (os error 2)","timestamp":"2025-11-09T08:15:15.498450874Z"},"type":"log"}

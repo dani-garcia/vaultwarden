@@ -1,0 +1,21 @@
+﻿security(audit): remediation scaffold + deny policy
+
+This draft PR adds cargo-deny policy, a GitHub Actions audit workflow, and a local security audit note. It contains temporary, timeboxed ignore entries to allow iteration while remediation is planned.
+
+Key artifacts:
+- Audit note: SECURITY-AUDIT-2025-11-09.md
+- Tracking file: issues/TRACK-2025-11-09-RSA-PASTE.md
+- Exceptions added to deny.toml (advisories.ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2024-0436"]) with expiry 2026-02-01
+
+Required checklist before merging:
+- [ ] Assign an owner for TRACK-2025-11-09-RSA-PASTE.md and confirm investigation steps (run `cargo tree -i rsa` and `cargo tree -i paste`).
+- [ ] Agree remediation path for RUSTSEC-2023-0071 (rsa): either a published upstream bump avoiding `rsa`, an alternative crate, or a vetted vendor shim. Attach a follow-up PR when chosen.
+- [ ] Agree remediation path for RUSTSEC-2024-0436 (paste): upgrade or replace the dependency chain (rmp/rmpv) or use a maintained alternative. Attach a follow-up PR when chosen.
+- [ ] Add unit/integration tests verifying replacement behavior (auth/serialization flows) in follow-up PR(s).
+- [ ] Remove the `advisories.ignore` entries from `deny.toml` and re-run the audit in CI to ensure no advisories remain.
+- [ ] Review license failures and add targeted license exceptions or plan replacements for crates with unapproved licenses.
+
+Notes:
+- The repository's Issues feature is disabled; use the tracking file in this branch (`issues/TRACK-2025-11-09-RSA-PASTE.md`) and the PR comment for workflow until issues are enabled.
+
+This PR is a draft while remediation work is planned and executed.

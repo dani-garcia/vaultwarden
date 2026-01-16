@@ -1,0 +1,8 @@
+crate,version,license,top_level_dependency
+ar_archive_writer,0.2.0,"Apache-2.0 WITH LLVM-exception",lettre
+base64urlsafedata,0.5.3,MPL-2.0,webauthn-rs
+webauthn-attestation-ca,0.5.3,MPL-2.0,webauthn-rs
+webauthn-rs,0.5.3,MPL-2.0,vaultwarden
+webauthn-rs-core,0.5.3,MPL-2.0,vaultwarden
+webauthn-rs-proto,0.5.3,MPL-2.0,vaultwarden
+webpki-roots,1.0.3,CDLA-Permissive-2.0,openidconnect
