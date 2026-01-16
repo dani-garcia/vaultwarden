@@ -192,6 +192,19 @@ bit-nav-item[route="sends"] {
   @extend %vw-hide;
 }
 {{/unless}}
+
+{{#unless password_hints_allowed}}
+/* Hide password hints if not allowed */
+a[routerlink="/hint"],
+{{#if (webver "<2025.12.2")}}
+app-change-password > form > .form-group:nth-child(5),
+auth-input-password > form > bit-form-field:nth-child(4) {
+{{else}}
+.vw-password-hint {
+{{/if}}
+  @extend %vw-hide;
+}
+{{/unless}}
 /**** End Dynamic Vaultwarden Changes ****/
 /**** Include a special user stylesheet for custom changes ****/
 {{#if load_user_scss}}
