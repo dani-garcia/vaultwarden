@@ -143,7 +143,8 @@ email_address = "0.2.9"
 handlebars = { version = "6.3.2", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.24", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
+# Swap rustls -> native-tls for experiment to avoid pulling webpki-roots (CDLA-Permissive-2.0)
+reqwest = { version = "0.12.24", features = ["native-tls", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false }
 hickory-resolver = "0.25.2"
 
 # Favicon extraction libraries
@@ -171,7 +172,7 @@ pastey = "0.1.1"
 governor = "0.10.1"
 
 # OIDC for SSO
-openidconnect = { version = "^4.0", features = ["reqwest", "native-tls"] }
+openidconnect = { version = "^4.0", features = ["native-tls"] }
 mini-moka = "0.10.3"
 
 # Check client versions for specific features.
