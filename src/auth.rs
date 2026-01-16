@@ -1210,8 +1210,20 @@ pub async fn refresh_tokens(
 ) -> ApiResult<(Device, AuthTokens)> {
     let refresh_claims = match decode_refresh(refresh_token) {
         Err(err) => {
-            debug!("Failed to decode {} refresh_token: {refresh_token}", ip.ip);
-            err_silent!(format!("Impossible to read refresh_token: {}", err.message()))
+            error!("Failed to decode {} refresh_token: {refresh_token}: {err:?}", ip.ip);
+            //err_silent!(format!("Impossible to read refresh_token: {}", err.message()))
+
+            // If the token failed to decode, it was probably one of the old style tokens that was just a Base64 string.
+            // We can generate a claim for them for backwards compatibility. Note that the password refresh claims don't
+            // check expiration or issuer, so they're not included here.
+            RefreshJwtClaims {
+                nbf: 0,
+                exp: 0,
+                iss: String::new(),
+                sub: AuthMethod::Password,
+                device_token: refresh_token.into(),
+                token: None,
+            }
         }
         Ok(claims) => claims,
     };
@@ -1223,7 +1235,7 @@ pub async fn refresh_tokens(
     };
 
     // Save to update `updated_at`.
-    device.save(conn).await?;
+    device.save(true, conn).await?;
 
     let user = match User::find_by_uuid(&device.user_uuid, conn).await {
         None => err!("Impossible to find user"),

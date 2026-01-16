@@ -26,12 +26,8 @@ pub fn routes() -> Vec<Route> {
 struct SendEmailLoginData {
     #[serde(alias = "DeviceIdentifier")]
     device_identifier: DeviceId,
-
-    #[allow(unused)]
     #[serde(alias = "Email")]
     email: Option<String>,
-
-    #[allow(unused)]
     #[serde(alias = "MasterPasswordHash")]
     master_password_hash: Option<String>,
 }
@@ -42,20 +38,40 @@ struct SendEmailLoginData {
 async fn send_email_login(data: Json<SendEmailLoginData>, conn: DbConn) -> EmptyResult {
     let data: SendEmailLoginData = data.into_inner();
 
-    use crate::db::models::User;
-
-    // Get the user
-    let Some(user) = User::find_by_device_id(&data.device_identifier, &conn).await else {
-        err!("Cannot find user. Try again.")
-    };
-
     if !CONFIG._enable_email_2fa() {
         err!("Email 2FA is disabled")
     }
 
-    send_token(&user.uuid, &conn).await?;
+    // Get the user
+    let email = match &data.email {
+        Some(email) if !email.is_empty() => Some(email),
+        _ => None,
+    };
+    let user = if let Some(email) = email {
+        let Some(master_password_hash) = &data.master_password_hash else {
+            err!("No password hash has been submitted.")
+        };
 
-    Ok(())
+        let Some(user) = User::find_by_mail(email, &conn).await else {
+            err!("Username or password is incorrect. Try again.")
+        };
+
+        // Check password
+        if !user.check_valid_password(master_password_hash) {
+            err!("Username or password is incorrect. Try again.")
+        }
+
+        user
+    } else {
+        // SSO login only sends device id, so we get the user by the most recently used device
+        let Some(user) = User::find_by_device_for_email2fa(&data.device_identifier, &conn).await else {
+            err!("Username or password is incorrect. Try again.")
+        };
+
+        user
+    };
+
+    send_token(&user.uuid, &conn).await
 }
 
 /// Generate the token, save the data for later verification and send email to user

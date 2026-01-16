@@ -91,6 +91,9 @@ test('2fa', async ({ page }) => {
         await page.getByLabel(/Verification code/).fill(code);
         await page.getByRole('button', { name: 'Continue' }).click();
 
+        await page.getByRole('button', { name: 'Add it later' }).click();
+        await page.getByRole('link', { name: 'Skip to web app' }).click();
+
         await expect(page).toHaveTitle(/Vaults/);
     })
 

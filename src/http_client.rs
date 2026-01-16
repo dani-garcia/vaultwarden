@@ -185,7 +185,10 @@ impl CustomDnsResolver {
 
     fn new() -> Arc<Self> {
         match TokioResolver::builder(TokioConnectionProvider::default()) {
-            Ok(builder) => {
+            Ok(mut builder) => {
+                if CONFIG.dns_prefer_ipv6() {
+                    builder.options_mut().ip_strategy = hickory_resolver::config::LookupIpStrategy::Ipv6thenIpv4;
+                }
                 let resolver = builder.build();
                 Arc::new(Self::Hickory(Arc::new(resolver)))
             }

@@ -47,24 +47,11 @@ pub fn routes() -> Vec<Route> {
 
 #[get("/emergency-access/trusted")]
 async fn get_contacts(headers: Headers, conn: DbConn) -> Json<Value> {
-    if !CONFIG.emergency_access_allowed() {
-        return Json(json!({
-            "data": [{
-                "id": "",
-                "status": 2,
-                "type": 0,
-                "waitTimeDays": 0,
-                "granteeId": "",
-                "email": "",
-                "name": "NOTE: Emergency Access is disabled!",
-                "object": "emergencyAccessGranteeDetails",
-
-            }],
-            "object": "list",
-            "continuationToken": null
-        }));
-    }
-    let emergency_access_list = EmergencyAccess::find_all_by_grantor_uuid(&headers.user.uuid, &conn).await;
+    let emergency_access_list = if CONFIG.emergency_access_allowed() {
+        EmergencyAccess::find_all_by_grantor_uuid(&headers.user.uuid, &conn).await
+    } else {
+        Vec::new()
+    };
     let mut emergency_access_list_json = Vec::with_capacity(emergency_access_list.len());
     for ea in emergency_access_list {
         if let Some(grantee) = ea.to_json_grantee_details(&conn).await {

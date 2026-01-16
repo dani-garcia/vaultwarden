@@ -53,6 +53,6 @@ repos:
         - "cd docker && make"
 # When this version is updated, do not forget to update this in `.github/workflows/typos.yaml` too
 - repo: https://github.com/crate-ci/typos
-  rev: 07d900b8fa1097806b8adb6391b0d3e0ac2fdea7 # v1.39.0
+  rev: 1a319b54cc9e3b333fed6a5c88ba1a90324da514 # v1.40.1
   hooks:
     - id: typos

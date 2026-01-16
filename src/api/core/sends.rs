@@ -568,7 +568,7 @@ async fn post_access_file(
 async fn download_url(host: &Host, send_id: &SendId, file_id: &SendFileId) -> Result<String, crate::Error> {
     let operator = CONFIG.opendal_operator_for_path_type(&PathType::Sends)?;
 
-    if operator.info().scheme() == opendal::Scheme::Fs {
+    if operator.info().scheme() == <&'static str>::from(opendal::Scheme::Fs) {
         let token_claims = crate::auth::generate_send_claims(send_id, file_id);
         let token = crate::auth::encode_jwt(&token_claims);
 

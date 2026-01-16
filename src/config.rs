@@ -14,7 +14,7 @@ use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 
 use crate::{
     error::Error,
-    util::{get_env, get_env_bool, get_web_vault_version, is_valid_email, parse_experimental_client_feature_flags},
+    util::{get_active_web_release, get_env, get_env_bool, is_valid_email, parse_experimental_client_feature_flags},
 };
 
 static CONFIG_FILE: LazyLock<String> = LazyLock::new(|| {
@@ -564,9 +564,9 @@ make_config! {
         /// Duo Auth context cleanup schedule |> Cron schedule of the job that cleans expired Duo contexts from the database. Does nothing if Duo MFA is disabled or set to use the legacy iframe prompt.
         /// Defaults to once every minute. Set blank to disable this job.
         duo_context_purge_schedule:   String, false,  def,    "30 * * * * *".to_string();
-        /// Purge incomplete SSO nonce. |> Cron schedule of the job that cleans leftover nonce in db due to incomplete SSO login.
+        /// Purge incomplete SSO auth. |> Cron schedule of the job that cleans leftover auth in db due to incomplete SSO login.
         /// Defaults to daily. Set blank to disable this job.
-        purge_incomplete_sso_nonce: String, false,  def,   "0 20 0 * * *".to_string();
+        purge_incomplete_sso_auth: String, false,  def,   "0 20 0 * * *".to_string();
     },
 
     /// General settings
@@ -789,6 +789,10 @@ make_config! {
         /// Bitwarden enforces this by default. In Vaultwarden we encouraged to use multiple organizations because groups were not available.
         /// Setting this to true will enforce the Single Org Policy to be enabled before you can enable the Reset Password policy.
         enforce_single_org_with_reset_pw_policy: bool, false, def, false;
+
+        /// Prefer IPv6 (AAAA) resolving |> This settings configures the DNS resolver to resolve IPv6 first, and if not available try IPv4
+        /// This could be useful in IPv6 only environments.
+        dns_prefer_ipv6: bool, true, def, false;
     },
 
     /// OpenID Connect SSO settings
@@ -1035,6 +1039,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         "ssh-agent",
         // Key Management Team
         "ssh-key-vault-item",
+        "pm-25373-windows-biometrics-v2",
         // Tools
         "export-attachments",
         // Mobile Team
@@ -1320,12 +1325,16 @@ fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
     if embed_images {
         "cid:".to_string()
     } else {
-        format!("{domain}/vw_static/")
+        // normalize base_url
+        let base_url = domain.trim_end_matches('/');
+        format!("{base_url}/vw_static/")
     }
 }
 
 fn generate_sso_callback_path(domain: &str) -> String {
-    format!("{domain}/identity/connect/oidc-signin")
+    // normalize base_url
+    let base_url = domain.trim_end_matches('/');
+    format!("{base_url}/identity/connect/oidc-signin")
 }
 
 /// Generate the correct URL for the icon service.
@@ -1840,7 +1849,7 @@ fn to_json<'reg, 'rc>(
 // Configure the web-vault version as an integer so it can be used as a comparison smaller or greater then.
 // The default is based upon the version since this feature is added.
 static WEB_VAULT_VERSION: LazyLock<semver::Version> = LazyLock::new(|| {
-    let vault_version = get_web_vault_version();
+    let vault_version = get_active_web_release();
     // Use a single regex capture to extract version components
     let re = regex::Regex::new(r"(\d{4})\.(\d{1,2})\.(\d{1,2})").unwrap();
     re.captures(&vault_version)
