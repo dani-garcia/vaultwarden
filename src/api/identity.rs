@@ -437,7 +437,7 @@ async fn authenticated_response(
     conn: &DbConn,
     ip: &ClientIp,
 ) -> JsonResult {
-    if CONFIG.mail_enabled() && device.is_new() {
+    if CONFIG.mail_enabled() && CONFIG.send_new_device_email() && device.is_new() {
         let now = Utc::now().naive_utc();
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, device).await {
             error!("Error sending new device email: {e:#?}");
@@ -581,7 +581,7 @@ async fn _user_api_key_login(
 
     let mut device = get_device(&data, conn, &user).await?;
 
-    if CONFIG.mail_enabled() && device.is_new() {
+    if CONFIG.mail_enabled() && CONFIG.send_new_device_email() && device.is_new() {
         let now = Utc::now().naive_utc();
         if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
             error!("Error sending new device email: {e:#?}");

@@ -717,6 +717,10 @@ make_config! {
         /// If sending the email fails the login attempt will fail.
         require_device_email:   bool,   true,   def,     false;
 
+        /// Send new device logged in notification |> When enabled, an email will be sent to users when a new device logs in.
+        /// Set to false to disable these notification emails.
+        send_new_device_email:  bool,   true,   def,     true;
+
         /// Reload templates (Dev) |> When this is set to true, the templates get reloaded with every request.
         /// ONLY use this during development, as it can slow down the server
         reload_templates:       bool,   true,   def,    false;
