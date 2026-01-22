@@ -1,7 +1,11 @@
 name: Code Spell Checking
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 on: [ push, pull_request ]
-permissions: {}
 
 jobs:
   typos:
@@ -19,4 +23,4 @@ jobs:
 
       # When this version is updated, do not forget to update this in `.pre-commit-config.yaml` too
       - name: Spell Check Repo
-        uses: crate-ci/typos@1a319b54cc9e3b333fed6a5c88ba1a90324da514 # v1.40.1
+        uses: crate-ci/typos@65120634e79d8374d1aa2f27e54baa0c364fff5a # v1.42.1
