@@ -1,5 +1,4 @@
 use rocket::{
-    http::Status,
     request::{FromRequest, Outcome, Request},
     response::content::RawText,
     Route,
@@ -7,9 +6,6 @@ use rocket::{
 
 use crate::{auth::ClientIp, db::DbConn, CONFIG};
 
-use log::error;
-
-// Metrics endpoint routes
 pub fn routes() -> Vec<Route> {
     if CONFIG.enable_metrics() {
         routes![get_metrics]
@@ -18,10 +14,8 @@ pub fn routes() -> Vec<Route> {
     }
 }
 
-// Metrics authentication token guard
-#[allow(dead_code)]
 pub struct MetricsToken {
-    ip: ClientIp,
+    _ip: ClientIp,
 }
 
 #[rocket::async_trait]
@@ -31,17 +25,13 @@ impl<'r> FromRequest<'r> for MetricsToken {
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let ip = match ClientIp::from_request(request).await {
             Outcome::Success(ip) => ip,
-            _ => return Outcome::Error((Status::InternalServerError, "Error getting Client IP")),
+            _ => err_handler!("Error getting Client IP"),
         };
 
-        // If no metrics token is configured, allow access
         let Some(configured_token) = CONFIG.metrics_token() else {
-            return Outcome::Success(Self {
-                ip,
-            });
+            return Outcome::Success(Self { _ip: ip });
         };
 
-        // Check for token in Authorization header or query parameter
         let provided_token = request
             .headers()
             .get_one("Authorization")
@@ -51,18 +41,12 @@ impl<'r> FromRequest<'r> for MetricsToken {
         match provided_token {
             Some(token) => {
                 if validate_metrics_token(token, &configured_token) {
-                    Outcome::Success(Self {
-                        ip,
-                    })
+                    Outcome::Success(Self { _ip: ip })
                 } else {
-                    error!("Invalid metrics token. IP: {}", ip.ip);
-                    Outcome::Error((Status::Unauthorized, "Invalid metrics token"))
+                    err_handler!("Invalid metrics token")
                 }
             }
-            None => {
-                error!("Missing metrics token. IP: {}", ip.ip);
-                Outcome::Error((Status::Unauthorized, "Metrics token required"))
-            }
+            None => err_handler!("Metrics token required"),
         }
     }
 }
@@ -84,20 +68,14 @@ fn validate_metrics_token(provided: &str, configured: &str) -> bool {
 
 /// Prometheus metrics endpoint
 #[get("/")]
-async fn get_metrics(_token: MetricsToken, mut conn: DbConn) -> Result<RawText<String>, Status> {
-    // Update business metrics from database
+async fn get_metrics(_token: MetricsToken, mut conn: DbConn) -> Result<RawText<String>, crate::error::Error> {
     if let Err(e) = crate::metrics::update_business_metrics(&mut conn).await {
-        error!("Failed to update business metrics: {e}");
-        return Err(Status::InternalServerError);
+        err!("Failed to update business metrics", e.to_string());
     }
 
-    // Gather all Prometheus metrics
     match crate::metrics::gather_metrics() {
         Ok(metrics) => Ok(RawText(metrics)),
-        Err(e) => {
-            error!("Failed to gather metrics: {e}");
-            Err(Status::InternalServerError)
-        }
+        Err(e) => err!("Failed to gather metrics", e.to_string()),
     }
 }
 
