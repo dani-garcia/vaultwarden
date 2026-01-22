@@ -1,6 +1,10 @@
 name: Build
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     paths:
@@ -29,6 +33,10 @@ on:
       - "docker/Dockerfile.j2"
       - "docker/DockerSettings.yaml"
       - "macros/**"
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   build:
@@ -63,7 +71,6 @@ jobs:
       # Determine rust-toolchain version
       - name: Init Variables
         id: toolchain
-        shell: bash
         env:
           CHANNEL: ${{ matrix.channel }}
         run: |

@@ -1,23 +1,23 @@
 /**
  * Jdenticon 3.3.0
  * http://jdenticon.com
- *  
+ *
  * Built: 2024-05-10T09:48:41.921Z
  *
  * MIT License
- * 
+ *
  * Copyright (c) 2014-2024 Daniel Mester Pirttijärvi
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -47,7 +47,7 @@
 
 /**
  * Parses a substring of the hash as a number.
- * @param {number} startPosition 
+ * @param {number} startPosition
  * @param {number=} octets
  */
 function parseHex(hash, startPosition, octets) {
@@ -90,7 +90,7 @@ function parseColor(color) {
         if (colorLength == 7 || colorLength > 8) {
             result = color;
         }
-        
+
         return result;
     }
 }
@@ -154,10 +154,10 @@ function correctedHsl(hue, saturation, lightness) {
     // The corrector specifies the perceived middle lightness for each hue
     var correctors = [ 0.55, 0.5, 0.5, 0.46, 0.6, 0.55, 0.55 ],
           corrector = correctors[(hue * 6 + 0.5) | 0];
-    
+
     // Adjust the input lightness relative to the corrector
     lightness = lightness < 0.5 ? lightness * corrector * 2 : corrector + (lightness - 0.5) * (1 - corrector) * 2;
-    
+
     return hsl(hue, saturation, lightness);
 }
 
@@ -188,14 +188,14 @@ var rootConfigurationHolder = {};
 /**
  * Defines the deprecated `config` property on the root Jdenticon object without printing a warning in the console
  * when it is being used.
- * @param {!Object} rootObject 
+ * @param {!Object} rootObject
  */
 function defineConfigProperty(rootObject) {
     rootConfigurationHolder = rootObject;
 }
 
 /**
- * Sets a new icon style configuration. The new configuration is not merged with the previous one. * 
+ * Sets a new icon style configuration. The new configuration is not merged with the previous one. *
  * @param {Object} newConfiguration - New configuration object.
  */
 function configure(newConfiguration) {
@@ -216,14 +216,14 @@ function configure(newConfiguration) {
  * @returns {ParsedConfiguration}
  */
 function getConfiguration(paddingOrLocalConfig, defaultPadding) {
-    var configObject = 
+    var configObject =
             typeof paddingOrLocalConfig == "object" && paddingOrLocalConfig ||
             rootConfigurationHolder[CONFIG_PROPERTIES.n/*MODULE*/] ||
             GLOBAL[CONFIG_PROPERTIES.G/*GLOBAL*/] ||
             { },
 
         lightnessConfig = configObject["lightness"] || { },
-        
+
         // In versions < 2.1.0 there was no grayscale saturation -
         // saturation was the color saturation.
         saturation = configObject["saturation"] || { },
@@ -232,13 +232,13 @@ function getConfiguration(paddingOrLocalConfig, defaultPadding) {
 
         backColor = configObject["backColor"],
         padding = configObject["padding"];
-    
+
     /**
      * Creates a lightness range.
      */
     function lightness(configName, defaultRange) {
         var range = lightnessConfig[configName];
-        
+
         // Check if the lightness range is an array-like object. This way we ensure the
         // array contain two values at the same time.
         if (!(range && range.length > 1)) {
@@ -261,7 +261,7 @@ function getConfiguration(paddingOrLocalConfig, defaultPadding) {
     function hueFunction(originalHue) {
         var hueConfig = configObject["hues"];
         var hue;
-        
+
         // Check if 'hues' is an array-like object. This way we also ensure that
         // the array is not empty, which would mean no hue restriction.
         if (hueConfig && hueConfig.length > 0) {
@@ -271,7 +271,7 @@ function getConfiguration(paddingOrLocalConfig, defaultPadding) {
         }
 
         return typeof hue == "number" ?
-            
+
             // A hue was specified. We need to convert the hue from
             // degrees on any turn - e.g. 746° is a perfectly valid hue -
             // to turns in the range [0, 1).
@@ -280,7 +280,7 @@ function getConfiguration(paddingOrLocalConfig, defaultPadding) {
             // No hue configured => use original hue
             originalHue;
     }
-        
+
     return {
         X/*hue*/: hueFunction,
         p/*colorSaturation*/: typeof colorSaturation == "number" ? colorSaturation : 0.5,
@@ -288,9 +288,9 @@ function getConfiguration(paddingOrLocalConfig, defaultPadding) {
         q/*colorLightness*/: lightness("color", [0.4, 0.8]),
         I/*grayscaleLightness*/: lightness("grayscale", [0.3, 0.9]),
         J/*backColor*/: parseColor(backColor),
-        Y/*iconPadding*/: 
-            typeof paddingOrLocalConfig == "number" ? paddingOrLocalConfig : 
-            typeof padding == "number" ? padding : 
+        Y/*iconPadding*/:
+            typeof paddingOrLocalConfig == "number" ? paddingOrLocalConfig :
+            typeof padding == "number" ? padding :
             defaultPadding
     }
 }
@@ -331,7 +331,7 @@ function whenDocumentIsReady(/** @type {Function} */ callback) {
         window.removeEventListener("load", loadedHandler);
         setTimeout(callback, 0); // Give scripts a chance to run
     }
-    
+
     if (typeof document !== "undefined" &&
         typeof window !== "undefined" &&
         typeof setTimeout !== "undefined"
@@ -352,10 +352,10 @@ function observer(updateCallback) {
             for (var mutationIndex = 0; mutationIndex < mutations.length; mutationIndex++) {
                 var mutation = mutations[mutationIndex];
                 var addedNodes = mutation.addedNodes;
-        
+
                 for (var addedNodeIndex = 0; addedNodes && addedNodeIndex < addedNodes.length; addedNodeIndex++) {
                     var addedNode = addedNodes[addedNodeIndex];
-        
+
                     // Skip other types of nodes than element nodes, since they might not support
                     // the querySelectorAll method => runtime error.
                     if (addedNode.nodeType == 1) {
@@ -370,7 +370,7 @@ function observer(updateCallback) {
                         }
                     }
                 }
-                
+
                 if (mutation.type == "attributes" && getIdenticonType(mutation.target)) {
                     updateCallback(mutation.target);
                 }
@@ -395,7 +395,7 @@ function Point(x, y) {
 }
 
 /**
- * Translates and rotates a point before being passed on to the canvas context. This was previously done by the canvas context itself, 
+ * Translates and rotates a point before being passed on to the canvas context. This was previously done by the canvas context itself,
  * but this caused a rendering issue in Chrome on sizes > 256 where the rotation transformation of inverted paths was not done properly.
  */
 function Transform(x, y, size, rotation) {
@@ -453,14 +453,14 @@ Graphics__prototype.g/*addPolygon*/ = function addPolygon (points, invert) {
 
     var di = invert ? -2 : 2,
           transformedPoints = [];
-        
+
     for (var i = invert ? points.length - 2 : 0; i < points.length && i >= 0; i += di) {
         transformedPoints.push(this$1.A/*currentTransform*/.L/*transformIconPoint*/(points[i], points[i + 1]));
     }
-        
+
     this.M/*_renderer*/.g/*addPolygon*/(transformedPoints);
 };
-    
+
 /**
  * Adds a polygon to the underlying renderer.
  * Source: http://stackoverflow.com/a/2173084
@@ -484,7 +484,7 @@ Graphics__prototype.h/*addCircle*/ = function addCircle (x, y, size, invert) {
  */
 Graphics__prototype.i/*addRectangle*/ = function addRectangle (x, y, w, h, invert) {
     this.g/*addPolygon*/([
-        x, y, 
+        x, y,
         x + w, y,
         x + w, y + h,
         x, y + h
@@ -502,8 +502,8 @@ Graphics__prototype.i/*addRectangle*/ = function addRectangle (x, y, w, h, inver
  */
 Graphics__prototype.j/*addTriangle*/ = function addTriangle (x, y, w, h, r, invert) {
     var points = [
-        x + w, y, 
-        x + w, y + h, 
+        x + w, y,
+        x + w, y + h,
         x, y + h,
         x, y
     ];
@@ -550,7 +550,7 @@ function centerShape(index, g, cell, positionIndex) {
         ])) :
 
     index == 1 ? (
-        w = 0 | (cell * 0.5), 
+        w = 0 | (cell * 0.5),
         h = 0 | (cell * 0.8),
 
         g.j/*addTriangle*/(cell - w, 0, w, h, 2)) :
@@ -562,12 +562,12 @@ function centerShape(index, g, cell, positionIndex) {
     index == 3 ? (
         inner = cell * 0.1,
         // Use fixed outer border widths in small icons to ensure the border is drawn
-        outer = 
+        outer =
             cell < 6 ? 1 :
             cell < 8 ? 2 :
             (0 | (cell * 0.25)),
-        
-        inner = 
+
+        inner =
             inner > 1 ? (0 | inner) : // large icon => truncate decimals
             inner > 0.5 ? 1 :         // medium size icon => fixed width
             inner,                    // small icon => anti-aliased border
@@ -585,7 +585,7 @@ function centerShape(index, g, cell, positionIndex) {
 
         // Align edge to nearest pixel in large icons
         outer > 3 && (outer = 0 | outer),
-        
+
         g.i/*addRectangle*/(0, 0, cell, cell),
         g.g/*addPolygon*/([
             outer, outer,
@@ -593,7 +593,7 @@ function centerShape(index, g, cell, positionIndex) {
             outer + (cell - outer - inner) / 2, cell - inner
         ], true)) :
 
-    index == 6 ? 
+    index == 6 ?
         g.g/*addPolygon*/([
             0, 0,
             cell, 0,
@@ -603,7 +603,7 @@ function centerShape(index, g, cell, positionIndex) {
             0, cell
         ]) :
 
-    index == 7 ? 
+    index == 7 ?
         g.j/*addTriangle*/(cell / 2, cell / 2, cell / 2, cell / 2, 3) :
 
     index == 8 ? (
@@ -614,12 +614,12 @@ function centerShape(index, g, cell, positionIndex) {
     index == 9 ? (
         inner = cell * 0.14,
         // Use fixed outer border widths in small icons to ensure the border is drawn
-        outer = 
+        outer =
             cell < 4 ? 1 :
             cell < 6 ? 2 :
             (0 | (cell * 0.35)),
 
-        inner = 
+        inner =
             cell < 8 ? inner : // small icon => anti-aliased border
             (0 | inner),       // large icon => truncate decimals
 
@@ -633,7 +633,7 @@ function centerShape(index, g, cell, positionIndex) {
         g.i/*addRectangle*/(0, 0, cell, cell),
         g.h/*addCircle*/(outer, outer, cell - inner - outer, true)) :
 
-    index == 11 ? 
+    index == 11 ?
         g.j/*addTriangle*/(cell / 2, cell / 2, cell / 2, cell / 2, 3) :
 
     index == 12 ? (
@@ -662,7 +662,7 @@ function outerShape(index, g, cell) {
 
     !index ?
         g.j/*addTriangle*/(0, 0, cell, cell, 0) :
-        
+
     index == 1 ?
         g.j/*addTriangle*/(0, cell / 2, cell, cell / 2, 0) :
 
@@ -710,17 +710,17 @@ function iconGenerator(renderer, hash, config) {
     if (parsedConfig.J/*backColor*/) {
         renderer.m/*setBackground*/(parsedConfig.J/*backColor*/);
     }
-    
+
     // Calculate padding and round to nearest integer
     var size = renderer.k/*iconSize*/;
     var padding = (0.5 + size * parsedConfig.Y/*iconPadding*/) | 0;
     size -= padding * 2;
-    
+
     var graphics = new Graphics(renderer);
-    
+
     // Calculate cell size and ensure it is an integer
     var cell = 0 | (size / 4);
-    
+
     // Since the cell size is integer based, the actual icon will be slightly smaller than specified => center icon
     var x = 0 | (padding + size / 2 - cell * 2);
     var y = 0 | (padding + size / 2 - cell * 2);
@@ -728,20 +728,20 @@ function iconGenerator(renderer, hash, config) {
     function renderShape(colorIndex, shapes, index, rotationIndex, positions) {
         var shapeIndex = parseHex(hash, index, 1);
         var r = rotationIndex ? parseHex(hash, rotationIndex, 1) : 0;
-        
+
         renderer.O/*beginShape*/(availableColors[selectedColorIndexes[colorIndex]]);
-        
+
         for (var i = 0; i < positions.length; i++) {
             graphics.A/*currentTransform*/ = new Transform(x + positions[i][0] * cell, y + positions[i][1] * cell, cell, r++ % 4);
             shapes(shapeIndex, graphics, cell, i);
         }
-        
+
         renderer.P/*endShape*/();
     }
 
     // AVAILABLE COLORS
     var hue = parseHex(hash, -7) / 0xfffffff,
-    
+
           // Available colors for this icon
           availableColors = colorTheme(hue, parsedConfig),
 
@@ -776,16 +776,16 @@ function iconGenerator(renderer, hash, config) {
     renderShape(1, outerShape, 4, 5, [[0, 0], [3, 0], [3, 3], [0, 3]]);
     // Center
     renderShape(2, centerShape, 1, null, [[1, 1], [2, 1], [2, 2], [1, 2]]);
-    
+
     renderer.finish();
 }
 
 /**
  * Computes a SHA1 hash for any value and returns it as a hexadecimal string.
- * 
+ *
  * This function is optimized for minimal code size and rather short messages.
- * 
- * @param {string} message 
+ *
+ * @param {string} message
  */
 function sha1(message) {
     var HASH_SIZE_HALF_BYTES = 40;
@@ -795,16 +795,16 @@ function sha1(message) {
     // `var` is used to be able to minimize the number of `var` keywords.
     var i = 0,
         f = 0,
-    
+
         // Use `encodeURI` to UTF8 encode the message without any additional libraries
         // We could use `unescape` + `encodeURI` to minimize the code, but that would be slightly risky
         // since `unescape` is deprecated.
         urlEncodedMessage = encodeURI(message) + "%80", // trailing '1' bit padding
-        
+
         // This can be changed to a preallocated Uint32Array array for greater performance and larger code size
         data = [],
         dataSize,
-        
+
         hashBuffer = [],
 
         a = 0x67452301,
@@ -852,23 +852,23 @@ function sha1(message) {
     // SHA1 uses a 64 bit integer to represent the size, but since we only support short messages only the least
     // significant 32 bits are set. -8 is for the '1' bit padding byte.
     data[dataSize - 1] = f * 8 - 8;
-    
+
     // Compute hash
     for ( ; blockStartIndex < dataSize; blockStartIndex += BLOCK_SIZE_WORDS) {
         for (i = 0; i < 80; i++) {
             f = rotl(a, 5) + e + (
                     // Ch
                     i < 20 ? ((b & c) ^ ((~b) & d)) + 0x5a827999 :
-                    
+
                     // Parity
                     i < 40 ? (b ^ c ^ d) + 0x6ed9eba1 :
-                    
+
                     // Maj
                     i < 60 ? ((b & c) ^ (b & d) ^ (c & d)) + 0x8f1bbcdc :
-                    
+
                     // Parity
                     (b ^ c ^ d) + 0xca62c1d6
-                ) + ( 
+                ) + (
                     hashBuffer[i] = i < BLOCK_SIZE_WORDS
                         // Bitwise OR is used to coerse `undefined` to 0
                         ? (data[blockStartIndex + i] | 0)
@@ -898,7 +898,7 @@ function sha1(message) {
 
                 // Append half-bytes in reverse order
                 ((7 - (i & 7)) * 4)
-            ) 
+            )
             // Clamp to half-byte
             & 0xf
         ).toString(16);
@@ -908,7 +908,7 @@ function sha1(message) {
 }
 
 /**
- * Inputs a value that might be a valid hash string for Jdenticon and returns it 
+ * Inputs a value that might be a valid hash string for Jdenticon and returns it
  * if it is determined valid, otherwise a falsy value is returned.
  */
 function isValidHash(hashCandidate) {
@@ -930,15 +930,15 @@ function computeHash(value) {
  * @implements {Renderer}
  */
 function CanvasRenderer(ctx, iconSize) {
-    var canvas = ctx.canvas; 
+    var canvas = ctx.canvas;
     var width = canvas.width;
     var height = canvas.height;
-        
+
     ctx.save();
-        
+
     if (!iconSize) {
         iconSize = Math.min(width, height);
-            
+
         ctx.translate(
             ((width - iconSize) / 2) | 0,
             ((height - iconSize) / 2) | 0);
@@ -949,7 +949,7 @@ function CanvasRenderer(ctx, iconSize) {
      */
     this.l/*_ctx*/ = ctx;
     this.k/*iconSize*/ = iconSize;
-        
+
     ctx.clearRect(0, 0, iconSize, iconSize);
 }
 var CanvasRenderer__prototype = CanvasRenderer.prototype;
@@ -1030,9 +1030,9 @@ function drawIcon(ctx, hashOrValue, size, config) {
     if (!ctx) {
         throw new Error("No canvas specified.");
     }
-    
-    iconGenerator(new CanvasRenderer(ctx, size), 
-        isValidHash(hashOrValue) || computeHash(hashOrValue), 
+
+    iconGenerator(new CanvasRenderer(ctx, size),
+        isValidHash(hashOrValue) || computeHash(hashOrValue),
         config);
 
     var canvas = ctx.canvas;
@@ -1085,10 +1085,10 @@ SvgPath__prototype.h/*addCircle*/ = function addCircle (point, diameter, counter
           svgRadius = svgValue(diameter / 2),
           svgDiameter = svgValue(diameter),
           svgArc = "a" + svgRadius + "," + svgRadius + " 0 1," + sweepFlag + " ";
-            
-    this.B/*dataString*/ += 
+
+    this.B/*dataString*/ +=
         "M" + svgValue(point.x) + " " + svgValue(point.y + diameter / 2) +
-        svgArc + svgDiameter + ",0" + 
+        svgArc + svgDiameter + ",0" +
         svgArc + (-svgDiameter) + ",0";
 };
 
@@ -1170,7 +1170,7 @@ SvgRenderer__prototype.h/*addCircle*/ = function addCircle (point, diameter, cou
  */
 SvgRenderer__prototype.finish = function finish () {
         var this$1 = this;
- 
+
     var pathsByColor = this.D/*_pathsByColor*/;
     for (var color in pathsByColor) {
         // hasOwnProperty cannot be shadowed in pathsByColor
@@ -1201,8 +1201,8 @@ function SvgWriter(iconSize) {
      * @private
      */
     this.F/*_s*/ =
-        '<svg xmlns="' + SVG_CONSTANTS.T/*XMLNS*/ + '" width="' + 
-        iconSize + '" height="' + iconSize + '" viewBox="0 0 ' + 
+        '<svg xmlns="' + SVG_CONSTANTS.T/*XMLNS*/ + '" width="' +
+        iconSize + '" height="' + iconSize + '" viewBox="0 0 ' +
         iconSize + ' ' + iconSize + '">';
 }
 var SvgWriter__prototype = SvgWriter.prototype;
@@ -1214,7 +1214,7 @@ var SvgWriter__prototype = SvgWriter.prototype;
  */
 SvgWriter__prototype.m/*setBackground*/ = function setBackground (fillColor, opacity) {
     if (opacity) {
-        this.F/*_s*/ += '<rect width="100%" height="100%" fill="' + 
+        this.F/*_s*/ += '<rect width="100%" height="100%" fill="' +
             fillColor + '" opacity="' + opacity.toFixed(2) + '"/>';
     }
 };
@@ -1246,7 +1246,7 @@ SvgWriter__prototype.toString = function toString () {
  */
 function toSvg(hashOrValue, size, config) {
     var writer = new SvgWriter(size);
-    iconGenerator(new SvgRenderer(writer), 
+    iconGenerator(new SvgRenderer(writer),
         isValidHash(hashOrValue) || computeHash(hashOrValue),
         config);
     return writer.toString();
@@ -1263,7 +1263,7 @@ function SvgElement_append(parentNode, name) {
     while ( len-- > 0 ) keyValuePairs[ len ] = arguments[ len + 2 ];
 
     var el = document.createElementNS(SVG_CONSTANTS.T/*XMLNS*/, name);
-    
+
     for (var i = 0; i + 1 < keyValuePairs.length; i += 2) {
         el.setAttribute(
             /** @type {string} */(keyValuePairs[i]),
@@ -1282,24 +1282,24 @@ function SvgElement(element) {
     // Don't use the clientWidth and clientHeight properties on SVG elements
     // since Firefox won't serve a proper value of these properties on SVG
     // elements (https://bugzilla.mozilla.org/show_bug.cgi?id=874811)
-    // Instead use 100px as a hardcoded size (the svg viewBox will rescale 
+    // Instead use 100px as a hardcoded size (the svg viewBox will rescale
     // the icon to the correct dimensions)
     var iconSize = this.k/*iconSize*/ = Math.min(
         (Number(element.getAttribute(SVG_CONSTANTS.U/*WIDTH*/)) || 100),
         (Number(element.getAttribute(SVG_CONSTANTS.V/*HEIGHT*/)) || 100)
         );
-        
+
     /**
      * @type {Element}
      * @private
      */
     this.W/*_el*/ = element;
-        
+
     // Clear current SVG child elements
     while (element.firstChild) {
         element.removeChild(element.firstChild);
     }
-        
+
     // Set viewBox attribute to ensure the svg scales nicely.
     element.setAttribute("viewBox", "0 0 " + iconSize + " " + iconSize);
     element.setAttribute("preserveAspectRatio", "xMidYMid meet");
@@ -1349,7 +1349,7 @@ function updateAllConditional() {
     if (documentQuerySelectorAll) {
         /** @type {NodeListOf<HTMLElement>} */
         var elements = documentQuerySelectorAll(ICON_SELECTOR);
-        
+
         for (var i = 0; i < elements.length; i++) {
             var el = elements[i];
             if (!el[IS_RENDERED_PROPERTY]) {
@@ -1372,8 +1372,8 @@ function updateAllConditional() {
 function update(el, hashOrValue, config) {
     renderDomElement(el, hashOrValue, config, function (el, iconType) {
         if (iconType) {
-            return iconType == ICON_TYPE_SVG ? 
-                new SvgRenderer(new SvgElement(el)) : 
+            return iconType == ICON_TYPE_SVG ?
+                new SvgRenderer(new SvgElement(el)) :
                 new CanvasRenderer(/** @type {HTMLCanvasElement} */(el).getContext("2d"));
         }
     });
@@ -1398,31 +1398,31 @@ function renderDomElement(el, hashOrValue, config, rendererFactory) {
         }
         return;
     }
-    
-    // Hash selection. The result from getValidHash or computeHash is 
+
+    // Hash selection. The result from getValidHash or computeHash is
     // accepted as a valid hash.
-    var hash = 
+    var hash =
         // 1. Explicit valid hash
         isValidHash(hashOrValue) ||
-        
+
         // 2. Explicit value (`!= null` catches both null and undefined)
         hashOrValue != null && computeHash(hashOrValue) ||
-        
+
         // 3. `data-jdenticon-hash` attribute
         isValidHash(el.getAttribute(ATTRIBUTES.t/*HASH*/)) ||
-        
-        // 4. `data-jdenticon-value` attribute. 
-        // We want to treat an empty attribute as an empty value. 
-        // Some browsers return empty string even if the attribute 
-        // is not specified, so use hasAttribute to determine if 
+
+        // 4. `data-jdenticon-value` attribute.
+        // We want to treat an empty attribute as an empty value.
+        // Some browsers return empty string even if the attribute
+        // is not specified, so use hasAttribute to determine if
         // the attribute is specified.
         el.hasAttribute(ATTRIBUTES.o/*VALUE*/) && computeHash(el.getAttribute(ATTRIBUTES.o/*VALUE*/));
-    
+
     if (!hash) {
         // No hash specified. Don't render an icon.
         return;
     }
-    
+
     var renderer = rendererFactory(el, getIdenticonType(el));
     if (renderer) {
         // Draw icon
@@ -1433,8 +1433,8 @@ function renderDomElement(el, hashOrValue, config, rendererFactory) {
 
 /**
  * Renders an identicon for all matching supported elements.
- * 
- * @param {*} hashOrValue - A hexadecimal hash string or any value that will be hashed by Jdenticon. If not 
+ *
+ * @param {*} hashOrValue - A hexadecimal hash string or any value that will be hashed by Jdenticon. If not
  * specified the `data-jdenticon-hash` and `data-jdenticon-value` attributes of each element will be
  * evaluated.
  * @param {Object|number=} config - Optional configuration. If specified, this configuration object overrides any global
@@ -1489,10 +1489,10 @@ function jdenticonStartup() {
         GLOBAL[CONFIG_PROPERTIES.G/*GLOBAL*/] ||
         { }
     )["replaceMode"];
-    
+
     if (replaceMode != "never") {
         updateAllConditional();
-        
+
         if (replaceMode == "observe") {
             observer(update);
         }

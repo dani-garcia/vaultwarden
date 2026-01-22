@@ -1,8 +1,15 @@
 name: Hadolint
-
-on: [ push, pull_request ]
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on: [ push, pull_request ]
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   hadolint:
@@ -25,7 +32,6 @@ jobs:
 
       # Download hadolint - https://github.com/hadolint/hadolint/releases
       - name: Download hadolint
-        shell: bash
         run: |
           sudo curl -L https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-$(uname -s)-$(uname -m) -o /usr/local/bin/hadolint && \
           sudo chmod +x /usr/local/bin/hadolint
@@ -41,13 +47,11 @@ jobs:
 
       # Test Dockerfiles with hadolint
       - name: Run hadolint
-        shell: bash
         run: hadolint docker/Dockerfile.{debian,alpine}
       # End Test Dockerfiles with hadolint
 
       # Test Dockerfiles with docker build checks
       - name: Run docker build check
-        shell: bash
         run: |
           echo "Checking docker/Dockerfile.debian"
           docker build --check . -f docker/Dockerfile.debian
