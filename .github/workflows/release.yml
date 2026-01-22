@@ -1,6 +1,12 @@
 name: Release
 permissions: {}
 
+concurrency:
+  # Apply concurrency control only on the upstream repo
+  group: ${{ github.repository == 'dani-garcia/vaultwarden' && format('{0}-{1}', github.workflow, github.ref) || github.run_id }}
+  # Don't cancel other runs when creating a tag
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
 on:
   push:
     branches:
@@ -9,12 +15,6 @@ on:
     tags:
       # https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#filter-pattern-cheat-sheet
       - '[1-2].[0-9]+.[0-9]+'
-
-concurrency:
-  # Apply concurrency control only on the upstream repo
-  group: ${{ github.repository == 'dani-garcia/vaultwarden' && format('{0}-{1}', github.workflow, github.ref) || github.run_id }}
-  # Don't cancel other runs when creating a tag
-  cancel-in-progress: ${{ github.ref_type == 'branch' }}
 
 defaults:
   run:
