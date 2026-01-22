@@ -67,14 +67,14 @@ dotenvy = { version = "0.15.7", default-features = false }
 # Numerical libraries
 num-traits = "0.2.19"
 num-derive = "0.4.2"
-bigdecimal = "0.4.9"
+bigdecimal = "0.4.10"
 
 # Web framework
 rocket = { version = "0.5.1", features = ["tls", "json"], default-features = false }
 rocket_ws = { version ="0.1.1" }
 
 # WebSockets libraries
-rmpv = "1.3.0" # MessagePack library
+rmpv = "1.3.1" # MessagePack library
 
 # Concurrent HashMap used for WebSocket messaging and favicons
 dashmap = "6.1.0"
@@ -89,14 +89,14 @@ tokio-util = { version = "0.7.17", features = ["compat"]}
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
+serde_json = "1.0.148"
 
 # A safe, extensible ORM and Query builder
 # Currently pinned diesel to v2.3.3 as newer version break MySQL/MariaDB compatibility
 diesel = { version = "2.3.5", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.3.1"
 
-derive_more = { version = "2.1.0", features = ["from", "into", "as_ref", "deref", "display"] }
+derive_more = { version = "2.1.1", features = ["from", "into", "as_ref", "deref", "display"] }
 diesel-derive-newtype = "2.1.2"
 
 # Bundled/Static SQLite
@@ -149,7 +149,7 @@ email_address = "0.2.9"
 handlebars = { version = "6.3.2", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.26", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
+reqwest = { version = "0.12.28", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
 hickory-resolver = "0.25.2"
 
 # Favicon extraction libraries

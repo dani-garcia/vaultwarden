@@ -231,6 +231,15 @@ impl User {
     pub fn reset_stamp_exception(&mut self) {
         self.stamp_exception = None;
     }
+
+    pub fn display_name(&self) -> &str {
+        // default to email if name is empty
+        if !&self.name.is_empty() {
+            &self.name
+        } else {
+            &self.email
+        }
+    }
 }
 
 /// Database methods

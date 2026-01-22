@@ -29,7 +29,7 @@ function isValidIp(ip) {
     return ipv4Regex.test(ip) || ipv6Regex.test(ip);
 }
 
-function checkVersions(platform, installed, latest, commit=null, pre_release=false) {
+function checkVersions(platform, installed, latest, commit=null, compare_order=0) {
     if (installed === "-" || latest === "-") {
         document.getElementById(`${platform}-failed`).classList.remove("d-none");
         return;
@@ -37,7 +37,7 @@ function checkVersions(platform, installed, latest, commit=null, pre_release=fal
 
     // Only check basic versions, no commit revisions
     if (commit === null || installed.indexOf("-") === -1) {
-        if (platform === "web" && pre_release === true) {
+        if (platform === "web" && compare_order === 1) {
             document.getElementById(`${platform}-prerelease`).classList.remove("d-none");
         } else if (installed == latest) {
             document.getElementById(`${platform}-success`).classList.remove("d-none");
@@ -83,7 +83,7 @@ async function generateSupportString(event, dj) {
     let supportString = "### Your environment (Generated via diagnostics page)\n\n";
 
     supportString += `* Vaultwarden version: v${dj.current_release}\n`;
-    supportString += `* Web-vault version: v${dj.web_vault_version}\n`;
+    supportString += `* Web-vault version: v${dj.active_web_release}\n`;
     supportString += `* OS/Arch: ${dj.host_os}/${dj.host_arch}\n`;
     supportString += `* Running within a container: ${dj.running_within_container} (Base: ${dj.container_base_image})\n`;
     supportString += `* Database type: ${dj.db_type}\n`;
@@ -208,9 +208,9 @@ function initVersionCheck(dj) {
     }
     checkVersions("server", serverInstalled, serverLatest, serverLatestCommit);
 
-    const webInstalled = dj.web_vault_version;
-    const webLatest = dj.latest_web_build;
-    checkVersions("web", webInstalled, webLatest, null, dj.web_vault_pre_release);
+    const webInstalled = dj.active_web_release;
+    const webLatest = dj.latest_web_release;
+    checkVersions("web", webInstalled, webLatest, null, dj.web_vault_compare);
 }
 
 function checkDns(dns_resolved) {

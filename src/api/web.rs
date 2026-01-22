@@ -60,11 +60,12 @@ fn vaultwarden_css() -> Cached<Css<String>> {
         "mail_2fa_enabled": CONFIG._enable_email_2fa(),
         "mail_enabled": CONFIG.mail_enabled(),
         "sends_allowed": CONFIG.sends_allowed(),
+        "password_hints_allowed": CONFIG.password_hints_allowed(),
         "signup_disabled": CONFIG.is_signup_disabled(),
         "sso_enabled": CONFIG.sso_enabled(),
         "sso_only": CONFIG.sso_enabled() && CONFIG.sso_only(),
-        "yubico_enabled": CONFIG._enable_yubico() && CONFIG.yubico_client_id().is_some() && CONFIG.yubico_secret_key().is_some(),
         "webauthn_2fa_supported": CONFIG.is_webauthn_2fa_supported(),
+        "yubico_enabled": CONFIG._enable_yubico() && CONFIG.yubico_client_id().is_some() && CONFIG.yubico_secret_key().is_some(),
     });
 
     let scss = match CONFIG.render_template("scss/vaultwarden.scss", &css_options) {

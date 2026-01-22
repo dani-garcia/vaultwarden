@@ -173,7 +173,10 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
                 "memory": headers.user.client_kdf_memory,
                 "parallelism": headers.user.client_kdf_parallelism
             },
+            // This field is named inconsistently and will be removed and replaced by the "wrapped" variant in the apps.
+            // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "masterKeyEncryptedUserKey": headers.user.akey,
+            "masterKeyWrappedUserKey": headers.user.akey,
             "salt": headers.user.email
         })
     } else {

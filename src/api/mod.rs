@@ -51,6 +51,7 @@ pub type EmptyResult = ApiResult<()>;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PasswordOrOtpData {
+    #[serde(alias = "MasterPasswordHash")]
     master_password_hash: Option<String>,
     otp: Option<String>,
 }

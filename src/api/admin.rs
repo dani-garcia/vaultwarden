@@ -31,7 +31,7 @@ use crate::{
     http_client::make_http_request,
     mail,
     util::{
-        container_base_image, format_naive_datetime_local, get_display_size, get_web_vault_version,
+        container_base_image, format_naive_datetime_local, get_active_web_release, get_display_size,
         is_running_in_container, NumberOrString,
     },
     CONFIG, VERSION,
@@ -689,6 +689,26 @@ async fn get_ntp_time(has_http_access: bool) -> String {
     String::from("Unable to fetch NTP time.")
 }
 
+fn web_vault_compare(active: &str, latest: &str) -> i8 {
+    use semver::Version;
+    use std::cmp::Ordering;
+
+    let active_semver = Version::parse(active).unwrap_or_else(|e| {
+        warn!("Unable to parse active web-vault version '{active}': {e}");
+        Version::parse("2025.1.1").unwrap()
+    });
+    let latest_semver = Version::parse(latest).unwrap_or_else(|e| {
+        warn!("Unable to parse latest web-vault version '{latest}': {e}");
+        Version::parse("2025.1.1").unwrap()
+    });
+
+    match active_semver.cmp(&latest_semver) {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
+    }
+}
+
 #[get("/diagnostics")]
 async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResult<Html<String>> {
     use chrono::prelude::*;
@@ -708,32 +728,21 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
         _ => "Unable to resolve domain name.".to_string(),
     };
 
-    let (latest_release, latest_commit, latest_web_build) = get_release_info(has_http_access).await;
+    let (latest_vw_release, latest_vw_commit, latest_web_release) = get_release_info(has_http_access).await;
+    let active_web_release = get_active_web_release();
+    let web_vault_compare = web_vault_compare(&active_web_release, &latest_web_release);
 
     let ip_header_name = &ip_header.0.unwrap_or_default();
-
-    // Get current running versions
-    let web_vault_version = get_web_vault_version();
-
-    // Check if the running version is newer than the latest stable released version
-    let web_vault_pre_release = if let Ok(web_ver_match) = semver::VersionReq::parse(&format!(">{latest_web_build}")) {
-        web_ver_match.matches(
-            &semver::Version::parse(&web_vault_version).unwrap_or_else(|_| semver::Version::parse("2025.1.1").unwrap()),
-        )
-    } else {
-        error!("Unable to parse latest_web_build: '{latest_web_build}'");
-        false
-    };
 
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
         "current_release": VERSION,
-        "latest_release": latest_release,
-        "latest_commit": latest_commit,
+        "latest_release": latest_vw_release,
+        "latest_commit": latest_vw_commit,
         "web_vault_enabled": &CONFIG.web_vault_enabled(),
-        "web_vault_version": web_vault_version,
-        "latest_web_build": latest_web_build,
-        "web_vault_pre_release": web_vault_pre_release,
+        "active_web_release": active_web_release,
+        "latest_web_release": latest_web_release,
+        "web_vault_compare": web_vault_compare,
         "running_within_container": running_within_container,
         "container_base_image": if running_within_container { container_base_image() } else { "Not applicable" },
         "has_http_access": has_http_access,
@@ -842,5 +851,34 @@ impl<'r> FromRequest<'r> for AdminToken {
         Outcome::Success(Self {
             ip,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_web_vault_compare() {
+        // web_vault_compare(active, latest)
+        // Test normal versions
+        assert!(web_vault_compare("2025.12.0", "2025.12.1") == -1);
+        assert!(web_vault_compare("2025.12.1", "2025.12.1") == 0);
+        assert!(web_vault_compare("2025.12.2", "2025.12.1") == 1);
+
+        // Test patched/+build.n versions
+        // Newer latest version
+        assert!(web_vault_compare("2025.12.0+build.1", "2025.12.1") == -1);
+        assert!(web_vault_compare("2025.12.1", "2025.12.1+build.1") == -1);
+        assert!(web_vault_compare("2025.12.0+build.1", "2025.12.1+build.1") == -1);
+        assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.2") == -1);
+        // Equal versions
+        assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.1") == 0);
+        assert!(web_vault_compare("2025.12.2+build.2", "2025.12.2+build.2") == 0);
+        // Newer active version
+        assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1") == 1);
+        assert!(web_vault_compare("2025.12.2", "2025.12.1+build.1") == 1);
+        assert!(web_vault_compare("2025.12.2+build.1", "2025.12.1+build.1") == 1);
+        assert!(web_vault_compare("2025.12.1+build.3", "2025.12.1+build.2") == 1);
     }
 }
