@@ -105,7 +105,7 @@ FLAGS:
 
 COMMAND:
     hash [--preset {bitwarden|owasp}]  Generate an Argon2id PHC ADMIN_TOKEN
-    backup                             Create a backup of the SQLite database
+    backup [-o, --output <dir>]        Create a backup of the SQLite database
                                        You can also send the USR1 signal to trigger a backup
 
 PRESETS:                  m=         t=          p=
@@ -187,7 +187,9 @@ fn parse_args() {
                 exit(1);
             }
         } else if command == "backup" {
-            match db::backup_sqlite() {
+            let output_dir: Option<String> = pargs.opt_value_from_str(["-o", "--output"]).unwrap_or_default();
+
+            match db::backup_sqlite(output_dir) {
                 Ok(f) => {
                     println!("Backup to '{f}' was successful");
                     exit(0);
@@ -606,7 +608,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
                     // If we need more signals to act upon, we might want to use select! here.
                     // With only one item to listen for this is enough.
                     let _ = signal_user1.recv().await;
-                    match db::backup_sqlite() {
+                    match db::backup_sqlite(None) {
                         Ok(f) => info!("Backup to '{f}' was successful"),
                         Err(e) => error!("Backup failed. {e:?}"),
                     }
