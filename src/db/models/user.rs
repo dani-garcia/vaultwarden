@@ -409,6 +409,28 @@ impl User {
         None
     }
 
+    pub async fn count_enabled(conn: &DbConn) -> i64 {
+        db_run! { conn: {
+            users::table
+                .filter(users::enabled.eq(true))
+                .count()
+                .first::<i64>(conn)
+                .ok()
+                .unwrap_or(0)
+        }}
+    }
+
+    pub async fn count_disabled(conn: &DbConn) -> i64 {
+        db_run! { conn: {
+            users::table
+                .filter(users::enabled.eq(false))
+                .count()
+                .first::<i64>(conn)
+                .ok()
+                .unwrap_or(0)
+        }}
+    }
+
     pub async fn get_all(conn: &DbConn) -> Vec<(Self, Option<SsoUser>)> {
         db_run! { conn: {
             users::table

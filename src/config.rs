@@ -918,6 +918,16 @@ make_config! {
         /// Auto-enable 2FA (Know the risks!) |> Automatically setup email 2FA as fallback provider when needed
         email_2fa_auto_fallback: bool,  true,   def,      false;
     },
+
+    /// Metrics Settings
+    metrics {
+        /// Enable metrics endpoint |> Enable Prometheus metrics endpoint at /metrics
+        enable_metrics:         bool,   true,   def,    false;
+        /// Metrics token |> Optional token to secure the /metrics endpoint. If not set, endpoint is public when enabled.
+        metrics_token:          Pass,   true,   option;
+        /// Business metrics cache timeout |> Number of seconds to cache business metrics before refreshing from database
+        metrics_business_cache_seconds: u64, true, def, 300;
+    },
 }
 
 fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
@@ -1266,6 +1276,30 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         println!("[WARNING] Secure Note size limit is increased to 100_000!");
         println!("[WARNING] This could cause issues with clients. Also exports will not work on Bitwarden servers!.");
     }
+
+    // Validate metrics configuration
+    if cfg.enable_metrics {
+        if let Some(ref token) = cfg.metrics_token {
+            if token.starts_with("$argon2") {
+                if let Err(e) = argon2::password_hash::PasswordHash::new(token) {
+                    err!(format!("The configured Argon2 PHC in `METRICS_TOKEN` is invalid: '{e}'"))
+                }
+            } else if token.trim().is_empty() {
+                err!("`METRICS_TOKEN` cannot be empty when metrics are enabled");
+            } else {
+                println!(
+                    "[NOTICE] You are using a plain text `METRICS_TOKEN` which is less secure.\n\
+                    Please consider generating a secure Argon2 PHC string by using `vaultwarden hash`.\n"
+                );
+            }
+        } else {
+            println!(
+                "[WARNING] Metrics endpoint is enabled without authentication. This may expose sensitive information."
+            );
+            println!("[WARNING] Consider setting `METRICS_TOKEN` to secure the endpoint.");
+        }
+    }
+
     Ok(())
 }
 
