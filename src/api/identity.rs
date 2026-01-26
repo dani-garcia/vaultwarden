@@ -482,14 +482,18 @@ async fn authenticated_response(
         Value::Null
     };
 
-    let account_keys = json!({
-        "publicKeyEncryptionKeyPair": {
-            "wrappedPrivateKey": user.private_key,
-            "publicKey": user.public_key,
-            "Object": "publicKeyEncryptionKeyPair"
-        },
-        "Object": "privateKeys"
-    });
+    let account_keys = if user.private_key.is_some() {
+        json!({
+            "publicKeyEncryptionKeyPair": {
+                "wrappedPrivateKey": user.private_key,
+                "publicKey": user.public_key,
+                "Object": "publicKeyEncryptionKeyPair"
+            },
+            "Object": "privateKeys"
+        })
+    } else {
+        Value::Null
+    };
 
     let mut result = json!({
         "access_token": auth_tokens.access_token(),
