@@ -144,7 +144,7 @@ async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Hea
     let (mut challenge, state) = WEBAUTHN.start_passkey_registration(
         Uuid::from_str(&user.uuid).expect("Failed to parse UUID"), // Should never fail
         &user.email,
-        &user.name,
+        user.display_name(),
         Some(registrations),
     )?;
 

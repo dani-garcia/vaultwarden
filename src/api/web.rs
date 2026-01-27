@@ -60,11 +60,12 @@ fn vaultwarden_css() -> Cached<Css<String>> {
         "mail_2fa_enabled": CONFIG._enable_email_2fa(),
         "mail_enabled": CONFIG.mail_enabled(),
         "sends_allowed": CONFIG.sends_allowed(),
+        "password_hints_allowed": CONFIG.password_hints_allowed(),
         "signup_disabled": CONFIG.is_signup_disabled(),
         "sso_enabled": CONFIG.sso_enabled(),
         "sso_only": CONFIG.sso_enabled() && CONFIG.sso_only(),
-        "yubico_enabled": CONFIG._enable_yubico() && CONFIG.yubico_client_id().is_some() && CONFIG.yubico_secret_key().is_some(),
         "webauthn_2fa_supported": CONFIG.is_webauthn_2fa_supported(),
+        "yubico_enabled": CONFIG._enable_yubico() && CONFIG.yubico_client_id().is_some() && CONFIG.yubico_secret_key().is_some(),
     });
 
     let scss = match CONFIG.render_template("scss/vaultwarden.scss", &css_options) {
@@ -238,8 +239,8 @@ pub fn static_files(filename: &str) -> Result<(ContentType, &'static [u8]), Erro
         "jdenticon-3.3.0.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jdenticon-3.3.0.js"))),
         "datatables.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/datatables.js"))),
         "datatables.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/datatables.css"))),
-        "jquery-3.7.1.slim.js" => {
-            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jquery-3.7.1.slim.js")))
+        "jquery-4.0.0.slim.js" => {
+            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jquery-4.0.0.slim.js")))
         }
         _ => err!(format!("Static file not found: {filename}")),
     }

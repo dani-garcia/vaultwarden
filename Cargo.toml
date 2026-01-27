@@ -79,12 +79,12 @@ dashmap = "6.1.0"
 
 # Async futures
 futures = "0.3.31"
-tokio = { version = "1.48.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
-tokio-util = { version = "0.7.17", features = ["compat"]}
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio-util = { version = "0.7.18", features = ["compat"]}
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.148"
+serde_json = "1.0.149"
 
 # A safe, extensible ORM and Query builder
 # Currently pinned diesel to v2.3.3 as newer version break MySQL/MariaDB compatibility
@@ -106,15 +106,15 @@ subtle = "2.6.1"
 uuid = { version = "1.19.0", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.42", features = ["clock", "serde"], default-features = false }
+chrono = { version = "0.4.43", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.10.4"
-time = "0.3.44"
+time = "0.3.45"
 
 # Job scheduler
 job_scheduler_ng = "2.4.0"
 
 # Data encoding library Hex/Base32/Base64
-data-encoding = "2.9.0"
+data-encoding = "2.10.0"
 
 # JWT library
 jsonwebtoken = { version = "10.2.0", features = ["use_pem", "rust_crypto"], default-features = false }
@@ -133,7 +133,7 @@ webauthn-rs-proto = "0.5.4"
 webauthn-rs-core = "0.5.4"
 
 # Handling of URL's for WebAuthn and favicons
-url = "2.5.7"
+url = "2.5.8"
 
 # Email libraries
 lettre = { version = "0.11.19", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "hostname", "tracing", "tokio1-rustls", "ring", "rustls-native-certs"], default-features = false }
@@ -141,7 +141,7 @@ percent-encoding = "2.3.2" # URL encoding library used for URL's in the emails
 email_address = "0.2.9"
 
 # HTML Template library
-handlebars = { version = "6.3.2", features = ["dir_source"] }
+handlebars = { version = "6.4.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
 reqwest = { version = "0.12.28", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
@@ -200,7 +200,7 @@ opendal = { version = "0.55.0", features = ["services-fs"], default-features = f
 anyhow = { version = "1.0.100", optional = true }
 aws-config = { version = "1.8.12", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
 aws-credential-types = { version = "1.2.11", optional = true }
-aws-smithy-runtime-api = { version = "1.9.3", optional = true }
+aws-smithy-runtime-api = { version = "1.10.0", optional = true }
 http = { version = "1.4.0", optional = true }
 reqsign = { version = "0.16.5", optional = true }
 

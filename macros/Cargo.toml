@@ -13,8 +13,8 @@ path = "src/lib.rs"
 proc-macro = true
 
 [dependencies]
-quote = "1.0.42"
-syn = "2.0.111"
+quote = "1.0.43"
+syn = "2.0.114"
 
 [lints]
 workspace = true

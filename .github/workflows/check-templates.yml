@@ -1,7 +1,15 @@
 name: Check templates
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on: [ push, pull_request ]
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   docker-templates:
