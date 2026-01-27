@@ -121,6 +121,14 @@ pub enum DbConnType {
 }
 
 pub static ACTIVE_DB_TYPE: OnceLock<DbConnType> = OnceLock::new();
+pub static DB_POOL: OnceLock<DbPool> = OnceLock::new();
+
+pub async fn get_conn() -> Result<DbConn, Error> {
+    match DB_POOL.get() {
+        Some(p) => p.get().await,
+        None => err!("Database pool not initialized"),
+    }
+}
 
 pub struct DbConn {
     conn: Arc<Mutex<Option<PooledConnection<DbConnManager>>>>,
