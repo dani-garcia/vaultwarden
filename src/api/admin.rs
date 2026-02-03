@@ -351,17 +351,17 @@ async fn get_users_property(users: Vec<(User, Option<SsoUser>)>, conn: &DbConn) 
     let mut users_json = Vec::with_capacity(users.len());
     for (u, sso_u) in users {
         let mut usr = u.to_json(conn).await;
-        usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, conn).await);
-        usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, conn).await);
-        usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, conn).await));
-        usr["user_enabled"] = json!(u.enabled);
-        usr["created_at"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
-        usr["last_active"] = match u.last_active(conn).await {
+        usr["cipherCount"] = json!(Cipher::count_owned_by_user(&u.uuid, conn).await);
+        usr["attachmentCount"] = json!(Attachment::count_by_user(&u.uuid, conn).await);
+        usr["attachmentSize"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, conn).await));
+        usr["userEnabled"] = json!(u.enabled);
+        usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
+        usr["lastActive"] = match u.last_active(conn).await {
             Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
             None => json!("Never"),
         };
 
-        usr["sso_identifier"] = json!(sso_u.map(|u| u.identifier.to_string()).unwrap_or(String::new()));
+        usr["ssoIdentifier"] = json!(sso_u.map(|u| u.identifier.to_string()).unwrap_or(String::new()));
 
         users_json.push(usr);
     }
