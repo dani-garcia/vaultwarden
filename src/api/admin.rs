@@ -296,12 +296,16 @@ struct InviteData {
     email: String,
 }
 
-async fn get_user_or_404(user_id: &UserId, conn: &DbConn) -> ApiResult<(User, Option<SsoUser>)> {
-    if let Some(user) = SsoUser::find_by_uuid(user_id, conn).await {
+async fn get_user_or_404(user_id: &UserId, conn: &DbConn) -> ApiResult<User> {
+    if let Some(user) = User::find_by_uuid(user_id, conn).await {
         Ok(user)
     } else {
         err_code!("User doesn't exist", Status::NotFound.code);
     }
+}
+
+async fn get_sso_user(user_id: &UserId, conn: &DbConn) -> Option<SsoUser> {
+    SsoUser::find_by_uuid(user_id, conn).await.and_then(|user_and_sso| user_and_sso.1)
 }
 
 #[post("/invite", format = "application/json", data = "<data>")]
@@ -395,15 +399,16 @@ async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> 
 
 #[get("/users/<user_id>")]
 async fn get_user_json(user_id: UserId, _token: AdminToken, conn: DbConn) -> JsonResult {
-    let u_sso = get_user_or_404(&user_id, &conn).await?;
-    let user_json = get_users_property(vec![u_sso], &conn).await[0].clone();
+    let user = get_user_or_404(&user_id, &conn).await?;
+    let sso_user = get_sso_user(&user_id, &conn).await;
+    let user_json = get_users_property(vec![(user, sso_user)], &conn).await[0].clone();
 
     Ok(Json(user_json))
 }
 
 #[post("/users/<user_id>/delete", format = "application/json")]
 async fn delete_user(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyResult {
-    let (user, _) = get_user_or_404(&user_id, &conn).await?;
+    let user = get_user_or_404(&user_id, &conn).await?;
 
     // Get the membership records before deleting the actual user
     let memberships = Membership::find_any_state_by_user(&user_id, &conn).await;
@@ -448,7 +453,7 @@ async fn delete_sso_user(user_id: UserId, token: AdminToken, conn: DbConn) -> Em
 
 #[post("/users/<user_id>/deauth", format = "application/json")]
 async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let (mut user, _) = get_user_or_404(&user_id, &conn).await?;
+    let mut user = get_user_or_404(&user_id, &conn).await?;
 
     nt.send_logout(&user, None, &conn).await;
 
@@ -469,7 +474,7 @@ async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Noti
 
 #[post("/users/<user_id>/disable", format = "application/json")]
 async fn disable_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    let (mut user, _) = get_user_or_404(&user_id, &conn).await?;
+    let mut user = get_user_or_404(&user_id, &conn).await?;
     Device::delete_all_by_user(&user.uuid, &conn).await?;
     user.reset_security_stamp();
     user.enabled = false;
@@ -483,7 +488,7 @@ async fn disable_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Not
 
 #[post("/users/<user_id>/enable", format = "application/json")]
 async fn enable_user(user_id: UserId, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let (mut user, _) = get_user_or_404(&user_id, &conn).await?;
+    let mut user = get_user_or_404(&user_id, &conn).await?;
     user.enabled = true;
 
     user.save(&conn).await
@@ -491,7 +496,7 @@ async fn enable_user(user_id: UserId, _token: AdminToken, conn: DbConn) -> Empty
 
 #[post("/users/<user_id>/remove-2fa", format = "application/json")]
 async fn remove_2fa(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyResult {
-    let (mut user, _) = get_user_or_404(&user_id, &conn).await?;
+    let mut user = get_user_or_404(&user_id, &conn).await?;
     TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
     two_factor::enforce_2fa_policy(&user, &ACTING_ADMIN_USER.into(), 14, &token.ip.ip, &conn).await?;
     user.totp_recover = None;
