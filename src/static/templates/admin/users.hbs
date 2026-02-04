@@ -50,7 +50,13 @@
                             <span class="d-block">{{createdAt}}</span>
                         </td>
                         <td>
-                            <span class="d-block">{{lastActive}}</span>
+                            <span class="d-block">
+                            {{#if lastActive}}
+                                {{lastActive}}
+                            {{else}}
+                                Never
+                            {{/if}}
+                            </span>
                         </td>
                         <td>
                             <span class="d-block">{{cipherCount}}</span>
