@@ -527,13 +527,11 @@ impl SsoUser {
         }}
     }
 
-    pub async fn find_by_uuid(uuid: &UserId, conn: &DbConn) -> Option<(User, Option<Self>)> {
+    pub async fn find_by_uuid(uuid: &UserId, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
-            users::table
-                .left_join(sso_users::table)
-                .select(<(User, Option<Self>)>::as_select())
-                .filter(users::uuid.eq(uuid))
-                .first::<(User, Option<Self>)>(conn)
+            sso_users::table
+                .filter(sso_users::user_uuid.eq(uuid))
+                .first::<Self>(conn)
                 .ok()
         }}
     }
