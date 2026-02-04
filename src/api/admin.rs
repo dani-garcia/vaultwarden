@@ -347,7 +347,7 @@ fn logout(cookies: &CookieJar<'_>) -> Redirect {
     Redirect::to(admin_path())
 }
 
-async fn get_users_property(users: Vec<(User, Option<SsoUser>)>, conn: &DbConn) -> Vec<Value> {
+async fn enrich_users_json(users: Vec<(User, Option<SsoUser>)>, conn: &DbConn) -> Vec<Value> {
     let mut users_json = Vec::with_capacity(users.len());
     for (u, sso_u) in users {
         let mut usr = u.to_json(conn).await;
@@ -358,7 +358,7 @@ async fn get_users_property(users: Vec<(User, Option<SsoUser>)>, conn: &DbConn) 
         usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
         usr["lastActive"] = match u.last_active(conn).await {
             Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
-            None => json!("Never"),
+            None => json!(None::<String>),
         };
 
         usr["ssoIdentifier"] = json!(sso_u.map(|u| u.identifier.to_string()).unwrap_or(String::new()));
@@ -371,14 +371,14 @@ async fn get_users_property(users: Vec<(User, Option<SsoUser>)>, conn: &DbConn) 
 #[get("/users")]
 async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
     let users = User::get_all(&conn).await;
-    let users_json = get_users_property(users, &conn).await;
+    let users_json = enrich_users_json(users, &conn).await;
     Json(Value::Array(users_json))
 }
 
 #[get("/users/overview")]
 async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
     let users = User::get_all(&conn).await;
-    let users_json = get_users_property(users, &conn).await;
+    let users_json = enrich_users_json(users, &conn).await;
     let text = AdminTemplateData::new("admin/users", json!(users_json)).render()?;
     Ok(Html(text))
 }
@@ -386,7 +386,7 @@ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<Stri
 #[get("/users/by-mail/<mail>")]
 async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> JsonResult {
     if let Some((u, sso)) = SsoUser::find_by_mail(mail, &conn).await {
-        let user_json = get_users_property(vec![(u, sso)], &conn).await[0].clone();
+        let user_json = enrich_users_json(vec![(u, sso)], &conn).await[0].clone();
         Ok(Json(user_json))
     } else {
         err_code!("User doesn't exist", Status::NotFound.code);
@@ -397,7 +397,7 @@ async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> 
 async fn get_user_json(user_id: UserId, _token: AdminToken, conn: DbConn) -> JsonResult {
     let user = get_user_or_404(&user_id, &conn).await?;
     let sso_user = SsoUser::find_by_uuid(&user_id, &conn).await;
-    let user_json = get_users_property(vec![(user, sso_user)], &conn).await[0].clone();
+    let user_json = enrich_users_json(vec![(user, sso_user)], &conn).await[0].clone();
 
     Ok(Json(user_json))
 }
