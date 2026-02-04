@@ -304,10 +304,6 @@ async fn get_user_or_404(user_id: &UserId, conn: &DbConn) -> ApiResult<User> {
     }
 }
 
-async fn get_sso_user(user_id: &UserId, conn: &DbConn) -> Option<SsoUser> {
-    SsoUser::find_by_uuid(user_id, conn).await.and_then(|user_and_sso| user_and_sso.1)
-}
-
 #[post("/invite", format = "application/json", data = "<data>")]
 async fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> JsonResult {
     let data: InviteData = data.into_inner();
@@ -400,7 +396,7 @@ async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> 
 #[get("/users/<user_id>")]
 async fn get_user_json(user_id: UserId, _token: AdminToken, conn: DbConn) -> JsonResult {
     let user = get_user_or_404(&user_id, &conn).await?;
-    let sso_user = get_sso_user(&user_id, &conn).await;
+    let sso_user = SsoUser::find_by_uuid(&user_id, &conn).await;
     let user_json = get_users_property(vec![(user, sso_user)], &conn).await[0].clone();
 
     Ok(Json(user_json))
