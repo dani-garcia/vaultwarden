@@ -1,6 +1,6 @@
 [workspace.package]
 edition = "2021"
-rust-version = "1.90.0"
+rust-version = "1.91.0"
 license = "AGPL-3.0-only"
 repository = "https://github.com/dani-garcia/vaultwarden"
 publish = false
@@ -88,7 +88,7 @@ serde_json = "1.0.149"
 
 # A safe, extensible ORM and Query builder
 # Currently pinned diesel to v2.3.3 as newer version break MySQL/MariaDB compatibility
-diesel = { version = "2.3.5", features = ["chrono", "r2d2", "numeric"] }
+diesel = { version = "2.3.6", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.3.1"
 
 derive_more = { version = "2.1.1", features = ["from", "into", "as_ref", "deref", "display"] }
@@ -103,12 +103,12 @@ ring = "0.17.14"
 subtle = "2.6.1"
 
 # UUID generation
-uuid = { version = "1.19.0", features = ["v4"] }
+uuid = { version = "1.20.0", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.43", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.10.4"
-time = "0.3.45"
+time = "0.3.47"
 
 # Job scheduler
 job_scheduler_ng = "2.4.0"
@@ -117,7 +117,7 @@ job_scheduler_ng = "2.4.0"
 data-encoding = "2.10.0"
 
 # JWT library
-jsonwebtoken = { version = "10.2.0", features = ["use_pem", "rust_crypto"], default-features = false }
+jsonwebtoken = { version = "10.3.0", features = ["use_pem", "rust_crypto"], default-features = false }
 
 # TOTP library
 totp-lite = "2.0.1"
@@ -149,9 +149,9 @@ hickory-resolver = "0.25.2"
 
 # Favicon extraction libraries
 html5gum = "0.8.3"
-regex = { version = "1.12.2", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.12.3", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.2"
-bytes = "1.11.0"
+bytes = "1.11.1"
 svg-hush = "0.9.5"
 
 # Cache function results (Used for version check and favicon fetching)
@@ -197,10 +197,10 @@ grass_compiler = { version = "0.13.4", default-features = false }
 opendal = { version = "0.55.0", features = ["services-fs"], default-features = false }
 
 # For retrieving AWS credentials, including temporary SSO credentials
-anyhow = { version = "1.0.100", optional = true }
-aws-config = { version = "1.8.12", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
+anyhow = { version = "1.0.101", optional = true }
+aws-config = { version = "1.8.13", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
 aws-credential-types = { version = "1.2.11", optional = true }
-aws-smithy-runtime-api = { version = "1.10.0", optional = true }
+aws-smithy-runtime-api = { version = "1.11.3", optional = true }
 http = { version = "1.4.0", optional = true }
 reqsign = { version = "0.16.5", optional = true }
 
