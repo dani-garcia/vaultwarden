@@ -57,7 +57,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # Debian Trixie uses libpq v17
     PQ_LIB_DIR="/usr/local/musl/pq17/lib"
 
-
 # Create CARGO_HOME folder and don't download rust docs
 RUN mkdir -pv "${CARGO_HOME}" && \
     rustup set profile minimal
