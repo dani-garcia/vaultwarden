@@ -1,0 +1,1 @@
+DROP TABLE xoauth2;
