@@ -929,9 +929,13 @@ struct OrgIdData {
 }
 
 #[get("/ciphers/organization-details?<data..>")]
-async fn get_org_details(data: OrgIdData, headers: OrgMemberHeaders, conn: DbConn) -> JsonResult {
+async fn get_org_details(data: OrgIdData, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
     if data.organization_id != headers.membership.org_uuid {
         err_code!("Resource not found.", "Organization id's do not match", rocket::http::Status::NotFound.code);
+    }
+
+    if !headers.membership.has_full_access() {
+        err_code!("Resource not found.", "User does not have full access", rocket::http::Status::NotFound.code);
     }
 
     Ok(Json(json!({
