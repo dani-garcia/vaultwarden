@@ -502,7 +502,7 @@ async fn enable_user(user_id: UserId, _token: AdminToken, conn: DbConn) -> Empty
 #[post("/users/<user_id>/remove-2fa", format = "application/json")]
 async fn remove_2fa(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &conn).await?;
-    TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
+    TwoFactor::delete_all_2fa_by_user(&user.uuid, &conn).await?;
     two_factor::enforce_2fa_policy(&user, &ACTING_ADMIN_USER.into(), 14, &token.ip.ip, &conn).await?;
     user.totp_recover = None;
     user.save(&conn).await

@@ -657,7 +657,7 @@ async fn password_emergency_access(
     grantor_user.save(&conn).await?;
 
     // Disable TwoFactor providers since they will otherwise block logins
-    TwoFactor::delete_all_by_user(&grantor_user.uuid, &conn).await?;
+    TwoFactor::delete_all_2fa_by_user(&grantor_user.uuid, &conn).await?;
 
     // Remove grantor from all organisations unless Owner
     for member in Membership::find_any_state_by_user(&grantor_user.uuid, &conn).await {

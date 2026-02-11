@@ -252,6 +252,31 @@ impl OrgPolicy {
         }}
     }
 
+    /// Returns true if the user belongs to an accepted/confirmed org that has
+    /// an enabled policy with the given raw policy type ID.
+    pub async fn has_active_raw_policy_for_user(user_uuid: &UserId, policy_type: i32, conn: &DbConn) -> bool {
+        db_run! { conn: {
+            use diesel::dsl::count_star;
+
+            org_policies::table
+                .inner_join(
+                    users_organizations::table.on(
+                        users_organizations::org_uuid.eq(org_policies::org_uuid)
+                            .and(users_organizations::user_uuid.eq(user_uuid)))
+                )
+                .filter(
+                    users_organizations::status.eq(MembershipStatus::Accepted as i32)
+                        .or(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                )
+                .filter(org_policies::atype.eq(policy_type))
+                .filter(org_policies::enabled.eq(true))
+                .select(count_star())
+                .first::<i64>(conn)
+                .map(|count| count > 0)
+                .unwrap_or(false)
+        }}
+    }
+
     /// Returns true if the user belongs to an org that has enabled the specified policy type,
     /// and the user is not an owner or admin of that org. This is only useful for checking
     /// applicability of policy types that have these particular semantics.

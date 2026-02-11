@@ -14,11 +14,23 @@ pub use emergency_access::{emergency_notification_reminder_job, emergency_reques
 pub use events::{event_cleanup_job, log_event, log_user_event};
 use reqwest::Method;
 pub use sends::purge_sends;
+use std::sync::LazyLock;
 
 pub fn routes() -> Vec<Route> {
     let mut eq_domains_routes = routes![get_eq_domains, post_eq_domains, put_eq_domains];
     let mut hibp_routes = routes![hibp_breach];
-    let mut meta_routes = routes![alive, now, version, config, get_api_webauthn];
+    let mut meta_routes = routes![
+        alive,
+        now,
+        version,
+        config,
+        get_api_webauthn,
+        get_api_webauthn_attestation_options,
+        post_api_webauthn,
+        post_api_webauthn_assertion_options,
+        put_api_webauthn,
+        delete_api_webauthn
+    ];
 
     let mut routes = Vec::new();
     routes.append(&mut accounts::routes());
@@ -50,13 +62,13 @@ pub fn events_routes() -> Vec<Route> {
 use rocket::{serde::json::Json, serde::json::Value, Catcher, Route};
 
 use crate::{
-    api::{EmptyResult, JsonResult, Notify, UpdateType},
-    auth::Headers,
+    api::{EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType},
+    auth::{self, Headers},
     db::{
-        models::{Membership, MembershipStatus, OrgPolicy, Organization, User},
+        models::{Membership, MembershipStatus, OrgPolicy, Organization, User, UserId},
         DbConn,
     },
-    error::Error,
+    error::{Error, MapResult},
     http_client::make_http_request,
     mail,
     util::parse_experimental_client_feature_flags,
@@ -71,6 +83,98 @@ struct GlobalDomain {
 }
 
 const GLOBAL_DOMAINS: &str = include_str!("../../static/global_domains.json");
+
+static WEBAUTHN_CREATE_OPTIONS_ISSUER: LazyLock<String> =
+    LazyLock::new(|| format!("{}|webauthn_create_options", crate::CONFIG.domain_origin()));
+static WEBAUTHN_UPDATE_ASSERTION_OPTIONS_ISSUER: LazyLock<String> =
+    LazyLock::new(|| format!("{}|webauthn_update_assertion_options", crate::CONFIG.domain_origin()));
+const REQUIRE_SSO_POLICY_TYPE: i32 = 4;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct WebauthnCreateOptionsClaims {
+    nbf: i64,
+    exp: i64,
+    iss: String,
+    sub: UserId,
+    state: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct WebauthnUpdateAssertionOptionsClaims {
+    nbf: i64,
+    exp: i64,
+    iss: String,
+    sub: UserId,
+    state: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WebauthnCredentialCreateRequest {
+    device_response: two_factor::webauthn::RegisterPublicKeyCredentialCopy,
+    name: String,
+    token: String,
+    supports_prf: bool,
+    encrypted_user_key: Option<String>,
+    encrypted_public_key: Option<String>,
+    encrypted_private_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WebauthnCredentialUpdateRequest {
+    device_response: two_factor::webauthn::PublicKeyCredentialCopy,
+    token: String,
+    encrypted_user_key: String,
+    encrypted_public_key: String,
+    encrypted_private_key: String,
+}
+
+fn encode_webauthn_create_options_token(user_id: &UserId, state: String) -> String {
+    let now = chrono::Utc::now();
+    let claims = WebauthnCreateOptionsClaims {
+        nbf: now.timestamp(),
+        exp: (now + chrono::TimeDelta::try_minutes(7).unwrap()).timestamp(),
+        iss: WEBAUTHN_CREATE_OPTIONS_ISSUER.to_string(),
+        sub: user_id.clone(),
+        state,
+    };
+
+    auth::encode_jwt(&claims)
+}
+
+fn decode_webauthn_create_options_token(token: &str) -> Result<WebauthnCreateOptionsClaims, Error> {
+    auth::decode_jwt(token, WEBAUTHN_CREATE_OPTIONS_ISSUER.to_string()).map_res("Invalid WebAuthn token")
+}
+
+fn encode_webauthn_update_assertion_options_token(user_id: &UserId, state: String) -> String {
+    let now = chrono::Utc::now();
+    let claims = WebauthnUpdateAssertionOptionsClaims {
+        nbf: now.timestamp(),
+        exp: (now + chrono::TimeDelta::try_minutes(17).unwrap()).timestamp(),
+        iss: WEBAUTHN_UPDATE_ASSERTION_OPTIONS_ISSUER.to_string(),
+        sub: user_id.clone(),
+        state,
+    };
+
+    auth::encode_jwt(&claims)
+}
+
+fn decode_webauthn_update_assertion_options_token(
+    token: &str,
+) -> Result<WebauthnUpdateAssertionOptionsClaims, Error> {
+    auth::decode_jwt(token, WEBAUTHN_UPDATE_ASSERTION_OPTIONS_ISSUER.to_string()).map_res("Invalid WebAuthn token")
+}
+
+async fn ensure_passkey_creation_allowed(user_id: &UserId, conn: &DbConn) -> EmptyResult {
+    // `RequireSso` (policy type 4) is not fully supported in Vaultwarden, but if present in DB
+    // we still mirror official behavior by blocking passkey creation.
+    if OrgPolicy::has_active_raw_policy_for_user(user_id, REQUIRE_SSO_POLICY_TYPE, conn).await {
+        err!("Passkeys cannot be created for your account. SSO login is required.")
+    }
+
+    Ok(())
+}
 
 #[get("/settings/domains")]
 fn get_eq_domains(headers: Headers) -> Json<Value> {
@@ -184,15 +288,125 @@ fn version() -> Json<&'static str> {
 }
 
 #[get("/webauthn")]
-fn get_api_webauthn(_headers: Headers) -> Json<Value> {
-    // Prevent a 404 error, which also causes key-rotation issues
-    // It looks like this is used when login with passkeys is enabled, which Vaultwarden does not (yet) support
-    // An empty list/data also works fine
-    Json(json!({
+async fn get_api_webauthn(headers: Headers, conn: DbConn) -> JsonResult {
+    let registrations = two_factor::webauthn::get_webauthn_login_registrations(&headers.user.uuid, &conn).await?;
+
+    let data: Vec<Value> = registrations
+        .into_iter()
+        .map(|registration| {
+            json!({
+                "id": registration.login_credential_api_id(),
+                "name": registration.name,
+                "prfStatus": registration.prf_status(),
+                "encryptedUserKey": registration.encrypted_user_key,
+                "encryptedPublicKey": registration.encrypted_public_key,
+                "object": "webauthnCredential"
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({
         "object": "list",
-        "data": [],
+        "data": data,
         "continuationToken": null
-    }))
+    })))
+}
+
+#[post("/webauthn/attestation-options", data = "<data>")]
+async fn get_api_webauthn_attestation_options(
+    data: Json<PasswordOrOtpData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    if !crate::CONFIG.domain_set() {
+        err!("`DOMAIN` environment variable is not set. Webauthn disabled")
+    }
+
+    data.into_inner().validate(&headers.user, false, &conn).await?;
+    ensure_passkey_creation_allowed(&headers.user.uuid, &conn).await?;
+
+    let (options, state) = two_factor::webauthn::generate_webauthn_attestation_options(&headers.user, &conn).await?;
+    let token = encode_webauthn_create_options_token(&headers.user.uuid, state);
+
+    Ok(Json(json!({
+        "options": options,
+        "token": token,
+        "object": "webauthnCredentialCreateOptions"
+    })))
+}
+
+#[post("/webauthn", data = "<data>")]
+async fn post_api_webauthn(data: Json<WebauthnCredentialCreateRequest>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data = data.into_inner();
+    let claims = decode_webauthn_create_options_token(&data.token)?;
+
+    if claims.sub != headers.user.uuid {
+        err!("The token associated with your request is expired. A valid token is required to continue.")
+    }
+    ensure_passkey_creation_allowed(&headers.user.uuid, &conn).await?;
+
+    two_factor::webauthn::create_webauthn_login_credential(
+        &headers.user.uuid,
+        &claims.state,
+        data.name,
+        data.device_response,
+        data.supports_prf,
+        data.encrypted_user_key,
+        data.encrypted_public_key,
+        data.encrypted_private_key,
+        &conn,
+    )
+    .await?;
+
+    Ok(())
+}
+
+#[post("/webauthn/assertion-options", data = "<data>")]
+async fn post_api_webauthn_assertion_options(
+    data: Json<PasswordOrOtpData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    data.into_inner().validate(&headers.user, false, &conn).await?;
+
+    let (options, state) = two_factor::webauthn::generate_webauthn_discoverable_login()?;
+    let token = encode_webauthn_update_assertion_options_token(&headers.user.uuid, state);
+
+    Ok(Json(json!({
+        "options": options,
+        "token": token,
+        "object": "webAuthnLoginAssertionOptions"
+    })))
+}
+
+#[put("/webauthn", data = "<data>")]
+async fn put_api_webauthn(data: Json<WebauthnCredentialUpdateRequest>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data = data.into_inner();
+    let claims = decode_webauthn_update_assertion_options_token(&data.token)?;
+
+    if claims.sub != headers.user.uuid {
+        err!("The token associated with your request is invalid or has expired. A valid token is required to continue.")
+    }
+
+    two_factor::webauthn::update_webauthn_login_credential_keys(
+        &headers.user.uuid,
+        &claims.state,
+        data.device_response,
+        data.encrypted_user_key,
+        data.encrypted_public_key,
+        data.encrypted_private_key,
+        &conn,
+    )
+    .await?;
+
+    Ok(())
+}
+
+#[post("/webauthn/<id>/delete", data = "<data>")]
+async fn delete_api_webauthn(id: String, data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    data.into_inner().validate(&headers.user, false, &conn).await?;
+    two_factor::webauthn::delete_webauthn_login_credential(&headers.user.uuid, &id, &conn).await?;
+    Ok(())
 }
 
 #[get("/config")]

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::db::DbPool;
 use chrono::Utc;
@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::{
     api::{
-        core::{accept_org_invite, log_user_event, two_factor::email},
+        core::{accept_org_invite, log_user_event, two_factor::{email, webauthn}},
         master_password_policy, register_push_device, unregister_push_device, AnonymousNotify, ApiResult, EmptyResult,
         JsonResult, Notify, PasswordOrOtpData, UpdateType,
     },
@@ -17,7 +17,7 @@ use crate::{
         models::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, EmergencyAccess,
             EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId, OrgPolicy,
-            OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
+            OrgPolicyType, Organization, OrganizationId, Send, SendId, TwoFactor, TwoFactorType, User, UserId, UserKdfType,
         },
         DbConn,
     },
@@ -689,6 +689,17 @@ struct RotateAccountUnlockData {
     emergency_access_unlock_data: Vec<UpdateEmergencyAccessData>,
     master_password_unlock_data: MasterPasswordUnlockData,
     organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
+    passkey_unlock_data: Vec<UpdatePasskeyData>,
+    #[serde(rename = "deviceKeyUnlockData")]
+    _device_key_unlock_data: Vec<Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdatePasskeyData {
+    id: NumberOrString,
+    encrypted_user_key: Option<String>,
+    encrypted_public_key: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -725,6 +736,7 @@ fn validate_keydata(
     existing_emergency_access: &[EmergencyAccess],
     existing_memberships: &[Membership],
     existing_sends: &[Send],
+    existing_webauthn_credentials: &[webauthn::WebauthnRegistration],
     user: &User,
 ) -> EmptyResult {
     if user.client_kdf_type != data.account_unlock_data.master_password_unlock_data.kdf_type
@@ -793,6 +805,32 @@ fn validate_keydata(
         err!("All existing sends must be included in the rotation")
     }
 
+    let keys_to_rotate = data
+        .account_unlock_data
+        .passkey_unlock_data
+        .iter()
+        .map(|credential| (credential.id.clone().into_string(), credential))
+        .collect::<HashMap<_, _>>();
+    let valid_webauthn_credentials: Vec<_> =
+        existing_webauthn_credentials.iter().filter(|credential| credential.prf_status() == 0).collect();
+
+    for webauthn_credential in valid_webauthn_credentials {
+        let key_to_rotate = keys_to_rotate
+            .get(&webauthn_credential.login_credential_api_id())
+            .or_else(|| keys_to_rotate.get(&webauthn_credential.id.to_string()));
+
+        let Some(key_to_rotate) = key_to_rotate else {
+            err!("All existing webauthn prf keys must be included in the rotation.");
+        };
+
+        if key_to_rotate.encrypted_user_key.is_none() {
+            err!("WebAuthn prf keys must have user-key during rotation.");
+        }
+        if key_to_rotate.encrypted_public_key.is_none() {
+            err!("WebAuthn prf keys must have public-key during rotation.");
+        }
+    }
+
     Ok(())
 }
 
@@ -822,6 +860,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // We only rotate the reset password key if it is set.
     existing_memberships.retain(|m| m.reset_password_key.is_some());
     let mut existing_sends = Send::find_by_user(user_id, &conn).await;
+    let mut existing_webauthn_credentials = webauthn::get_webauthn_login_registrations(user_id, &conn).await?;
 
     validate_keydata(
         &data,
@@ -830,6 +869,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         &existing_emergency_access,
         &existing_memberships,
         &existing_sends,
+        &existing_webauthn_credentials,
         &headers.user,
     )?;
 
@@ -869,6 +909,44 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
 
         membership.reset_password_key = Some(reset_password_data.reset_password_key);
         membership.save(&conn).await?
+    }
+
+    let passkey_unlock_data = data
+        .account_unlock_data
+        .passkey_unlock_data
+        .iter()
+        .map(|credential| (credential.id.clone().into_string(), credential))
+        .collect::<HashMap<_, _>>();
+    let mut webauthn_credentials_changed = false;
+    for webauthn_credential in existing_webauthn_credentials.iter_mut().filter(|credential| credential.prf_status() == 0) {
+        let key_to_rotate = passkey_unlock_data
+            .get(&webauthn_credential.login_credential_api_id())
+            .or_else(|| passkey_unlock_data.get(&webauthn_credential.id.to_string()))
+            .expect("Missing webauthn prf key after successful validation");
+
+        let encrypted_user_key =
+            key_to_rotate.encrypted_user_key.clone().expect("Missing user-key after successful validation");
+        let encrypted_public_key =
+            key_to_rotate.encrypted_public_key.clone().expect("Missing public-key after successful validation");
+
+        if webauthn_credential.encrypted_user_key.as_ref() != Some(&encrypted_user_key)
+            || webauthn_credential.encrypted_public_key.as_ref() != Some(&encrypted_public_key)
+        {
+            webauthn_credentials_changed = true;
+        }
+
+        webauthn_credential.encrypted_user_key = Some(encrypted_user_key);
+        webauthn_credential.encrypted_public_key = Some(encrypted_public_key);
+    }
+
+    if webauthn_credentials_changed {
+        TwoFactor::new(
+            user_id.clone(),
+            TwoFactorType::WebauthnLoginCredential,
+            serde_json::to_string(&existing_webauthn_credentials)?,
+        )
+            .save(&conn)
+            .await?;
     }
 
     // Update send data

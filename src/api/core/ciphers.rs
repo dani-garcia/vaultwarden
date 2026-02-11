@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{NaiveDateTime, Utc};
+use data_encoding::BASE64URL_NOPAD;
 use num_traits::ToPrimitive;
 use rocket::fs::TempFile;
 use rocket::serde::json::Json;
@@ -127,6 +128,28 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     } else {
         false
     };
+
+    let webauthn_prf_options: Vec<Value> = api::core::two_factor::webauthn::get_webauthn_login_registrations(
+        &headers.user.uuid,
+        &conn,
+    )
+    .await?
+    .into_iter()
+    .filter(|registration| registration.prf_status() == 0)
+    .filter_map(|registration| {
+        let encrypted_private_key = registration.encrypted_private_key?;
+        let encrypted_user_key = registration.encrypted_user_key?;
+        registration.encrypted_public_key.as_ref()?;
+
+        Some(json!({
+            "encryptedPrivateKey": encrypted_private_key,
+            "encryptedUserKey": encrypted_user_key,
+            "credentialId": BASE64URL_NOPAD.encode(registration.credential.cred_id().as_slice()),
+            "transports": Vec::<String>::new(),
+        }))
+    })
+    .collect();
+
     if !show_ssh_keys {
         ciphers.retain(|c| c.atype != 5);
     }
@@ -173,15 +196,19 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
                 "memory": headers.user.client_kdf_memory,
                 "parallelism": headers.user.client_kdf_parallelism
             },
-            // This field is named inconsistently and will be removed and replaced by the "wrapped" variant in the apps.
-            // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "masterKeyEncryptedUserKey": headers.user.akey,
-            "masterKeyWrappedUserKey": headers.user.akey,
             "salt": headers.user.email
         })
     } else {
         Value::Null
     };
+
+    let mut user_decryption = json!({
+        "masterPasswordUnlock": master_password_unlock,
+    });
+    if !webauthn_prf_options.is_empty() {
+        user_decryption["webAuthnPrfOptions"] = Value::Array(webauthn_prf_options);
+    }
 
     Ok(Json(json!({
         "profile": user_json,
@@ -191,9 +218,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "ciphers": ciphers_json,
         "domains": domains_json,
         "sends": sends_json,
-        "userDecryption": {
-            "masterPasswordUnlock": master_password_unlock,
-        },
+        "userDecryption": user_decryption,
         "object": "sync"
     })))
 }

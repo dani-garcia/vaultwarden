@@ -54,32 +54,34 @@ app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secon
 }
 {{/if}}
 
-/* Hide the `Log in with passkey` settings */
-app-user-layout app-password-settings app-webauthn-login-settings {
-  @extend %vw-hide;
-}
-/* Hide Log in with passkey on the login page */
+/* Hide Log in with passkey on the login page when SSO-only mode is enabled */
 {{#if (webver ">=2025.5.1")}}
+{{#if sso_only}}
 .vw-passkey-login {
   @extend %vw-hide;
 }
+{{/if}}
 {{else}}
+{{#if sso_only}}
 app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secondary"].\!tw-text-primary-600:nth-child(3) {
   @extend %vw-hide;
 }
 {{/if}}
+{{/if}}
 
-/* Hide the or text followed by the two buttons hidden above */
+/* Hide the or text only if passkey login is hidden (SSO-only mode) */
 {{#if (webver ">=2025.5.1")}}
-{{#if (or (not sso_enabled) sso_only)}}
+{{#if sso_only}}
 .vw-or-text {
   @extend %vw-hide;
 }
 {{/if}}
 {{else}}
+{{#if sso_only}}
 app-root ng-component > form > div:nth-child(1) > div:nth-child(3) > div:nth-child(2) {
   @extend %vw-hide;
 }
+{{/if}}
 {{/if}}
 
 /* Hide the `Other` button on the login page */

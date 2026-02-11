@@ -106,7 +106,7 @@ async fn recover(data: Json<RecoverTwoFactor>, client_headers: ClientHeaders, co
     }
 
     // Remove all twofactors from the user
-    TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
+    TwoFactor::delete_all_2fa_by_user(&user.uuid, &conn).await?;
     enforce_2fa_policy(&user, &user.uuid, client_headers.device_type, &client_headers.ip.ip, &conn).await?;
 
     log_user_event(

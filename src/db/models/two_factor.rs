@@ -39,6 +39,7 @@ pub enum TwoFactorType {
     EmailVerificationChallenge = 1002,
     WebauthnRegisterChallenge = 1003,
     WebauthnLoginChallenge = 1004,
+    WebauthnLoginCredential = 1005,
 
     // Special type for Protected Actions verification via email
     ProtectedActions = 2000,
@@ -150,6 +151,18 @@ impl TwoFactor {
         }}
     }
 
+    pub async fn delete_all_2fa_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+        db_run! { conn: {
+            diesel::delete(
+                twofactor::table
+                    .filter(twofactor::user_uuid.eq(user_uuid))
+                    .filter(twofactor::atype.lt(1000))
+            )
+                .execute(conn)
+                .map_res("Error deleting 2fa providers")
+        }}
+    }
+
     pub async fn migrate_u2f_to_webauthn(conn: &DbConn) -> EmptyResult {
         let u2f_factors = db_run! { conn: {
             twofactor::table
@@ -192,6 +205,7 @@ impl TwoFactor {
 
                 let new_reg = WebauthnRegistration {
                     id: reg.id,
+                    api_id: None,
                     migrated: true,
                     name: reg.name.clone(),
                     credential: Credential {
@@ -209,6 +223,10 @@ impl TwoFactor {
                         attestation_format: AttestationFormat::None,
                     }
                     .into(),
+                    supports_prf: false,
+                    encrypted_user_key: None,
+                    encrypted_public_key: None,
+                    encrypted_private_key: None,
                 };
 
                 webauthn_regs.push(new_reg);
@@ -268,9 +286,14 @@ impl From<WebauthnRegistrationV3> for WebauthnRegistration {
     fn from(value: WebauthnRegistrationV3) -> Self {
         Self {
             id: value.id,
+            api_id: None,
             name: value.name,
             migrated: value.migrated,
             credential: Credential::from(value.credential).into(),
+            supports_prf: false,
+            encrypted_user_key: None,
+            encrypted_public_key: None,
+            encrypted_private_key: None,
         }
     }
 }

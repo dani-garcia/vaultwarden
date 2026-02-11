@@ -8,6 +8,7 @@ use rocket::{
     Route,
 };
 use serde_json::Value;
+use std::sync::LazyLock;
 
 use crate::{
     api::{
@@ -38,6 +39,7 @@ use crate::{
 pub fn routes() -> Vec<Route> {
     routes![
         login,
+        get_webauthn_login_assertion_options,
         prelogin,
         identity_register,
         register_verification_email,
@@ -47,6 +49,17 @@ pub fn routes() -> Vec<Route> {
         oidcsignin,
         oidcsignin_error
     ]
+}
+
+static WEBAUTHN_LOGIN_ASSERTION_ISSUER: LazyLock<String> =
+    LazyLock::new(|| format!("{}|webauthn_login_assertion", CONFIG.domain_origin()));
+
+#[derive(Debug, Serialize, Deserialize)]
+struct WebauthnLoginAssertionClaims {
+    nbf: i64,
+    exp: i64,
+    iss: String,
+    state: String,
 }
 
 #[post("/connect/token", data = "<data>")]
@@ -77,6 +90,19 @@ async fn login(
             _check_is_some(&data.device_type, "device_type cannot be blank")?;
 
             _password_login(data, &mut user_id, &conn, &client_header.ip, &client_version).await
+        }
+        "webauthn" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
+        "webauthn" => {
+            _check_is_some(&data.client_id, "client_id cannot be blank")?;
+            _check_is_some(&data.scope, "scope cannot be blank")?;
+            _check_is_some(&data.token, "token cannot be blank")?;
+            _check_is_some(&data.device_response, "device_response cannot be blank")?;
+
+            _check_is_some(&data.device_identifier, "device_identifier cannot be blank")?;
+            _check_is_some(&data.device_name, "device_name cannot be blank")?;
+            _check_is_some(&data.device_type, "device_type cannot be blank")?;
+
+            _webauthn_login(data, &mut user_id, &conn, &client_header.ip).await
         }
         "client_credentials" => {
             _check_is_some(&data.client_id, "client_id cannot be blank")?;
@@ -304,7 +330,7 @@ async fn _sso_login(
     // We passed 2FA get auth tokens
     let auth_tokens = sso::redeem(&device, &user, data.client_id, sso_user, sso_auth, user_infos, conn).await?;
 
-    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
+    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, None, conn, ip).await
 }
 
 async fn _password_login(
@@ -426,7 +452,74 @@ async fn _password_login(
 
     let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password, data.client_id);
 
-    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
+    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, None, conn, ip).await
+}
+
+fn encode_webauthn_login_assertion_token(state: String) -> String {
+    let now = Utc::now();
+    let claims = WebauthnLoginAssertionClaims {
+        nbf: now.timestamp(),
+        exp: (now + chrono::TimeDelta::try_minutes(17).unwrap()).timestamp(),
+        iss: WEBAUTHN_LOGIN_ASSERTION_ISSUER.to_string(),
+        state,
+    };
+
+    auth::encode_jwt(&claims)
+}
+
+fn decode_webauthn_login_assertion_token(token: &str) -> ApiResult<WebauthnLoginAssertionClaims> {
+    auth::decode_jwt(token, WEBAUTHN_LOGIN_ASSERTION_ISSUER.to_string()).map_res("Invalid passkey login token")
+}
+
+async fn _webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbConn, ip: &ClientIp) -> JsonResult {
+    AuthMethod::Password.check_scope(data.scope.as_ref())?;
+    crate::ratelimit::check_limit_login(&ip.ip)?;
+
+    let assertion_token = data.token.as_ref().expect("No passkey assertion token provided");
+    let device_response = data.device_response.as_ref().expect("No passkey device response provided");
+    let assertion_claims = decode_webauthn_login_assertion_token(assertion_token)?;
+
+    let webauthn_login_result =
+        webauthn::validate_webauthn_discoverable_login(&assertion_claims.state, device_response, conn).await?;
+    let Some(user) = User::find_by_uuid(&webauthn_login_result.user_id, conn).await else {
+        err!("Invalid credential.")
+    };
+
+    // Set the user_id here to be passed back used for event logging.
+    *user_id = Some(user.uuid.clone());
+
+    if !user.enabled {
+        err!(
+            "This user has been disabled",
+            format!("IP: {}. Username: {}.", ip.ip, user.display_name()),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    }
+
+    if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
+        err!(
+            "Please verify your email before trying again.",
+            format!("IP: {}. Username: {}.", ip.ip, user.display_name()),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    }
+
+    let mut device = get_device(&data, conn, &user).await?;
+    let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password, data.client_id);
+    authenticated_response(
+        &user,
+        &mut device,
+        auth_tokens,
+        None,
+        webauthn_login_result.prf_decryption_option,
+        conn,
+        ip,
+    )
+    .await
 }
 
 async fn authenticated_response(
@@ -434,6 +527,7 @@ async fn authenticated_response(
     device: &mut Device,
     auth_tokens: auth::AuthTokens,
     twofactor_token: Option<String>,
+    webauthn_prf_option: Option<webauthn::WebauthnPrfDecryptionOption>,
     conn: &DbConn,
     ip: &ClientIp,
 ) -> JsonResult {
@@ -472,10 +566,7 @@ async fn authenticated_response(
                 "Memory": user.client_kdf_memory,
                 "Parallelism": user.client_kdf_parallelism
             },
-            // This field is named inconsistently and will be removed and replaced by the "wrapped" variant in the apps.
-            // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "MasterKeyEncryptedUserKey": user.akey,
-            "MasterKeyWrappedUserKey": user.akey,
             "Salt": user.email
         })
     } else {
@@ -516,6 +607,15 @@ async fn authenticated_response(
             "Object": "userDecryptionOptions"
         },
     });
+
+    if let Some(webauthn_prf_option) = webauthn_prf_option {
+        result["UserDecryptionOptions"]["WebAuthnPrfOption"] = json!({
+            "EncryptedPrivateKey": webauthn_prf_option.encrypted_private_key,
+            "EncryptedUserKey": webauthn_prf_option.encrypted_user_key,
+            "CredentialId": webauthn_prf_option.credential_id,
+            "Transports": webauthn_prf_option.transports,
+        });
+    }
 
     if !user.akey.is_empty() {
         result["Key"] = Value::String(user.akey.clone());
@@ -623,10 +723,7 @@ async fn _user_api_key_login(
                 "Memory": user.client_kdf_memory,
                 "Parallelism": user.client_kdf_parallelism
             },
-            // This field is named inconsistently and will be removed and replaced by the "wrapped" variant in the apps.
-            // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "MasterKeyEncryptedUserKey": user.akey,
-            "MasterKeyWrappedUserKey": user.akey,
             "Salt": user.email
         })
     } else {
@@ -792,7 +889,7 @@ async fn twofactor_auth(
             }
 
             // Remove all twofactors from the user
-            TwoFactor::delete_all_by_user(&user.uuid, conn).await?;
+            TwoFactor::delete_all_2fa_by_user(&user.uuid, conn).await?;
             enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, conn).await?;
 
             log_user_event(EventType::UserRecovered2fa as i32, &user.uuid, device.atype, &ip.ip, conn).await;
@@ -927,6 +1024,22 @@ async fn _json_err_twofactor(
     Ok(result)
 }
 
+#[get("/accounts/webauthn/assertion-options")]
+fn get_webauthn_login_assertion_options() -> JsonResult {
+    if !CONFIG.domain_set() {
+        err!("`DOMAIN` environment variable is not set. Webauthn disabled")
+    }
+
+    let (options, serialized_state) = webauthn::generate_webauthn_discoverable_login()?;
+    let token = encode_webauthn_login_assertion_token(serialized_state);
+
+    Ok(Json(json!({
+        "options": options,
+        "token": token,
+        "object": "webAuthnLoginAssertionOptions"
+    })))
+}
+
 #[post("/accounts/prelogin", data = "<data>")]
 async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
     _prelogin(data, conn).await
@@ -1012,7 +1125,7 @@ struct ConnectData {
     #[field(name = uncased("refreshtoken"))]
     refresh_token: Option<String>,
 
-    // Needed for grant_type = "password" | "client_credentials"
+    // Needed for grant_type = "password" | "client_credentials" | "webauthn"
     #[field(name = uncased("client_id"))]
     #[field(name = uncased("clientid"))]
     client_id: Option<String>, // web, cli, desktop, browser, mobile
@@ -1025,6 +1138,11 @@ struct ConnectData {
     scope: Option<String>,
     #[field(name = uncased("username"))]
     username: Option<String>,
+    #[field(name = uncased("token"))]
+    token: Option<String>,
+    #[field(name = uncased("device_response"))]
+    #[field(name = uncased("deviceresponse"))]
+    device_response: Option<String>,
 
     #[field(name = uncased("device_identifier"))]
     #[field(name = uncased("deviceidentifier"))]
