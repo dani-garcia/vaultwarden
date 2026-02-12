@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use super::{
     Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
+    WebAuthnCredential,
 };
 use crate::{
     api::EmptyResult,
@@ -331,6 +332,7 @@ impl User {
         Device::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactor::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn).await?;
+        WebAuthnCredential::delete_all_by_user(&self.uuid, conn).await?;
         Invitation::take(&self.email, conn).await; // Delete invitation if any
 
         db_run! { conn: {
