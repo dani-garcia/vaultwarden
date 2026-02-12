@@ -29,7 +29,7 @@ use webauthn_rs_proto::{
     RequestAuthenticationExtensions, UserVerificationPolicy,
 };
 
-static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
+pub static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
     let domain = CONFIG.domain();
     let domain_origin = CONFIG.domain_origin();
     let rp_id = Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
@@ -180,7 +180,7 @@ struct EnableWebauthnData {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RegisterPublicKeyCredentialCopy {
+pub struct RegisterPublicKeyCredentialCopy {
     pub id: String,
     pub raw_id: Base64UrlSafeData,
     pub response: AuthenticatorAttestationResponseRawCopy,

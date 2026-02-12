@@ -1,3 +1,6 @@
+use std::sync::{Arc, LazyLock};
+use std::time::Duration;
+
 use chrono::Utc;
 use num_traits::FromPrimitive;
 use rocket::{
@@ -8,7 +11,12 @@ use rocket::{
     Route,
 };
 use serde_json::Value;
+use webauthn_rs::prelude::{Base64UrlSafeData, Passkey, PasskeyAuthentication};
+use webauthn_rs_proto::{
+    AuthenticatorAssertionResponseRaw, PublicKeyCredential, RequestAuthenticationExtensions, UserVerificationPolicy,
+};
 
+use crate::api::core::two_factor::webauthn::WEBAUTHN;
 use crate::{
     api::{
         core::{
@@ -26,6 +34,7 @@ use crate::{
         models::{
             AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeWrapper, OrganizationApiKey,
             OrganizationId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
+            WebAuthnCredential,
         },
         DbConn,
     },
@@ -45,7 +54,8 @@ pub fn routes() -> Vec<Route> {
         prevalidate,
         authorize,
         oidcsignin,
-        oidcsignin_error
+        oidcsignin_error,
+        get_web_authn_assertion_options
     ]
 }
 
@@ -101,6 +111,19 @@ async fn login(
             _sso_login(data, &mut user_id, &conn, &client_header.ip, &client_version).await
         }
         "authorization_code" => err!("SSO sign-in is not available"),
+        "webauthn" => {
+            _check_is_some(&data.client_id, "client_id cannot be blank")?;
+            _check_is_some(&data.scope, "scope cannot be blank")?;
+
+            _check_is_some(&data.device_identifier, "device_identifier cannot be blank")?;
+            _check_is_some(&data.device_name, "device_name cannot be blank")?;
+            _check_is_some(&data.device_type, "device_type cannot be blank")?;
+
+            _check_is_some(&data.device_response, "device_response cannot be blank")?;
+            _check_is_some(&data.token, "token cannot be blank")?;
+
+            _webauthn_login(data, &mut user_id, &conn, &client_header.ip).await
+        }
         t => err!("Invalid type", t),
     };
 
@@ -981,7 +1004,7 @@ async fn register_verification_email(
             let mut rng = SmallRng::from_os_rng();
             let delta: i32 = 100;
             let sleep_ms = (1_000 + rng.random_range(-delta..=delta)) as u64;
-            tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
+            tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
         } else {
             mail::send_register_verify_email(&data.email, &token).await?;
         }
@@ -999,13 +1022,297 @@ async fn register_finish(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
     _register(data, true, conn).await
 }
 
+// Cache for webauthn authentication states, keyed by a random token.
+// Entries expire after 5 minutes (matching the WebAuthn ceremony timeout of 60s with margin).
+// This is used for the discoverable credential (passkey login) flow where we don't know
+// the user until the authenticator response arrives.
+// Wrapped in Arc because PasskeyAuthentication does not implement Clone.
+static WEBAUTHN_AUTHENTICATION_STATES: LazyLock<mini_moka::sync::Cache<String, Arc<PasskeyAuthentication>>> =
+    LazyLock::new(|| {
+        mini_moka::sync::Cache::builder().max_capacity(10_000).time_to_live(Duration::from_secs(300)).build()
+    });
+
+// Copied from webauthn-rs to rename clientDataJSON -> clientDataJson for Bitwarden compatibility
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssertionResponseCopy {
+    pub authenticator_data: Base64UrlSafeData,
+    #[serde(rename = "clientDataJson", alias = "clientDataJSON")]
+    pub client_data_json: Base64UrlSafeData,
+    pub signature: Base64UrlSafeData,
+    pub user_handle: Option<Base64UrlSafeData>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicKeyCredentialCopy {
+    pub id: String,
+    pub raw_id: Base64UrlSafeData,
+    pub response: AssertionResponseCopy,
+    pub r#type: String,
+    #[allow(dead_code)]
+    pub extensions: Option<Value>,
+}
+
+impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
+    fn from(p: PublicKeyCredentialCopy) -> Self {
+        Self {
+            id: p.id,
+            raw_id: p.raw_id,
+            response: AuthenticatorAssertionResponseRaw {
+                authenticator_data: p.response.authenticator_data,
+                client_data_json: p.response.client_data_json,
+                signature: p.response.signature,
+                user_handle: p.response.user_handle,
+            },
+            extensions: Default::default(),
+            type_: p.r#type,
+        }
+    }
+}
+
+#[get("/accounts/webauthn/assertion-options")]
+fn get_web_authn_assertion_options() -> JsonResult {
+    let (mut response, state) = WEBAUTHN.start_passkey_authentication(&[])?;
+
+    // Allow any credential (discoverable) and require user verification
+    response.public_key.allow_credentials = vec![];
+    response.public_key.user_verification = UserVerificationPolicy::Required;
+    response.public_key.extensions = Some(RequestAuthenticationExtensions {
+        appid: None,
+        uvm: None,
+        hmac_get_secret: None,
+    });
+
+    let token = util::get_uuid();
+    WEBAUTHN_AUTHENTICATION_STATES.insert(token.clone(), Arc::new(state));
+
+    let options = serde_json::to_value(response.public_key)?;
+
+    Ok(Json(json!({
+        "options": options,
+        "token": token,
+        "object": "webAuthnLoginAssertionOptions"
+    })))
+}
+
+async fn _webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbConn, ip: &ClientIp) -> JsonResult {
+    // Validate scope
+    AuthMethod::WebAuthn.check_scope(data.scope.as_ref())?;
+
+    // Ratelimit the login
+    crate::ratelimit::check_limit_login(&ip.ip)?;
+
+    // Parse the device response to get the user handle (user UUID)
+    let device_response: PublicKeyCredentialCopy = serde_json::from_str(data.device_response.as_ref().unwrap())?;
+
+    let user = if let Some(ref uuid_bytes) = device_response.response.user_handle {
+        // The user_handle contains the raw UUID bytes (16 bytes) set during passkey registration.
+        // We need to reconstruct the UUID string from these bytes.
+        let bytes: &[u8] = uuid_bytes.as_ref();
+        let uuid_str = uuid::Uuid::from_slice(bytes)
+            .map(|u| u.to_string())
+            .or_else(|_| {
+                // Fallback: try interpreting as UTF-8 string (for compatibility)
+                String::from_utf8(bytes.to_vec())
+            })
+            .map_err(|_| crate::error::Error::new("Invalid user handle encoding", ""))?;
+        let uuid = UserId::from(uuid_str);
+        User::find_by_uuid(&uuid, conn).await
+    } else {
+        None
+    };
+
+    let Some(user) = user else {
+        err!(
+            "Passkey authentication failed.",
+            format!("IP: {}. Could not find user from device response.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    };
+
+    let username = user.display_name().to_string();
+
+    // Set the user_id here to be passed back used for event logging.
+    *user_id = Some(user.uuid.clone());
+
+    // Check if the user is disabled
+    if !user.enabled {
+        err!(
+            "This user has been disabled",
+            format!("IP: {}. Username: {username}.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    }
+
+    // Retrieve all webauthn login credentials for this user
+    let web_authn_credentials: Vec<WebAuthnCredential> = WebAuthnCredential::find_all_by_user(&user.uuid, conn).await;
+
+    let parsed_credentials: Vec<(WebAuthnCredential, Passkey)> = web_authn_credentials
+        .into_iter()
+        .filter_map(|wac| {
+            let passkey: Passkey = serde_json::from_str(&wac.credential).ok()?;
+            Some((wac, passkey))
+        })
+        .collect();
+
+    if parsed_credentials.is_empty() {
+        err!(
+            "No passkey credentials registered for this user.",
+            format!("IP: {}. Username: {username}.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    }
+
+    // Retrieve and consume the saved authentication state (one-time use)
+    let token = data.token.as_ref().unwrap();
+    let state = WEBAUTHN_AUTHENTICATION_STATES.get(token);
+    // Invalidate immediately to prevent replay
+    WEBAUTHN_AUTHENTICATION_STATES.invalidate(token);
+    debug!(
+        "WebAuthn login: found {} credentials for user, state present: {}",
+        parsed_credentials.len(),
+        state.is_some()
+    );
+
+    let Some(state_arc) = state else {
+        err!(
+            "Passkey authentication failed. Please try again.",
+            format!("IP: {}. Username: {username}. Missing authentication state.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    };
+
+    // Inject the user's credentials into the state so the library can verify against them.
+    // We serialize the state to JSON, inject the user's credentials, then deserialize back.
+    // This is necessary because for discoverable credentials (passkey login), the initial
+    // assertion was created without knowing which user will authenticate, so the state has
+    // no credentials to verify against. This is the same pattern used by
+    // check_and_update_backup_eligible() in two_factor/webauthn.rs.
+    let passkeys: Vec<Passkey> =
+        parsed_credentials.iter().map(|(_, p): &(WebAuthnCredential, Passkey)| p.clone()).collect();
+
+    let mut raw_state = serde_json::to_value(&*state_arc)?;
+    if let Some(credentials) =
+        raw_state.get_mut("ast").and_then(|v| v.get_mut("credentials")).and_then(|v| v.as_array_mut())
+    {
+        credentials.clear();
+        for passkey in &passkeys {
+            let passkey_owned: Passkey = passkey.clone();
+            let cred = <webauthn_rs::prelude::Credential>::from(passkey_owned);
+            credentials.push(serde_json::to_value(&cred)?);
+        }
+    }
+    let state: PasskeyAuthentication = serde_json::from_value(raw_state).map_err(|e| {
+        error!("Failed to deserialize PasskeyAuthentication state after credential injection: {e:?}");
+        e
+    })?;
+
+    let rsp: PublicKeyCredential = device_response.into();
+    let authentication_result = match WEBAUTHN.finish_passkey_authentication(&rsp, &state) {
+        Ok(result) => result,
+        Err(e) => {
+            err!(
+                "Passkey authentication failed.",
+                format!("IP: {}. Username: {username}. WebAuthn error: {e:?}", ip.ip),
+                ErrorEvent {
+                    event: EventType::UserFailedLogIn
+                }
+            )
+        }
+    };
+
+    // Find the matching credential and update its counter
+    let matched_wac = parsed_credentials.iter().find(|(_, p): &&(WebAuthnCredential, Passkey)| {
+        crate::crypto::ct_eq(p.cred_id().as_slice(), authentication_result.cred_id().as_slice())
+    });
+
+    let matched_wac = match matched_wac {
+        Some((wac, _)) => wac,
+        None => {
+            err!(
+                "Passkey authentication failed.",
+                format!("IP: {}. Username: {username}. Credential not found.", ip.ip),
+                ErrorEvent {
+                    event: EventType::UserFailedLogIn
+                }
+            )
+        }
+    };
+
+    // Update the credential counter
+    let mut passkey: Passkey = serde_json::from_str(&matched_wac.credential)?;
+    if passkey.update_credential(&authentication_result) == Some(true) {
+        WebAuthnCredential::update_credential_by_uuid(&matched_wac.uuid, serde_json::to_string(&passkey)?, conn)
+            .await?;
+    }
+
+    // Email verification check
+    let now = Utc::now().naive_utc();
+    if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
+        if user.last_verifying_at.is_none()
+            || now.signed_duration_since(user.last_verifying_at.unwrap()).num_seconds()
+                > CONFIG.signups_verify_resend_time() as i64
+        {
+            let resend_limit = CONFIG.signups_verify_resend_limit() as i32;
+            if resend_limit == 0 || user.login_verify_count < resend_limit {
+                let mut user = user;
+                user.last_verifying_at = Some(now);
+                user.login_verify_count += 1;
+
+                if let Err(e) = user.save(conn).await {
+                    error!("Error updating user: {e:#?}");
+                }
+
+                if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
+                    error!("Error auto-sending email verification email: {e:#?}");
+                }
+            }
+        }
+
+        err!(
+            "Please verify your email before trying again.",
+            format!("IP: {}. Username: {username}.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    }
+
+    let mut device = get_device(&data, conn, &user).await?;
+
+    let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::WebAuthn, data.client_id);
+
+    // Build response using the common authenticated_response helper
+    let mut result = authenticated_response(&user, &mut device, auth_tokens, None, conn, ip).await?;
+
+    // Add WebAuthnPrfOption if the credential has encrypted keys (PRF-based decryption)
+    if matched_wac.encrypted_private_key.is_some() && matched_wac.encrypted_user_key.is_some() {
+        let Json(ref mut val) = result;
+        val["UserDecryptionOptions"]["WebAuthnPrfOption"] = json!({
+            "EncryptedPrivateKey": matched_wac.encrypted_private_key,
+            "EncryptedUserKey": matched_wac.encrypted_user_key,
+        });
+    }
+
+    Ok(result)
+}
+
 // https://github.com/bitwarden/jslib/blob/master/common/src/models/request/tokenRequest.ts
 // https://github.com/bitwarden/mobile/blob/master/src/Core/Models/Request/TokenRequest.cs
 #[derive(Debug, Clone, Default, FromForm)]
 struct ConnectData {
     #[field(name = uncased("grant_type"))]
     #[field(name = uncased("granttype"))]
-    grant_type: String, // refresh_token, password, client_credentials (API key)
+    grant_type: String, // refresh_token, password, client_credentials (API key), webauthn
 
     // Needed for grant_type="refresh_token"
     #[field(name = uncased("refresh_token"))]
@@ -1058,6 +1365,13 @@ struct ConnectData {
     code: Option<OIDCState>,
     #[field(name = uncased("code_verifier"))]
     code_verifier: Option<OIDCCodeVerifier>,
+
+    // Needed for grant_type = "webauthn"
+    #[field(name = uncased("deviceresponse"))]
+    device_response: Option<String>,
+    // Token identifying the webauthn authentication state
+    #[field(name = uncased("token"))]
+    token: Option<String>,
 }
 fn _check_is_some<T>(value: &Option<T>, msg: &str) -> EmptyResult {
     if value.is_none() {

@@ -106,7 +106,7 @@ WORKDIR /app
 # Environment variables for Cargo on Debian based builds
 ARG TARGET_PKG_CONFIG_PATH
 
-RUN source /env-cargo && \
+RUN . /env-cargo /env-cargo && \
     if xx-info is-cross ; then \
         # We can't use xx-cargo since that uses clang, which doesn't work for our libraries.
         # Because of this we generate the needed environment variables here which we can load in the needed steps.
@@ -133,7 +133,7 @@ RUN echo "export CARGO_TARGET=${RUST_MUSL_CROSS_TARGET}" >> /env-cargo && \
     cat /env-cargo
 
 {% endif %}
-RUN source /env-cargo && \
+RUN . /env-cargo /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
 # Copies over *only* your manifests and build files
@@ -153,7 +153,7 @@ ARG DB=sqlite,mysql,postgresql,enable_mimalloc
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN source /env-cargo && \
+RUN . /env-cargo /env-cargo && \
     cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
     find . -not -path "./target*" -delete
 
@@ -164,7 +164,7 @@ COPY . .
 ARG VW_VERSION
 
 # Builds again, this time it will be the actual source files being build
-RUN source /env-cargo && \
+RUN . /env-cargo /env-cargo && \
     # Make sure that we actually build the project by updating the src/main.rs timestamp
     # Also do this for build.rs to ensure the version is rechecked
     touch build.rs src/main.rs && \
