@@ -17,6 +17,7 @@ mod two_factor;
 mod two_factor_duo_context;
 mod two_factor_incomplete;
 mod user;
+mod web_authn_credential;
 
 pub use self::archive::Archive;
 pub use self::attachment::{Attachment, AttachmentId};
@@ -43,3 +44,4 @@ pub use self::two_factor::{TwoFactor, TwoFactorType};
 pub use self::two_factor_duo_context::TwoFactorDuoContext;
 pub use self::two_factor_incomplete::TwoFactorIncomplete;
 pub use self::user::{Invitation, SsoUser, User, UserId, UserKdfType, UserStampException};
+pub use self::web_authn_credential::{WebAuthnCredential, WebAuthnCredentialId};

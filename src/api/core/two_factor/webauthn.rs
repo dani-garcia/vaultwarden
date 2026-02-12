@@ -10,7 +10,7 @@ use webauthn_rs::{
 };
 use webauthn_rs_proto::{
     AuthenticationExtensionsClientOutputs, AuthenticatorAssertionResponseRaw, AuthenticatorAttestationResponseRaw,
-    PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs,
+    AuthenticatorTransport, PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs,
     RequestAuthenticationExtensions, UserVerificationPolicy,
 };
 
@@ -30,7 +30,7 @@ use crate::{
     util::NumberOrString,
 };
 
-static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
+pub static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
     let domain = CONFIG.domain();
     let domain_origin = CONFIG.domain_origin();
     let rp_id = Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
@@ -181,7 +181,7 @@ struct EnableWebauthnData {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RegisterPublicKeyCredentialCopy {
+pub struct RegisterPublicKeyCredentialCopy {
     pub id: String,
     pub raw_id: Base64UrlSafeData,
     pub response: AuthenticatorAttestationResponseRawCopy,
@@ -196,17 +196,19 @@ pub struct AuthenticatorAttestationResponseRawCopy {
     pub attestation_object: Base64UrlSafeData,
     #[serde(rename = "clientDataJson", alias = "clientDataJSON")]
     pub client_data_json: Base64UrlSafeData,
+    pub transports: Option<Vec<AuthenticatorTransport>>,
 }
 
 impl From<RegisterPublicKeyCredentialCopy> for RegisterPublicKeyCredential {
     fn from(r: RegisterPublicKeyCredentialCopy) -> Self {
+        let transports = r.response.transports;
         Self {
             id: r.id,
             raw_id: r.raw_id,
             response: AuthenticatorAttestationResponseRaw {
                 attestation_object: r.response.attestation_object,
                 client_data_json: r.response.client_data_json,
-                transports: None,
+                transports,
             },
             type_: r.r#type,
             extensions: RegistrationExtensionsClientOutputs::default(),

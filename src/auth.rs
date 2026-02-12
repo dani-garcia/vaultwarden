@@ -1147,6 +1147,7 @@ pub enum AuthMethod {
     Password,
     Sso,
     UserApiKey,
+    WebAuthn,
 }
 
 impl AuthMethod {
@@ -1154,7 +1155,7 @@ impl AuthMethod {
         match self {
             AuthMethod::OrgApiKey => "api.organization".to_owned(),
             AuthMethod::UserApiKey => "api".to_owned(),
-            AuthMethod::Password | AuthMethod::Sso => "api offline_access".to_owned(),
+            AuthMethod::Password | AuthMethod::Sso | AuthMethod::WebAuthn => "api offline_access".to_owned(),
         }
     }
 
@@ -1292,7 +1293,7 @@ pub async fn refresh_tokens(
         }
         AuthMethod::Sso => err!("SSO is now disabled, Login again using email and master password"),
         AuthMethod::Password if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO is now required, Login again"),
-        AuthMethod::Password => AuthTokens::new(&device, &user, refresh_claims.sub, client_id),
+        AuthMethod::Password | AuthMethod::WebAuthn => AuthTokens::new(&device, &user, refresh_claims.sub, client_id),
         _ => err!("Invalid auth method, cannot refresh token"),
     };
 
