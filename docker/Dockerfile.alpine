@@ -71,7 +71,7 @@ RUN echo "export CARGO_TARGET=${RUST_MUSL_CROSS_TARGET}" >> /env-cargo && \
     # Output the current contents of the file
     cat /env-cargo
 
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
 # Copies over *only* your manifests and build files
@@ -87,7 +87,7 @@ ARG DB=sqlite,mysql,postgresql,enable_mimalloc
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
     find . -not -path "./target*" -delete
 
@@ -98,7 +98,7 @@ COPY . .
 ARG VW_VERSION
 
 # Builds again, this time it will be the actual source files being build
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     # Make sure that we actually build the project by updating the src/main.rs timestamp
     # Also do this for build.rs to ensure the version is rechecked
     touch build.rs src/main.rs && \
