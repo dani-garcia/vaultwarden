@@ -1476,7 +1476,7 @@ fn set_s3_config_param(
         let display_json_value = if is_s3_secret_param(param_name) {
             json!("***")
         } else {
-            json_value.clone()
+            json_value
         };
         let new_config = serde_json::from_value::<opendal::services::S3Config>(Value::Object(config_obj))
             .map_err(|e| Error::from(format!("Failed to deserialize S3Config from JSON after updating parameter '{param_name}' to value {display_json_value}: {e}")))?;
@@ -1522,10 +1522,15 @@ fn parse_s3_config_for_path(path: &str) -> Result<opendal::services::S3Config, E
 
         if param_name == "disable_virtual_host_style" {
             let value = param_value.unwrap_or("true");
-            let bool_value = parse_s3_bool(value)
-                .ok_or_else(|| format!("S3 OpenDAL Parameter 'disable_virtual_host_style' has invalid boolean value {value:?}"))?;
+            let bool_value = parse_s3_bool(value).ok_or_else(|| {
+                format!("S3 OpenDAL Parameter 'disable_virtual_host_style' has invalid boolean value {value:?}")
+            })?;
 
-            let enabled_value = if bool_value { "false" } else { "true" };
+            let enabled_value = if bool_value {
+                "false"
+            } else {
+                "true"
+            };
             config = set_s3_config_param(config, "enable_virtual_host_style", Some(enabled_value))?;
             continue;
         }
@@ -1668,15 +1673,13 @@ mod s3_tests {
 
     #[test]
     fn test_parse_s3_config_implicit_boolean_flag() {
-        let config = parse_s3_config_for_path("s3://vw/path?enable_virtual_host_style")
-            .expect("config should parse");
+        let config = parse_s3_config_for_path("s3://vw/path?enable_virtual_host_style").expect("config should parse");
         assert!(config.enable_virtual_host_style);
     }
 
     #[test]
     fn test_parse_s3_config_boolean_variants() {
-        let config = parse_s3_config_for_path("s3://vw/path?enable_virtual_host_style=0")
-            .expect("config should parse");
+        let config = parse_s3_config_for_path("s3://vw/path?enable_virtual_host_style=0").expect("config should parse");
         assert!(!config.enable_virtual_host_style);
     }
 
@@ -1688,8 +1691,8 @@ mod s3_tests {
 
     #[test]
     fn test_parse_s3_config_rejects_unknown_parameter() {
-        let error = parse_s3_config_for_path("s3://vw/path?unknown_param=value")
-            .expect_err("unknown params should fail");
+        let error =
+            parse_s3_config_for_path("s3://vw/path?unknown_param=value").expect_err("unknown params should fail");
         let error_string = error.to_string();
         assert!(error_string.contains("unknown field"));
     }
@@ -1714,7 +1717,8 @@ mod s3_tests {
         query.append_pair("secret_access_key", &secret_key);
         let s3_path = format!("s3://{bucket}{root}?{}", query.finish());
 
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime should build");
+        let rt =
+            tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime should build");
         rt.block_on(async move {
             let operator = opendal_s3_operator_for_path(&s3_path).expect("operator should be created");
             let key = format!("integration/{}.txt", uuid::Uuid::new_v4());
