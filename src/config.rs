@@ -1697,7 +1697,7 @@ mod s3_tests {
     fn test_parse_s3_config_rejects_unknown_parameter() {
         let error = parse_s3_config_for_path("s3://vw/path?region=auto&unknown_param=value")
             .expect_err("unknown params should fail");
-        let error_message = error.message().to_string();
+        let error_message = format!("{error:?}");
         assert!(
             error_message.contains("Unknown S3 OpenDAL parameter") && error_message.contains("unknown_param"),
             "error message: {error_message}"
