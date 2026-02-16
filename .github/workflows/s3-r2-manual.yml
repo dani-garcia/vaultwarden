@@ -1,0 +1,50 @@
+name: S3-Compatible Integration (R2 Manual)
+permissions: {}
+
+on:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  s3-compatible-r2:
+    name: S3-Compatible Integration (R2)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Install dependencies Ubuntu
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openssl build-essential libmariadb-dev-compat libpq-dev libssl-dev pkg-config
+
+      - name: Checkout
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install rust-toolchain version
+        uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561
+        with:
+          toolchain: stable
+
+      - name: Show environment
+        run: |
+          rustc -vV
+          cargo -vV
+
+      - name: Rust Caching
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          prefix-key: "v2025.09-rust"
+
+      - name: Run R2 integration test
+        env:
+          VW_S3_MINIO_ENDPOINT: ${{ secrets.VW_R2_ENDPOINT }}
+          VW_S3_MINIO_BUCKET: ${{ secrets.VW_R2_BUCKET }}
+          VW_S3_MINIO_ROOT: ${{ secrets.VW_R2_ROOT }}
+          VW_S3_MINIO_REGION: ${{ secrets.VW_R2_REGION }}
+          VW_S3_MINIO_ACCESS_KEY: ${{ secrets.VW_R2_ACCESS_KEY_ID }}
+          VW_S3_MINIO_SECRET_KEY: ${{ secrets.VW_R2_SECRET_ACCESS_KEY }}
+        run: cargo test --profile ci --features s3 config::s3_tests::test_s3_minio_integration_put_get_delete -- --ignored --nocapture
