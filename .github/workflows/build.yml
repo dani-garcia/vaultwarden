@@ -283,8 +283,8 @@ jobs:
             exit 1
           fi
 
-          docker run --rm --network host minio/mc:latest \
-            sh -c "mc alias set local http://127.0.0.1:9000 minioadmin minioadmin && mc mb --ignore-existing local/vaultwarden-test"
+          docker run --rm --network host --entrypoint /bin/sh minio/mc:latest -c \
+            "mc alias set local http://127.0.0.1:9000 minioadmin minioadmin && mc mb --ignore-existing local/vaultwarden-test"
 
       - name: Run MinIO integration test
         env:

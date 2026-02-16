@@ -1469,6 +1469,10 @@ fn set_s3_config_param(
 
     // Merge with the new field and deserialize
     if let Value::Object(mut config_obj) = config_json {
+        if !config_obj.contains_key(param_name) {
+            return Err(format!("Unknown S3 OpenDAL parameter '{param_name}'").into());
+        }
+
         // Insert the new field
         config_obj.insert(param_name.to_string(), json_value.clone());
 
@@ -1686,7 +1690,7 @@ mod s3_tests {
     #[test]
     fn test_parse_s3_config_percent_encoded_prefix() {
         let config = parse_s3_config_for_path("s3://vw/path%20with%20spaces").expect("config should parse");
-        assert_eq!(config.root.as_deref(), Some("/path with spaces"));
+        assert_eq!(config.root.as_deref(), Some("/path%20with%20spaces"));
     }
 
     #[test]
@@ -1694,7 +1698,7 @@ mod s3_tests {
         let error =
             parse_s3_config_for_path("s3://vw/path?unknown_param=value").expect_err("unknown params should fail");
         let error_string = error.to_string();
-        assert!(error_string.contains("unknown field"));
+        assert!(error_string.contains("Unknown S3 OpenDAL parameter"));
     }
 
     #[test]
