@@ -44,6 +44,9 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
         err!("Email 2FA is disabled")
     }
 
+    // Ratelimit the login
+    crate::ratelimit::check_limit_login(&client_headers.ip.ip)?;
+
     // Get the user
     let email = match &data.email {
         Some(email) if !email.is_empty() => Some(email),
