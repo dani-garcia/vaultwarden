@@ -1,0 +1,91 @@
+name: Docker Beta
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  docker-beta:
+    name: Build and Push Beta (${{ matrix.base_image }})
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        base_image: ["debian", "alpine"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Initialize QEMU binfmt support
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          platforms: "arm64"
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          cache-binary: false
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 2
+          driver-opts: |
+            network=host
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare metadata
+        run: |
+          echo "SOURCE_COMMIT=${GITHUB_SHA}" | tee -a "${GITHUB_ENV}"
+          echo "SOURCE_REPOSITORY_URL=https://github.com/${GITHUB_REPOSITORY}" | tee -a "${GITHUB_ENV}"
+          echo "SHORT_SHA=${GITHUB_SHA::8}" | tee -a "${GITHUB_ENV}"
+          echo "BASE_TAGS=beta-${GITHUB_SHA::8}" | tee -a "${GITHUB_ENV}"
+          echo "CONTAINER_REGISTRIES=ghcr.io/${GITHUB_REPOSITORY}" | tee -a "${GITHUB_ENV}"
+
+      - name: Bake ${{ matrix.base_image }} multi-arch image
+        uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4 # v6.10.0
+        env:
+          BASE_TAGS: ${{ env.BASE_TAGS }}
+          SOURCE_COMMIT: ${{ env.SOURCE_COMMIT }}
+          SOURCE_VERSION: ${{ env.BASE_TAGS }}
+          SOURCE_REPOSITORY_URL: ${{ env.SOURCE_REPOSITORY_URL }}
+          CONTAINER_REGISTRIES: ${{ env.CONTAINER_REGISTRIES }}
+        with:
+          pull: true
+          source: .
+          files: docker/docker-bake.hcl
+          targets: ${{ matrix.base_image }}-multi
+          set: |
+            *.cache-from=type=gha,scope=docker-beta-${{ matrix.base_image }}
+            *.cache-to=type=gha,mode=max,scope=docker-beta-${{ matrix.base_image }}
+            *.platform=linux/amd64,linux/arm64
+            *.output=type=registry
+
+      - name: Publish summary
+        run: |
+          if [[ "${{ matrix.base_image }}" == "debian" ]]; then
+            echo "### Published beta image" >> "${GITHUB_STEP_SUMMARY}"
+            echo "- \`ghcr.io/${GITHUB_REPOSITORY}:beta-${SHORT_SHA}\`" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "### Published beta image" >> "${GITHUB_STEP_SUMMARY}"
+            echo "- \`ghcr.io/${GITHUB_REPOSITORY}:beta-${SHORT_SHA}-alpine\`" >> "${GITHUB_STEP_SUMMARY}"
+          fi
