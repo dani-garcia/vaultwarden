@@ -337,6 +337,46 @@ macro_rules! db_run {
     };
 }
 
+// Write all ToSql<Text, DB> and FromSql<Text, DB> given a serializable/deserializable type.
+#[macro_export]
+macro_rules! impl_FromToSqlText {
+    ($name:ty) => {
+        #[cfg(mysql)]
+        impl ToSql<Text, diesel::mysql::Mysql> for $name {
+            fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, diesel::mysql::Mysql>) -> diesel::serialize::Result {
+                serde_json::to_writer(out, self).map(|_| diesel::serialize::IsNull::No).map_err(Into::into)
+            }
+        }
+
+        #[cfg(postgresql)]
+        impl ToSql<Text, diesel::pg::Pg> for $name {
+            fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, diesel::pg::Pg>) -> diesel::serialize::Result {
+                serde_json::to_writer(out, self).map(|_| diesel::serialize::IsNull::No).map_err(Into::into)
+            }
+        }
+
+        #[cfg(sqlite)]
+        impl ToSql<Text, diesel::sqlite::Sqlite> for $name {
+            fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, diesel::sqlite::Sqlite>) -> diesel::serialize::Result {
+                serde_json::to_string(self).map_err(Into::into).map(|str| {
+                    out.set_value(str);
+                    diesel::serialize::IsNull::No
+                })
+            }
+        }
+
+        impl<DB: diesel::backend::Backend> FromSql<Text, DB> for $name
+        where
+            String: FromSql<Text, DB>,
+        {
+            fn from_sql(bytes: DB::RawValue<'_>) -> diesel::deserialize::Result<Self> {
+                <String as FromSql<Text, DB>>::from_sql(bytes)
+                    .and_then(|str| serde_json::from_str(&str).map_err(Into::into))
+            }
+        }
+    };
+}
+
 pub mod schema;
 
 // Reexport the models, needs to be after the macros are defined so it can access them

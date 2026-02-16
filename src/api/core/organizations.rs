@@ -195,8 +195,7 @@ async fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn
     }
 
     let data: OrgData = data.into_inner();
-    let (private_key, public_key) = if data.keys.is_some() {
-        let keys: OrgKeyData = data.keys.unwrap();
+    let (private_key, public_key) = if let Some(keys) = data.keys {
         (Some(keys.encrypted_private_key), Some(keys.public_key))
     } else {
         (None, None)
@@ -370,9 +369,9 @@ async fn get_auto_enroll_status(identifier: &str, headers: Headers, conn: DbConn
     };
 
     Ok(Json(json!({
-        "Id": id,
-        "Identifier": identifier,
-        "ResetPasswordEnabled": rp_auto_enroll,
+        "id": id,
+        "identifier": identifier,
+        "resetPasswordEnabled": rp_auto_enroll,
     })))
 }
 
@@ -930,9 +929,13 @@ struct OrgIdData {
 }
 
 #[get("/ciphers/organization-details?<data..>")]
-async fn get_org_details(data: OrgIdData, headers: OrgMemberHeaders, conn: DbConn) -> JsonResult {
+async fn get_org_details(data: OrgIdData, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
     if data.organization_id != headers.membership.org_uuid {
         err_code!("Resource not found.", "Organization id's do not match", rocket::http::Status::NotFound.code);
+    }
+
+    if !headers.membership.has_full_access() {
+        err_code!("Resource not found.", "User does not have full access", rocket::http::Status::NotFound.code);
     }
 
     Ok(Json(json!({
@@ -2057,8 +2060,6 @@ async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: AdminHeaders
 #[derive(Deserialize)]
 struct PolicyData {
     enabled: bool,
-    #[serde(rename = "type")]
-    _type: i32,
     data: Option<Value>,
 }
 
@@ -3210,7 +3211,7 @@ async fn put_reset_password(
 
     // Sending email before resetting password to ensure working email configuration and the resulting
     // user notification. Also this might add some protection against security flaws and misuse
-    if let Err(e) = mail::send_admin_reset_password(&user.email, &user.name, &org.name).await {
+    if let Err(e) = mail::send_admin_reset_password(&user.email, user.display_name(), &org.name).await {
         err!(format!("Error sending user reset password email: {e:#?}"));
     }
 

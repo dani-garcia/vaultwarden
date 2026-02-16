@@ -128,7 +128,7 @@ pub async fn register_push_device(device: &mut Device, conn: &DbConn) -> EmptyRe
         err!(format!("An error occurred while proceeding registration of a device: {e}"));
     }
 
-    if let Err(e) = device.save(conn).await {
+    if let Err(e) = device.save(true, conn).await {
         err!(format!("An error occurred while trying to save the (registered) device push uuid: {e}"));
     }
 

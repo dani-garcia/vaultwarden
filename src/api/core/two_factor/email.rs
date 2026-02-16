@@ -7,10 +7,10 @@ use crate::{
         core::{log_user_event, two_factor::_generate_recover_code},
         EmptyResult, JsonResult, PasswordOrOtpData,
     },
-    auth::Headers,
+    auth::{ClientHeaders, Headers},
     crypto,
     db::{
-        models::{EventType, TwoFactor, TwoFactorType, User, UserId},
+        models::{AuthRequest, AuthRequestId, DeviceId, EventType, TwoFactor, TwoFactorType, User, UserId},
         DbConn,
     },
     error::{Error, MapResult},
@@ -24,37 +24,79 @@ pub fn routes() -> Vec<Route> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SendEmailLoginData {
+    #[serde(alias = "DeviceIdentifier")]
+    device_identifier: DeviceId,
     #[serde(alias = "Email")]
-    email: String,
+    email: Option<String>,
     #[serde(alias = "MasterPasswordHash")]
-    master_password_hash: String,
+    master_password_hash: Option<String>,
+    auth_request_id: Option<AuthRequestId>,
+    auth_request_access_code: Option<String>,
 }
 
 /// User is trying to login and wants to use email 2FA.
 /// Does not require Bearer token
 #[post("/two-factor/send-email-login", data = "<data>")] // JsonResult
-async fn send_email_login(data: Json<SendEmailLoginData>, conn: DbConn) -> EmptyResult {
+async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: ClientHeaders, conn: DbConn) -> EmptyResult {
     let data: SendEmailLoginData = data.into_inner();
-
-    use crate::db::models::User;
-
-    // Get the user
-    let Some(user) = User::find_by_mail(&data.email, &conn).await else {
-        err!("Username or password is incorrect. Try again.")
-    };
 
     if !CONFIG._enable_email_2fa() {
         err!("Email 2FA is disabled")
     }
 
-    // Check password
-    if !user.check_valid_password(&data.master_password_hash) {
-        err!("Username or password is incorrect. Try again.")
-    }
+    // Get the user
+    let email = match &data.email {
+        Some(email) if !email.is_empty() => Some(email),
+        _ => None,
+    };
+    let master_password_hash = match &data.master_password_hash {
+        Some(password_hash) if !password_hash.is_empty() => Some(password_hash),
+        _ => None,
+    };
+    let auth_request_id = match &data.auth_request_id {
+        Some(auth_request_id) if !auth_request_id.is_empty() => Some(auth_request_id),
+        _ => None,
+    };
 
-    send_token(&user.uuid, &conn).await?;
+    let user = if let Some(email) = email {
+        let Some(user) = User::find_by_mail(email, &conn).await else {
+            err!("Username or password is incorrect. Try again.")
+        };
 
-    Ok(())
+        if let Some(master_password_hash) = master_password_hash {
+            // Check password
+            if !user.check_valid_password(master_password_hash) {
+                err!("Username or password is incorrect. Try again.")
+            }
+        } else if let Some(auth_request_id) = auth_request_id {
+            let Some(auth_request) = AuthRequest::find_by_uuid(auth_request_id, &conn).await else {
+                err!("AuthRequest doesn't exist", "User not found")
+            };
+            let Some(code) = &data.auth_request_access_code else {
+                err!("no auth request access code")
+            };
+
+            if auth_request.device_type != client_headers.device_type
+                || auth_request.request_ip != client_headers.ip.ip.to_string()
+                || !auth_request.check_access_code(code)
+            {
+                err!("AuthRequest doesn't exist", "Invalid device, IP or code")
+            }
+        } else {
+            err!("No password hash has been submitted.")
+        }
+
+        user
+    } else {
+        // SSO login only sends device id, so we get the user by the most recently used device
+        let Some(user) = User::find_by_device_for_email2fa(&data.device_identifier, &conn).await else {
+            err!("Username or password is incorrect. Try again.")
+        };
+
+        user
+    };
+
+    send_token(&user.uuid, &conn).await
 }
 
 /// Generate the token, save the data for later verification and send email to user

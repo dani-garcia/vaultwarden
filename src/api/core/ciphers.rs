@@ -159,7 +159,28 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     let domains_json = if data.exclude_domains {
         Value::Null
     } else {
-        api::core::_get_eq_domains(headers, true).into_inner()
+        api::core::_get_eq_domains(&headers, true).into_inner()
+    };
+
+    // This is very similar to the the userDecryptionOptions sent in connect/token,
+    // but as of 2025-12-19 they're both using different casing conventions.
+    let has_master_password = !headers.user.password_hash.is_empty();
+    let master_password_unlock = if has_master_password {
+        json!({
+            "kdf": {
+                "kdfType": headers.user.client_kdf_type,
+                "iterations": headers.user.client_kdf_iter,
+                "memory": headers.user.client_kdf_memory,
+                "parallelism": headers.user.client_kdf_parallelism
+            },
+            // This field is named inconsistently and will be removed and replaced by the "wrapped" variant in the apps.
+            // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
+            "masterKeyEncryptedUserKey": headers.user.akey,
+            "masterKeyWrappedUserKey": headers.user.akey,
+            "salt": headers.user.email
+        })
+    } else {
+        Value::Null
     };
 
     Ok(Json(json!({
@@ -170,6 +191,9 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "ciphers": ciphers_json,
         "domains": domains_json,
         "sends": sends_json,
+        "userDecryption": {
+            "masterPasswordUnlock": master_password_unlock,
+        },
         "object": "sync"
     })))
 }
@@ -301,12 +325,6 @@ async fn post_ciphers_create(
 ) -> JsonResult {
     let mut data: ShareCipherData = data.into_inner();
 
-    // Check if there are one more more collections selected when this cipher is part of an organization.
-    // err if this is not the case before creating an empty cipher.
-    if data.cipher.organization_id.is_some() && data.collection_ids.is_empty() {
-        err!("You must select at least one collection.");
-    }
-
     // This check is usually only needed in update_cipher_from_data(), but we
     // need it here as well to avoid creating an empty cipher in the call to
     // cipher.save() below.
@@ -324,7 +342,11 @@ async fn post_ciphers_create(
     // or otherwise), we can just ignore this field entirely.
     data.cipher.last_known_revision_date = None;
 
-    share_cipher_by_uuid(&cipher.uuid, data, &headers, &conn, &nt, None).await
+    let res = share_cipher_by_uuid(&cipher.uuid, data, &headers, &conn, &nt, None).await;
+    if res.is_err() {
+        cipher.delete(&conn).await?;
+    }
+    res
 }
 
 /// Called when creating a new user-owned cipher.

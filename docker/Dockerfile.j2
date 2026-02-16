@@ -19,13 +19,13 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:{{ vault_version }}
-#     $ docker image inspect --format "{{ '{{' }}.RepoDigests}}" docker.io/vaultwarden/web-vault:{{ vault_version }}
+#     $ docker pull docker.io/vaultwarden/web-vault:{{ vault_version | replace('+', '_') }}
+#     $ docker image inspect --format "{{ '{{' }}.RepoDigests}}" docker.io/vaultwarden/web-vault:{{ vault_version | replace('+', '_') }}
 #     [docker.io/vaultwarden/web-vault@{{ vault_image_digest }}]
 #
 # - Conversely, to get the tag name from the digest:
 #     $ docker image inspect --format "{{ '{{' }}.RepoTags}}" docker.io/vaultwarden/web-vault@{{ vault_image_digest }}
-#     [docker.io/vaultwarden/web-vault:{{ vault_version }}]
+#     [docker.io/vaultwarden/web-vault:{{ vault_version | replace('+', '_') }}]
 #
 FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@{{ vault_image_digest }} AS vault
 
@@ -69,15 +69,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
 {% endif %}
 
 {% if base == "debian" %}
-
-# Force the install of an older MariaDB library to prevent a Diesel panic
-# See https://github.com/dani-garcia/vaultwarden/issues/6416
-RUN echo "deb http://snapshot.debian.org/archive/debian/20250707T084701Z/ trixie main" > /etc/apt/sources.list.d/snapshot.list && \
-    echo "Acquire::Check-Valid-Until false;" > etc/apt/apt.conf.d/AllowSnapshot && \
-    echo 'Package: libmariadb libmariadb3 libmariadb-dev mariadb*' > /etc/apt/preferences.d/mariadb-snapshot && \
-    echo 'Pin: origin "snapshot.debian.org"' >> /etc/apt/preferences.d/mariadb-snapshot && \
-    echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mariadb-snapshot
-
 # Install clang to get `xx-cargo` working
 # Install pkg-config to allow amd64 builds to find all libraries
 # Install git so build.rs can determine the correct version
@@ -216,14 +207,6 @@ ENV ROCKET_PROFILE="release" \
 # Create data folder and Install needed libraries
 RUN mkdir /data && \
 {% if base == "debian" %}
-    # Force the install of an older MariaDB library to prevent a Diesel panic
-    # See https://github.com/dani-garcia/vaultwarden/issues/6416
-    echo "deb http://snapshot.debian.org/archive/debian/20250707T084701Z/ trixie main" > /etc/apt/sources.list.d/snapshot.list && \
-    echo "Acquire::Check-Valid-Until false;" > etc/apt/apt.conf.d/AllowSnapshot && \
-    echo 'Package: libmariadb libmariadb3 libmariadb-dev mariadb*' > /etc/apt/preferences.d/mariadb-snapshot && \
-    echo 'Pin: origin "snapshot.debian.org"' >> /etc/apt/preferences.d/mariadb-snapshot && \
-    echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mariadb-snapshot && \
-    # Continue with normal install
     apt-get update && apt-get install -y \
         --no-install-recommends \
         ca-certificates \

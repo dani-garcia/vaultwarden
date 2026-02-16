@@ -66,6 +66,7 @@ pub fn routes() -> Vec<rocket::Route> {
         put_device_token,
         put_clear_device_token,
         post_clear_device_token,
+        get_tasks,
         post_auth_request,
         get_auth_request,
         put_auth_request,
@@ -378,7 +379,7 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     }
 
     if let Some(identifier) = data.org_identifier {
-        if identifier != crate::sso::FAKE_IDENTIFIER {
+        if identifier != crate::sso::FAKE_IDENTIFIER && identifier != crate::api::admin::FAKE_ADMIN_UUID {
             let org = match Organization::find_by_uuid(&identifier.into(), &conn).await {
                 None => err!("Failed to retrieve the associated organization"),
                 Some(org) => org,
@@ -405,8 +406,8 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     user.save(&conn).await?;
 
     Ok(Json(json!({
-      "Object": "set-password",
-      "CaptchaBypassToken": "",
+      "object": "set-password",
+      "captchaBypassToken": "",
     })))
 }
 
@@ -1409,7 +1410,7 @@ async fn put_device_token(device_id: DeviceId, data: Json<PushToken>, headers: H
     }
 
     device.push_token = Some(token);
-    if let Err(e) = device.save(&conn).await {
+    if let Err(e) = device.save(true, &conn).await {
         err!(format!("An error occurred while trying to save the device push token: {e}"));
     }
 
@@ -1443,6 +1444,14 @@ async fn put_clear_device_token(device_id: DeviceId, conn: DbConn) -> EmptyResul
 #[post("/devices/identifier/<device_id>/clear-token")]
 async fn post_clear_device_token(device_id: DeviceId, conn: DbConn) -> EmptyResult {
     put_clear_device_token(device_id, conn).await
+}
+
+#[get("/tasks")]
+fn get_tasks(_client_headers: ClientHeaders) -> JsonResult {
+    Ok(Json(json!({
+        "data": [],
+        "object": "list"
+    })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1695,6 +1704,6 @@ pub async fn purge_auth_requests(pool: DbPool) {
     if let Ok(conn) = pool.get().await {
         AuthRequest::purge_expired_auth_requests(&conn).await;
     } else {
-        error!("Failed to get DB connection while purging trashed ciphers")
+        error!("Failed to get DB connection while purging auth requests")
     }
 }

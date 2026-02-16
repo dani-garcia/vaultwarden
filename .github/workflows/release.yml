@@ -1,6 +1,12 @@
 name: Release
 permissions: {}
 
+concurrency:
+  # Apply concurrency control only on the upstream repo
+  group: ${{ github.repository == 'dani-garcia/vaultwarden' && format('{0}-{1}', github.workflow, github.ref) || github.run_id }}
+  # Don't cancel other runs when creating a tag
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
 on:
   push:
     branches:
@@ -9,12 +15,6 @@ on:
     tags:
       # https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#filter-pattern-cheat-sheet
       - '[1-2].[0-9]+.[0-9]+'
-
-concurrency:
-  # Apply concurrency control only on the upstream repo
-  group: ${{ github.repository == 'dani-garcia/vaultwarden' && format('{0}-{1}', github.workflow, github.ref) || github.run_id }}
-  # Don't cancel other runs when creating a tag
-  cancel-in-progress: ${{ github.ref_type == 'branch' }}
 
 defaults:
   run:
@@ -44,12 +44,6 @@ jobs:
       id-token: write # Needed to mint the OIDC token necessary to request a Sigstore signing certificate
     runs-on: ${{ contains(matrix.arch, 'arm') && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 120
-    # Start a local docker registry to extract the compiled binaries to upload as artifacts and attest them
-    services:
-      registry:
-        image: registry@sha256:1fc7de654f2ac1247f0b67e8a459e273b0993be7d2beda1f3f56fbf1001ed3e7 # v3.0.0
-        ports:
-          - 5000:5000
     env:
       SOURCE_COMMIT: ${{ github.sha }}
       SOURCE_REPOSITORY_URL: "https://github.com/${{ github.repository }}"
@@ -57,8 +51,6 @@ jobs:
       matrix:
         arch: ["amd64", "arm64", "arm/v7", "arm/v6"]
         base_image: ["debian","alpine"]
-    outputs:
-      base-tags: ${{ steps.determine-version.outputs.BASE_TAGS }}
 
     steps:
       - name: Initialize QEMU binfmt support
@@ -68,7 +60,7 @@ jobs:
 
       # Start Docker Buildx
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
         # https://github.com/moby/buildkit/issues/3969
         # Also set max parallelism to 2, the default of 4 breaks GitHub Actions and causes OOMKills
         with:
@@ -96,19 +88,9 @@ jobs:
           NORMALIZED_ARCH="${MATRIX_ARCH//\/}"
           echo "NORMALIZED_ARCH=${NORMALIZED_ARCH}" | tee -a "${GITHUB_ENV}"
 
-      # Determine Base Tags and Source Version
-      - name: Determine Base Tags and Source Version
-        id: determine-version
-        env:
-          REF_TYPE: ${{ github.ref_type }}
+      # Determine Source Version
+      - name: Determine Source Version
         run: |
-          # Check which main tag we are going to build determined by ref_type
-          if [[ "${REF_TYPE}" == "tag" ]]; then
-            echo "BASE_TAGS=latest,${GITHUB_REF#refs/*/}" | tee -a "${GITHUB_OUTPUT}"
-          elif [[ "${REF_TYPE}" == "branch" ]]; then
-            echo "BASE_TAGS=testing" | tee -a "${GITHUB_OUTPUT}"
-          fi
-
           # Get the Source Version for this release
           GIT_EXACT_TAG="$(git describe --tags --abbrev=0 --exact-match 2>/dev/null || true)"
           if [[ -n "${GIT_EXACT_TAG}" ]]; then
@@ -117,11 +99,10 @@ jobs:
               GIT_LAST_TAG="$(git describe --tags --abbrev=0)"
               echo "SOURCE_VERSION=${GIT_LAST_TAG}-${SOURCE_COMMIT:0:8}" | tee -a "${GITHUB_ENV}"
           fi
-      # End Determine Base Tags
 
       # Login to Docker Hub
       - name: Login to Docker Hub
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -136,7 +117,7 @@ jobs:
 
       # Login to GitHub Container Registry
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -152,7 +133,7 @@ jobs:
 
       # Login to Quay.io
       - name: Login to Quay.io
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
@@ -182,10 +163,6 @@ jobs:
             echo "BAKE_CACHE_TO="
           fi
           #
-
-      - name: Add localhost registry
-        run: |
-          echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}localhost:5000/vaultwarden/server" | tee -a "${GITHUB_ENV}"
 
       - name: Generate tags
         id: tags
@@ -220,7 +197,8 @@ jobs:
             *.cache-to=${{ env.BAKE_CACHE_TO }}
             *.platform=linux/${{ matrix.arch }}
             ${{ env.TAGS }}
-            *.output=type=image,push-by-digest=true,name-canonical=true,push=true,compression=zstd
+            *.output=type=local,dest=./output
+            *.output=type=image,push-by-digest=true,name-canonical=true,push=true
 
       - name: Extract digest SHA
         env:
@@ -240,49 +218,27 @@ jobs:
           touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: digests-${{ env.NORMALIZED_ARCH }}-${{ matrix.base_image }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
 
-      # Extract the Alpine binaries from the containers
-      - name: Extract binaries
+      - name: Rename binaries to match target platform
         env:
-          REF_TYPE: ${{ github.ref_type }}
-          BASE_IMAGE: ${{ matrix.base_image }}
-          DIGEST_SHA: ${{ env.DIGEST_SHA }}
           NORMALIZED_ARCH: ${{ env.NORMALIZED_ARCH }}
         run: |
-          # Check which main tag we are going to build determined by ref_type
-          if [[ "${REF_TYPE}" == "tag" ]]; then
-            EXTRACT_TAG="latest"
-          elif [[ "${REF_TYPE}" == "branch" ]]; then
-            EXTRACT_TAG="testing"
-          fi
-
-          # Check which base_image was used and append -alpine if needed
-          if [[ "${BASE_IMAGE}" == "alpine" ]]; then
-            EXTRACT_TAG="${EXTRACT_TAG}-alpine"
-          fi
-
-          CONTAINER_ID="$(docker create "localhost:5000/vaultwarden/server:${EXTRACT_TAG}@${DIGEST_SHA}")"
-
-          # Copy the binary
-          docker cp "$CONTAINER_ID":/vaultwarden vaultwarden-"${NORMALIZED_ARCH}"
-
-          # Clean up
-          docker rm "$CONTAINER_ID"
+          mv ./output/vaultwarden vaultwarden-"${NORMALIZED_ARCH}"
 
       # Upload artifacts to Github Actions and Attest the binaries
       - name: Attest binaries
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
           subject-path: vaultwarden-${{ env.NORMALIZED_ARCH }}
 
       - name: Upload binaries as artifacts
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-${{ env.NORMALIZED_ARCH }}-${{ matrix.base_image }}
           path: vaultwarden-${{ env.NORMALIZED_ARCH }}
@@ -291,22 +247,17 @@ jobs:
     name: Merge manifests
     runs-on: ubuntu-latest
     needs: docker-build
-
-    env:
-      BASE_TAGS: ${{ needs.docker-build.outputs.base-tags }}
-
     permissions:
       packages: write # Needed to upload packages and artifacts
       attestations: write # Needed to generate an artifact attestation for a build
       id-token: write # Needed to mint the OIDC token necessary to request a Sigstore signing certificate
-
     strategy:
       matrix:
         base_image: ["debian","alpine"]
 
     steps:
       - name: Download digests
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: ${{ runner.temp }}/digests
           pattern: digests-*-${{ matrix.base_image }}
@@ -314,7 +265,7 @@ jobs:
 
       # Login to Docker Hub
       - name: Login to Docker Hub
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -329,7 +280,7 @@ jobs:
 
       # Login to GitHub Container Registry
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -345,7 +296,7 @@ jobs:
 
       # Login to Quay.io
       - name: Login to Quay.io
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
@@ -359,42 +310,55 @@ jobs:
         run: |
           echo "CONTAINER_REGISTRIES=${CONTAINER_REGISTRIES:+${CONTAINER_REGISTRIES},}${QUAY_REPO}" | tee -a "${GITHUB_ENV}"
 
+      # Determine Base Tags
+      - name: Determine Base Tags
+        env:
+          BASE_IMAGE_TAG: "${{ matrix.base_image != 'debian' && format('-{0}', matrix.base_image) || '' }}"
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          # Check which main tag we are going to build determined by ref_type
+          if [[ "${REF_TYPE}" == "tag" ]]; then
+            echo "BASE_TAGS=latest${BASE_IMAGE_TAG},${GITHUB_REF#refs/*/}${BASE_IMAGE_TAG}${BASE_IMAGE_TAG//-/,}" | tee -a "${GITHUB_ENV}"
+          elif [[ "${REF_TYPE}" == "branch" ]]; then
+            echo "BASE_TAGS=testing${BASE_IMAGE_TAG}" | tee -a "${GITHUB_ENV}"
+          fi
+
       - name: Create manifest list, push it and extract digest SHA
         working-directory: ${{ runner.temp }}/digests
         env:
-          BASE_IMAGE: "${{ matrix.base_image }}"
           BASE_TAGS: "${{ env.BASE_TAGS }}"
           CONTAINER_REGISTRIES: "${{ env.CONTAINER_REGISTRIES }}"
         run: |
-          set +e
           IFS=',' read -ra IMAGES <<< "${CONTAINER_REGISTRIES}"
+          IFS=',' read -ra TAGS <<< "${BASE_TAGS}"
+
+          TAG_ARGS=()
           for img in "${IMAGES[@]}"; do
-            echo "Creating manifest for $img:${BASE_TAGS}-${BASE_IMAGE}"
-
-            OUTPUT=$(docker buildx imagetools create \
-              -t "$img:${BASE_TAGS}-${BASE_IMAGE}" \
-              $(printf "$img:${BASE_TAGS}-${BASE_IMAGE}@sha256:%s " *) 2>&1)
-            STATUS=$?
-
-            if [ $STATUS -ne 0 ]; then
-              echo "Manifest creation failed for $img"
-              echo "$OUTPUT"
-            exit $STATUS
-            fi
-
-            echo "Manifest created for $img"
-            echo "$OUTPUT"
+            for tag in "${TAGS[@]}"; do
+              TAG_ARGS+=("-t" "${img}:${tag}")
+            done
           done
-          set -e
+
+          echo "Creating manifest"
+          if ! OUTPUT=$(docker buildx imagetools create \
+                          "${TAG_ARGS[@]}" \
+                          $(printf "${IMAGES[0]}@sha256:%s " *) 2>&1); then
+            echo "Manifest creation failed"
+            echo "${OUTPUT}"
+            exit 1
+          fi
+
+          echo "Manifest created successfully"
+          echo "${OUTPUT}"
 
           # Extract digest SHA for subsequent steps
-          GET_DIGEST_SHA="$(echo "$OUTPUT" | grep -oE 'sha256:[a-f0-9]{64}' | tail -1)"
+          GET_DIGEST_SHA="$(echo "${OUTPUT}" | grep -oE 'sha256:[a-f0-9]{64}' | tail -1)"
           echo "DIGEST_SHA=${GET_DIGEST_SHA}" | tee -a "${GITHUB_ENV}"
 
       # Attest container images
       - name: Attest - docker.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && env.DIGEST_SHA != ''}}
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
           subject-name: ${{ vars.DOCKERHUB_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -402,7 +366,7 @@ jobs:
 
       - name: Attest - ghcr.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_GHCR_LOGIN == 'true' && env.DIGEST_SHA != ''}}
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
           subject-name: ${{ vars.GHCR_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -410,7 +374,7 @@ jobs:
 
       - name: Attest - quay.io - ${{ matrix.base_image }}
         if: ${{ env.HAVE_QUAY_LOGIN == 'true' && env.DIGEST_SHA != ''}}
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
           subject-name: ${{ vars.QUAY_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
