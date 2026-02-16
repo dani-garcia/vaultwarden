@@ -260,11 +260,14 @@ jobs:
 
       - name: Start MinIO
         run: |
+          docker pull minio/minio:latest
+          docker pull minio/mc:latest
+
           docker run -d --name minio \
             -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
-            quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z \
+            minio/minio:latest \
             server /data --console-address ":9001"
 
           for i in {1..30}; do
@@ -274,7 +277,13 @@ jobs:
             sleep 1
           done
 
-          docker run --rm --network host quay.io/minio/mc:RELEASE.2025-06-13T11-33-47Z \
+          if ! curl -fsS "http://127.0.0.1:9000/minio/health/live" >/dev/null; then
+            docker ps -a
+            docker logs minio || true
+            exit 1
+          fi
+
+          docker run --rm --network host minio/mc:latest \
             sh -c "mc alias set local http://127.0.0.1:9000 minioadmin minioadmin && mc mb --ignore-existing local/vaultwarden-test"
 
       - name: Run MinIO integration test
