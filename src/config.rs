@@ -1695,10 +1695,13 @@ mod s3_tests {
 
     #[test]
     fn test_parse_s3_config_rejects_unknown_parameter() {
-        let error =
-            parse_s3_config_for_path("s3://vw/path?unknown_param=value").expect_err("unknown params should fail");
-        let error_string = error.to_string();
-        assert!(error_string.contains("Unknown S3 OpenDAL parameter"));
+        let error = parse_s3_config_for_path("s3://vw/path?region=auto&unknown_param=value")
+            .expect_err("unknown params should fail");
+        let error_message = error.message().to_string();
+        assert!(
+            error_message.contains("Unknown S3 OpenDAL parameter") && error_message.contains("unknown_param"),
+            "error message: {error_message}"
+        );
     }
 
     #[test]
@@ -1712,9 +1715,11 @@ mod s3_tests {
         }
         let access_key = std::env::var("VW_S3_MINIO_ACCESS_KEY").unwrap_or_else(|_| "minioadmin".to_string());
         let secret_key = std::env::var("VW_S3_MINIO_SECRET_KEY").unwrap_or_else(|_| "minioadmin".to_string());
+        let region = std::env::var("VW_S3_MINIO_REGION").unwrap_or_else(|_| "auto".to_string());
 
         let mut query = url::form_urlencoded::Serializer::new(String::new());
         query.append_pair("endpoint", &endpoint);
+        query.append_pair("region", &region);
         query.append_pair("enable_virtual_host_style", "false");
         query.append_pair("default_storage_class", "STANDARD");
         query.append_pair("access_key_id", &access_key);

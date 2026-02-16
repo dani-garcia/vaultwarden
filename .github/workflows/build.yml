@@ -291,6 +291,7 @@ jobs:
           VW_S3_MINIO_ENDPOINT: "http://127.0.0.1:9000"
           VW_S3_MINIO_BUCKET: "vaultwarden-test"
           VW_S3_MINIO_ROOT: "/vaultwarden-integration"
+          VW_S3_MINIO_REGION: "auto"
           VW_S3_MINIO_ACCESS_KEY: "minioadmin"
           VW_S3_MINIO_SECRET_KEY: "minioadmin"
         run: |
