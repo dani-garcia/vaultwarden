@@ -140,6 +140,38 @@ env:
 
 Use IAM/service account/environment credentials when possible. URI credentials are supported as a last resort.
 
+### Browser Attachment Downloads (CSP + CORS)
+
+For S3-compatible backends, attachment downloads from the Web Vault use presigned URLs. The browser downloads directly from the object storage endpoint.
+
+Configure both sides:
+
+- Vaultwarden CSP: allow the object-storage origin in `ALLOWED_CONNECT_SRC`.
+- Object storage CORS policy: allow your Vaultwarden origin (`DOMAIN`) for `GET`/`HEAD`.
+
+R2 example:
+
+```text
+ALLOWED_CONNECT_SRC="https://<accountid>.r2.cloudflarestorage.com"
+```
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://vault.example.com"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag", "Content-Length", "Content-Type", "Content-Disposition"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+Troubleshooting:
+
+- `violates the document's Content Security Policy`: set `ALLOWED_CONNECT_SRC` correctly.
+- `No 'Access-Control-Allow-Origin' header`: fix CORS policy on the bucket/provider.
+
 <br>
 
 ## Get in touch
