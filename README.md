@@ -123,6 +123,7 @@ s3://bucket/prefix?endpoint=https%3A%2F%2Fs3.example.internal&enable_virtual_hos
 - MinIO/Ceph usually require `endpoint` and `enable_virtual_host_style=false`.
 - Cloudflare R2 usually requires `endpoint` and often `region=auto`.
 - To omit `x-amz-storage-class`, set `default_storage_class=` (empty value).
+- Container images must include both a DB backend feature and `s3` (for example `sqlite,s3`, `postgresql,s3`, or `mysql,s3`).
 
 Kubernetes example:
 
