@@ -1,0 +1,347 @@
+# -- Number of replicas. Keep at 1 when using SQLite.
+replicaCount: 1
+
+image:
+  # -- Container image repository
+  repository: vaultwarden/server
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag (default: appVersion from Chart.yaml)
+  tag: ""
+
+# -- Image pull secrets
+imagePullSecrets: []
+# -- Override the release name
+nameOverride: ""
+# -- Override the full release name
+fullnameOverride: ""
+
+# =============================================================================
+# Vaultwarden configuration
+# =============================================================================
+vaultwarden:
+  # -- (required) The domain URL for your vaultwarden instance (e.g. https://vault.example.com)
+  domain: ""
+  # -- Allow new user signups
+  signupsAllowed: false
+  # -- Rocket server port. Set to non-privileged port for non-root operation.
+  rocketPort: 8080
+  # -- Enable websocket notifications
+  websocket:
+    enabled: true
+
+  # -- Logging configuration
+  logging:
+    # -- Log level (trace, debug, info, warn, error, off)
+    level: "info"
+
+  # -- Icon service configuration
+  icons:
+    # -- Icon service to use (internal, bitwarden, duckduckgo, google)
+    service: "internal"
+
+  # -- Admin panel configuration
+  admin:
+    # -- Enable the admin panel (/admin)
+    enabled: false
+    # -- Admin token (argon2 hash recommended). Ignored if existingSecret is set.
+    token: ""
+    # -- Use an existing secret for the admin token
+    existingSecret: ""
+    # -- Key within the existing secret that holds the admin token
+    existingSecretKey: "admin-token"
+
+  # -- SMTP email configuration
+  smtp:
+    # -- SMTP server hostname
+    host: ""
+    # -- Email address used as the sender
+    from: ""
+    # -- SMTP server port
+    port: 587
+    # -- SMTP security mode (starttls, force_tls, off)
+    security: "starttls"
+    # -- SMTP username. Ignored if existingSecret is set.
+    username: ""
+    # -- SMTP password. Ignored if existingSecret is set.
+    password: ""
+    # -- Use an existing secret for SMTP credentials
+    existingSecret: ""
+    # -- Key in existing secret for SMTP username
+    existingSecretUsernameKey: "smtp-username"
+    # -- Key in existing secret for SMTP password
+    existingSecretPasswordKey: "smtp-password"
+
+  # -- SSO/OpenID Connect configuration
+  sso:
+    # -- Enable SSO authentication
+    enabled: false
+    # -- Require SSO for all logins (disable password login)
+    only: false
+    # -- OpenID Connect authority URL
+    authority: ""
+    # -- OIDC client ID. Ignored if existingSecret is set.
+    clientId: ""
+    # -- OIDC client secret. Ignored if existingSecret is set.
+    clientSecret: ""
+    # -- Use an existing secret for SSO credentials
+    existingSecret: ""
+    # -- Key in existing secret for client ID
+    existingSecretClientIdKey: "sso-client-id"
+    # -- Key in existing secret for client secret
+    existingSecretClientSecretKey: "sso-client-secret"
+
+  # -- Push notifications configuration (requires https://bitwarden.com/host keys)
+  push:
+    # -- Enable push notifications
+    enabled: false
+    # -- Installation ID from https://bitwarden.com/host. Ignored if existingSecret is set.
+    installationId: ""
+    # -- Installation key from https://bitwarden.com/host. Ignored if existingSecret is set.
+    installationKey: ""
+    # -- Use an existing secret for push notification credentials
+    existingSecret: ""
+    # -- Key in existing secret for installation ID
+    existingSecretInstallationIdKey: "push-installation-id"
+    # -- Key in existing secret for installation key
+    existingSecretInstallationKeyKey: "push-installation-key"
+    # -- Relay URI (default uses Bitwarden US server)
+    relayUri: ""
+    # -- Identity URI (default uses Bitwarden US server)
+    identityUri: ""
+
+  # -- Yubico OTP configuration
+  yubico:
+    # -- Enable Yubico OTP support
+    enabled: false
+    # -- Yubico client ID. Ignored if existingSecret is set.
+    clientId: ""
+    # -- Yubico secret key. Ignored if existingSecret is set.
+    secretKey: ""
+    # -- Use an existing secret for Yubico credentials
+    existingSecret: ""
+    # -- Key in existing secret for client ID
+    existingSecretClientIdKey: "yubico-client-id"
+    # -- Key in existing secret for secret key
+    existingSecretSecretKeyKey: "yubico-secret-key"
+
+# =============================================================================
+# Database configuration
+# =============================================================================
+database:
+  # -- Database backend: sqlite, postgresql, or mysql
+  type: "sqlite"
+
+  # --- Option 1: Full connection URL ---
+  # -- Full database connection URL.
+  # Examples:
+  #   postgresql://user:password@host:5432/vaultwarden
+  #   mysql://user:password@host:3306/vaultwarden
+  url: ""
+  # -- Use an existing secret containing the full database URL
+  existingSecret: ""
+  # -- Key within the existing secret for the database URL
+  existingSecretKey: "database-url"
+
+  # --- Option 2: Compose from parts (recommended for Postgres operators) ---
+  # When `host` is set, the chart composes DATABASE_URL from individual fields.
+  # Username and password are read from a Kubernetes secret via secretKeyRef.
+  # This is ideal for Zalando Postgres Operator, CloudNativePG, etc.
+  # -- Database hostname (e.g. my-cluster.postgres-namespace)
+  host: ""
+  # -- Database port
+  port: 5432
+  # -- Database name
+  dbName: "vaultwarden"
+  # -- Secret containing database user credentials (must have username and password keys)
+  credentialsSecret: ""
+  # -- Key in credentialsSecret for the username
+  credentialsSecretUsernameKey: "username"
+  # -- Key in credentialsSecret for the password
+  credentialsSecretPasswordKey: "password"
+
+  # --- Common settings ---
+  # -- Maximum number of database connections
+  maxConnections: 10
+  # -- Enable WAL mode for SQLite (improves performance)
+  wal: true
+
+# =============================================================================
+# Kubernetes resources
+# =============================================================================
+serviceAccount:
+  # -- Create a service account
+  create: true
+  # -- Annotations for the service account
+  annotations: {}
+  # -- Override the service account name
+  name: ""
+  # -- Automount the service account token
+  automountServiceAccountToken: false
+
+# -- Pod-level security context
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container-level security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: true
+
+service:
+  # -- Service type (ClusterIP, NodePort, LoadBalancer)
+  type: ClusterIP
+  # -- Service port
+  port: 8080
+  # -- Node port (only used when type is NodePort)
+  nodePort: ""
+  # -- Load balancer IP (only used when type is LoadBalancer)
+  loadBalancerIP: ""
+  # -- External traffic policy (Local or Cluster, only used when type is NodePort or LoadBalancer)
+  externalTrafficPolicy: ""
+  # -- Additional service annotations (e.g. for external-dns, service meshes)
+  annotations: {}
+  # -- Additional service labels
+  labels: {}
+
+ingress:
+  # -- Enable ingress
+  enabled: false
+  # -- Ingress class name (e.g. nginx, traefik, haproxy)
+  className: ""
+  # -- Ingress annotations (e.g. cert-manager, auth, rate-limiting)
+  annotations: {}
+  #   cert-manager.io/cluster-issuer: letsencrypt-production
+  #   cert-manager.io/private-key-algorithm: ECDSA
+  #   cert-manager.io/private-key-size: "384"
+  #   cert-manager.io/private-key-rotation-policy: Always
+  #   nginx.ingress.kubernetes.io/proxy-body-size: 128m
+  # -- Additional ingress labels
+  labels: {}
+  # -- Ingress hosts
+  hosts:
+    - host: vault.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- Ingress TLS configuration
+  tls: []
+  #  - secretName: vault-tls
+  #    hosts:
+  #      - vault.example.com
+
+persistence:
+  # -- Enable persistent storage for /data
+  enabled: true
+  # -- Storage class name.
+  # Set to "-" to disable dynamic provisioning.
+  # Leave unset or null for the cluster default storage class.
+  # @default -- `nil` (cluster default)
+  storageClassName:
+  # -- Access modes
+  accessModes:
+    - ReadWriteOnce
+  # -- Storage size
+  size: 5Gi
+  # -- Use an existing PVC instead of creating one
+  existingClaim: ""
+  # -- Additional PVC annotations
+  annotations: {}
+  # -- Additional PVC labels
+  labels: {}
+
+# -- Resource requests and limits
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+# -- Liveness probe configuration
+livenessProbe:
+  httpGet:
+    path: /alive
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# -- Readiness probe configuration
+readinessProbe:
+  httpGet:
+    path: /alive
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+
+# -- Startup probe configuration (useful for slow-starting instances with large databases)
+startupProbe: {}
+#  httpGet:
+#    path: /alive
+#    port: http
+#  failureThreshold: 30
+#  periodSeconds: 5
+
+# -- Deployment revision history limit
+revisionHistoryLimit: 3
+
+# -- Pod annotations
+podAnnotations: {}
+
+# -- Pod labels
+podLabels: {}
+
+# -- Priority class name for pod scheduling
+priorityClassName: ""
+
+# -- Termination grace period in seconds
+terminationGracePeriodSeconds: 30
+
+# -- Node selector
+nodeSelector: {}
+
+# -- Tolerations
+tolerations: []
+
+# -- Affinity rules
+affinity: {}
+
+# -- Topology spread constraints for pod scheduling
+topologySpreadConstraints: []
+#  - maxSkew: 1
+#    topologyKey: kubernetes.io/hostname
+#    whenUnsatisfiable: DoNotSchedule
+#    labelSelector:
+#      matchLabels: ...
+
+# -- Init containers
+initContainers: []
+
+# -- Additional environment variables
+extraEnv: []
+#  - name: EXAMPLE_VAR
+#    value: "example"
+#  - name: SECRET_VAR
+#    valueFrom:
+#      secretKeyRef:
+#        name: my-secret
+#        key: my-key
+
+# -- Additional volume mounts for the vaultwarden container
+extraVolumeMounts: []
+#  - name: custom-certs
+#    mountPath: /etc/ssl/custom
+#    readOnly: true
+
+# -- Additional volumes
+extraVolumes: []
+#  - name: custom-certs
+#    secret:
+#      secretName: custom-ca-certs
