@@ -324,15 +324,35 @@ topologySpreadConstraints: []
 # -- Init containers
 initContainers: []
 
-# -- Additional environment variables
+# -- Additional environment variables (plain key-value).
+# Use this to set any vaultwarden env var not covered by the structured values above.
+# These are added to the container env directly.
+env: {}
+#  SIGNUPS_ALLOWED: "false"
+#  INVITATION_ORG_NAME: "My Org"
+#  SENDS_ALLOWED: "true"
+#  EMERGENCY_ACCESS_ALLOWED: "true"
+
+# -- Environment variables sourced from Kubernetes secrets (secretKeyRef shorthand).
+# Each key is the env var name, value specifies the secret and key to read from.
+secretEnv: {}
+#  ADMIN_TOKEN:
+#    secretName: my-admin-secret
+#    secretKey: admin-token
+#  DATABASE_URL:
+#    secretName: my-db-secret
+#    secretKey: database-url
+#  SMTP_PASSWORD:
+#    secretName: my-smtp-secret
+#    secretKey: password
+
+# -- Additional environment variables (raw Kubernetes env spec).
+# Use this for complex env definitions like fieldRef, resourceFieldRef, etc.
 extraEnv: []
-#  - name: EXAMPLE_VAR
-#    value: "example"
-#  - name: SECRET_VAR
+#  - name: POD_IP
 #    valueFrom:
-#      secretKeyRef:
-#        name: my-secret
-#        key: my-key
+#      fieldRef:
+#        fieldPath: status.podIP
 
 # -- Additional volume mounts for the vaultwarden container
 extraVolumeMounts: []

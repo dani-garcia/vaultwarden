@@ -326,11 +326,47 @@ The chart runs vaultwarden as a non-root user (UID 1000) by default with a read-
 | `terminationGracePeriodSeconds` | Termination grace period | `30` |
 | `startupProbe` | Startup probe config (for slow starts) | `{}` |
 | `initContainers` | Init containers | `[]` |
-| `extraEnv` | Additional environment variables | `[]` |
 | `extraVolumes` | Additional volumes | `[]` |
 | `extraVolumeMounts` | Additional volume mounts | `[]` |
 | `podAnnotations` | Pod annotations | `{}` |
 | `podLabels` | Additional pod labels | `{}` |
+
+### Environment Variables
+
+The chart provides three layers for setting environment variables, from simplest to most flexible:
+
+**`env`** — plain key-value map for any vaultwarden env var:
+
+```yaml
+env:
+  SIGNUPS_ALLOWED: "true"
+  INVITATION_ORG_NAME: "My Org"
+  SENDS_ALLOWED: "true"
+```
+
+**`secretEnv`** — shorthand for sourcing env vars from Kubernetes secrets:
+
+```yaml
+secretEnv:
+  ADMIN_TOKEN:
+    secretName: my-admin-secret
+    secretKey: admin-token
+  DATABASE_URL:
+    secretName: my-db-secret
+    secretKey: database-url
+```
+
+**`extraEnv`** — raw Kubernetes env spec for complex cases (fieldRef, resourceFieldRef, etc.):
+
+```yaml
+extraEnv:
+  - name: POD_IP
+    valueFrom:
+      fieldRef:
+        fieldPath: status.podIP
+```
+
+These layers are additive and render in order: structured values (from `vaultwarden.*`), then `env`, then `secretEnv`, then `extraEnv`. Later values override earlier ones for the same env var name.
 
 ## Using Existing Secrets
 

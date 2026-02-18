@@ -154,7 +154,20 @@ spec:
                   name: {{ include "vaultwarden.yubicoSecretName" . }}
                   key: {{ .Values.vaultwarden.yubico.existingSecretSecretKeyKey | default "yubico-secret-key" }}
             {{- end }}
-            {{- /* Extra env vars */}}
+            {{- /* Plain env vars from env map */}}
+            {{- range $name, $value := .Values.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- /* Secret env vars from secretEnv map */}}
+            {{- range $name, $ref := .Values.secretEnv }}
+            - name: {{ $name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $ref.secretName }}
+                  key: {{ $ref.secretKey }}
+            {{- end }}
+            {{- /* Raw extra env vars */}}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
