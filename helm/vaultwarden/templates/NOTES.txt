@@ -1,0 +1,52 @@
+Vaultwarden has been deployed successfully!
+
+{{- if .Values.ingress.enabled }}
+
+Your vaultwarden instance is available at:
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+
+To access vaultwarden, run:
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "vaultwarden.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+Then open http://localhost:{{ .Values.service.port }} in your browser.
+{{- end }}
+
+{{- if not .Values.vaultwarden.domain }}
+
+WARNING: vaultwarden.domain is not set. You must set this to the URL
+where vaultwarden will be accessible (e.g. https://vault.example.com).
+{{- end }}
+
+{{- if .Values.vaultwarden.admin.enabled }}
+
+Admin panel is enabled at /admin
+{{- if not .Values.vaultwarden.admin.existingSecret }}
+  Make sure to use an existingSecret for the admin token in production.
+{{- end }}
+{{- end }}
+
+{{- if eq .Values.database.type "sqlite" }}
+
+NOTE: You are using SQLite (default). For production deployments with
+multiple users, consider switching to PostgreSQL:
+  database.type=postgresql
+  database.host=<your-postgres-host>
+  database.credentialsSecret=<your-credentials-secret>
+{{- end }}
+
+{{- if and (gt (int .Values.replicaCount) 1) (eq .Values.database.type "sqlite") }}
+
+WARNING: replicaCount > 1 is not supported with SQLite. Use PostgreSQL
+for multi-replica deployments.
+{{- end }}
+
+{{- if and (gt (int .Values.replicaCount) 1) .Values.persistence.enabled }}
+
+NOTE: Running multiple replicas with persistence requires a storage class
+that supports ReadWriteMany (RWX) access mode, such as NFS, CephFS, or
+a cloud-native RWX provider. Ensure persistence.accessModes includes
+ReadWriteMany.
+{{- end }}
