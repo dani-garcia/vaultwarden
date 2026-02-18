@@ -793,6 +793,9 @@ make_config! {
         /// Prefer IPv6 (AAAA) resolving |> This settings configures the DNS resolver to resolve IPv6 first, and if not available try IPv4
         /// This could be useful in IPv6 only environments.
         dns_prefer_ipv6: bool, true, def, false;
+
+        /// Accept passkeys bound to subdomains |> This setting controls if passkeys bound to sub-domains of <Domain URL> are accepted for authentication.
+        webauthn_allow_subdomains: bool, false, def, false;
     },
 
     /// OpenID Connect SSO settings
