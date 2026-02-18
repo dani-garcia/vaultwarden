@@ -1175,9 +1175,14 @@ impl AuthTokens {
     }
 
     // Create refresh_token and access_token with default validity
-    pub fn new(device: &Device, user: &User, sub: AuthMethod, client_id: Option<String>, existing_refresh_claims: Option<&RefreshJwtClaims>) -> Self {
+    pub fn new(
+        device: &Device,
+        user: &User,
+        sub: AuthMethod,
+        client_id: Option<String>,
+        existing_refresh_claims: Option<&RefreshJwtClaims>,
+    ) -> Self {
         let time_now = Utc::now();
-
         let access_claims = LoginJwtClaims::default(device, user, &sub, client_id);
 
         let validity = if device.is_mobile() {
@@ -1258,7 +1263,9 @@ pub async fn refresh_tokens(
         }
         AuthMethod::Sso => err!("SSO is now disabled, Login again using email and master password"),
         AuthMethod::Password if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO is now required, Login again"),
-        AuthMethod::Password => AuthTokens::new(&device, &user, refresh_claims.sub.clone(), client_id, Some(&refresh_claims)),
+        AuthMethod::Password => {
+            AuthTokens::new(&device, &user, refresh_claims.sub.clone(), client_id, Some(&refresh_claims))
+        }
         _ => err!("Invalid auth method, cannot refresh token"),
     };
 
