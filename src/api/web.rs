@@ -60,6 +60,7 @@ fn vaultwarden_css() -> Cached<Css<String>> {
         "mail_2fa_enabled": CONFIG._enable_email_2fa(),
         "mail_enabled": CONFIG.mail_enabled(),
         "sends_allowed": CONFIG.sends_allowed(),
+        "remember_2fa_disabled": CONFIG.disable_2fa_remember(),
         "password_hints_allowed": CONFIG.password_hints_allowed(),
         "signup_disabled": CONFIG.is_signup_disabled(),
         "sso_enabled": CONFIG.sso_enabled(),
