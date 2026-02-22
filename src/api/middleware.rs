@@ -73,27 +73,6 @@ fn normalize_path(path: &str) -> String {
     }
 }
 
-        // Common patterns in Vaultwarden routes
-        let normalized_segment = if is_uuid(segment) {
-            "{id}"
-        } else if segment.chars().all(|c| c.is_ascii_hexdigit()) && segment.len() > 10 {
-            "{hash}"
-        } else if segment.chars().all(|c| c.is_ascii_digit()) {
-            "{number}"
-        } else {
-            segment
-        };
-
-        normalized.push(normalized_segment);
-    }
-
-    if normalized.is_empty() {
-        "/".to_string()
-    } else {
-        format!("/{}", normalized.join("/"))
-    }
-}
-
 /// Check if a string looks like a UUID
 fn is_uuid(s: &str) -> bool {
     s.len() == 36
