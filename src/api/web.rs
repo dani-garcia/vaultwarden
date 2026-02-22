@@ -179,9 +179,10 @@ async fn attachments(cipher_id: CipherId, file_id: AttachmentId, token: String) 
 // We use DbConn here to let the alive healthcheck also verify the database connection.
 use crate::db::DbConn;
 #[get("/alive")]
+#[allow(clippy::let_unit_value, clippy::unused_async)]
 async fn alive(mut conn: DbConn) -> Json<String> {
     // Update basic health metrics if metrics are enabled
-    let _ = crate::api::metrics::update_health_metrics(&mut conn).await;
+    crate::api::metrics::update_health_metrics(&mut conn);
     now()
 }
 

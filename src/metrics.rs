@@ -4,14 +4,14 @@
 use once_cell::sync::Lazy;
 #[cfg(feature = "enable_metrics")]
 use prometheus::{
-    register_gauge_vec, register_histogram_vec, register_int_counter_vec, register_int_gauge_vec,
-    Encoder, GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec, TextEncoder,
+    register_gauge_vec, register_histogram_vec, register_int_counter_vec, register_int_gauge_vec, Encoder, GaugeVec,
+    HistogramVec, IntCounterVec, IntGaugeVec, TextEncoder,
 };
 
 use crate::{db::DbConn, error::Error, CONFIG};
-use std::time::SystemTime;
 #[cfg(feature = "enable_metrics")]
 use std::sync::{Arc, RwLock};
+use std::time::SystemTime;
 #[cfg(feature = "enable_metrics")]
 use std::time::UNIX_EPOCH;
 
@@ -137,8 +137,6 @@ pub fn observe_db_query_duration(operation: &str, duration_seconds: f64) {
 pub fn increment_auth_attempts(method: &str, status: &str) {
     AUTH_ATTEMPTS_TOTAL.with_label_values(&[method, status]).inc();
 }
-
-
 
 /// Update active user sessions
 #[cfg(feature = "enable_metrics")]

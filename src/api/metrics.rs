@@ -103,7 +103,7 @@ async fn get_metrics(_token: MetricsToken, mut conn: DbConn) -> Result<RawText<S
 
 /// Health check endpoint that also updates some basic metrics
 #[cfg(feature = "enable_metrics")]
-pub async fn update_health_metrics(_conn: &mut DbConn) {
+pub fn update_health_metrics(_conn: &mut DbConn) {
     // Update basic system metrics
     use std::time::SystemTime;
     static START_TIME: std::sync::OnceLock<SystemTime> = std::sync::OnceLock::new();
@@ -117,4 +117,4 @@ pub async fn update_health_metrics(_conn: &mut DbConn) {
 }
 
 #[cfg(not(feature = "enable_metrics"))]
-pub async fn update_health_metrics(_conn: &mut DbConn) {}
+pub fn update_health_metrics(_conn: &mut DbConn) {}
