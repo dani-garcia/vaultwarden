@@ -9,10 +9,11 @@ use prometheus::{
 };
 
 use crate::{db::DbConn, error::Error, CONFIG};
+use std::time::SystemTime;
 #[cfg(feature = "enable_metrics")]
 use std::sync::{Arc, RwLock};
 #[cfg(feature = "enable_metrics")]
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 // HTTP request metrics
 #[cfg(feature = "enable_metrics")]
@@ -49,8 +50,6 @@ static DB_CONNECTIONS_IDLE: Lazy<IntGaugeVec> = Lazy::new(|| {
         .unwrap()
 });
 
-<<<<<<< HEAD
-=======
 #[cfg(feature = "enable_metrics")]
 static DB_QUERY_DURATION_SECONDS: Lazy<HistogramVec> = Lazy::new(|| {
     register_histogram_vec!(
@@ -61,8 +60,6 @@ static DB_QUERY_DURATION_SECONDS: Lazy<HistogramVec> = Lazy::new(|| {
     )
     .unwrap()
 });
-
->>>>>>> dfe102f5 (feat: add comprehensive Prometheus metrics support)
 // Authentication metrics
 #[cfg(feature = "enable_metrics")]
 static AUTH_ATTEMPTS_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
@@ -74,15 +71,11 @@ static AUTH_ATTEMPTS_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
     .unwrap()
 });
 
-<<<<<<< HEAD
-=======
 #[cfg(feature = "enable_metrics")]
 static USER_SESSIONS_ACTIVE: Lazy<IntGaugeVec> = Lazy::new(|| {
     register_int_gauge_vec!("vaultwarden_user_sessions_active", "Number of active user sessions", &["user_type"])
         .unwrap()
 });
-
->>>>>>> dfe102f5 (feat: add comprehensive Prometheus metrics support)
 // Business metrics
 #[cfg(feature = "enable_metrics")]
 static USERS_TOTAL: Lazy<IntGaugeVec> =
@@ -133,11 +126,6 @@ pub fn update_db_connections(database: &str, active: i64, idle: i64) {
     DB_CONNECTIONS_IDLE.with_label_values(&[database]).set(idle);
 }
 
-<<<<<<< HEAD
-/// Increment authentication attempts (success/failure tracking)
-/// Tracks authentication success/failure by method (password, client_credentials, SSO, etc.)
-/// Called from src/api/identity.rs login() after each authentication attempt
-=======
 /// Observe database query duration
 #[cfg(feature = "enable_metrics")]
 pub fn observe_db_query_duration(operation: &str, duration_seconds: f64) {
@@ -145,7 +133,6 @@ pub fn observe_db_query_duration(operation: &str, duration_seconds: f64) {
 }
 
 /// Increment authentication attempts
->>>>>>> dfe102f5 (feat: add comprehensive Prometheus metrics support)
 #[cfg(feature = "enable_metrics")]
 pub fn increment_auth_attempts(method: &str, status: &str) {
     AUTH_ATTEMPTS_TOTAL.with_label_values(&[method, status]).inc();

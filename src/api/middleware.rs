@@ -52,7 +52,27 @@ fn normalize_path(path: &str) -> String {
             continue;
         }
 
-<<<<<<< HEAD
+        // Common patterns in Vaultwarden routes
+        let normalized_segment = if is_uuid(segment) {
+            "{id}"
+        } else if segment.chars().all(|c| c.is_ascii_hexdigit()) && segment.len() > 10 {
+            "{hash}"
+        } else if segment.chars().all(|c| c.is_ascii_digit()) {
+            "{number}"
+        } else {
+            segment
+        };
+
+        normalized.push(normalized_segment);
+    }
+
+    if normalized.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", normalized.join("/"))
+    }
+}
+
         // Common patterns in Vaultwarden routes
         let normalized_segment = if is_uuid(segment) {
             "{id}"
@@ -82,14 +102,6 @@ fn is_uuid(s: &str) -> bool {
             _ => c.is_ascii_hexdigit(),
         })
 }
-/// Check if a string looks like a UUID
-fn is_uuid(s: &str) -> bool {
-    s.len() == 36
-        && s.chars().enumerate().all(|(i, c)| match i {
-            8 | 13 | 18 | 23 => c == '-',
-            _ => c.is_ascii_hexdigit(),
-        })
-}
 
 #[cfg(test)]
 mod tests {
@@ -110,6 +122,5 @@ mod tests {
         assert!(!is_uuid("not-a-uuid"));
         assert!(!is_uuid("12345678123456781234567812345678")); // No dashes
         assert!(!is_uuid("123")); // Too short
-    }
     }
 }
