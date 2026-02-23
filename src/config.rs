@@ -712,6 +712,9 @@ make_config! {
 
         /// Customize the enabled feature flags on the clients |> This is a comma separated list of feature flags to enable.
         experimental_client_feature_flags: String, false, def, String::new();
+        /// Skip validation of experimental client feature flags |> If this is set to true, the experimental client feature flags will not be validated. This is useful for testing.
+        /// Use this at your own risk!
+        experimental_client_feature_flags_skip_validation: bool, false, def, false;
 
         /// Require new device emails |> When a user logs in an email is required to be sent.
         /// If sending the email fails the login attempt will fail.
@@ -1047,12 +1050,15 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         "simple-login-self-host-alias",
         "mutual-tls",
     ];
-    let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
-    let invalid_flags: Vec<_> = configured_flags.keys().filter(|flag| !KNOWN_FLAGS.contains(&flag.as_str())).collect();
-    if !invalid_flags.is_empty() {
-        err!(format!("Unrecognized experimental client feature flags: {invalid_flags:?}.\n\n\
-                     Please ensure all feature flags are spelled correctly and that they are supported in this version.\n\
-                     Supported flags: {KNOWN_FLAGS:?}"));
+    if !cfg.experimental_client_feature_flags_skip_validation {
+        let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
+        let invalid_flags: Vec<_> =
+            configured_flags.keys().filter(|flag| !KNOWN_FLAGS.contains(&flag.as_str())).collect();
+        if !invalid_flags.is_empty() {
+            err!(format!("Unrecognized experimental client feature flags: {invalid_flags:?}.\n\n\
+                         Please ensure all feature flags are spelled correctly and that they are supported in this version.\n\
+                         Supported flags: {KNOWN_FLAGS:?}"));
+        }
     }
 
     const MAX_FILESIZE_KB: i64 = i64::MAX >> 10;
