@@ -1046,6 +1046,8 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         "anon-addy-self-host-alias",
         "simple-login-self-host-alias",
         "mutual-tls",
+        "cxp-import-mobile",
+        "cxp-export-mobile",
     ];
     let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
     let invalid_flags: Vec<_> = configured_flags.keys().filter(|flag| !KNOWN_FLAGS.contains(&flag.as_str())).collect();
