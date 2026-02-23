@@ -67,6 +67,7 @@ pub fn routes() -> Vec<Route> {
         get_master_password_policy,
         get_policy,
         put_policy,
+        put_policy_vnext,
         get_plans,
         post_org_keys,
         get_organization_keys,
@@ -2090,6 +2091,28 @@ async fn put_policy(
     .await;
 
     Ok(Json(policy.to_json()))
+}
+
+#[derive(Deserialize)]
+struct PolicyDataVnext {
+    policy: PolicyData,
+    // Ignore metadata for now as we do not yet support this
+    // "metadata": {
+    //     "defaultUserCollectionName": "2.xx|xx==|xx="
+    // }
+}
+
+#[put("/organizations/<org_id>/policies/<pol_type>/vnext", data = "<data>")]
+async fn put_policy_vnext(
+    org_id: OrganizationId,
+    pol_type: i32,
+    data: Json<PolicyDataVnext>,
+    headers: AdminHeaders,
+    conn: DbConn,
+) -> JsonResult {
+    let data: PolicyDataVnext = data.into_inner();
+    let policy: PolicyData = data.policy;
+    put_policy(org_id, pol_type, Json(policy), headers, conn).await
 }
 
 #[get("/plans")]
