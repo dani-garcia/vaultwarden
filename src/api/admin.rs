@@ -38,7 +38,10 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
-    if !CONFIG.disable_admin_token() && !CONFIG.is_admin_token_set() {
+    if !(CONFIG.disable_admin_token()
+        || CONFIG.is_admin_token_set()
+        || (CONFIG.sso_enabled() && CONFIG.sso_roles_enabled()))
+    {
         return routes![admin_disabled];
     }
 
@@ -166,6 +169,7 @@ fn render_admin_login(msg: Option<&str>, redirect: Option<&str>) -> ApiResult<Ht
     let json = json!({
         "page_content": "admin/login",
         "error": msg,
+        "sso_only": CONFIG.sso_enabled() && CONFIG.sso_roles_enabled(),
         "redirect": redirect,
         "urlpath": CONFIG.domain_path()
     });
@@ -179,6 +183,24 @@ fn render_admin_login(msg: Option<&str>, redirect: Option<&str>) -> ApiResult<Ht
 struct LoginForm {
     token: String,
     redirect: Option<String>,
+}
+
+pub fn add_admin_cookie(cookies: &CookieJar<'_>, is_secure: bool) {
+    let claims = generate_admin_claims();
+    let jwt = encode_jwt(&claims);
+
+    let cookie = Cookie::build((COOKIE_NAME, jwt))
+        .path(admin_path())
+        .max_age(time::Duration::minutes(CONFIG.admin_session_lifetime()))
+        .same_site(SameSite::Strict)
+        .http_only(true)
+        .secure(is_secure);
+
+    cookies.add(cookie);
+}
+
+pub fn remove_admin_cookie(cookies: &CookieJar<'_>) {
+    cookies.remove(Cookie::build(COOKIE_NAME).path(admin_path()));
 }
 
 #[post("/", format = "application/x-www-form-urlencoded", data = "<data>")]
@@ -207,17 +229,7 @@ fn post_admin_login(
         )))
     } else {
         // If the token received is valid, generate JWT and save it as a cookie
-        let claims = generate_admin_claims();
-        let jwt = encode_jwt(&claims);
-
-        let cookie = Cookie::build((COOKIE_NAME, jwt))
-            .path(admin_path())
-            .max_age(time::Duration::minutes(CONFIG.admin_session_lifetime()))
-            .same_site(SameSite::Strict)
-            .http_only(true)
-            .secure(secure.https);
-
-        cookies.add(cookie);
+        add_admin_cookie(cookies, secure.https);
         if let Some(redirect) = redirect {
             Ok(Redirect::to(format!("{}{redirect}", admin_path())))
         } else {
@@ -275,6 +287,7 @@ fn render_admin_page() -> ApiResult<Html<String>> {
     let settings_json = json!({
         "config": CONFIG.prepare_json(),
         "can_backup": *CAN_BACKUP,
+        "sso_only": CONFIG.sso_enabled() && CONFIG.sso_roles_enabled(),
     });
     let text = AdminTemplateData::new("admin/settings", settings_json).render()?;
     Ok(Html(text))
@@ -343,7 +356,7 @@ async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
 
 #[get("/logout")]
 fn logout(cookies: &CookieJar<'_>) -> Redirect {
-    cookies.remove(Cookie::build(COOKIE_NAME).path(admin_path()));
+    remove_admin_cookie(cookies);
     Redirect::to(admin_path())
 }
 
@@ -841,8 +854,7 @@ impl<'r> FromRequest<'r> for AdminToken {
             };
 
             if decode_admin(access_token).is_err() {
-                // Remove admin cookie
-                cookies.remove(Cookie::build(COOKIE_NAME).path(admin_path()));
+                remove_admin_cookie(cookies);
                 error!("Invalid or expired admin JWT. IP: {}.", &ip.ip);
                 return Outcome::Error((Status::Unauthorized, "Session expired"));
             }
