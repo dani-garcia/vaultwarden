@@ -227,3 +227,72 @@ jobs:
         run: |
           echo "### :tada: Checks Passed!" >> "${GITHUB_STEP_SUMMARY}"
           echo "" >> "${GITHUB_STEP_SUMMARY}"
+
+  s3-compatible-minio:
+    name: S3-Compatible Integration (MinIO)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: "Install dependencies Ubuntu"
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends curl openssl build-essential libmariadb-dev-compat libpq-dev libssl-dev pkg-config
+
+      - name: "Checkout"
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 #v6.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: "Install rust-toolchain version"
+        uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # master @ Dec 16, 2025, 6:11 PM GMT+1
+        with:
+          toolchain: stable
+
+      - name: "Show environment"
+        run: |
+          rustc -vV
+          cargo -vV
+
+      - name: Rust Caching
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          prefix-key: "v2025.09-rust"
+
+      - name: Start MinIO
+        run: |
+          docker pull minio/minio:latest
+          docker pull minio/mc:latest
+
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest \
+            server /data --console-address ":9001"
+
+          for i in {1..30}; do
+            if curl -fsS "http://127.0.0.1:9000/minio/health/live" >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          if ! curl -fsS "http://127.0.0.1:9000/minio/health/live" >/dev/null; then
+            docker ps -a
+            docker logs minio || true
+            exit 1
+          fi
+
+          docker run --rm --network host --entrypoint /bin/sh minio/mc:latest -c \
+            "mc alias set local http://127.0.0.1:9000 minioadmin minioadmin && mc mb --ignore-existing local/vaultwarden-test"
+
+      - name: Run MinIO integration test
+        env:
+          VW_S3_MINIO_ENDPOINT: "http://127.0.0.1:9000"
+          VW_S3_MINIO_BUCKET: "vaultwarden-test"
+          VW_S3_MINIO_ROOT: "/vaultwarden-integration"
+          VW_S3_MINIO_REGION: "auto"
+          VW_S3_MINIO_ACCESS_KEY: "minioadmin"
+          VW_S3_MINIO_SECRET_KEY: "minioadmin"
+        run: |
+          cargo test --profile ci --features sqlite,s3 test_s3_minio_integration_put_get_delete -- --ignored
