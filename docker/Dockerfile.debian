@@ -51,7 +51,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TERM=xterm-256color \
     CARGO_HOME="/root/.cargo" \
     USER="root"
-# Install clang to get `xx-cargo` working
+# Install clang && xx-c-essentials to get `xx-cargo` working
 # Install pkg-config to allow amd64 builds to find all libraries
 # Install git so build.rs can determine the correct version
 # Install the libc cross packages based upon the debian-arch
@@ -59,19 +59,16 @@ RUN apt-get update && \
     apt-get install -y \
         --no-install-recommends \
         clang \
-        pkg-config \
-        git \
-        "libc6-$(xx-info debian-arch)-cross" \
-        "libc6-dev-$(xx-info debian-arch)-cross" \
-        "linux-libc-dev-$(xx-info debian-arch)-cross" && \
+        git && \
     xx-apt-get install -y \
         --no-install-recommends \
-        gcc \
         libpq-dev \
         libpq5 \
         libssl-dev \
         libmariadb-dev \
-        zlib1g-dev && \
+        pkg-config \
+        zlib1g-dev \
+        xx-c-essentials && \
     # Run xx-cargo early, since it sometimes seems to break when run at a later stage
     echo "export CARGO_TARGET=$(xx-cargo --print-target-triple)" >> /env-cargo
 
@@ -82,29 +79,6 @@ RUN mkdir -pv "${CARGO_HOME}" && \
 # Creates a dummy project used to grab dependencies
 RUN USER=root cargo new --bin /app
 WORKDIR /app
-
-# Environment variables for Cargo on Debian based builds
-ARG TARGET_PKG_CONFIG_PATH
-
-RUN source /env-cargo && \
-    if xx-info is-cross ; then \
-        # We can't use xx-cargo since that uses clang, which doesn't work for our libraries.
-        # Because of this we generate the needed environment variables here which we can load in the needed steps.
-        echo "export CC_$(echo "${CARGO_TARGET}" | tr '[:upper:]' '[:lower:]' | tr - _)=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
-        echo "export CARGO_TARGET_$(echo "${CARGO_TARGET}" | tr '[:lower:]' '[:upper:]' | tr - _)_LINKER=/usr/bin/$(xx-info)-gcc" >> /env-cargo && \
-        echo "export CROSS_COMPILE=1" >> /env-cargo && \
-        echo "export PKG_CONFIG_ALLOW_CROSS=1" >> /env-cargo && \
-        # For some architectures `xx-info` returns a triple which doesn't matches the path on disk
-        # In those cases you can override this by setting the `TARGET_PKG_CONFIG_PATH` build-arg
-        if [[ -n "${TARGET_PKG_CONFIG_PATH}" ]]; then \
-            echo "export TARGET_PKG_CONFIG_PATH=${TARGET_PKG_CONFIG_PATH}" >> /env-cargo ; \
-        else \
-            echo "export PKG_CONFIG_PATH=/usr/lib/$(xx-info)/pkgconfig" >> /env-cargo ; \
-        fi && \
-        echo "# End of env-cargo" >> /env-cargo ; \
-    fi && \
-    # Output the current contents of the file
-    cat /env-cargo
 
 RUN source /env-cargo && \
     rustup target add "${CARGO_TARGET}"
@@ -122,7 +96,9 @@ ARG DB=sqlite,mysql,postgresql
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
 RUN source /env-cargo && \
-    cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
+    # Workaround for xx related build issues
+    # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
+    PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}" && \
     find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -137,7 +113,9 @@ RUN source /env-cargo && \
     # Also do this for build.rs to ensure the version is rechecked
     touch build.rs src/main.rs && \
     # Create a symlink to the binary target folder to easy copy the binary in the final stage
-    cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
+    # Workaround for xx related build issues
+    # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
+    PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}" && \
     if [[ "${CARGO_PROFILE}" == "dev" ]] ; then \
         ln -vfsr "/app/target/${CARGO_TARGET}/debug" /app/target/final ; \
     else \
