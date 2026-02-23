@@ -195,20 +195,23 @@ impl Event {
     /// Basic Queries
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
-                diesel::replace_into(event::table)
-                .values(self)
-                .execute(conn)
-                .map_res("Error saving event")
-            }
-            postgresql {
+            mysql {
                 diesel::insert_into(event::table)
-                .values(self)
-                .on_conflict(event::uuid)
-                .do_update()
-                .set(self)
-                .execute(conn)
-                .map_res("Error saving event")
+                    .values(self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(self)
+                    .execute(conn)
+                    .map_res("Error saving event")
+            }
+            postgresql, sqlite {
+                diesel::insert_into(event::table)
+                    .values(self)
+                    .on_conflict(event::uuid)
+                    .do_update()
+                    .set(self)
+                    .execute(conn)
+                    .map_res("Error saving event")
             }
         }
     }

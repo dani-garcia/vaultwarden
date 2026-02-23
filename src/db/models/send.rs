@@ -192,24 +192,16 @@ impl Send {
         self.revision_date = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(sends::table)
+            mysql {
+                diesel::insert_into(sends::table)
                     .values(&*self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(&*self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(sends::table)
-                            .filter(sends::uuid.eq(&self.uuid))
-                            .set(&*self)
-                            .execute(conn)
-                            .map_res("Error saving send")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving send")
+                    .map_res("Error saving send")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(sends::table)
                     .values(&*self)
                     .on_conflict(sends::uuid)

@@ -80,31 +80,23 @@ use crate::api::EmptyResult;
 use crate::error::MapResult;
 
 impl AuthRequest {
-    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(auth_requests::table)
-                    .values(&*self)
-                    .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(auth_requests::table)
-                            .filter(auth_requests::uuid.eq(&self.uuid))
-                            .set(&*self)
-                            .execute(conn)
-                            .map_res("Error auth_request")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error auth_request")
-            }
-            postgresql {
+            mysql {
                 diesel::insert_into(auth_requests::table)
-                    .values(&*self)
+                    .values(self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(self)
+                    .execute(conn)
+                    .map_res("Error saving auth_request")
+            }
+            postgresql, sqlite {
+                diesel::insert_into(auth_requests::table)
+                    .values(self)
                     .on_conflict(auth_requests::uuid)
                     .do_update()
-                    .set(&*self)
+                    .set(self)
                     .execute(conn)
                     .map_res("Error saving auth_request")
             }

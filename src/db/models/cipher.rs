@@ -438,24 +438,16 @@ impl Cipher {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(ciphers::table)
+            mysql {
+                diesel::insert_into(ciphers::table)
                     .values(&*self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(&*self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(ciphers::table)
-                            .filter(ciphers::uuid.eq(&self.uuid))
-                            .set(&*self)
-                            .execute(conn)
-                            .map_res("Error saving cipher")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving cipher")
+                    .map_res("Error saving cipher")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(ciphers::table)
                     .values(&*self)
                     .on_conflict(ciphers::uuid)

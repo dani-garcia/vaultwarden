@@ -160,24 +160,16 @@ impl Group {
         self.revision_date = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(groups::table)
+            mysql {
+                diesel::insert_into(groups::table)
                     .values(&*self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(&*self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(groups::table)
-                            .filter(groups::uuid.eq(&self.uuid))
-                            .set(&*self)
-                            .execute(conn)
-                            .map_res("Error saving group")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving group")
+                    .map_res("Error saving group")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(groups::table)
                     .values(&*self)
                     .on_conflict(groups::uuid)
@@ -312,53 +304,30 @@ impl CollectionGroup {
             group_user.update_user_revision(conn).await;
         }
 
+        let values = (
+            collections_groups::collections_uuid.eq(&self.collections_uuid),
+            collections_groups::groups_uuid.eq(&self.groups_uuid),
+            collections_groups::read_only.eq(&self.read_only),
+            collections_groups::hide_passwords.eq(&self.hide_passwords),
+            collections_groups::manage.eq(&self.manage),
+        );
+
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(collections_groups::table)
-                    .values((
-                        collections_groups::collections_uuid.eq(&self.collections_uuid),
-                        collections_groups::groups_uuid.eq(&self.groups_uuid),
-                        collections_groups::read_only.eq(&self.read_only),
-                        collections_groups::hide_passwords.eq(&self.hide_passwords),
-                        collections_groups::manage.eq(&self.manage),
-                    ))
-                    .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(collections_groups::table)
-                            .filter(collections_groups::collections_uuid.eq(&self.collections_uuid))
-                            .filter(collections_groups::groups_uuid.eq(&self.groups_uuid))
-                            .set((
-                                collections_groups::collections_uuid.eq(&self.collections_uuid),
-                                collections_groups::groups_uuid.eq(&self.groups_uuid),
-                                collections_groups::read_only.eq(&self.read_only),
-                                collections_groups::hide_passwords.eq(&self.hide_passwords),
-                                collections_groups::manage.eq(&self.manage),
-                            ))
-                            .execute(conn)
-                            .map_res("Error adding group to collection")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error adding group to collection")
-            }
-            postgresql {
+            mysql {
                 diesel::insert_into(collections_groups::table)
-                    .values((
-                        collections_groups::collections_uuid.eq(&self.collections_uuid),
-                        collections_groups::groups_uuid.eq(&self.groups_uuid),
-                        collections_groups::read_only.eq(self.read_only),
-                        collections_groups::hide_passwords.eq(self.hide_passwords),
-                        collections_groups::manage.eq(self.manage),
-                    ))
+                    .values(values)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(values)
+                    .execute(conn)
+                    .map_res("Error adding group to collection")
+            }
+            postgresql, sqlite {
+                diesel::insert_into(collections_groups::table)
+                    .values(values)
                     .on_conflict((collections_groups::collections_uuid, collections_groups::groups_uuid))
                     .do_update()
-                    .set((
-                        collections_groups::read_only.eq(self.read_only),
-                        collections_groups::hide_passwords.eq(self.hide_passwords),
-                        collections_groups::manage.eq(self.manage),
-                    ))
+                    .set(values)
                     .execute(conn)
                     .map_res("Error adding group to collection")
             }
@@ -451,43 +420,25 @@ impl GroupUser {
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         self.update_user_revision(conn).await;
 
+        let values = (
+            groups_users::users_organizations_uuid.eq(&self.users_organizations_uuid),
+            groups_users::groups_uuid.eq(&self.groups_uuid),
+        );
+
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(groups_users::table)
-                    .values((
-                        groups_users::users_organizations_uuid.eq(&self.users_organizations_uuid),
-                        groups_users::groups_uuid.eq(&self.groups_uuid),
-                    ))
-                    .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(groups_users::table)
-                            .filter(groups_users::users_organizations_uuid.eq(&self.users_organizations_uuid))
-                            .filter(groups_users::groups_uuid.eq(&self.groups_uuid))
-                            .set((
-                                groups_users::users_organizations_uuid.eq(&self.users_organizations_uuid),
-                                groups_users::groups_uuid.eq(&self.groups_uuid),
-                            ))
-                            .execute(conn)
-                            .map_res("Error adding user to group")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error adding user to group")
-            }
-            postgresql {
+            mysql {
                 diesel::insert_into(groups_users::table)
-                    .values((
-                        groups_users::users_organizations_uuid.eq(&self.users_organizations_uuid),
-                        groups_users::groups_uuid.eq(&self.groups_uuid),
-                    ))
+                    .values(values)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_nothing()
+                    .execute(conn)
+                    .map_res("Error adding user to group")
+            }
+            postgresql, sqlite {
+                diesel::insert_into(groups_users::table)
+                    .values(values)
                     .on_conflict((groups_users::users_organizations_uuid, groups_users::groups_uuid))
-                    .do_update()
-                    .set((
-                        groups_users::users_organizations_uuid.eq(&self.users_organizations_uuid),
-                        groups_users::groups_uuid.eq(&self.groups_uuid),
-                    ))
+                    .do_nothing()
                     .execute(conn)
                     .map_res("Error adding user to group")
             }
