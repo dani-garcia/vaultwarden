@@ -158,6 +158,13 @@ app-root a[routerlink="/signup"] {
 {{/if}}
 {{/if}}
 
+{{#if remember_2fa_disabled}}
+/* Hide checkbox to remember 2FA token for 30 days */
+app-two-factor-auth > form > bit-form-control {
+  @extend %vw-hide;
+}
+{{/if}}
+
 {{#unless mail_2fa_enabled}}
 /* Hide `Email` 2FA if mail is not enabled */
 .providers-2fa-1 {
