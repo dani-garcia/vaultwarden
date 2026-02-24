@@ -345,7 +345,7 @@ pub async fn redeem(
 
         _create_auth_tokens(device, auth_user.refresh_token, access_claims, auth_user.access_token)
     } else {
-        Ok(AuthTokens::new(device, user, AuthMethod::Sso, client_id))
+        Ok(AuthTokens::new(device, user, AuthMethod::Sso, client_id, None))
     }
 }
 
@@ -373,7 +373,7 @@ pub fn create_auth_tokens(
 
         _create_auth_tokens(device, refresh_token, access_claims, access_token)
     } else {
-        Ok(AuthTokens::new(device, user, AuthMethod::Sso, client_id))
+        Ok(AuthTokens::new(device, user, AuthMethod::Sso, client_id, None))
     }
 }
 

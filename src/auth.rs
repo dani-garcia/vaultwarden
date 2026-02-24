@@ -1129,13 +1129,13 @@ impl AuthMethod {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TokenWrapper {
     Access(String),
     Refresh(String),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RefreshJwtClaims {
     // Not before
     pub nbf: i64,
@@ -1175,9 +1175,14 @@ impl AuthTokens {
     }
 
     // Create refresh_token and access_token with default validity
-    pub fn new(device: &Device, user: &User, sub: AuthMethod, client_id: Option<String>) -> Self {
+    pub fn new(
+        device: &Device,
+        user: &User,
+        sub: AuthMethod,
+        client_id: Option<String>,
+        existing_refresh_claims: Option<&RefreshJwtClaims>,
+    ) -> Self {
         let time_now = Utc::now();
-
         let access_claims = LoginJwtClaims::default(device, user, &sub, client_id);
 
         let validity = if device.is_mobile() {
@@ -1186,13 +1191,20 @@ impl AuthTokens {
             *DEFAULT_REFRESH_VALIDITY
         };
 
-        let refresh_claims = RefreshJwtClaims {
+        let default_refresh_claims = RefreshJwtClaims {
             nbf: time_now.timestamp(),
             exp: (time_now + validity).timestamp(),
             iss: JWT_LOGIN_ISSUER.to_string(),
             sub,
             device_token: device.refresh_token.clone(),
             token: None,
+        };
+
+        let refresh_claims = if CONFIG.disable_refresh_token_renewal() {
+            // Use existing_refresh_claims if passed and config is enabled
+            existing_refresh_claims.cloned().unwrap_or(default_refresh_claims)
+        } else {
+            default_refresh_claims
         };
 
         Self {
@@ -1244,14 +1256,16 @@ pub async fn refresh_tokens(
 
     let auth_tokens = match refresh_claims.sub {
         AuthMethod::Sso if CONFIG.sso_enabled() && CONFIG.sso_auth_only_not_session() => {
-            AuthTokens::new(&device, &user, refresh_claims.sub, client_id)
+            AuthTokens::new(&device, &user, refresh_claims.sub.clone(), client_id, Some(&refresh_claims))
         }
         AuthMethod::Sso if CONFIG.sso_enabled() => {
             sso::exchange_refresh_token(&device, &user, client_id, refresh_claims).await?
         }
         AuthMethod::Sso => err!("SSO is now disabled, Login again using email and master password"),
         AuthMethod::Password if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO is now required, Login again"),
-        AuthMethod::Password => AuthTokens::new(&device, &user, refresh_claims.sub, client_id),
+        AuthMethod::Password => {
+            AuthTokens::new(&device, &user, refresh_claims.sub.clone(), client_id, Some(&refresh_claims))
+        }
         _ => err!("Invalid auth method, cannot refresh token"),
     };
 

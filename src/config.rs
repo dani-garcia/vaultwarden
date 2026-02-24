@@ -706,6 +706,10 @@ make_config! {
         /// Note that the checkbox would still be present, but ignored.
         disable_2fa_remember:   bool,   true,   def,    false;
 
+        /// Disable refresh token renewal |> If true, disables sliding window for refresh token expiry.
+        /// This only renews the token on a full login (Password (+2FA), SSO, etc.) forcing a full reauth every 30 days (90 for the native app)
+        disable_refresh_token_renewal: bool, true, def, false;
+
         /// Disable authenticator time drifted codes to be valid |> Enabling this only allows the current TOTP code to be valid
         /// TOTP codes of the previous and next 30 seconds will be invalid.
         authenticator_disable_time_drift: bool, true, def, false;
