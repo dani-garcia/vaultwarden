@@ -26,7 +26,7 @@
                                 <strong>{{name}}</strong>
                                 <span class="d-block">{{email}}</span>
                                 <span class="d-block">
-                                    {{#unless user_enabled}}
+                                    {{#unless userEnabled}}
                                         <span class="badge bg-danger me-2" title="User is disabled">Disabled</span>
                                     {{/unless}}
                                     {{#if twoFactorEnabled}}
@@ -43,22 +43,28 @@
                         </td>
                         {{#if ../sso_enabled}}
                         <td>
-                            <span class="d-block">{{sso_identifier}}</span>
+                            <span class="d-block">{{ssoIdentifier}}</span>
                         </td>
                         {{/if}}
                         <td>
-                            <span class="d-block">{{created_at}}</span>
+                            <span class="d-block">{{createdAt}}</span>
                         </td>
                         <td>
-                            <span class="d-block">{{last_active}}</span>
+                            <span class="d-block">
+                            {{#if lastActive}}
+                                {{lastActive}}
+                            {{else}}
+                                Never
+                            {{/if}}
+                            </span>
                         </td>
                         <td>
-                            <span class="d-block">{{cipher_count}}</span>
+                            <span class="d-block">{{cipherCount}}</span>
                         </td>
                         <td>
-                            <span class="d-block"><strong>Amount:</strong> {{attachment_count}}</span>
+                            <span class="d-block"><strong>Amount:</strong> {{attachmentCount}}</span>
                             {{#if attachment_count}}
-                            <span class="d-block"><strong>Size:</strong> {{attachment_size}}</span>
+                            <span class="d-block"><strong>Size:</strong> {{attachmentSize}}</span>
                             {{/if}}
                         </td>
                         <td>
@@ -78,7 +84,7 @@
                                 {{#if ../sso_enabled}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-sso-user>Delete SSO Association</button><br>
                                 {{/if}}
-                                {{#if user_enabled}}
+                                {{#if userEnabled}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-disable-user>Disable User</button><br>
                                 {{else}}
                                 <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-enable-user>Enable User</button><br>
