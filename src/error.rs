@@ -126,6 +126,12 @@ impl std::fmt::Debug for Error {
     }
 }
 
+impl From<&str> for Error {
+    fn from(err: &str) -> Self {
+        Error::new(err, "")
+    }
+}
+
 impl Error {
     pub fn new<M: Into<String>, N: Into<String>>(usr_msg: M, log_msg: N) -> Self {
         (usr_msg, log_msg.into()).into()

@@ -26,6 +26,33 @@ function smtpTest(event) {
     );
 }
 
+function oauth2RefreshToken(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (formHasChanges(config_form)) {
+        alert("Config has been changed but not yet saved.\nPlease save the changes first before refreshing the OAuth2 token.");
+        return false;
+    }
+
+    _post(`${BASE_URL}/admin/oauth2/test`,
+        "OAuth2 token refreshed successfully",
+        "Error refreshing OAuth2 token",
+        null, false
+    );
+}
+
+function oauth2Authorize(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (formHasChanges(config_form)) {
+        alert("Config has been changed but not yet saved.\nPlease save the changes first before starting OAuth2 authorization.");
+        return false;
+    }
+
+    // Redirect to the OAuth2 authorization endpoint
+    window.location.href = `${BASE_URL}/admin/oauth2/authorize`;
+}
+
 function getFormData() {
     let data = {};
 
@@ -224,6 +251,14 @@ document.addEventListener("DOMContentLoaded", (/*event*/) => {
     const btnSmtpTest = document.getElementById("smtpTest");
     if (btnSmtpTest) {
         btnSmtpTest.addEventListener("click", smtpTest);
+    }
+    const btnOAuth2Refresh = document.getElementById("oauth2RefreshTest");
+    if (btnOAuth2Refresh) {
+        btnOAuth2Refresh.addEventListener("click", oauth2RefreshToken);
+    }
+    const btnOAuth2Authorize = document.getElementById("oauth2Authorize");
+    if (btnOAuth2Authorize) {
+        btnOAuth2Authorize.addEventListener("click", oauth2Authorize);
     }
 
     config_form.addEventListener("submit", saveConfig);
