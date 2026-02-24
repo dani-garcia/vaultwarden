@@ -32,12 +32,17 @@ use webauthn_rs_proto::{
 static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
     let domain = CONFIG.domain();
     let domain_origin = CONFIG.domain_origin();
-    let rp_id = Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
-    let rp_origin = Url::parse(&domain_origin).unwrap();
+    let rp_id = Url::parse(&domain)
+        .map(|u| u.domain().map(str::to_owned))
+        .ok()
+        .flatten()
+        .expect("Invalid domain part for rp_id");
+    let rp_origin = Url::parse(&domain_origin).expect("Invalid domain_origin for rp_origin");
 
     let webauthn = WebauthnBuilder::new(&rp_id, &rp_origin)
         .expect("Creating WebauthnBuilder failed")
         .rp_name(&domain)
+        .allow_subdomains(CONFIG.webauthn_allow_subdomains())
         .timeout(Duration::from_millis(60000));
 
     webauthn.build().expect("Building Webauthn failed")
