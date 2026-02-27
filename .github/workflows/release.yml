@@ -36,7 +36,7 @@ env:
 jobs:
   docker-build:
     name: Build Vaultwarden containers
-    if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
+    # if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
     permissions:
       packages: write # Needed to upload packages and artifacts
       contents: read
