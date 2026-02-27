@@ -534,7 +534,9 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
 
     use data_url::DataUrl;
 
-    for icon in icon_result.iconlist.iter().take(5) {
+    for (i, icon) in icon_result.iconlist.iter().take(5).enumerate() {
+        let is_last = i == icon_result.iconlist.iter().take(5).count() - 1;
+
         if icon.href.starts_with("data:image") {
             let Ok(datauri) = DataUrl::process(&icon.href) else {
                 continue;
@@ -562,11 +564,23 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
                 _ => debug!("Extracted icon from data:image uri is invalid"),
             };
         } else {
-            let res = get_page_with_referer(&icon.href, &icon_result.referer).await?;
+            debug!("Trying {}", icon.href);
+            // Make sure all icons are checked before returning error
+            let res = match get_page_with_referer(&icon.href, &icon_result.referer).await {
+                Ok(r) => r,
+                Err(e) if is_last => return Err(e.into()),
+                Err(e) if CustomHttpClientError::downcast_ref(&e).is_some() => return Err(e.into()), // If blacklisted stop immediately instead of checking the rest of the icons. see explanation and actual handling inside get_icon()
+                Err(e) => {
+                    warn!("Unable to download icon: {e:?}");
+                    
+                    // Continue to next icon
+                    continue;
+                }
+            };
 
             buffer = stream_to_bytes_limit(res, 5120 * 1024).await?; // 5120KB/5MB for each icon max (Same as icons.bitwarden.net)
 
-            // Check if the icon type is allowed, else try an icon from the list.
+            // Check if the icon type is allowed, else try another icon from the list.
             icon_type = get_icon_type(&buffer);
             if icon_type.is_none() {
                 buffer.clear();
