@@ -683,6 +683,12 @@ make_config! {
         /// has been decided on, consider using permanent redirects for cacheability. The legacy codes
         /// are currently better supported by the Bitwarden clients.
         icon_redirect_code:     u32,    true,   def,    302;
+        /// Icon service to use as URL fallback for internal Icon service. Works only when icon_service is set to "internal"
+        /// Same predefined/custom values as icon_service (except "internal"). Unlike Icon service, the Fallback Icon service
+        /// does not send any redirect to the client and instead use the internal Icon service to download the icon located at the external service
+        icon_service_fallback:  String, false,  def,    String::new();
+        /// _icon_service_fallback
+        _icon_service_fallback_url: String, false,  generated,    |c| generate_icon_service_url(&c.icon_service_fallback);
         /// Positive icon cache expiry |> Number of seconds to consider that an already cached icon is fresh. After this period, the icon will be refreshed
         icon_cache_ttl:         u64,    true,   def,    2_592_000;
         /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
@@ -1197,6 +1203,27 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
                 1 => (), // nominal
                 0 => err!(format!("Icon service URL `{icon_service}` has no placeholder \"{{}}\"")),
                 _ => err!(format!("Icon service URL `{icon_service}` has more than one placeholder \"{{}}\"")),
+            }
+        }
+    }
+
+    // Check if the Fallback Icon service is valid
+    let icon_service_fallback = cfg.icon_service_fallback.as_str();
+    if !icon_service_fallback.is_empty() {
+        if icon_service != "internal" {
+            err!(format!("Fallback Icon service can only be used for \"internal\" Icon service, you are currently using \"{icon_service}\""))
+        }
+        match icon_service_fallback {
+            "bitwarden" | "duckduckgo" | "google" => (),
+            _ => {
+                if !icon_service_fallback.starts_with("http") {
+                    err!(format!("Fallback Icon service URL `{icon_service_fallback}` must start with \"http\""))
+                }
+                match icon_service_fallback.matches("{}").count() {
+                    1 => (), // nominal
+                    0 => err!(format!("Fallback Icon service URL `{icon_service_fallback}` has no placeholder \"{{}}\"")),
+                    _ => err!(format!("Fallback Icon service URL `{icon_service_fallback}` has more than one placeholder \"{{}}\"")),
+                }
             }
         }
     }
