@@ -96,8 +96,14 @@ jobs:
           if [[ -n "${GIT_EXACT_TAG}" ]]; then
               echo "SOURCE_VERSION=${GIT_EXACT_TAG}" | tee -a "${GITHUB_ENV}"
           else
-              GIT_LAST_TAG="$(git describe --tags --abbrev=0)"
+              # 尝试获取最近的 Tag
+              GIT_LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+              if [[ -n "${GIT_LAST_TAG}" ]]; then
+                  # 如果有旧 Tag，生成 "Tag-CommitHash" 格式
+                  echo "SOURCE_VERSION=${GIT_LAST_TAG}-${SOURCE_COMMIT:0:8}" | tee -a "${GITHUB_ENV}"
+              else
               echo "SOURCE_VERSION=${GIT_LAST_TAG}-${SOURCE_COMMIT:0:8}" | tee -a "${GITHUB_ENV}"
+              echo "⚠️ No tags found in repository. Using version: dev-${SOURCE_COMMIT:0:8}"
           fi
 
       # Login to Docker Hub
