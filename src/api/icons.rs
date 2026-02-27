@@ -425,6 +425,9 @@ async fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
         iconlist.push(Icon::new(40, format!("{httpdomain}/apple-touch-icon.png")));
     }
 
+    // Add Google S2 icon cache fallback
+    iconlist.push(Icon::new(255, format!("https://www.google.com/s2/favicons?sz=32&domain={domain}")));
+
     // Sort the iconlist by priority
     iconlist.sort_by_key(|x| x.priority);
 
