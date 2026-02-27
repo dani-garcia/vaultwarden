@@ -534,8 +534,8 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
 
     use data_url::DataUrl;
 
-    for (i, icon) in icon_result.iconlist.iter().enumerate() {
-        let is_last = i == icon_result.iconlist.iter().count() - 1;
+    for (i, icon) in icon_result.iconlist.iter().take(5).enumerate() {
+        let is_last = i == icon_result.iconlist.iter().take(5).count() - 1;
 
         if icon.href.starts_with("data:image") {
             let Ok(datauri) = DataUrl::process(&icon.href) else {
