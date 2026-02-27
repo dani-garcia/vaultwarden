@@ -43,6 +43,8 @@ jobs:
     name: Build and Test ${{ matrix.channel }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    container:
+      image: debian:12
     # Make warnings errors, this is to prevent warnings slipping through.
     # This is done globally to prevent rebuilds when the RUSTFLAGS env variable changes.
     env:
@@ -57,7 +59,7 @@ jobs:
     steps:
       # Install dependencies
       - name: "Install dependencies Ubuntu"
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openssl build-essential libmariadb-dev-compat libpq-dev libssl-dev pkg-config
+        run: apt-get update && apt-get install -y --no-install-recommends curl git ca-certificates openssl build-essential libmariadb-dev-compat libpq-dev libssl-dev pkg-config cmake
       # End Install dependencies
 
       # Checkout the repo
