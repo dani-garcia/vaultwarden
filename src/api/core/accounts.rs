@@ -33,7 +33,6 @@ use rocket::{
 
 pub fn routes() -> Vec<rocket::Route> {
     routes![
-        register,
         profile,
         put_profile,
         post_profile,
@@ -166,11 +165,6 @@ async fn is_email_2fa_required(member_id: Option<MembershipId>, conn: &DbConn) -
         return OrgPolicy::is_enabled_for_member(&member_id, OrgPolicyType::TwoFactorAuthentication, conn).await;
     }
     false
-}
-
-#[post("/accounts/register", data = "<data>")]
-async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
-    _register(data, false, conn).await
 }
 
 pub async fn _register(data: Json<RegisterData>, email_verification: bool, conn: DbConn) -> JsonResult {
@@ -1199,10 +1193,9 @@ async fn password_hint(data: Json<PasswordHintData>, conn: DbConn) -> EmptyResul
                 // There is still a timing side channel here in that the code
                 // paths that send mail take noticeably longer than ones that
                 // don't. Add a randomized sleep to mitigate this somewhat.
-                use rand::{rngs::SmallRng, Rng, SeedableRng};
-                let mut rng = SmallRng::from_os_rng();
-                let delta: i32 = 100;
-                let sleep_ms = (1_000 + rng.random_range(-delta..=delta)) as u64;
+                use rand::{rngs::SmallRng, RngExt};
+                let mut rng: SmallRng = rand::make_rng();
+                let sleep_ms = rng.random_range(900..=1100) as u64;
                 tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
                 Ok(())
             } else {

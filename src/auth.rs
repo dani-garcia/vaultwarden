@@ -826,7 +826,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
                         _ => err_handler!("Error getting DB"),
                     };
 
-                    if !Collection::can_access_collection(&headers.membership, &col_id, &conn).await {
+                    if !Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await {
                         err_handler!("The current user isn't a manager for this collection")
                     }
                 }
@@ -908,8 +908,8 @@ impl ManagerHeaders {
             if uuid::Uuid::parse_str(col_id.as_ref()).is_err() {
                 err!("Collection Id is malformed!");
             }
-            if !Collection::can_access_collection(&h.membership, col_id, conn).await {
-                err!("You don't have access to all collections!");
+            if !Collection::is_coll_manageable_by_user(col_id, &h.membership.user_uuid, conn).await {
+                err!("Collection not found", "The current user isn't a manager for this collection")
             }
         }
 
