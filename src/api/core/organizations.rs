@@ -480,6 +480,10 @@ async fn post_organization_collections(
         err!("Can't find organization details")
     };
 
+    if headers.membership.atype == MembershipType::Manager && !headers.membership.access_all {
+        err!("You don't have permission to create collections")
+    }
+
     let collection = Collection::new(org.uuid, data.name, data.external_id);
     collection.save(&conn).await?;
 
@@ -518,10 +522,6 @@ async fn post_organization_collections(
             &conn,
         )
         .await?;
-    }
-
-    if headers.membership.atype == MembershipType::Manager && !headers.membership.access_all {
-        CollectionUser::save(&headers.membership.user_uuid, &collection.uuid, false, false, false, &conn).await?;
     }
 
     Ok(Json(collection.to_json_details(&headers.membership.user_uuid, None, &conn).await))
