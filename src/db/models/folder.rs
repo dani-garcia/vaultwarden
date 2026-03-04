@@ -74,24 +74,16 @@ impl Folder {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(folders::table)
+            mysql {
+                diesel::insert_into(folders::table)
                     .values(&*self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(&*self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(folders::table)
-                            .filter(folders::uuid.eq(&self.uuid))
-                            .set(&*self)
-                            .execute(conn)
-                            .map_res("Error saving folder")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving folder")
+                    .map_res("Error saving folder")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(folders::table)
                     .values(&*self)
                     .on_conflict(folders::uuid)
@@ -144,16 +136,15 @@ impl Folder {
 impl FolderCipher {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
-                // Not checking for ForeignKey Constraints here.
-                // Table folders_ciphers does not have ForeignKey Constraints which would cause conflicts.
-                // This table has no constraints pointing to itself, but only to others.
-                diesel::replace_into(folders_ciphers::table)
+            mysql {
+                diesel::insert_into(folders_ciphers::table)
                     .values(self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_nothing()
                     .execute(conn)
                     .map_res("Error adding cipher to folder")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(folders_ciphers::table)
                     .values(self)
                     .on_conflict((folders_ciphers::cipher_uuid, folders_ciphers::folder_uuid))
