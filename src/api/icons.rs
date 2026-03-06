@@ -513,13 +513,11 @@ fn parse_sizes(sizes: &str) -> (u16, u16) {
 
     if !sizes.is_empty() {
         match ICON_SIZE_REGEX.captures(sizes.trim()) {
-            None => {}
-            Some(dimensions) => {
-                if dimensions.len() >= 3 {
-                    width = dimensions[1].parse::<u16>().unwrap_or_default();
-                    height = dimensions[2].parse::<u16>().unwrap_or_default();
-                }
+            Some(dimensions) if dimensions.len() >= 3 => {
+                width = dimensions[1].parse::<u16>().unwrap_or_default();
+                height = dimensions[2].parse::<u16>().unwrap_or_default();
             }
+            _ => {}
         }
     }
 
