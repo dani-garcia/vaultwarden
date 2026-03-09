@@ -395,7 +395,7 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
         Membership::find_confirmed_by_org(&org_id, &conn).await.into_iter().map(|m| (m.uuid, m.atype)).collect();
 
     // check if current user has full access to the organization (either directly or via any group)
-    let has_full_access_to_org = member.access_all
+    let has_full_access_to_org = member.has_full_access()
         || (CONFIG.org_groups_enabled() && GroupUser::has_full_access_by_member(&org_id, &member.uuid, &conn).await);
 
     // Get all admins, owners and managers who can manage/access all
@@ -420,6 +420,11 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
             || CollectionUser::has_access_to_collection_by_user(&col.uuid, &member.user_uuid, &conn).await
             || (CONFIG.org_groups_enabled()
                 && GroupUser::has_access_to_collection_by_member(&col.uuid, &member.uuid, &conn).await);
+
+        // If the user is a manager, and is not assigned to this collection, skip this and continue with the next collection
+        if !assigned {
+            continue;
+        }
 
         // get the users assigned directly to the given collection
         let mut users: Vec<Value> = col_users
