@@ -647,6 +647,7 @@ async fn _user_api_key_login(
         "KdfMemory": user.client_kdf_memory,
         "KdfParallelism": user.client_kdf_parallelism,
         "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
+        "ForcePasswordReset": false,
         "scope": AuthMethod::UserApiKey.scope(),
         "UserDecryptionOptions": {
             "HasMasterPassword": has_master_password,
