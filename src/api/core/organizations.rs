@@ -395,7 +395,6 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
         Membership::find_confirmed_by_org(&org_id, &conn).await.into_iter().map(|m| (m.uuid, m.atype)).collect();
 
     // check if current user has full access to the organization (either directly or via any group)
-    // let has_full_access_to_org = headers.membership.has_full_access();
     let has_full_access_to_org = member.has_full_access()
         || (CONFIG.org_groups_enabled() && GroupUser::has_full_access_by_member(&org_id, &member.uuid, &conn).await);
 
