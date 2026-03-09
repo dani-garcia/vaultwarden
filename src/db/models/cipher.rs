@@ -381,7 +381,7 @@ impl Cipher {
                 self.is_favorite(user_uuid, conn).await
             });
             json_object["archivedDate"] = json!(if let Some(cipher_sync_data) = cipher_sync_data {
-                cipher_sync_data.cipher_archives.get(&self.uuid).map_or(Value::Null, |d| Value::String(format_date(&d)))
+                cipher_sync_data.cipher_archives.get(&self.uuid).map_or(Value::Null, |d| Value::String(format_date(d)))
             } else {
                 self.get_archived_date(user_uuid, conn).await.map_or(Value::Null, |d| Value::String(format_date(&d)))
             });

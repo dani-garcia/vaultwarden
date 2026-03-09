@@ -1709,7 +1709,7 @@ async fn delete_all(
 
 #[put("/ciphers/<cipher_id>/archive")]
 async fn archive_cipher_put(cipher_id: CipherId, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    _set_archived_cipher_by_uuid(&cipher_id, &headers, true, false, &conn, &nt).await
+    set_archived_cipher_by_uuid(&cipher_id, &headers, true, false, &conn, &nt).await
 }
 
 #[put("/ciphers/archive", data = "<data>")]
@@ -1719,12 +1719,12 @@ async fn archive_cipher_selected(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    _set_archived_multiple_ciphers(data, &headers, true, &conn, &nt).await
+    set_archived_multiple_ciphers(data, &headers, true, &conn, &nt).await
 }
 
 #[put("/ciphers/<cipher_id>/unarchive")]
 async fn unarchive_cipher_put(cipher_id: CipherId, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    _set_archived_cipher_by_uuid(&cipher_id, &headers, false, false, &conn, &nt).await
+    set_archived_cipher_by_uuid(&cipher_id, &headers, false, false, &conn, &nt).await
 }
 
 #[put("/ciphers/unarchive", data = "<data>")]
@@ -1734,7 +1734,7 @@ async fn unarchive_cipher_selected(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    _set_archived_multiple_ciphers(data, &headers, false, &conn, &nt).await
+    set_archived_multiple_ciphers(data, &headers, false, &conn, &nt).await
 }
 
 #[derive(PartialEq)]
@@ -1955,7 +1955,7 @@ async fn _delete_cipher_attachment_by_id(
     Ok(Json(json!({"cipher":cipher_json})))
 }
 
-async fn _set_archived_cipher_by_uuid(
+async fn set_archived_cipher_by_uuid(
     cipher_id: &CipherId,
     headers: &Headers,
     archived: bool,
@@ -1988,7 +1988,7 @@ async fn _set_archived_cipher_by_uuid(
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await?))
 }
 
-async fn _set_archived_multiple_ciphers(
+async fn set_archived_multiple_ciphers(
     data: Json<CipherIdsData>,
     headers: &Headers,
     archived: bool,
@@ -1999,7 +1999,7 @@ async fn _set_archived_multiple_ciphers(
 
     let mut ciphers: Vec<Value> = Vec::new();
     for cipher_id in data.ids {
-        match _set_archived_cipher_by_uuid(&cipher_id, headers, archived, true, conn, nt).await {
+        match set_archived_cipher_by_uuid(&cipher_id, headers, archived, true, conn, nt).await {
             Ok(json) => ciphers.push(json.into_inner()),
             err => return err,
         }
