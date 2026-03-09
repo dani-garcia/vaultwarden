@@ -68,7 +68,7 @@ impl Archive {
     }
 
     /// Return a vec with (cipher_uuid, archived_at)
-    /// This is used during a full sync so we only need one query for all folder matches
+    /// This is used during a full sync so we only need one query for all archive matches
     pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<(CipherId, NaiveDateTime)> {
         db_run! { conn: {
             archives::table
