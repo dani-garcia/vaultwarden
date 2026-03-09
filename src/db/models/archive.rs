@@ -1,4 +1,4 @@
-use chrono::{NaiveDateTime, Utc};
+use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
 use super::{CipherId, User, UserId};
@@ -18,7 +18,7 @@ pub struct Archive {
 
 impl Archive {
     // Returns the date the specified cipher was archived
-    pub async fn get_archived_date(cipher_uuid: &CipherId, user_uuid: &UserId, conn: &DbConn) -> Option<NaiveDateTime> {
+    pub async fn get_archived_at(cipher_uuid: &CipherId, user_uuid: &UserId, conn: &DbConn) -> Option<NaiveDateTime> {
         db_run! { conn: {
             archives::table
                 .filter(archives::cipher_uuid.eq(cipher_uuid))
@@ -29,28 +29,44 @@ impl Archive {
     }
 
     // Sets the specified cipher to be archived or unarchived
-    pub async fn set_archived(
-        archived: bool,
+    pub async fn set_archived_at(
+        archived_at: Option<NaiveDateTime>,
         cipher_uuid: &CipherId,
         user_uuid: &UserId,
         conn: &DbConn,
     ) -> EmptyResult {
-        let (old, new) = (Self::get_archived_date(cipher_uuid, user_uuid, conn).await.is_some(), archived);
-        match (old, new) {
-            (false, true) => {
+        let existing = Self::get_archived_at(cipher_uuid, user_uuid, conn).await;
+
+        match (existing, archived_at) {
+            // Not archived - archive at the provided timestamp
+            (None, Some(dt)) => {
                 User::update_uuid_revision(user_uuid, conn).await;
                 db_run! { conn: {
                 diesel::insert_into(archives::table)
                     .values((
                         archives::user_uuid.eq(user_uuid),
                         archives::cipher_uuid.eq(cipher_uuid),
-                        archives::archived_at.eq(Utc::now().naive_utc()),
+                        archives::archived_at.eq(dt),
                     ))
                     .execute(conn)
                     .map_res("Error archiving")
                 }}
             }
-            (true, false) => {
+            // Already archived - update with the provided timestamp
+            (Some(_), Some(dt)) => {
+                User::update_uuid_revision(user_uuid, conn).await;
+                db_run! { conn: {
+                    diesel::update(
+                        archives::table
+                            .filter(archives::user_uuid.eq(user_uuid))
+                            .filter(archives::cipher_uuid.eq(cipher_uuid))
+                    )
+                    .set(archives::archived_at.eq(dt))
+                    .execute(conn)
+                    .map_res("Error updating archive date")
+                }}
+            }
+            (Some(_), None) => {
                 User::update_uuid_revision(user_uuid, conn).await;
                 db_run! { conn: {
                     diesel::delete(

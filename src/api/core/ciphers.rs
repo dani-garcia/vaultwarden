@@ -295,6 +295,7 @@ pub struct CipherData {
     // when using older client versions, or if the operation doesn't involve
     // updating an existing cipher.
     last_known_revision_date: Option<String>,
+    archived_date: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -534,6 +535,17 @@ pub async fn update_cipher_from_data(
     cipher.save(conn).await?;
     cipher.move_to_folder(data.folder_id, &headers.user.uuid, conn).await?;
     cipher.set_favorite(data.favorite, &headers.user.uuid, conn).await?;
+    let archived_at = match data.archived_date {
+        Some(dt_str) => match NaiveDateTime::parse_from_str(&dt_str, "%+") {
+            Ok(dt) => Some(dt),
+            Err(err) => {
+                warn!("Error parsing ArchivedDate '{dt_str}': {err}");
+                None
+            }
+        },
+        None => None,
+    };
+    cipher.set_archived_at(archived_at, &headers.user.uuid, conn).await?;
 
     if ut != UpdateType::None {
         // Only log events for organizational ciphers
@@ -1971,7 +1983,12 @@ async fn set_archived_cipher_by_uuid(
         err!("Cipher is not accessible for the current user")
     }
 
-    cipher.set_archived(archived, &headers.user.uuid, conn).await?;
+    let archived_at = if archived {
+        Some(Utc::now().naive_utc())
+    } else {
+        None
+    };
+    cipher.set_archived_at(archived_at, &headers.user.uuid, conn).await?;
 
     if !multi_archive {
         nt.send_cipher_update(

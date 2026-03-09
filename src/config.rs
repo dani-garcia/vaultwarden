@@ -1053,7 +1053,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         // Webauthn Related Origins
         "pm-30529-webauthn-related-origins",
         // Innovation Team
-        "pm-19148-innovation-archive"
+        "pm-19148-innovation-archive",
     ];
     let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
     let invalid_flags: Vec<_> = configured_flags.keys().filter(|flag| !KNOWN_FLAGS.contains(&flag.as_str())).collect();
