@@ -1967,8 +1967,8 @@ async fn _set_archived_cipher_by_uuid(
         err!("Cipher doesn't exist")
     };
 
-    if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
-        err!("Cipher can't be archived by user")
+    if !cipher.is_accessible_to_user(&headers.user.uuid, conn).await {
+        err!("Cipher is not accessible for the current user")
     }
 
     cipher.set_archived(archived, &headers.user.uuid, conn).await?;
