@@ -33,7 +33,6 @@ use rocket::{
 
 pub fn routes() -> Vec<rocket::Route> {
     routes![
-        register,
         profile,
         put_profile,
         post_profile,
@@ -166,11 +165,6 @@ async fn is_email_2fa_required(member_id: Option<MembershipId>, conn: &DbConn) -
         return OrgPolicy::is_enabled_for_member(&member_id, OrgPolicyType::TwoFactorAuthentication, conn).await;
     }
     false
-}
-
-#[post("/accounts/register", data = "<data>")]
-async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
-    _register(data, false, conn).await
 }
 
 pub async fn _register(data: Json<RegisterData>, email_verification: bool, conn: DbConn) -> JsonResult {
