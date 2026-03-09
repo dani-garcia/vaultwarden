@@ -19,9 +19,9 @@ use crate::{
     crypto,
     db::{
         models::{
-            Attachment, AttachmentId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId,
-            CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, Membership, MembershipType,
-            OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
+            Archive, Attachment, AttachmentId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup,
+            CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, Membership,
+            MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
         },
         DbConn, DbPool,
     },
@@ -95,6 +95,10 @@ pub fn routes() -> Vec<Route> {
         post_collections_update,
         post_collections_admin,
         put_collections_admin,
+        archive_cipher_put,
+        archive_cipher_selected,
+        unarchive_cipher_put,
+        unarchive_cipher_selected,
     ]
 }
 
@@ -1703,6 +1707,36 @@ async fn delete_all(
     }
 }
 
+#[put("/ciphers/<cipher_id>/archive")]
+async fn archive_cipher_put(cipher_id: CipherId, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    _set_archived_cipher_by_uuid(&cipher_id, &headers, true, false, &conn, &nt).await
+}
+
+#[put("/ciphers/archive", data = "<data>")]
+async fn archive_cipher_selected(
+    data: Json<CipherIdsData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    _set_archived_multiple_ciphers(data, &headers, true, &conn, &nt).await
+}
+
+#[put("/ciphers/<cipher_id>/unarchive")]
+async fn unarchive_cipher_put(cipher_id: CipherId, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    _set_archived_cipher_by_uuid(&cipher_id, &headers, false, false, &conn, &nt).await
+}
+
+#[put("/ciphers/unarchive", data = "<data>")]
+async fn unarchive_cipher_selected(
+    data: Json<CipherIdsData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    _set_archived_multiple_ciphers(data, &headers, false, &conn, &nt).await
+}
+
 #[derive(PartialEq)]
 pub enum CipherDeleteOptions {
     SoftSingle,
@@ -1921,6 +1955,66 @@ async fn _delete_cipher_attachment_by_id(
     Ok(Json(json!({"cipher":cipher_json})))
 }
 
+async fn _set_archived_cipher_by_uuid(
+    cipher_id: &CipherId,
+    headers: &Headers,
+    archived: bool,
+    multi_archive: bool,
+    conn: &DbConn,
+    nt: &Notify<'_>,
+) -> JsonResult {
+    let Some(cipher) = Cipher::find_by_uuid(cipher_id, conn).await else {
+        err!("Cipher doesn't exist")
+    };
+
+    if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
+        err!("Cipher can't be archived by user")
+    }
+
+    cipher.set_archived(archived, &headers.user.uuid, conn).await?;
+
+    if !multi_archive {
+        nt.send_cipher_update(
+            UpdateType::SyncCipherUpdate,
+            &cipher,
+            &cipher.update_users_revision(conn).await,
+            &headers.device,
+            None,
+            conn,
+        )
+        .await;
+    }
+
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await?))
+}
+
+async fn _set_archived_multiple_ciphers(
+    data: Json<CipherIdsData>,
+    headers: &Headers,
+    archived: bool,
+    conn: &DbConn,
+    nt: &Notify<'_>,
+) -> JsonResult {
+    let data = data.into_inner();
+
+    let mut ciphers: Vec<Value> = Vec::new();
+    for cipher_id in data.ids {
+        match _set_archived_cipher_by_uuid(&cipher_id, headers, archived, true, conn, nt).await {
+            Ok(json) => ciphers.push(json.into_inner()),
+            err => return err,
+        }
+    }
+
+    // Multi archive actions do not send out a push for each cipher, we need to send a general sync here
+    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, conn).await;
+
+    Ok(Json(json!({
+      "data": ciphers,
+      "object": "list",
+      "continuationToken": null
+    })))
+}
+
 /// This will hold all the necessary data to improve a full sync of all the ciphers
 /// It can be used during the `Cipher::to_json()` call.
 /// It will prevent the so called N+1 SQL issue by running just a few queries which will hold all the data needed.
@@ -1930,6 +2024,7 @@ pub struct CipherSyncData {
     pub cipher_folders: HashMap<CipherId, FolderId>,
     pub cipher_favorites: HashSet<CipherId>,
     pub cipher_collections: HashMap<CipherId, Vec<CollectionId>>,
+    pub cipher_archives: HashMap<CipherId, NaiveDateTime>,
     pub members: HashMap<OrganizationId, Membership>,
     pub user_collections: HashMap<CollectionId, CollectionUser>,
     pub user_collections_groups: HashMap<CollectionId, CollectionGroup>,
@@ -1946,6 +2041,7 @@ impl CipherSyncData {
     pub async fn new(user_id: &UserId, sync_type: CipherSyncType, conn: &DbConn) -> Self {
         let cipher_folders: HashMap<CipherId, FolderId>;
         let cipher_favorites: HashSet<CipherId>;
+        let cipher_archives: HashMap<CipherId, NaiveDateTime>;
         match sync_type {
             // User Sync supports Folders and Favorites
             CipherSyncType::User => {
@@ -1954,12 +2050,16 @@ impl CipherSyncData {
 
                 // Generate a HashSet of all the Cipher UUID's which are marked as favorite
                 cipher_favorites = Favorite::get_all_cipher_uuid_by_user(user_id, conn).await.into_iter().collect();
+
+                // Generate a HashMap with the Cipher UUID as key and the archived date time as value
+                cipher_archives = Archive::find_by_user(user_id, conn).await.into_iter().collect();
             }
             // Organization Sync does not support Folders and Favorites.
             // If these are set, it will cause issues in the web-vault.
             CipherSyncType::Organization => {
                 cipher_folders = HashMap::with_capacity(0);
                 cipher_favorites = HashSet::with_capacity(0);
+                cipher_archives = HashMap::with_capacity(0);
             }
         }
 
@@ -2019,6 +2119,7 @@ impl CipherSyncData {
         };
 
         Self {
+            cipher_archives,
             cipher_attachments,
             cipher_folders,
             cipher_favorites,
