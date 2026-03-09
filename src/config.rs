@@ -1048,6 +1048,8 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         "anon-addy-self-host-alias",
         "simple-login-self-host-alias",
         "mutual-tls",
+        "cxp-import-mobile",
+        "cxp-export-mobile",
         // Webauthn Related Origins
         "pm-30529-webauthn-related-origins",
     ];
