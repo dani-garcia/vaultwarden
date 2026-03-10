@@ -111,6 +111,69 @@ services:
 
 <br>
 
+### S3-Compatible Object Storage
+
+When built with the `s3` feature, storage paths like `DATA_FOLDER`, `ATTACHMENTS_FOLDER`, `ICON_CACHE_FOLDER` and `SENDS_FOLDER` can use `s3://` URIs with query parameters:
+
+```text
+s3://bucket/prefix?endpoint=https%3A%2F%2Fs3.example.internal&enable_virtual_host_style=false&default_storage_class=STANDARD
+```
+
+- AWS S3 works with defaults (no extra parameters required).
+- MinIO/Ceph usually require `endpoint` and `enable_virtual_host_style=false`.
+- Cloudflare R2 usually requires `endpoint` and often `region=auto`.
+- To omit `x-amz-storage-class`, set `default_storage_class=` (empty value).
+- Container images must include both a DB backend feature and `s3` (for example `sqlite,s3`, `postgresql,s3`, or `mysql,s3`).
+
+Kubernetes example:
+
+```yaml
+env:
+  - name: DATA_FOLDER
+    value: "s3://vaultwarden-data/prod?endpoint=https%3A%2F%2Fs3.example.internal&enable_virtual_host_style=false&default_storage_class=STANDARD"
+  - name: DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: vaultwarden-db
+        key: url
+```
+
+Use IAM/service account/environment credentials when possible. URI credentials are supported as a last resort.
+
+### Browser Attachment Downloads (CSP + CORS)
+
+For S3-compatible backends, attachment downloads from the Web Vault use presigned URLs. The browser downloads directly from the object storage endpoint.
+
+Configure both sides:
+
+- Vaultwarden CSP: allow the object-storage origin in `ALLOWED_CONNECT_SRC`.
+- Object storage CORS policy: allow your Vaultwarden origin (`DOMAIN`) for `GET`/`HEAD`.
+
+R2 example:
+
+```text
+ALLOWED_CONNECT_SRC="https://<accountid>.r2.cloudflarestorage.com"
+```
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://vault.example.com"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag", "Content-Length", "Content-Type", "Content-Disposition"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+Troubleshooting:
+
+- `violates the document's Content Security Policy`: set `ALLOWED_CONNECT_SRC` correctly.
+- `No 'Access-Control-Allow-Origin' header`: fix CORS policy on the bucket/provider.
+
+<br>
+
 ## Get in touch
 
 Have a question, suggestion or need help? Join our community on [Matrix](https://matrix.to/#/#vaultwarden:matrix.org), [GitHub Discussions](https://github.com/dani-garcia/vaultwarden/discussions) or [Discourse Forums](https://vaultwarden.discourse.group/).
