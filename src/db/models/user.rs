@@ -443,15 +443,15 @@ impl Invitation {
         }
 
         db_run! { conn:
-            sqlite, mysql {
-                // Not checking for ForeignKey Constraints here
-                // Table invitations does not have any ForeignKey Constraints.
-                diesel::replace_into(invitations::table)
+            mysql {
+                diesel::insert_into(invitations::table)
                     .values(self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_nothing()
                     .execute(conn)
                     .map_res("Error saving invitation")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(invitations::table)
                     .values(self)
                     .on_conflict(invitations::email)
@@ -511,13 +511,13 @@ pub struct UserId(String);
 impl SsoUser {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
-                diesel::replace_into(sso_users::table)
+            mysql {
+                diesel::insert_into(sso_users::table)
                     .values(self)
                     .execute(conn)
                     .map_res("Error saving SSO user")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(sso_users::table)
                     .values(self)
                     .execute(conn)
