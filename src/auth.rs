@@ -46,6 +46,7 @@ static JWT_FILE_DOWNLOAD_ISSUER: LazyLock<String> =
     LazyLock::new(|| format!("{}|file_download", CONFIG.domain_origin()));
 static JWT_REGISTER_VERIFY_ISSUER: LazyLock<String> =
     LazyLock::new(|| format!("{}|register_verify", CONFIG.domain_origin()));
+static JWT_2FA_REMEMBER_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|2faremember", CONFIG.domain_origin()));
 
 static PRIVATE_RSA_KEY: OnceLock<EncodingKey> = OnceLock::new();
 static PUBLIC_RSA_KEY: OnceLock<DecodingKey> = OnceLock::new();
@@ -158,6 +159,10 @@ pub fn decode_file_download(token: &str) -> Result<FileDownloadClaims, Error> {
 
 pub fn decode_register_verify(token: &str) -> Result<RegisterVerifyClaims, Error> {
     decode_jwt(token, JWT_REGISTER_VERIFY_ISSUER.to_string())
+}
+
+pub fn decode_2fa_remember(token: &str) -> Result<TwoFactorRememberClaims, Error> {
+    decode_jwt(token, JWT_2FA_REMEMBER_ISSUER.to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -437,6 +442,31 @@ pub fn generate_register_verify_claims(email: String, name: Option<String>, veri
         sub: email,
         name,
         verified,
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TwoFactorRememberClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,
+    // Issuer
+    pub iss: String,
+    // Subject
+    pub sub: DeviceId,
+    // UserId
+    pub user_uuid: UserId,
+}
+
+pub fn generate_2fa_remember_claims(device_uuid: DeviceId, user_uuid: UserId) -> TwoFactorRememberClaims {
+    let time_now = Utc::now();
+    TwoFactorRememberClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + TimeDelta::try_days(30).unwrap()).timestamp(),
+        iss: JWT_2FA_REMEMBER_ISSUER.to_string(),
+        sub: device_uuid,
+        user_uuid,
     }
 }
 
