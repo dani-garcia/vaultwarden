@@ -757,7 +757,6 @@ async fn twofactor_auth(
     use crate::crypto::ct_eq;
 
     let selected_data = _selected_data(selected_twofactor);
-    let mut remember = data.two_factor_remember.unwrap_or(0);
 
     match TwoFactorType::from_i32(selected_id) {
         Some(TwoFactorType::Authenticator) => {
@@ -789,13 +788,23 @@ async fn twofactor_auth(
         }
         Some(TwoFactorType::Remember) => {
             match device.twofactor_remember {
-                Some(ref code) if !CONFIG.disable_2fa_remember() && ct_eq(code, twofactor_code) => {
-                    remember = 1; // Make sure we also return the token here, otherwise it will only remember the first time
-                }
+                // When a 2FA Remember token is used, check and validate this JWT token, if it is valid, just continue
+                // If it is invalid we need to trigger the 2FA Login prompt
+                Some(ref token)
+                    if !CONFIG.disable_2fa_remember()
+                        && (ct_eq(token, twofactor_code)
+                            && auth::decode_2fa_remember(twofactor_code)
+                                .is_ok_and(|t| t.sub == device.uuid && t.user_uuid == user.uuid)) => {}
                 _ => {
+                    // Always delete the current twofactor remember token here if it exists
+                    if device.twofactor_remember.is_some() {
+                        device.delete_twofactor_remember();
+                        // We need to save here, since we send a err_json!() which prevents saving `device` at a later stage
+                        device.save(true, conn).await?;
+                    }
                     err_json!(
                         _json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
-                        "2FA Remember token not provided"
+                        "2FA Remember token not provided or expired"
                     )
                 }
             }
@@ -826,10 +835,10 @@ async fn twofactor_auth(
 
     TwoFactorIncomplete::mark_complete(&user.uuid, &device.uuid, conn).await?;
 
+    let remember = data.two_factor_remember.unwrap_or(0);
     let two_factor = if !CONFIG.disable_2fa_remember() && remember == 1 {
         Some(device.refresh_twofactor_remember())
     } else {
-        device.delete_twofactor_remember();
         None
     };
     Ok(two_factor)
