@@ -262,7 +262,7 @@ pub struct CipherData {
     SshKey = 5
     */
     pub r#type: i32,
-    pub name: String,
+    pub name: Option<String>,
     pub notes: Option<String>,
     fields: Option<Value>,
 
@@ -330,7 +330,10 @@ async fn post_ciphers_create(
     // cipher.save() below.
     enforce_personal_ownership_policy(Some(&data.cipher), &headers, &conn).await?;
 
-    let mut cipher = Cipher::new(data.cipher.r#type, data.cipher.name.clone());
+    let Some(ref cipher_name) = data.cipher.name else {
+        err!("Cipher Name field is required")
+    };
+    let mut cipher = Cipher::new(data.cipher.r#type, cipher_name.clone());
     cipher.user_uuid = Some(headers.user.uuid.clone());
     cipher.save(&conn).await?;
 
@@ -360,7 +363,10 @@ async fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn, nt
     // needed when creating a new cipher, so just ignore it unconditionally.
     data.last_known_revision_date = None;
 
-    let mut cipher = Cipher::new(data.r#type, data.name.clone());
+    let Some(ref cipher_name) = data.name else {
+        err!("Cipher Name field is required")
+    };
+    let mut cipher = Cipher::new(data.r#type, cipher_name.clone());
     update_cipher_from_data(&mut cipher, data, &headers, None, &conn, &nt, UpdateType::SyncCipherCreate).await?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &conn).await?))
@@ -520,7 +526,10 @@ pub async fn update_cipher_from_data(
     };
 
     cipher.key = data.key;
-    cipher.name = data.name;
+    let Some(cipher_name) = data.name else {
+        err!("Cipher Name field is required")
+    };
+    cipher.name = cipher_name;
     cipher.notes = data.notes;
     cipher.fields = data.fields.map(|f| _clean_cipher_data(f).to_string());
     cipher.data = type_data.to_string();
@@ -621,7 +630,10 @@ async fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbC
         let folder_id = relations_map.get(&index).map(|i| folders[*i].clone());
         cipher_data.folder_id = folder_id;
 
-        let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
+        let Some(ref cipher_name) = cipher_data.name else {
+            err!("Cipher Name field is required")
+        };
+        let mut cipher = Cipher::new(cipher_data.r#type, cipher_name.clone());
         update_cipher_from_data(&mut cipher, cipher_data, &headers, None, &conn, &nt, UpdateType::None).await?;
     }
 
