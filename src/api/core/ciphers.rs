@@ -799,12 +799,16 @@ async fn post_collections_update(
         err!("Collection cannot be changed")
     }
 
+    let Some(ref org_uuid) = cipher.organization_uuid else {
+        err!("Cipher is not owned by an organization")
+    };
+
     let posted_collections = HashSet::<CollectionId>::from_iter(data.collection_ids);
     let current_collections =
         HashSet::<CollectionId>::from_iter(cipher.get_collections(headers.user.uuid.clone(), &conn).await);
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
-        match Collection::find_by_uuid_and_org(collection, cipher.organization_uuid.as_ref().unwrap(), &conn).await {
+        match Collection::find_by_uuid_and_org(collection, org_uuid, &conn).await {
             None => err!("Invalid collection ID provided"),
             Some(collection) => {
                 if collection.is_writable_by_user(&headers.user.uuid, &conn).await {
@@ -835,7 +839,7 @@ async fn post_collections_update(
     log_event(
         EventType::CipherUpdatedCollections as i32,
         &cipher.uuid,
-        &cipher.organization_uuid.clone().unwrap(),
+        org_uuid,
         &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
@@ -875,12 +879,16 @@ async fn post_collections_admin(
         err!("Collection cannot be changed")
     }
 
+    let Some(ref org_uuid) = cipher.organization_uuid else {
+        err!("Cipher is not owned by an organization")
+    };
+
     let posted_collections = HashSet::<CollectionId>::from_iter(data.collection_ids);
     let current_collections =
         HashSet::<CollectionId>::from_iter(cipher.get_admin_collections(headers.user.uuid.clone(), &conn).await);
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
-        match Collection::find_by_uuid_and_org(collection, cipher.organization_uuid.as_ref().unwrap(), &conn).await {
+        match Collection::find_by_uuid_and_org(collection, org_uuid, &conn).await {
             None => err!("Invalid collection ID provided"),
             Some(collection) => {
                 if collection.is_writable_by_user(&headers.user.uuid, &conn).await {
@@ -911,7 +919,7 @@ async fn post_collections_admin(
     log_event(
         EventType::CipherUpdatedCollections as i32,
         &cipher.uuid,
-        &cipher.organization_uuid.unwrap(),
+        org_uuid,
         &headers.user.uuid,
         headers.device.atype,
         &headers.ip.ip,
