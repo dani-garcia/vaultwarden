@@ -515,15 +515,11 @@ impl WebSocketUsers {
         if *NOTIFICATIONS_DISABLED {
             return;
         }
-        let data = create_update(
-            vec![("Id".into(), auth_request_id.to_string().into()), ("UserId".into(), user_id.to_string().into())],
-            UpdateType::AuthRequestResponse,
-            Some(device.uuid.clone()),
-        );
-        if CONFIG.enable_websocket() {
-            self.send_update(user_id, &data).await;
-        }
-
+        // AuthRequestResponse should not be sent through the authenticated WebSocket hub,
+        // as that broadcasts to all user devices including the approving device, causing
+        // a duplicate notification. The anonymous hub already delivers the response to the
+        // requesting device. Only the push relay is needed here as a fallback for devices
+        // not connected via WebSocket.
         if CONFIG.push_enabled() {
             push_auth_response(user_id, auth_request_id, device, conn).await;
         }
