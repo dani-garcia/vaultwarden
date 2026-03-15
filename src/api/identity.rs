@@ -22,10 +22,12 @@ use crate::{
     },
     auth,
     auth::{generate_organization_api_key_login_claims, AuthMethod, ClientHeaders, ClientIp, ClientVersion},
+    crypto,
     db::{
         models::{
-            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeWrapper, OrganizationApiKey,
-            OrganizationId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
+            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, Membership, MembershipStatus,
+            MembershipType, OIDCCodeWrapper, Organization, OrganizationApiKey, OrganizationId, SsoAuth, SsoUser,
+            TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
         DbConn,
     },
@@ -301,6 +303,69 @@ async fn _sso_login(
     // Set the user_uuid here to be passed back used for event logging.
     *user_id = Some(user.uuid.clone());
 
+    // SSO auto-enroll: create organization and membership on first SSO login
+    if CONFIG.sso_auto_enroll() {
+        if Membership::find_by_user(&user.uuid, conn).await.is_empty() {
+            let sso_id_cfg = CONFIG.sso_identifier();
+            let org_name = if sso_id_cfg.is_empty() { "SSO Organization".to_string() } else { sso_id_cfg };
+
+            let mut org = match Organization::find_by_name(&org_name, conn).await {
+                Some(org) => org,
+                None => {
+                    let org = Organization::new(org_name, &user.email, None, None);
+                    org.save(conn).await?;
+                    info!("Created SSO organization: {}", org.name);
+                    org
+                }
+            };
+
+            let mut member = Membership::new(user.uuid.clone(), org.uuid.clone(), None);
+            member.access_all = true;
+            member.atype = MembershipType::User as i32;
+
+            // If user already has RSA keys (returning user), set up org keys + akey now
+            if let Some(ref user_pub_key) = user.public_key {
+                if org.public_key.is_none() {
+                    match crypto::generate_org_keys() {
+                        Ok(keys) => {
+                            org.public_key = Some(keys.public_key);
+                            org.private_key = Some(keys.encrypted_private_key);
+                            org.save(conn).await?;
+                            if let Err(e) = crypto::save_org_sym_key(org.uuid.as_ref(), &keys.org_sym_key) {
+                                warn!("Failed to save org symmetric key: {e}");
+                            }
+                        }
+                        Err(e) => warn!("Failed to generate org keys: {e}"),
+                    }
+                }
+
+                match crypto::load_org_sym_key(org.uuid.as_ref()) {
+                    Ok(org_sym_key) => {
+                        match crypto::encrypt_org_key_for_user(&org_sym_key, user_pub_key) {
+                            Ok(akey) => {
+                                member.akey = akey;
+                                member.status = MembershipStatus::Confirmed as i32;
+                            }
+                            Err(e) => {
+                                warn!("Failed to encrypt org key for user: {e}");
+                                member.status = MembershipStatus::Accepted as i32;
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        member.status = MembershipStatus::Accepted as i32;
+                    }
+                }
+            } else {
+                // New user without keys — will be set up during Key Connector flow
+                member.status = MembershipStatus::Accepted as i32;
+            }
+
+            member.save(conn).await?;
+            info!("Auto-enrolled user {} in SSO organization {}", user.email, org.name);
+        }
+    }
+
     // We passed 2FA get auth tokens
     let auth_tokens = sso::redeem(&device, &user, data.client_id, sso_user, sso_auth, user_infos, conn).await?;
 
@@ -513,6 +578,11 @@ async fn authenticated_response(
         "UserDecryptionOptions": {
             "HasMasterPassword": has_master_password,
             "MasterPasswordUnlock": master_password_unlock,
+            "KeyConnectorOption": if CONFIG.sso_key_connector() && !has_master_password {
+                json!({ "KeyConnectorUrl": format!("{}/api/key-connector", CONFIG.domain()) })
+            } else {
+                Value::Null
+            },
             "Object": "userDecryptionOptions"
         },
     });
@@ -666,6 +736,11 @@ async fn _user_api_key_login(
         "UserDecryptionOptions": {
             "HasMasterPassword": has_master_password,
             "MasterPasswordUnlock": master_password_unlock,
+            "KeyConnectorOption": if CONFIG.sso_key_connector() && !has_master_password {
+                json!({ "KeyConnectorUrl": format!("{}/api/key-connector", CONFIG.domain()) })
+            } else {
+                Value::Null
+            },
             "Object": "userDecryptionOptions"
         },
     });

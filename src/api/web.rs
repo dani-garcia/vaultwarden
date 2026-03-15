@@ -14,6 +14,7 @@ use crate::{
     auth::decode_file_download,
     db::models::{AttachmentId, CipherId},
     error::Error,
+    sso,
     util::Cached,
     CONFIG,
 };
@@ -24,6 +25,9 @@ pub fn routes() -> Vec<Route> {
     let mut routes = routes![attachments, alive, alive_head, static_files];
     if CONFIG.web_vault_enabled() {
         routes.append(&mut routes![web_index, web_index_direct, web_index_head, app_id, web_files, vaultwarden_css]);
+        if CONFIG.sso_enabled() && CONFIG.sso_only() && CONFIG.sso_auto_redirect() {
+            routes.append(&mut routes![vaultwarden_sso_js, sso_auto_redirect, sso_auto_redirect_js]);
+        }
     }
 
     #[cfg(debug_assertions)]
@@ -106,8 +110,23 @@ fn vaultwarden_css() -> Cached<Css<String>> {
 }
 
 #[get("/")]
-async fn web_index() -> Cached<Option<NamedFile>> {
-    Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join("index.html")).await.ok(), false)
+async fn web_index() -> Cached<Option<Html<String>>> {
+    let path = Path::new(&CONFIG.web_vault_folder()).join("index.html");
+    match tokio::fs::read_to_string(&path).await {
+        Ok(mut html) => {
+            // When SSO auto-redirect is enabled, inject a script that redirects the login page
+            // to the SSO provider and hides the default login UI to prevent flash
+            if CONFIG.sso_enabled() && CONFIG.sso_only() && CONFIG.sso_auto_redirect() {
+                html = html.replace(
+                    "</head>",
+                    "<style>app-root{display:none!important}html,body{background:#0f1419!important}</style>\
+                     <script src=\"vaultwarden-sso.js\"></script></head>",
+                );
+            }
+            Cached::short(Some(Html(html)), false)
+        }
+        Err(_) => Cached::short(None, false),
+    }
 }
 
 // Make sure that `/index.html` redirect to actual domain path.
@@ -245,4 +264,145 @@ pub fn static_files(filename: &str) -> Result<(ContentType, &'static [u8]), Erro
         }
         _ => err!(format!("Static file not found: {filename}")),
     }
+}
+
+/// Inline JS injected into index.html that intercepts the login page and redirects to the
+/// SSO auto-redirect page. Non-login pages (SSO callback, vault, etc.) show `app-root` normally.
+///
+/// When SSO_LOGOUT_REDIRECT is also enabled, tracks the active session in localStorage.
+/// On logout (page reloads to login hash while flag exists), redirects to the SSO provider's
+/// end_session endpoint to properly terminate the SSO session before the next auto-redirect.
+#[get("/vaultwarden-sso.js")]
+fn vaultwarden_sso_js() -> Cached<(ContentType, String)> {
+    let js = if CONFIG.sso_enabled() && CONFIG.sso_only() && CONFIG.sso_auto_redirect() {
+        let logout_redirect = CONFIG.sso_logout_redirect();
+
+        if logout_redirect {
+            let sso_authority = CONFIG.sso_authority();
+            let sso_client_id = CONFIG.sso_client_id();
+            let domain = CONFIG.domain();
+            let safe_authority: String = sso_authority.chars()
+                .filter(|c| c.is_alphanumeric() || matches!(c, ':' | '/' | '.' | '-' | '_'))
+                .collect();
+            let safe_client_id: String = sso_client_id.chars()
+                .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_'))
+                .collect();
+            let safe_domain: String = domain.chars()
+                .filter(|c| c.is_alphanumeric() || matches!(c, ':' | '/' | '.' | '-' | '_'))
+                .collect();
+
+            // With logout redirect: track active session via localStorage flag.
+            // Login hash + flag present = logout → redirect to IdP end_session.
+            // Login hash + no flag = fresh visit → auto-redirect to SSO.
+            // Other hash = active session → set flag, show app.
+            format!(
+                "(function(){{\
+                    var h=window.location.hash||'';\
+                    if(!h||h==='#'||h==='#/'||h==='#/login'||h.indexOf('#/login?')===0){{\
+                        if(localStorage.getItem('__vw_sso_active')){{\
+                            localStorage.removeItem('__vw_sso_active');\
+                            window.location.replace('{safe_authority}/protocol/openid-connect/logout\
+?client_id={safe_client_id}&post_logout_redirect_uri='+encodeURIComponent('{safe_domain}/sso-auto-redirect'));\
+                        }}else{{\
+                            var p=window.location.pathname;\
+                            if(p.charAt(p.length-1)!=='/') p+='/';\
+                            window.location.replace(p+'sso-auto-redirect');\
+                        }}\
+                    }}else{{\
+                        localStorage.setItem('__vw_sso_active','1');\
+                        var s=document.createElement('style');\
+                        s.textContent='app-root{{display:block!important}}';\
+                        document.head.appendChild(s);\
+                    }}\
+                }})();",
+                safe_authority = safe_authority,
+                safe_client_id = safe_client_id,
+                safe_domain = safe_domain,
+            )
+        } else {
+            // Without logout redirect: simple auto-redirect, no session tracking.
+            "(function(){\
+                var h=window.location.hash||'';\
+                if(!h||h==='#'||h==='#/'||h==='#/login'||h.indexOf('#/login?')===0){\
+                    var p=window.location.pathname;\
+                    if(p.charAt(p.length-1)!=='/') p+='/';\
+                    window.location.replace(p+'sso-auto-redirect');\
+                } else {\
+                    var s=document.createElement('style');\
+                    s.textContent='app-root{display:block!important}';\
+                    document.head.appendChild(s);\
+                }\
+            })();".to_string()
+        }
+    } else {
+        String::new()
+    };
+    Cached::ttl((ContentType::JavaScript, js), 86_400, false)
+}
+
+/// Minimal HTML page that loads the PKCE redirect script as an external resource.
+#[get("/sso-auto-redirect")]
+fn sso_auto_redirect() -> Cached<Html<&'static str>> {
+    Cached::short(
+        Html(r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>html,body{margin:0;background:#0f1419}</style>
+</head><body>
+<script src="sso-auto-redirect.js"></script>
+</body></html>"#),
+        false,
+    )
+}
+
+/// PKCE-based SSO auto-redirect script. Generates code verifier, challenge, and state,
+/// stores them in sessionStorage (where the web vault expects them), then redirects to
+/// Vaultwarden's /identity/connect/authorize endpoint which forwards to the SSO provider.
+#[get("/sso-auto-redirect.js")]
+fn sso_auto_redirect_js() -> Cached<(ContentType, String)> {
+    let domain = CONFIG.domain();
+    // Sanitize values for safe JS string embedding (prevent XSS via config injection)
+    let safe_domain: String = domain
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, ':' | '/' | '.' | '-' | '_'))
+        .collect();
+
+    let sso_id_cfg = CONFIG.sso_identifier();
+    let sso_id = if sso_id_cfg.is_empty() { sso::FAKE_IDENTIFIER.to_string() } else { sso_id_cfg };
+    let safe_sso_id: String = sso_id
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_'))
+        .collect();
+
+    let js = format!(
+        r#"(async function(){{
+var cv='';var a=new Uint8Array(64);crypto.getRandomValues(a);
+for(var i=0;i<a.length;i++)cv+=a[i].toString(16).padStart(2,'0');
+var enc=new TextEncoder().encode(cv);
+var hash=await crypto.subtle.digest('SHA-256',enc);
+var u8=new Uint8Array(hash);var b='';
+for(var i=0;i<u8.length;i++)b+=String.fromCharCode(u8[i]);
+var cc=btoa(b).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/g,'');
+var sa=new Uint8Array(32);crypto.getRandomValues(sa);
+var state='';for(var i=0;i<sa.length;i++)state+=sa[i].toString(16).padStart(2,'0');
+state+='_identifier={safe_sso_id}';
+sessionStorage.setItem('global_ssoLogin_ssoCodeVerifier',JSON.stringify(cv));
+sessionStorage.setItem('global_ssoLogin_ssoState',JSON.stringify(state));
+sessionStorage.setItem('global_ssoLogin_organizationSsoIdentifier',JSON.stringify('{safe_sso_id}'));
+sessionStorage.setItem('global_ssoLogin_ssoEmail',JSON.stringify(''));
+localStorage.setItem('global_ssoLogin_organizationSsoIdentifier',JSON.stringify('{safe_sso_id}'));
+var p=new URLSearchParams({{
+client_id:'web',
+redirect_uri:'{safe_domain}/sso-connector.html',
+response_type:'code',
+scope:'api offline_access',
+state:state,
+code_challenge:cc,
+code_challenge_method:'S256'
+}});
+window.location.replace('{safe_domain}/identity/connect/authorize?'+p.toString());
+}})();"#,
+        safe_domain = safe_domain,
+        safe_sso_id = safe_sso_id,
+    );
+    Cached::short((ContentType::JavaScript, js), false)
 }

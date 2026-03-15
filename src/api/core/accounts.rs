@@ -16,8 +16,8 @@ use crate::{
     db::{
         models::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, EmergencyAccess,
-            EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId, OrgPolicy,
-            OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
+            EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId, MembershipStatus,
+            OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
         },
         DbConn,
     },
@@ -72,6 +72,12 @@ pub fn routes() -> Vec<rocket::Route> {
         get_auth_request_response,
         get_auth_requests,
         get_auth_requests_pending,
+        // Key Connector endpoints (SSO passwordless)
+        get_key_connector_user_keys,
+        post_key_connector_user_keys,
+        post_set_key_connector_key,
+        post_convert_to_key_connector,
+        get_key_connector_confirmation_details,
     ]
 }
 
@@ -1699,4 +1705,135 @@ pub async fn purge_auth_requests(pool: DbPool) {
     } else {
         error!("Failed to get DB connection while purging auth requests")
     }
+}
+
+#[get("/key-connector/user-keys")]
+async fn get_key_connector_user_keys(headers: Headers) -> JsonResult {
+    if !CONFIG.sso_key_connector() {
+        err!("Key Connector is not enabled");
+    }
+    match crypto::load_kc_key(headers.user.uuid.as_ref()) {
+        Ok(key) => Ok(Json(json!({ "key": key }))),
+        Err(_) => err!("Key not found"),
+    }
+}
+
+#[post("/key-connector/user-keys", data = "<data>")]
+async fn post_key_connector_user_keys(data: Json<KeyConnectorKeyData>, headers: Headers) -> EmptyResult {
+    if !CONFIG.sso_key_connector() {
+        err!("Key Connector is not enabled");
+    }
+    if data.key.len() > 1024 {
+        err!("Key data too large");
+    }
+    crypto::save_kc_key(headers.user.uuid.as_ref(), &data.key)?;
+    info!("Stored Key Connector key for user {}", headers.user.email);
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KeyConnectorKeyData {
+    key: String,
+}
+
+#[post("/accounts/set-key-connector-key", data = "<data>")]
+async fn post_set_key_connector_key(data: Json<SetKeyConnectorKeyData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    if !CONFIG.sso_key_connector() {
+        err!("Key Connector is not enabled");
+    }
+
+    let data = data.into_inner();
+    let mut user = headers.user;
+
+    set_kdf_data(&mut user, &data.kdf)?;
+
+    user.akey = data.key;
+    if let Some(keys) = data.keys {
+        user.private_key = Some(keys.encrypted_private_key);
+        user.public_key = Some(keys.public_key);
+    }
+
+    if let Some(ref identifier) = data.org_identifier {
+        if !identifier.is_empty() {
+            if let Some(mut org) = Organization::find_by_name(identifier, &conn).await {
+                if let Some(mut membership) = Membership::find_by_user_and_org(&user.uuid, &org.uuid, &conn).await {
+                    if membership.akey.is_empty() {
+                        if let Some(ref user_pub_key) = user.public_key {
+                            if org.public_key.is_none() {
+                                if let Ok(keys) = crypto::generate_org_keys() {
+                                    org.public_key = Some(keys.public_key);
+                                    org.private_key = Some(keys.encrypted_private_key);
+                                    org.save(&conn).await?;
+                                    if let Err(e) = crypto::save_org_sym_key(org.uuid.as_ref(), &keys.org_sym_key) {
+                                        warn!("Failed to save org symmetric key: {e}");
+                                    }
+                                }
+                            }
+                            if let Ok(org_sym_key) = crypto::load_org_sym_key(org.uuid.as_ref()) {
+                                if let Ok(akey) = crypto::encrypt_org_key_for_user(&org_sym_key, user_pub_key) {
+                                    membership.akey = akey;
+                                    membership.status = MembershipStatus::Confirmed as i32;
+                                    membership.save(&conn).await?;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    user.save(&conn).await?;
+    info!("Set Key Connector key for user {}", user.email);
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetKeyConnectorKeyData {
+    #[serde(flatten)]
+    kdf: KDFData,
+    key: String,
+    keys: Option<KeysData>,
+    org_identifier: Option<String>,
+}
+
+#[get("/accounts/key-connector/confirmation-details/<identifier>")]
+async fn get_key_connector_confirmation_details(identifier: &str, headers: Headers, conn: DbConn) -> JsonResult {
+    if !CONFIG.sso_key_connector() {
+        err!("Key Connector is not enabled");
+    }
+
+    let org = if identifier == crate::sso::FAKE_IDENTIFIER {
+        match Membership::find_main_user_org(&headers.user.uuid, &conn).await {
+            Some(member) => Organization::find_by_uuid(&member.org_uuid, &conn).await,
+            None => None,
+        }
+    } else {
+        Organization::find_by_name(identifier, &conn).await
+    };
+
+    match org {
+        Some(org) => Ok(Json(json!({
+            "name": org.name,
+            "keyConnectorUrl": format!("{}/api/key-connector", CONFIG.domain()),
+        }))),
+        None => err!("Organization not found"),
+    }
+}
+
+#[post("/accounts/convert-to-key-connector")]
+async fn post_convert_to_key_connector(headers: Headers, conn: DbConn) -> EmptyResult {
+    if !CONFIG.sso_key_connector() {
+        err!("Key Connector is not enabled");
+    }
+    if !crypto::has_kc_key(headers.user.uuid.as_ref()) {
+        err!("No Key Connector key stored for this user");
+    }
+    let mut user = headers.user;
+    user.password_hash = Vec::new();
+    user.save(&conn).await?;
+    info!("User {} converted to Key Connector (passwordless)", user.email);
+    Ok(())
 }

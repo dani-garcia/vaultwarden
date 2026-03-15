@@ -198,8 +198,8 @@ impl Organization {
             "useTotp": true,
             "usePolicies": true,
             "useScim": false, // Not supported (Not AGPLv3 Licensed)
-            "useSso": false, // Not supported
-            "useKeyConnector": false, // Not supported
+            "useSso": CONFIG.sso_enabled(),
+            "useKeyConnector": CONFIG.sso_key_connector(),
             "usePasswordManager": true,
             "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
             "selfHost": true,
@@ -474,7 +474,7 @@ impl Membership {
         // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/ProfileOrganizationResponseModel.cs
         json!({
             "id": self.org_uuid,
-            "identifier": null, // Not supported
+            "identifier": &org.name,
             "name": org.name,
             "seats": 20, // hardcoded maxEmailsCount in the web-vault
             "maxCollections": null,
@@ -492,8 +492,8 @@ impl Membership {
             "resetPasswordEnrolled": self.reset_password_key.is_some(),
             "useResetPassword": CONFIG.mail_enabled(),
             "ssoBound": false, // Not supported
-            "useSso": false, // Not supported
-            "useKeyConnector": false,
+            "useSso": CONFIG.sso_enabled(),
+            "useKeyConnector": CONFIG.sso_key_connector(),
             "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
             "usePasswordManager": true,
             "useCustomPermissions": true,
@@ -508,8 +508,12 @@ impl Membership {
             "familySponsorshipFriendlyName": null,
             "familySponsorshipAvailable": false,
             "productTierType": 3, // Enterprise tier
-            "keyConnectorEnabled": false,
-            "keyConnectorUrl": null,
+            "keyConnectorEnabled": CONFIG.sso_key_connector(),
+            "keyConnectorUrl": if CONFIG.sso_key_connector() {
+                json!(format!("{}/api/key-connector", CONFIG.domain()))
+            } else {
+                json!(null)
+            },
             "familySponsorshipLastSyncDate": null,
             "familySponsorshipValidUntil": null,
             "familySponsorshipToDelete": null,
@@ -662,7 +666,7 @@ impl Membership {
             "ssoBound": false, // Not supported
             "managedByOrganization": false, // This key is obsolete replaced by claimedByOrganization
             "claimedByOrganization": false, // Means not managed via the Members UI, like SSO
-            "usesKeyConnector": false, // Not supported
+            "usesKeyConnector": crate::crypto::has_kc_key(self.user_uuid.as_ref()),
             "accessSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
 
             "object": "organizationUserUserDetails",

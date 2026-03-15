@@ -829,6 +829,18 @@ make_config! {
         sso_client_cache_expiration:    u64,    true,   def,    0;
         /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
         sso_debug_tokens:               bool,   true,   def,    false;
+        /// Auto-redirect to SSO |> Automatically redirect users to the SSO provider login page instead of showing the Vaultwarden login form. Requires SSO_ONLY=true.
+        sso_auto_redirect:              bool,   true,   def,    false;
+        /// SSO organization identifier |> Identifier sent during SSO auto-redirect. Must match the identifier used in organization invitations. Leave empty to use default.
+        sso_identifier:                 String, true,   def,    String::new();
+        /// SSO logout redirect |> On logout, redirect to the SSO provider's end_session endpoint to terminate the SSO session. Prevents auto-re-login when SSO_AUTO_REDIRECT is enabled.
+        sso_logout_redirect:            bool,   true,   def,    false;
+        /// SSO Key Connector |> Enable built-in Key Connector support. Allows SSO users to use their vault without ever setting a master password. The server stores user master keys encrypted at rest. Requires SSO_ONLY=true and SSO_KEY_CONNECTOR_SECRET.
+        sso_key_connector:              bool,   true,   def,    false;
+        /// SSO Key Connector secret |> Required when SSO_KEY_CONNECTOR=true. 64-char hex string (256 bits) used to encrypt user keys at rest via AES-256-GCM. Generate with: openssl rand -hex 32. CRITICAL: back up this secret — losing it means all Key Connector users lose vault access.
+        sso_key_connector_secret:       Pass,   true,   option;
+        /// SSO auto-enroll |> Automatically create an organization and enroll SSO users on first login. The organization name matches SSO_IDENTIFIER (or a default).
+        sso_auto_enroll:                bool,   true,   def,    false;
     },
 
     /// Yubikey settings
@@ -1096,6 +1108,23 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
         validate_sso_master_password_policy(&cfg.sso_master_password_policy)?;
+
+        if cfg.sso_key_connector {
+            match &cfg.sso_key_connector_secret {
+                None => err!("`SSO_KEY_CONNECTOR_SECRET` is required when `SSO_KEY_CONNECTOR` is enabled. Generate with: openssl rand -hex 32"),
+                Some(secret) if secret.len() != 64 => err!("`SSO_KEY_CONNECTOR_SECRET` must be exactly 64 hex characters (256 bits)"),
+                Some(secret) if data_encoding::HEXLOWER.decode(secret.as_bytes()).is_err() => {
+                    err!("`SSO_KEY_CONNECTOR_SECRET` must be valid lowercase hex")
+                }
+                _ => {}
+            }
+            if !cfg.sso_only {
+                err!("`SSO_KEY_CONNECTOR` requires `SSO_ONLY=true`")
+            }
+        }
+        if cfg.sso_auto_redirect && !cfg.sso_only {
+            err!("`SSO_AUTO_REDIRECT` requires `SSO_ONLY=true`")
+        }
     }
 
     if cfg._enable_yubico {

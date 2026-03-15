@@ -277,7 +277,7 @@ impl User {
             "providerOrganizations": [],
             "forcePasswordReset": false,
             "avatarColor": self.avatar_color,
-            "usesKeyConnector": false,
+            "usesKeyConnector": crypto::has_kc_key(self.uuid.as_ref()),
             "creationDate": format_date(&self.created_at),
             "object": "profile",
         })
