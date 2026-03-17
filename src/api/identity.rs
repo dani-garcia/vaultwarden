@@ -633,6 +633,19 @@ async fn _user_api_key_login(
         Value::Null
     };
 
+    let account_keys = if user.private_key.is_some() {
+        json!({
+            "publicKeyEncryptionKeyPair": {
+                "wrappedPrivateKey": user.private_key,
+                "publicKey": user.public_key,
+                "Object": "publicKeyEncryptionKeyPair"
+            },
+            "Object": "privateKeys"
+        })
+    } else {
+        Value::Null
+    };
+
     // Note: No refresh_token is returned. The CLI just repeats the
     // client_credentials login flow when the existing token expires.
     let result = json!({
@@ -647,7 +660,9 @@ async fn _user_api_key_login(
         "KdfMemory": user.client_kdf_memory,
         "KdfParallelism": user.client_kdf_parallelism,
         "ResetMasterPassword": false, // TODO: according to official server seems something like: user.password_hash.is_empty(), but would need testing
+        "ForcePasswordReset": false,
         "scope": AuthMethod::UserApiKey.scope(),
+        "AccountKeys": account_keys,
         "UserDecryptionOptions": {
             "HasMasterPassword": has_master_password,
             "MasterPasswordUnlock": master_password_unlock,
@@ -975,12 +990,11 @@ async fn register_verification_email(
         let user = User::find_by_mail(&data.email, &conn).await;
         if user.filter(|u| u.private_key.is_some()).is_some() {
             // There is still a timing side channel here in that the code
-            // paths that send mail take noticeably longer than ones that
-            // don't. Add a randomized sleep to mitigate this somewhat.
-            use rand::{rngs::SmallRng, Rng, SeedableRng};
-            let mut rng = SmallRng::from_os_rng();
-            let delta: i32 = 100;
-            let sleep_ms = (1_000 + rng.random_range(-delta..=delta)) as u64;
+            // paths that send mail take noticeably longer than ones that don't.
+            // Add a randomized sleep to mitigate this somewhat.
+            use rand::{rngs::SmallRng, RngExt};
+            let mut rng: SmallRng = rand::make_rng();
+            let sleep_ms = rng.random_range(900..=1100) as u64;
             tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
         } else {
             mail::send_register_verify_email(&data.email, &token).await?;

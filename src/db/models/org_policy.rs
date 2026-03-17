@@ -269,7 +269,7 @@ impl OrgPolicy {
                 continue;
             }
 
-            if let Some(user) = Membership::find_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
+            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
                 if user.atype < MembershipType::Admin {
                     return true;
                 }

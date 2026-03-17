@@ -153,9 +153,11 @@ impl Cors {
     fn get_allowed_origin(headers: &HeaderMap<'_>) -> Option<String> {
         let origin = Cors::get_header(headers, "Origin");
         let safari_extension_origin = "file://";
+        let desktop_custom_file_origin = "bw-desktop-file://bundle";
 
         if origin == CONFIG.domain_origin()
             || origin == safari_extension_origin
+            || origin == desktop_custom_file_origin
             || (CONFIG.sso_enabled() && origin == CONFIG.sso_authority())
         {
             Some(origin)

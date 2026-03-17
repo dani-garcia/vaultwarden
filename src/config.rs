@@ -1027,12 +1027,14 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
     }
 
     // Server (v2025.6.2): https://github.com/bitwarden/server/blob/d094be3267f2030bd0dc62106bc6871cf82682f5/src/Core/Constants.cs#L103
-    // Client (web-v2025.6.1): https://github.com/bitwarden/clients/blob/747c2fd6a1c348a57a76e4a7de8128466ffd3c01/libs/common/src/enums/feature-flag.enum.ts#L12
+    // Client (web-v2026.2.0): https://github.com/bitwarden/clients/blob/a2fefe804d8c9b4a56c42f9904512c5c5821e2f6/libs/common/src/enums/feature-flag.enum.ts#L12
     // Android (v2025.6.0): https://github.com/bitwarden/android/blob/b5b022caaad33390c31b3021b2c1205925b0e1a2/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/manager/model/FlagKey.kt#L22
     // iOS (v2025.6.0): https://github.com/bitwarden/ios/blob/ff06d9c6cc8da89f78f37f376495800201d7261a/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
     //
     // NOTE: Move deprecated flags to the utils::parse_experimental_client_feature_flags() DEPRECATED_FLAGS const!
     const KNOWN_FLAGS: &[&str] = &[
+        // Auth Team
+        "pm-5594-safari-account-switching",
         // Autofill Team
         "inline-menu-positioning-improvements",
         "inline-menu-totp",
@@ -1046,6 +1048,10 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         "anon-addy-self-host-alias",
         "simple-login-self-host-alias",
         "mutual-tls",
+        "cxp-import-mobile",
+        "cxp-export-mobile",
+        // Webauthn Related Origins
+        "pm-30529-webauthn-related-origins",
     ];
     let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
     let invalid_flags: Vec<_> = configured_flags.keys().filter(|flag| !KNOWN_FLAGS.contains(&flag.as_str())).collect();

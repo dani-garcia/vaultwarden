@@ -1,6 +1,6 @@
 [workspace.package]
 edition = "2021"
-rust-version = "1.91.0"
+rust-version = "1.92.0"
 license = "AGPL-3.0-only"
 repository = "https://github.com/dani-garcia/vaultwarden"
 publish = false
@@ -78,8 +78,8 @@ rmpv = "1.3.1" # MessagePack library
 dashmap = "6.1.0"
 
 # Async futures
-futures = "0.3.31"
-tokio = { version = "1.49.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+futures = "0.3.32"
+tokio = { version = "1.50.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 tokio-util = { version = "0.7.18", features = ["compat"]}
 
 # A generic serialization/deserialization framework
@@ -98,15 +98,15 @@ diesel-derive-newtype = "2.1.2"
 libsqlite3-sys = { version = "0.35.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
-rand = "0.9.2"
+rand = "0.10.0"
 ring = "0.17.14"
 subtle = "2.6.1"
 
 # UUID generation
-uuid = { version = "1.20.0", features = ["v4"] }
+uuid = { version = "1.22.0", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.43", features = ["clock", "serde"], default-features = false }
+chrono = { version = "0.4.44", features = ["clock", "serde"], default-features = false }
 chrono-tz = "0.10.4"
 time = "0.3.47"
 
@@ -152,14 +152,14 @@ html5gum = "0.8.3"
 regex = { version = "1.12.3", features = ["std", "perf", "unicode-perl"], default-features = false }
 data-url = "0.3.2"
 bytes = "1.11.1"
-svg-hush = "0.9.5"
+svg-hush = "0.9.6"
 
 # Cache function results (Used for version check and favicon fetching)
 cached = { version = "0.56.0", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.18.1"
-cookie_store = "0.22.0"
+cookie_store = "0.22.1"
 
 # Used by U2F, JWT and PostgreSQL
 openssl = "0.10.75"
@@ -172,8 +172,8 @@ pastey = "0.2.1"
 governor = "0.10.4"
 
 # OIDC for SSO
-openidconnect = { version = "4.0.1", features = ["reqwest", "native-tls"] }
-mini-moka = "0.10.3"
+openidconnect = { version = "4.0.1", features = ["reqwest", "rustls-tls"] }
+moka = { version = "0.12.13", features = ["future"] }
 
 # Check client versions for specific features.
 semver = "1.0.27"
@@ -182,7 +182,7 @@ semver = "1.0.27"
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.48", features = ["secure"], default-features = false, optional = true }
 
-which = "8.0.0"
+which = "8.0.1"
 
 # Argon2 library with support for the PHC format
 argon2 = "0.5.3"
@@ -197,10 +197,10 @@ grass_compiler = { version = "0.13.4", default-features = false }
 opendal = { version = "0.55.0", features = ["services-fs"], default-features = false }
 
 # For retrieving AWS credentials, including temporary SSO credentials
-anyhow = { version = "1.0.101", optional = true }
-aws-config = { version = "1.8.13", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
-aws-credential-types = { version = "1.2.11", optional = true }
-aws-smithy-runtime-api = { version = "1.11.3", optional = true }
+anyhow = { version = "1.0.102", optional = true }
+aws-config = { version = "1.8.15", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
+aws-credential-types = { version = "1.2.14", optional = true }
+aws-smithy-runtime-api = { version = "1.11.6", optional = true }
 http = { version = "1.4.0", optional = true }
 reqsign = { version = "0.16.5", optional = true }
 
