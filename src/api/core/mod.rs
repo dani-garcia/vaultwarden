@@ -205,11 +205,9 @@ fn config() -> Json<Value> {
     // iOS (v2025.6.0): https://github.com/bitwarden/ios/blob/ff06d9c6cc8da89f78f37f376495800201d7261a/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
     let mut feature_states =
         parse_experimental_client_feature_flags(&crate::CONFIG.experimental_client_feature_flags());
-    feature_states.insert("duo-redirect".to_string(), true);
     feature_states.insert("email-verification".to_string(), true);
-    feature_states.insert("unauth-ui-refresh".to_string(), true);
-    feature_states.insert("enable-pm-flight-recorder".to_string(), true);
     feature_states.insert("mobile-error-reporting".to_string(), true);
+    feature_states.insert("pm-19148-innovation-archive".to_string(), true);
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns

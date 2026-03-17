@@ -341,6 +341,14 @@ table! {
     }
 }
 
+table! {
+    archives (user_uuid, cipher_uuid) {
+        user_uuid -> Text,
+        cipher_uuid -> Text,
+        archived_at -> Timestamp,
+    }
+}
+
 joinable!(attachments -> ciphers (cipher_uuid));
 joinable!(ciphers -> organizations (organization_uuid));
 joinable!(ciphers -> users (user_uuid));
