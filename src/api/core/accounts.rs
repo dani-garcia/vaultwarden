@@ -1328,6 +1328,11 @@ impl<'r> FromRequest<'r> for KnownDevice {
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let email = if let Some(email_b64) = req.headers().get_one("X-Request-Email") {
+            // Bitwarden seems to send padded Base64 strings since 2026.2.1
+            // Since these values are not streamed and Headers are always split by newlines
+            // we can safely ignore padding here and remove any '=' appended.
+            let email_b64 = email_b64.trim_end_matches('=');
+
             let Ok(email_bytes) = data_encoding::BASE64URL_NOPAD.decode(email_b64.as_bytes()) else {
                 return Outcome::Error((Status::BadRequest, "X-Request-Email value failed to decode as base64url"));
             };
