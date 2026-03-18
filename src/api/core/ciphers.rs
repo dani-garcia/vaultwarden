@@ -448,7 +448,11 @@ pub async fn update_cipher_from_data(
         cipher.user_uuid = Some(headers.user.uuid.clone());
     }
 
-    if let Some(ref folder_id) = data.folder_id {
+    // Newer Bitwarden clients may send folderId as "" instead of null for "No folder".
+    // Normalize empty folder_id to None to avoid invalid folder lookup errors.
+    let folder_id = data.folder_id.filter(|f| !f.is_empty());
+
+    if let Some(ref folder_id) = folder_id {
         if Folder::find_by_uuid_and_user(folder_id, &headers.user.uuid, conn).await.is_none() {
             err!("Invalid folder", "Folder does not exist or belongs to another user");
         }
@@ -528,7 +532,7 @@ pub async fn update_cipher_from_data(
     cipher.reprompt = data.reprompt.filter(|r| *r == RepromptType::None as i32 || *r == RepromptType::Password as i32);
 
     cipher.save(conn).await?;
-    cipher.move_to_folder(data.folder_id, &headers.user.uuid, conn).await?;
+    cipher.move_to_folder(folder_id, &headers.user.uuid, conn).await?;
     cipher.set_favorite(data.favorite, &headers.user.uuid, conn).await?;
 
     if ut != UpdateType::None {
@@ -722,14 +726,16 @@ async fn put_cipher_partial(
         err!("Cipher does not exist", "Cipher is not accessible for the current user")
     }
 
-    if let Some(ref folder_id) = data.folder_id {
+    let folder_id = data.folder_id.filter(|f| !f.is_empty());
+
+    if let Some(ref folder_id) = folder_id {
         if Folder::find_by_uuid_and_user(folder_id, &headers.user.uuid, &conn).await.is_none() {
             err!("Invalid folder", "Folder does not exist or belongs to another user");
         }
     }
 
     // Move cipher
-    cipher.move_to_folder(data.folder_id.clone(), &headers.user.uuid, &conn).await?;
+    cipher.move_to_folder(folder_id, &headers.user.uuid, &conn).await?;
     // Update favorite
     cipher.set_favorite(Some(data.favorite), &headers.user.uuid, &conn).await?;
 
@@ -1582,7 +1588,9 @@ async fn move_cipher_selected(
     let data = data.into_inner();
     let user_id = &headers.user.uuid;
 
-    if let Some(ref folder_id) = data.folder_id {
+    let folder_id = data.folder_id.filter(|f| !f.is_empty());
+
+    if let Some(ref folder_id) = folder_id {
         if Folder::find_by_uuid_and_user(folder_id, user_id, &conn).await.is_none() {
             err!("Invalid folder", "Folder does not exist or belongs to another user");
         }
@@ -1596,7 +1604,7 @@ async fn move_cipher_selected(
     let accessible_ciphers = Cipher::find_by_user_and_ciphers(user_id, &data.ids, &conn).await;
     let accessible_ciphers_count = accessible_ciphers.len();
     for cipher in accessible_ciphers {
-        cipher.move_to_folder(data.folder_id.clone(), user_id, &conn).await?;
+        cipher.move_to_folder(folder_id.clone(), user_id, &conn).await?;
         if cipher_count == 1 {
             single_cipher = Some(cipher);
         }
