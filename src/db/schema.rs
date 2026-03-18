@@ -341,6 +341,13 @@ table! {
     }
 }
 
+table! {
+    xoauth2 (id) {
+        id -> Text,
+        refresh_token -> Text,
+    }
+}
+
 joinable!(attachments -> ciphers (cipher_uuid));
 joinable!(ciphers -> organizations (organization_uuid));
 joinable!(ciphers -> users (user_uuid));
