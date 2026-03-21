@@ -102,8 +102,36 @@ pub struct UserStampException {
 
 /// Local methods
 impl User {
-    pub const CLIENT_KDF_TYPE_DEFAULT: i32 = UserKdfType::Pbkdf2 as i32;
-    pub const CLIENT_KDF_ITER_DEFAULT: i32 = 600_000;
+    pub fn client_kdf_type_default() -> i32 {
+        CONFIG.client_kdf_type()
+    }
+
+    pub fn client_kdf_iter_default() -> i32 {
+        let kdf_type = CONFIG.client_kdf_type();
+        let configured = CONFIG.client_kdf_iterations();
+        // If the admin set Argon2id but left iterations at the PBKDF2 default, use sensible Argon2id default
+        if kdf_type == UserKdfType::Argon2id as i32 && configured >= 100_000 {
+            3
+        } else {
+            configured
+        }
+    }
+
+    pub fn client_kdf_memory_default() -> Option<i32> {
+        if CONFIG.client_kdf_type() == UserKdfType::Argon2id as i32 {
+            Some(CONFIG.client_kdf_memory())
+        } else {
+            None
+        }
+    }
+
+    pub fn client_kdf_parallelism_default() -> Option<i32> {
+        if CONFIG.client_kdf_type() == UserKdfType::Argon2id as i32 {
+            Some(CONFIG.client_kdf_parallelism())
+        } else {
+            None
+        }
+    }
 
     pub fn new(email: &str, name: Option<String>) -> Self {
         let now = Utc::now().naive_utc();
@@ -140,10 +168,10 @@ impl User {
             equivalent_domains: "[]".to_string(),
             excluded_globals: "[]".to_string(),
 
-            client_kdf_type: Self::CLIENT_KDF_TYPE_DEFAULT,
-            client_kdf_iter: Self::CLIENT_KDF_ITER_DEFAULT,
-            client_kdf_memory: None,
-            client_kdf_parallelism: None,
+            client_kdf_type: Self::client_kdf_type_default(),
+            client_kdf_iter: Self::client_kdf_iter_default(),
+            client_kdf_memory: Self::client_kdf_memory_default(),
+            client_kdf_parallelism: Self::client_kdf_parallelism_default(),
 
             api_key: None,
 
