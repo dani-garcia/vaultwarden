@@ -87,8 +87,13 @@ jobs:
 
       # Verify that all PostgreSQL migrations apply cleanly to a fresh database.
       # This catches broken SQL before it reaches a production deployment.
+      # Restore src/db/schema.rs after running: diesel.toml has [print_schema]
+      # configured, so diesel rewrites the file with backend-specific types after
+      # migration. The checked-in schema.rs must be restored before compiling.
       - name: Run PostgreSQL migrations
-        run: diesel migration run --migration-dir migrations/postgresql
+        run: |
+          diesel migration run --migration-dir migrations/postgresql
+          git checkout -- src/db/schema.rs
 
       # Run the test suite with a live PostgreSQL instance available.
       # Existing tests are unit tests (no DB access), but DATABASE_URL is set
@@ -152,8 +157,11 @@ jobs:
         run: cargo install diesel_cli --no-default-features --features mysql
 
       # Verify that all MySQL migrations apply cleanly to a fresh database.
+      # Restore src/db/schema.rs for the same reason as the PostgreSQL job above.
       - name: Run MySQL migrations
-        run: diesel migration run --migration-dir migrations/mysql
+        run: |
+          diesel migration run --migration-dir migrations/mysql
+          git checkout -- src/db/schema.rs
 
       # Run the test suite with a live MySQL instance available.
       - name: Run tests (mysql)
