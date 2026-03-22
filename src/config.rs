@@ -1029,10 +1029,8 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         }
     }
 
-    let configured_flags =
-        parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags, FeatureFlagFilter::Unfiltered);
-    let invalid_flags: Vec<&str> =
-        configured_flags.keys().map(String::as_str).filter(|flag| !SUPPORTED_FEATURE_FLAGS.contains(flag)).collect();
+    let invalid_flags =
+        parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags, FeatureFlagFilter::InvalidOnly);
     if !invalid_flags.is_empty() {
         let feature_flags_error = format!("Unrecognized experimental client feature flags: {:?}.\n\
                      Please ensure all feature flags are spelled correctly and that they are supported in this version.\n\
@@ -1475,6 +1473,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "pm-5594-safari-account-switching",
     // Autofill Team
     "ssh-agent",
+    "ssh-agent-v2",
     // Key Management Team
     "ssh-key-vault-item",
     "pm-25373-windows-biometrics-v2",

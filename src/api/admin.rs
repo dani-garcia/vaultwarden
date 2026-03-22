@@ -32,7 +32,7 @@ use crate::{
     mail,
     util::{
         container_base_image, format_naive_datetime_local, get_active_web_release, get_display_size,
-        is_running_in_container, NumberOrString,
+        is_running_in_container, parse_experimental_client_feature_flags, FeatureFlagFilter, NumberOrString,
     },
     CONFIG, VERSION,
 };
@@ -734,6 +734,13 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
 
     let ip_header_name = &ip_header.0.unwrap_or_default();
 
+    let invalid_feature_flags: Vec<String> = parse_experimental_client_feature_flags(
+        &CONFIG.experimental_client_feature_flags(),
+        FeatureFlagFilter::InvalidOnly,
+    )
+    .into_keys()
+    .collect();
+
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
         "current_release": VERSION,
@@ -756,6 +763,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
         "db_version": get_sql_server_version(&conn).await,
         "admin_url": format!("{}/diagnostics", admin_url()),
         "overrides": &CONFIG.get_overrides().join(", "),
+        "invalid_feature_flags": invalid_feature_flags,
         "host_arch": env::consts::ARCH,
         "host_os":  env::consts::OS,
         "tz_env": env::var("TZ").unwrap_or_default(),

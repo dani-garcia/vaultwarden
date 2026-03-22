@@ -769,8 +769,10 @@ pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
 }
 
 pub enum FeatureFlagFilter {
+    #[allow(dead_code)]
     Unfiltered,
     ValidOnly,
+    InvalidOnly,
 }
 
 /// Parses the experimental client feature flags string into a HashMap.
@@ -785,6 +787,7 @@ pub fn parse_experimental_client_feature_flags(
         .filter(|flag| match filter_mode {
             FeatureFlagFilter::Unfiltered => true,
             FeatureFlagFilter::ValidOnly => SUPPORTED_FEATURE_FLAGS.contains(flag),
+            FeatureFlagFilter::InvalidOnly => !SUPPORTED_FEATURE_FLAGS.contains(flag),
         })
         .map(|flag| (flag.to_owned(), true))
         .collect()
