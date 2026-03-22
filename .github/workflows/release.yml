@@ -183,7 +183,6 @@ jobs:
         id: bake_vw
         uses: docker/bake-action@82490499d2e5613fcead7e128237ef0b0ea210f7 # v7.0.0
         env:
-          BASE_TAGS: "${{ steps.determine-version.outputs.BASE_TAGS }}"
           SOURCE_COMMIT: "${{ env.SOURCE_COMMIT }}"
           SOURCE_VERSION: "${{ env.SOURCE_VERSION }}"
           SOURCE_REPOSITORY_URL: "${{ env.SOURCE_REPOSITORY_URL }}"
@@ -245,7 +244,7 @@ jobs:
 
   merge-manifests:
     name: Merge manifests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: docker-build
     permissions:
       packages: write # Needed to upload packages and artifacts
