@@ -1,0 +1,160 @@
+name: Integration Tests
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    paths:
+      - ".github/workflows/integration-test.yml"
+      - "src/**"
+      - "migrations/**"
+      - "Cargo.*"
+      - "build.rs"
+      - "rust-toolchain.toml"
+
+  pull_request:
+    paths:
+      - ".github/workflows/integration-test.yml"
+      - "src/**"
+      - "migrations/**"
+      - "Cargo.*"
+      - "build.rs"
+      - "rust-toolchain.toml"
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  # ============================================================
+  # PostgreSQL integration test
+  # ============================================================
+  postgresql:
+    name: Integration test (PostgreSQL)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vaultwarden
+          POSTGRES_PASSWORD: vaultwarden
+          POSTGRES_DB: vaultwarden
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vaultwarden"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+
+    env:
+      DATABASE_URL: "postgresql://vaultwarden:vaultwarden@localhost:5432/vaultwarden"
+
+    steps:
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpq-dev pkg-config
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          prefix-key: "v2025.09-rust-integration-pg"
+
+      # Cache the diesel CLI binary to avoid recompiling it on every run.
+      # Key includes the Cargo.lock hash so it is invalidated when diesel is upgraded.
+      - name: Cache diesel CLI (postgresql)
+        id: cache-diesel-pg
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.2
+        with:
+          path: ~/.cargo/bin/diesel
+          key: diesel-cli-postgres-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install diesel CLI (postgresql)
+        if: steps.cache-diesel-pg.outputs.cache-hit != 'true'
+        run: cargo install diesel_cli --no-default-features --features postgres
+
+      # Verify that all PostgreSQL migrations apply cleanly to a fresh database.
+      # This catches broken SQL before it reaches a production deployment.
+      - name: Run PostgreSQL migrations
+        run: diesel migration run --migration-dir migrations/postgresql
+
+      # Run the test suite with a live PostgreSQL instance available.
+      # Existing tests are unit tests (no DB access), but DATABASE_URL is set
+      # so any future integration tests can connect without further setup.
+      - name: Run tests (postgresql)
+        run: cargo test --profile ci --features postgresql
+
+  # ============================================================
+  # MySQL integration test
+  # ============================================================
+  mysql:
+    name: Integration test (MySQL)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_USER: vaultwarden
+          MYSQL_PASSWORD: vaultwarden
+          MYSQL_DATABASE: vaultwarden
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_CHARACTER_SET_SERVER: utf8mb4
+          MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -uvaultwarden -pvaultwarden --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+
+    env:
+      DATABASE_URL: "mysql://vaultwarden:vaultwarden@localhost:3306/vaultwarden"
+
+    steps:
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libmariadb-dev-compat pkg-config
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          prefix-key: "v2025.09-rust-integration-mysql"
+
+      # Cache the diesel CLI binary to avoid recompiling it on every run.
+      - name: Cache diesel CLI (mysql)
+        id: cache-diesel-mysql
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.2
+        with:
+          path: ~/.cargo/bin/diesel
+          key: diesel-cli-mysql-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install diesel CLI (mysql)
+        if: steps.cache-diesel-mysql.outputs.cache-hit != 'true'
+        run: cargo install diesel_cli --no-default-features --features mysql
+
+      # Verify that all MySQL migrations apply cleanly to a fresh database.
+      - name: Run MySQL migrations
+        run: diesel migration run --migration-dir migrations/mysql
+
+      # Run the test suite with a live MySQL instance available.
+      - name: Run tests (mysql)
+        run: cargo test --profile ci --features mysql
