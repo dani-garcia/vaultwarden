@@ -403,6 +403,7 @@ pub fn backup_sqlite() -> Result<String, Error> {
         diesel::sql_query("VACUUM INTO ?")
             .bind::<diesel::sql_types::Text, _>(&backup_file)
             .execute(&mut conn)
+            .map(|_| ())
             .map_res("VACUUM INTO failed")?;
 
         Ok(backup_file)
