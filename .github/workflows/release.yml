@@ -244,7 +244,7 @@ jobs:
 
   merge-manifests:
     name: Merge manifests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: docker-build
     permissions:
       packages: write # Needed to upload packages and artifacts
