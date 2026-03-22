@@ -123,7 +123,7 @@ jobs:
           --health-retries 15
 
     env:
-      DATABASE_URL: "mysql://vaultwarden:vaultwarden@localhost:3306/vaultwarden"
+      DATABASE_URL: "mysql://vaultwarden:vaultwarden@127.0.0.1:3306/vaultwarden"
 
     steps:
       - name: Install dependencies
