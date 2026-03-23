@@ -720,6 +720,36 @@ impl OrgHeaders {
     }
 }
 
+// org_id is usually the second path param ("/organizations/<org_id>"),
+// but there are cases where it is a query value.
+// First check the path, if this is not a valid uuid, try the query values.
+fn get_org_id(request: &Request<'_>) -> Option<OrganizationId> {
+    if let Some(Ok(org_id)) = request.param::<OrganizationId>(1) {
+        Some(org_id)
+    } else if let Some(Ok(org_id)) = request.query_value::<OrganizationId>("organizationId") {
+        Some(org_id)
+    } else {
+        None
+    }
+}
+
+// Special Guard to ensure that there is an organization id present
+// If there is no org id trigger the Outcome::Forward.
+// This is useful for endpoints which work for both organization and personal vaults, like purge.
+pub struct OrgIdGuard;
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for OrgIdGuard {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        match get_org_id(request) {
+            Some(_) => Outcome::Success(OrgIdGuard),
+            None => Outcome::Forward(rocket::http::Status::NotFound),
+        }
+    }
+}
+
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for OrgHeaders {
     type Error = &'static str;
@@ -727,18 +757,8 @@ impl<'r> FromRequest<'r> for OrgHeaders {
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(Headers::from_request(request).await);
 
-        // org_id is usually the second path param ("/organizations/<org_id>"),
-        // but there are cases where it is a query value.
-        // First check the path, if this is not a valid uuid, try the query values.
-        let url_org_id: Option<OrganizationId> = {
-            if let Some(Ok(org_id)) = request.param::<OrganizationId>(1) {
-                Some(org_id)
-            } else if let Some(Ok(org_id)) = request.query_value::<OrganizationId>("organizationId") {
-                Some(org_id)
-            } else {
-                None
-            }
-        };
+        // Extract the org_id from the request
+        let url_org_id = get_org_id(request);
 
         match url_org_id {
             Some(org_id) if uuid::Uuid::parse_str(&org_id).is_ok() => {
