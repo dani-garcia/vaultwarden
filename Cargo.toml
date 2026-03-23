@@ -88,14 +88,14 @@ serde_json = "1.0.149"
 
 # A safe, extensible ORM and Query builder
 # Currently pinned diesel to v2.3.3 as newer version break MySQL/MariaDB compatibility
-diesel = { version = "2.3.6", features = ["chrono", "r2d2", "numeric"] }
+diesel = { version = "2.3.7", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.3.1"
 
 derive_more = { version = "2.1.1", features = ["from", "into", "as_ref", "deref", "display"] }
 diesel-derive-newtype = "2.1.2"
 
 # Bundled/Static SQLite
-libsqlite3-sys = { version = "0.35.0", features = ["bundled"], optional = true }
+libsqlite3-sys = { version = "0.36.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = "0.10.0"
@@ -155,14 +155,14 @@ bytes = "1.11.1"
 svg-hush = "0.9.6"
 
 # Cache function results (Used for version check and favicon fetching)
-cached = { version = "0.56.0", features = ["async"] }
+cached = { version = "0.59.0", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.18.1"
 cookie_store = "0.22.1"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.75"
+openssl = "0.10.76"
 
 # CLI argument parsing
 pico-args = "0.5.0"
@@ -173,7 +173,7 @@ governor = "0.10.4"
 
 # OIDC for SSO
 openidconnect = { version = "4.0.1", features = ["reqwest", "rustls-tls"] }
-moka = { version = "0.12.13", features = ["future"] }
+moka = { version = "0.12.15", features = ["future"] }
 
 # Check client versions for specific features.
 semver = "1.0.27"
@@ -182,7 +182,7 @@ semver = "1.0.27"
 # Mainly used for the musl builds, since the default musl malloc is very slow
 mimalloc = { version = "0.1.48", features = ["secure"], default-features = false, optional = true }
 
-which = "8.0.1"
+which = "8.0.2"
 
 # Argon2 library with support for the PHC format
 argon2 = "0.5.3"
