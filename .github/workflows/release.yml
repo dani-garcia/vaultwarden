@@ -20,23 +20,25 @@ defaults:
   run:
     shell: bash
 
-env:
-  # The *_REPO variables need to be configured as repository variables
-  # Append `/settings/variables/actions` to your repo url
-  # DOCKERHUB_REPO needs to be 'index.docker.io/<user>/<repo>'
-  # Check for Docker hub credentials in secrets
-  HAVE_DOCKERHUB_LOGIN: ${{ vars.DOCKERHUB_REPO != '' && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
-  # GHCR_REPO needs to be 'ghcr.io/<user>/<repo>'
-  # Check for Github credentials in secrets
-  HAVE_GHCR_LOGIN: ${{ vars.GHCR_REPO != '' && github.repository_owner != '' && secrets.GITHUB_TOKEN != '' }}
-  # QUAY_REPO needs to be 'quay.io/<user>/<repo>'
-  # Check for Quay.io credentials in secrets
-  HAVE_QUAY_LOGIN: ${{ vars.QUAY_REPO != '' && secrets.QUAY_USERNAME != '' && secrets.QUAY_TOKEN != '' }}
+# A "release" environment must be created in the repository settings
+# (Settings > Environments > New environment) with the following
+# variables and secrets configured as needed.
+#
+# Variables (only set the ones for registries you want to push to):
+#   DOCKERHUB_REPO: 'index.docker.io/<user>/<repo>'
+#   QUAY_REPO: 'quay.io/<user>/<repo>'
+#   GHCR_REPO: 'ghcr.io/<user>/<repo>'
+#
+# Secrets (only required when the corresponding *_REPO variable is set):
+#   DOCKERHUB_REPO => DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
+#   QUAY_REPO      => QUAY_USERNAME, QUAY_TOKEN
+#   GITHUB_TOKEN is provided automatically
 
 jobs:
   docker-build:
     name: Build Vaultwarden containers
     if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
+    environment: release
     permissions:
       packages: write # Needed to upload packages and artifacts
       contents: read
@@ -106,10 +108,10 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' }}
+        if: ${{ vars.DOCKERHUB_REPO != '' }}
 
       - name: Add registry for DockerHub
-        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' }}
+        if: ${{ vars.DOCKERHUB_REPO != '' }}
         env:
           DOCKERHUB_REPO: ${{ vars.DOCKERHUB_REPO }}
         run: |
@@ -122,10 +124,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-        if: ${{ env.HAVE_GHCR_LOGIN == 'true' }}
+        if: ${{ vars.GHCR_REPO != '' }}
 
       - name: Add registry for ghcr.io
-        if: ${{ env.HAVE_GHCR_LOGIN == 'true' }}
+        if: ${{ vars.GHCR_REPO != '' }}
         env:
           GHCR_REPO: ${{ vars.GHCR_REPO }}
         run: |
@@ -138,10 +140,10 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_TOKEN }}
-        if: ${{ env.HAVE_QUAY_LOGIN == 'true' }}
+        if: ${{ vars.QUAY_REPO != '' }}
 
       - name: Add registry for Quay.io
-        if: ${{ env.HAVE_QUAY_LOGIN == 'true' }}
+        if: ${{ vars.QUAY_REPO != '' }}
         env:
           QUAY_REPO: ${{ vars.QUAY_REPO }}
         run: |
@@ -155,7 +157,7 @@ jobs:
         run: |
           #
           # Check if there is a GitHub Container Registry Login and use it for caching
-          if [[ -n "${HAVE_GHCR_LOGIN}" ]]; then
+          if [[ -n "${GHCR_REPO}" ]]; then
             echo "BAKE_CACHE_FROM=type=registry,ref=${GHCR_REPO}-buildcache:${BASE_IMAGE}-${NORMALIZED_ARCH}" | tee -a "${GITHUB_ENV}"
             echo "BAKE_CACHE_TO=type=registry,ref=${GHCR_REPO}-buildcache:${BASE_IMAGE}-${NORMALIZED_ARCH},compression=zstd,mode=max" | tee -a "${GITHUB_ENV}"
           else
@@ -247,6 +249,7 @@ jobs:
     name: Merge manifests
     runs-on: ubuntu-latest
     needs: docker-build
+    environment: release
     permissions:
       packages: write # Needed to upload packages and artifacts
       attestations: write # Needed to generate an artifact attestation for a build
@@ -269,10 +272,10 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' }}
+        if: ${{ vars.DOCKERHUB_REPO != '' }}
 
       - name: Add registry for DockerHub
-        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' }}
+        if: ${{ vars.DOCKERHUB_REPO != '' }}
         env:
           DOCKERHUB_REPO: ${{ vars.DOCKERHUB_REPO }}
         run: |
@@ -285,10 +288,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-        if: ${{ env.HAVE_GHCR_LOGIN == 'true' }}
+        if: ${{ vars.GHCR_REPO != '' }}
 
       - name: Add registry for ghcr.io
-        if: ${{ env.HAVE_GHCR_LOGIN == 'true' }}
+        if: ${{ vars.GHCR_REPO != '' }}
         env:
           GHCR_REPO: ${{ vars.GHCR_REPO }}
         run: |
@@ -301,10 +304,10 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_TOKEN }}
-        if: ${{ env.HAVE_QUAY_LOGIN == 'true' }}
+        if: ${{ vars.QUAY_REPO != '' }}
 
       - name: Add registry for Quay.io
-        if: ${{ env.HAVE_QUAY_LOGIN == 'true' }}
+        if: ${{ vars.QUAY_REPO != '' }}
         env:
           QUAY_REPO: ${{ vars.QUAY_REPO }}
         run: |
@@ -357,7 +360,7 @@ jobs:
 
       # Attest container images
       - name: Attest - docker.io - ${{ matrix.base_image }}
-        if: ${{ env.HAVE_DOCKERHUB_LOGIN == 'true' && env.DIGEST_SHA != ''}}
+        if: ${{ vars.DOCKERHUB_REPO != '' && env.DIGEST_SHA != ''}}
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name: ${{ vars.DOCKERHUB_REPO }}
@@ -365,7 +368,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest - ghcr.io - ${{ matrix.base_image }}
-        if: ${{ env.HAVE_GHCR_LOGIN == 'true' && env.DIGEST_SHA != ''}}
+        if: ${{ vars.GHCR_REPO != '' && env.DIGEST_SHA != ''}}
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name: ${{ vars.GHCR_REPO }}
@@ -373,7 +376,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest - quay.io - ${{ matrix.base_image }}
-        if: ${{ env.HAVE_QUAY_LOGIN == 'true' && env.DIGEST_SHA != ''}}
+        if: ${{ vars.QUAY_REPO != '' && env.DIGEST_SHA != ''}}
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name: ${{ vars.QUAY_REPO }}
