@@ -1,6 +1,6 @@
 use chrono::{NaiveDateTime, Utc};
 
-use data_encoding::{BASE64, BASE64URL};
+use data_encoding::BASE64URL;
 use derive_more::{Display, From};
 use serde_json::Value;
 
@@ -67,10 +67,13 @@ impl Device {
     }
 
     pub fn refresh_twofactor_remember(&mut self) -> String {
-        let twofactor_remember = crypto::encode_random_bytes::<180>(&BASE64);
-        self.twofactor_remember = Some(twofactor_remember.clone());
+        use crate::auth::{encode_jwt, generate_2fa_remember_claims};
 
-        twofactor_remember
+        let two_factor_remember_claim = generate_2fa_remember_claims(self.uuid.clone(), self.user_uuid.clone());
+        let two_factor_remember_string = encode_jwt(&two_factor_remember_claim);
+        self.twofactor_remember = Some(two_factor_remember_string.clone());
+
+        two_factor_remember_string
     }
 
     pub fn delete_twofactor_remember(&mut self) {
