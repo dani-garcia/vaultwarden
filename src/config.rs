@@ -14,7 +14,10 @@ use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 
 use crate::{
     error::Error,
-    util::{get_active_web_release, get_env, get_env_bool, is_valid_email, parse_experimental_client_feature_flags},
+    util::{
+        get_active_web_release, get_env, get_env_bool, is_valid_email, parse_experimental_client_feature_flags,
+        FeatureFlagFilter,
+    },
 };
 
 static CONFIG_FILE: LazyLock<String> = LazyLock::new(|| {
@@ -920,7 +923,7 @@ make_config! {
     },
 }
 
-fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
+fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     // Validate connection URL is valid and DB feature is enabled
     #[cfg(sqlite)]
     {
@@ -1026,39 +1029,17 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
-    // Server (v2025.6.2): https://github.com/bitwarden/server/blob/d094be3267f2030bd0dc62106bc6871cf82682f5/src/Core/Constants.cs#L103
-    // Client (web-v2026.2.0): https://github.com/bitwarden/clients/blob/a2fefe804d8c9b4a56c42f9904512c5c5821e2f6/libs/common/src/enums/feature-flag.enum.ts#L12
-    // Android (v2025.6.0): https://github.com/bitwarden/android/blob/b5b022caaad33390c31b3021b2c1205925b0e1a2/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/manager/model/FlagKey.kt#L22
-    // iOS (v2025.6.0): https://github.com/bitwarden/ios/blob/ff06d9c6cc8da89f78f37f376495800201d7261a/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
-    //
-    // NOTE: Move deprecated flags to the utils::parse_experimental_client_feature_flags() DEPRECATED_FLAGS const!
-    const KNOWN_FLAGS: &[&str] = &[
-        // Auth Team
-        "pm-5594-safari-account-switching",
-        // Autofill Team
-        "inline-menu-positioning-improvements",
-        "inline-menu-totp",
-        "ssh-agent",
-        // Key Management Team
-        "ssh-key-vault-item",
-        "pm-25373-windows-biometrics-v2",
-        // Tools
-        "export-attachments",
-        // Mobile Team
-        "anon-addy-self-host-alias",
-        "simple-login-self-host-alias",
-        "mutual-tls",
-        "cxp-import-mobile",
-        "cxp-export-mobile",
-        // Webauthn Related Origins
-        "pm-30529-webauthn-related-origins",
-    ];
-    let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
-    let invalid_flags: Vec<_> = configured_flags.keys().filter(|flag| !KNOWN_FLAGS.contains(&flag.as_str())).collect();
+    let invalid_flags =
+        parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags, FeatureFlagFilter::InvalidOnly);
     if !invalid_flags.is_empty() {
-        err!(format!("Unrecognized experimental client feature flags: {invalid_flags:?}.\n\n\
+        let feature_flags_error = format!("Unrecognized experimental client feature flags: {:?}.\n\
                      Please ensure all feature flags are spelled correctly and that they are supported in this version.\n\
-                     Supported flags: {KNOWN_FLAGS:?}"));
+                     Supported flags: {:?}\n", invalid_flags, SUPPORTED_FEATURE_FLAGS);
+        if on_update {
+            err!(feature_flags_error);
+        } else {
+            println!("[WARNING] {feature_flags_error}");
+        }
     }
 
     const MAX_FILESIZE_KB: i64 = i64::MAX >> 10;
@@ -1477,6 +1458,35 @@ pub enum PathType {
     RsaKey,
 }
 
+// Official available feature flags can be found here:
+// Server (v2026.2.1): https://github.com/bitwarden/server/blob/0e42725d0837bd1c0dabd864ff621a579959744b/src/Core/Constants.cs#L135
+// Client (v2026.2.1): https://github.com/bitwarden/clients/blob/f96380c3138291a028bdd2c7a5fee540d5c98ba5/libs/common/src/enums/feature-flag.enum.ts#L12
+// Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
+// iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
+pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
+    // Architecture
+    "desktop-ui-migration-milestone-1",
+    "desktop-ui-migration-milestone-2",
+    "desktop-ui-migration-milestone-3",
+    "desktop-ui-migration-milestone-4",
+    // Auth Team
+    "pm-5594-safari-account-switching",
+    // Autofill Team
+    "ssh-agent",
+    "ssh-agent-v2",
+    // Key Management Team
+    "ssh-key-vault-item",
+    "pm-25373-windows-biometrics-v2",
+    // Mobile Team
+    "anon-addy-self-host-alias",
+    "simple-login-self-host-alias",
+    "mutual-tls",
+    "cxp-import-mobile",
+    "cxp-export-mobile",
+    // Platform Team
+    "pm-30529-webauthn-related-origins",
+];
+
 impl Config {
     pub async fn load() -> Result<Self, Error> {
         // Loading from env and file
@@ -1490,7 +1500,7 @@ impl Config {
         // Fill any missing with defaults
         let config = builder.build();
         if !SKIP_CONFIG_VALIDATION.load(Ordering::Relaxed) {
-            validate_config(&config)?;
+            validate_config(&config, false)?;
         }
 
         Ok(Config {
@@ -1526,7 +1536,7 @@ impl Config {
             let env = &self.inner.read().unwrap()._env;
             env.merge(&builder, false, &mut overrides).build()
         };
-        validate_config(&config)?;
+        validate_config(&config, true)?;
 
         // Save both the user and the combined config
         {

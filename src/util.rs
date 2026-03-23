@@ -16,7 +16,10 @@ use tokio::{
     time::{sleep, Duration},
 };
 
-use crate::{config::PathType, CONFIG};
+use crate::{
+    config::{PathType, SUPPORTED_FEATURE_FLAGS},
+    CONFIG,
+};
 
 pub struct AppHeaders();
 
@@ -765,21 +768,28 @@ pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
     }
 }
 
+pub enum FeatureFlagFilter {
+    #[allow(dead_code)]
+    Unfiltered,
+    ValidOnly,
+    InvalidOnly,
+}
+
 /// Parses the experimental client feature flags string into a HashMap.
-pub fn parse_experimental_client_feature_flags(experimental_client_feature_flags: &str) -> HashMap<String, bool> {
-    // These flags could still be configured, but are deprecated and not used anymore
-    // To prevent old installations from starting filter these out and not error out
-    const DEPRECATED_FLAGS: &[&str] =
-        &["autofill-overlay", "autofill-v2", "browser-fileless-import", "extension-refresh", "fido2-vault-credentials"];
+pub fn parse_experimental_client_feature_flags(
+    experimental_client_feature_flags: &str,
+    filter_mode: FeatureFlagFilter,
+) -> HashMap<String, bool> {
     experimental_client_feature_flags
         .split(',')
-        .filter_map(|f| {
-            let flag = f.trim();
-            if !flag.is_empty() && !DEPRECATED_FLAGS.contains(&flag) {
-                return Some((flag.to_owned(), true));
-            }
-            None
+        .map(str::trim)
+        .filter(|flag| !flag.is_empty())
+        .filter(|flag| match filter_mode {
+            FeatureFlagFilter::Unfiltered => true,
+            FeatureFlagFilter::ValidOnly => SUPPORTED_FEATURE_FLAGS.contains(flag),
+            FeatureFlagFilter::InvalidOnly => !SUPPORTED_FEATURE_FLAGS.contains(flag),
         })
+        .map(|flag| (flag.to_owned(), true))
         .collect()
 }
 
