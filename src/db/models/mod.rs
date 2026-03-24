@@ -1,3 +1,4 @@
+mod archive;
 mod attachment;
 mod auth_request;
 mod cipher;
@@ -17,6 +18,7 @@ mod two_factor_duo_context;
 mod two_factor_incomplete;
 mod user;
 
+pub use self::archive::Archive;
 pub use self::attachment::{Attachment, AttachmentId};
 pub use self::auth_request::{AuthRequest, AuthRequestId};
 pub use self::cipher::{Cipher, CipherId, RepromptType};
