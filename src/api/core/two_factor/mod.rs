@@ -2,6 +2,7 @@ use chrono::{TimeDelta, Utc};
 use data_encoding::BASE32;
 use rocket::serde::json::Json;
 use rocket::Route;
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
     db::{
         models::{
             DeviceType, EventType, Membership, MembershipType, OrgPolicyType, Organization, OrganizationId, TwoFactor,
-            TwoFactorIncomplete, User, UserId,
+            TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
         DbConn, DbPool,
     },
@@ -30,6 +31,37 @@ pub mod email;
 pub mod protected_actions;
 pub mod webauthn;
 pub mod yubikey;
+
+fn has_global_duo_credentials() -> bool {
+    CONFIG._enable_duo() && CONFIG.duo_host().is_some() && CONFIG.duo_ikey().is_some() && CONFIG.duo_skey().is_some()
+}
+
+pub fn is_twofactor_provider_usable(provider_type: i32, provider_data: Option<&str>) -> bool {
+    #[derive(Deserialize)]
+    struct DuoProviderData {
+        host: String,
+        ik: String,
+        sk: String,
+    }
+
+    match provider_type {
+        x if x == TwoFactorType::Authenticator as i32 => true,
+        x if x == TwoFactorType::Email as i32 => CONFIG._enable_email_2fa(),
+        x if x == TwoFactorType::Duo as i32 || x == TwoFactorType::OrganizationDuo as i32 => {
+            provider_data
+                .and_then(|raw| serde_json::from_str::<DuoProviderData>(raw).ok())
+                .is_some_and(|duo| !duo.host.is_empty() && !duo.ik.is_empty() && !duo.sk.is_empty())
+                || has_global_duo_credentials()
+        }
+        x if x == TwoFactorType::YubiKey as i32 => {
+            CONFIG._enable_yubico() && CONFIG.yubico_client_id().is_some() && CONFIG.yubico_secret_key().is_some()
+        }
+        x if x == TwoFactorType::Webauthn as i32 => CONFIG.domain_set(),
+        x if x == TwoFactorType::Remember as i32 => !CONFIG.disable_2fa_remember(),
+        x if x == TwoFactorType::RecoveryCode as i32 => true,
+        _ => false,
+    }
+}
 
 pub fn routes() -> Vec<Route> {
     let mut routes = routes![
@@ -53,7 +85,11 @@ pub fn routes() -> Vec<Route> {
 #[get("/two-factor")]
 async fn get_twofactor(headers: Headers, conn: DbConn) -> Json<Value> {
     let twofactors = TwoFactor::find_by_user(&headers.user.uuid, &conn).await;
-    let twofactors_json: Vec<Value> = twofactors.iter().map(TwoFactor::to_json_provider).collect();
+    let twofactors_json: Vec<Value> = twofactors
+        .iter()
+        .filter(|tf| is_twofactor_provider_usable(tf.atype, Some(&tf.data)))
+        .map(TwoFactor::to_json_provider)
+        .collect();
 
     Json(json!({
         "data": twofactors_json,
