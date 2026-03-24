@@ -382,3 +382,55 @@ jobs:
           subject-name: ${{ vars.QUAY_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
           push-to-registry: true
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-24.04
+    needs: merge-manifests
+    # Only create a release when a version tag is pushed, not on branch pushes.
+    if: ${{ github.ref_type == 'tag' }}
+    timeout-minutes: 30
+    permissions:
+      contents: write # Create the release and upload binary assets
+
+    steps:
+      # Download all per-arch/per-base-image binary artifacts produced by docker-build.
+      # Each artifact is a single file named vaultwarden-<arch> inside a directory
+      # named vaultwarden-<version>-linux-<arch>-<base_image>.
+      - name: Download binary artifacts
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          pattern: "vaultwarden-*-linux-*"
+          path: ./release-assets
+          merge-multiple: false
+
+      # Rename binaries to human-friendly release asset names:
+      #   debian (glibc): vaultwarden-linux-<arch>
+      #   alpine (musl):  vaultwarden-linux-<arch>-musl
+      - name: Prepare release binaries
+        run: |
+          mkdir -p ./release-binaries
+          for dir in ./release-assets/*/; do
+            dirname="$(basename "${dir}")"
+            if [[ "${dirname}" =~ -linux-([^-]+)-(debian|alpine)$ ]]; then
+              arch="${BASH_REMATCH[1]}"
+              base="${BASH_REMATCH[2]}"
+              suffix=""
+              [[ "${base}" == "alpine" ]] && suffix="-musl"
+              cp "${dir}vaultwarden-${arch}" "./release-binaries/vaultwarden-linux-${arch}${suffix}"
+              chmod +x "./release-binaries/vaultwarden-linux-${arch}${suffix}"
+            fi
+          done
+          ls -la ./release-binaries/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "${TAG}" \
+            --repo="${GITHUB_REPOSITORY}" \
+            --title="Vaultwarden ${TAG}" \
+            --generate-notes \
+            --verify-tag \
+            ./release-binaries/*
