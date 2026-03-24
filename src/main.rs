@@ -589,11 +589,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
 
     CONFIG.set_rocket_shutdown_handle(instance.shutdown());
 
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.expect("Error setting Ctrl-C handler");
-        info!("Exiting Vaultwarden!");
-        CONFIG.shutdown();
-    });
+    spawn_shutdown_signal_handler();
 
     #[cfg(all(unix, sqlite))]
     {
@@ -619,6 +615,35 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
 
     info!("Vaultwarden process exited!");
     Ok(())
+}
+
+#[cfg(unix)]
+fn spawn_shutdown_signal_handler() {
+    tokio::spawn(async move {
+        use tokio::signal::unix::signal;
+
+        let mut sigint = signal(SignalKind::interrupt()).expect("Error setting SIGINT handler");
+        let mut sigterm = signal(SignalKind::terminate()).expect("Error setting SIGTERM handler");
+        let mut sigquit = signal(SignalKind::quit()).expect("Error setting SIGQUIT handler");
+
+        let signal_name = tokio::select! {
+            _ = sigint.recv() => "SIGINT",
+            _ = sigterm.recv() => "SIGTERM",
+            _ = sigquit.recv() => "SIGQUIT",
+        };
+
+        info!("Received {signal_name}, starting graceful shutdown");
+        CONFIG.shutdown();
+    });
+}
+
+#[cfg(not(unix))]
+fn spawn_shutdown_signal_handler() {
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.expect("Error setting Ctrl-C handler");
+        info!("Received Ctrl-C, starting graceful shutdown");
+        CONFIG.shutdown();
+    });
 }
 
 fn schedule_jobs(pool: db::DbPool) {
