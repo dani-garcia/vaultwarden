@@ -10,8 +10,8 @@ use diesel::prelude::*;
 use serde_json::Value;
 
 use super::{
-    Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership, MembershipStatus,
-    MembershipType, OrganizationId, User, UserId,
+    Archive, Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership,
+    MembershipStatus, MembershipType, OrganizationId, User, UserId,
 };
 use crate::api::core::{CipherData, CipherSyncData, CipherSyncType};
 use macros::UuidFromParam;
@@ -380,6 +380,11 @@ impl Cipher {
             } else {
                 self.is_favorite(user_uuid, conn).await
             });
+            json_object["archivedDate"] = json!(if let Some(cipher_sync_data) = cipher_sync_data {
+                cipher_sync_data.cipher_archives.get(&self.uuid).map_or(Value::Null, |d| Value::String(format_date(d)))
+            } else {
+                self.get_archived_at(user_uuid, conn).await.map_or(Value::Null, |d| Value::String(format_date(&d)))
+            });
             // These values are true by default, but can be false if the
             // cipher belongs to a collection or group where the org owner has enabled
             // the "Read Only" or "Hide Passwords" restrictions for the user.
@@ -735,6 +740,19 @@ impl Cipher {
             None => Ok(()), // No change requested.
             Some(status) => Favorite::set_favorite(status, &self.uuid, user_uuid, conn).await,
         }
+    }
+
+    pub async fn get_archived_at(&self, user_uuid: &UserId, conn: &DbConn) -> Option<NaiveDateTime> {
+        Archive::get_archived_at(&self.uuid, user_uuid, conn).await
+    }
+
+    pub async fn set_archived_at(
+        &self,
+        archived_at: Option<NaiveDateTime>,
+        user_uuid: &UserId,
+        conn: &DbConn,
+    ) -> EmptyResult {
+        Archive::set_archived_at(archived_at, &self.uuid, user_uuid, conn).await
     }
 
     pub async fn get_folder_uuid(&self, user_uuid: &UserId, conn: &DbConn) -> Option<FolderId> {
