@@ -426,7 +426,7 @@ pub async fn update_cipher_from_data(
     let transfer_cipher = cipher.organization_uuid.is_none() && data.organization_id.is_some();
 
     if let Some(org_id) = data.organization_id {
-        match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, conn).await {
+        match Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, conn).await {
             None => err!("You don't have permission to add item to organization"),
             Some(member) => {
                 if shared_to_collections.is_some()
@@ -1989,8 +1989,11 @@ impl CipherSyncData {
         }
 
         // Generate a HashMap with the Organization UUID as key and the Membership record
-        let members: HashMap<OrganizationId, Membership> =
-            Membership::find_by_user(user_id, conn).await.into_iter().map(|m| (m.org_uuid.clone(), m)).collect();
+        let members: HashMap<OrganizationId, Membership> = Membership::find_confirmed_by_user(user_id, conn)
+            .await
+            .into_iter()
+            .map(|m| (m.org_uuid.clone(), m))
+            .collect();
 
         // Generate a HashMap with the User_Collections UUID as key and the CollectionUser record
         let user_collections: HashMap<CollectionId, CollectionUser> = CollectionUser::find_by_user(user_id, conn)

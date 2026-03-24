@@ -234,7 +234,7 @@ async fn post_delete_organization(
 
 #[post("/organizations/<org_id>/leave")]
 async fn leave_organization(org_id: OrganizationId, headers: Headers, conn: DbConn) -> EmptyResult {
-    match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
+    match Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
         None => err!("User not part of organization"),
         Some(member) => {
             if member.atype == MembershipType::Owner
@@ -2951,15 +2951,19 @@ async fn check_reset_password_applicable(org_id: &OrganizationId, conn: &DbConn)
     Ok(())
 }
 
-#[put("/organizations/<org_id>/users/<member_id>/reset-password-enrollment", data = "<data>")]
+#[put("/organizations/<org_id>/users/<user_id>/reset-password-enrollment", data = "<data>")]
 async fn put_reset_password_enrollment(
     org_id: OrganizationId,
-    member_id: MembershipId,
-    headers: Headers,
+    user_id: UserId,
+    headers: OrgMemberHeaders,
     data: Json<OrganizationUserResetPasswordEnrollmentRequest>,
     conn: DbConn,
 ) -> EmptyResult {
-    let Some(mut member) = Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await else {
+    if user_id != headers.user.uuid {
+        err!("User to enroll isn't member of required organization", "The user_id and acting user do not match");
+    }
+
+    let Some(mut membership) = Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, &conn).await else {
         err!("User to enroll isn't member of required organization")
     };
 
@@ -2986,16 +2990,16 @@ async fn put_reset_password_enrollment(
         .await?;
     }
 
-    member.reset_password_key = reset_password_key;
-    member.save(&conn).await?;
+    membership.reset_password_key = reset_password_key;
+    membership.save(&conn).await?;
 
-    let log_id = if member.reset_password_key.is_some() {
+    let event_type = if membership.reset_password_key.is_some() {
         EventType::OrganizationUserResetPasswordEnroll as i32
     } else {
         EventType::OrganizationUserResetPasswordWithdraw as i32
     };
 
-    log_event(log_id, &member_id, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+    log_event(event_type, &membership.uuid, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(())
 }

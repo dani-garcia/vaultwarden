@@ -559,7 +559,7 @@ impl Cipher {
                 if let Some(cached_member) = cipher_sync_data.members.get(org_uuid) {
                     return cached_member.has_full_access();
                 }
-            } else if let Some(member) = Membership::find_by_user_and_org(user_uuid, org_uuid, conn).await {
+            } else if let Some(member) = Membership::find_confirmed_by_user_and_org(user_uuid, org_uuid, conn).await {
                 return member.has_full_access();
             }
         }

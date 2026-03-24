@@ -704,10 +704,9 @@ pub struct OrgHeaders {
 
 impl OrgHeaders {
     fn is_member(&self) -> bool {
-        // NOTE: we don't care about MembershipStatus at the moment because this is only used
-        // where an invited, accepted or confirmed user is expected if this ever changes or
-        // if from_i32 is changed to return Some(Revoked) this check needs to be changed accordingly
-        self.membership_type >= MembershipType::User
+        // Only allow not revoked members, we can not use the Confirmed status here
+        // as some endpoints can be triggered by invited users during joining
+        self.membership_status != MembershipStatus::Revoked && self.membership_type >= MembershipType::User
     }
     fn is_confirmed_and_admin(&self) -> bool {
         self.membership_status == MembershipStatus::Confirmed && self.membership_type >= MembershipType::Admin
@@ -768,7 +767,8 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                 };
 
                 let user = headers.user;
-                let Some(membership) = Membership::find_by_user_and_org(&user.uuid, &org_id, &conn).await else {
+                let Some(membership) = Membership::find_by_user_and_org(&user.uuid, &org_id, &conn).await
+                else {
                     err_handler!("The current user isn't member of the organization");
                 };
 
