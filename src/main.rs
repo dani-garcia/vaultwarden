@@ -53,6 +53,7 @@ mod crypto;
 #[macro_use]
 mod db;
 mod http_client;
+mod jobs;
 mod mail;
 mod ratelimit;
 mod sso;
@@ -70,27 +71,38 @@ pub use util::is_running_in_container;
 
 #[rocket::main]
 async fn main() -> Result<(), Error> {
-    parse_args();
-    launch_info();
+    let run_mode = parse_args();
+    if matches!(run_mode, RunMode::Server) {
+        launch_info();
+    }
 
     let level = init_logging()?;
 
     check_data_folder().await;
-    auth::initialize_keys().await.unwrap_or_else(|e| {
-        error!("Error creating private key '{}'\n{e:?}\nExiting Vaultwarden!", CONFIG.private_rsa_key());
-        exit(1);
-    });
-    check_web_vault();
 
-    create_dir(&CONFIG.tmp_folder(), "tmp folder");
+    match run_mode {
+        RunMode::Server => {
+            auth::initialize_keys().await.unwrap_or_else(|e| {
+                error!("Error creating private key '{}'\n{e:?}\nExiting Vaultwarden!", CONFIG.private_rsa_key());
+                exit(1);
+            });
+            check_web_vault();
+            create_dir(&CONFIG.tmp_folder(), "tmp folder");
 
-    let pool = create_db_pool().await;
-    schedule_jobs(pool.clone());
-    db::models::TwoFactor::migrate_u2f_to_webauthn(&pool.get().await.unwrap()).await.unwrap();
-    db::models::TwoFactor::migrate_credential_to_passkey(&pool.get().await.unwrap()).await.unwrap();
+            let pool = create_db_pool(true).await;
+            schedule_jobs(pool.clone());
+            db::models::TwoFactor::migrate_u2f_to_webauthn(&pool.get().await.unwrap()).await.unwrap();
+            db::models::TwoFactor::migrate_credential_to_passkey(&pool.get().await.unwrap()).await.unwrap();
 
-    let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
-    launch_rocket(pool, extra_debug).await // Blocks until program termination.
+            let extra_debug = matches!(level, log::LevelFilter::Trace | log::LevelFilter::Debug);
+            launch_rocket(pool, extra_debug).await // Blocks until program termination.
+        }
+        RunMode::RunSingleJob(job) => {
+            create_dir(&CONFIG.tmp_folder(), "tmp folder");
+            let pool = create_db_pool(false).await;
+            jobs::run(pool, job).await
+        }
+    }
 }
 
 const HELP: &str = "\
@@ -107,6 +119,8 @@ COMMAND:
     hash [--preset {bitwarden|owasp}]  Generate an Argon2id PHC ADMIN_TOKEN
     backup                             Create a backup of the SQLite database
                                        You can also send the USR1 signal to trigger a backup
+    jobs run <job-name>                Run one scheduled background job and exit
+    jobs run --list                    List available scheduled background jobs
 
 PRESETS:                  m=         t=          p=
     bitwarden (default) 64MiB, 3 Iterations, 4 Threads
@@ -116,7 +130,12 @@ PRESETS:                  m=         t=          p=
 
 pub const VERSION: Option<&str> = option_env!("VW_VERSION");
 
-fn parse_args() {
+enum RunMode {
+    Server,
+    RunSingleJob(jobs::ScheduledJob),
+}
+
+fn parse_args() -> RunMode {
     let mut pargs = pico_args::Arguments::from_env();
     let version = VERSION.unwrap_or("(Version info from Git not present)");
 
@@ -197,9 +216,49 @@ fn parse_args() {
                     exit(1);
                 }
             }
+        } else if command == "jobs" {
+            let action = pargs.subcommand().unwrap_or_default();
+            let action = action.as_deref().unwrap_or_default();
+
+            match action {
+                "run" => {
+                    let args = pargs.finish();
+                    if args.len() == 1 && (args[0] == "--list" || args[0] == "-l") {
+                        println!("Available jobs:");
+                        for name in jobs::ScheduledJob::names() {
+                            println!("  {name}");
+                        }
+                        exit(0);
+                    }
+
+                    if args.len() != 1 {
+                        println!("Usage: vaultwarden jobs run <job-name>");
+                        println!("Usage: vaultwarden jobs run --list");
+                        println!("Available jobs: {}", jobs::ScheduledJob::names().join(", "));
+                        exit(1);
+                    }
+
+                    let job_name = args[0].to_string_lossy();
+                    let Some(job) = jobs::ScheduledJob::from_str(&job_name) else {
+                        println!("Unknown job '{job_name}'");
+                        println!("Available jobs: {}", jobs::ScheduledJob::names().join(", "));
+                        exit(1);
+                    };
+
+                    return RunMode::RunSingleJob(job);
+                }
+                _ => {
+                    println!("Usage: vaultwarden jobs run <job-name>");
+                    println!("Usage: vaultwarden jobs run --list");
+                    println!("Available jobs: {}", jobs::ScheduledJob::names().join(", "));
+                    exit(1);
+                }
+            }
         }
         exit(0);
     }
+
+    RunMode::Server
 }
 
 fn launch_info() {
@@ -544,8 +603,16 @@ fn check_web_vault() {
     }
 }
 
-async fn create_db_pool() -> db::DbPool {
-    match util::retry_db(db::DbPool::from_config, CONFIG.db_connection_retries()).await {
+async fn create_db_pool(run_migrations: bool) -> db::DbPool {
+    let build_pool = || {
+        if run_migrations {
+            db::DbPool::from_config()
+        } else {
+            db::DbPool::from_config_no_migrations()
+        }
+    };
+
+    match util::retry_db(build_pool, CONFIG.db_connection_retries()).await {
         Ok(p) => p,
         Err(e) => {
             error!("Error creating database pool: {e:?}");
