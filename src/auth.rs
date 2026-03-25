@@ -767,8 +767,7 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                 };
 
                 let user = headers.user;
-                let Some(membership) = Membership::find_by_user_and_org(&user.uuid, &org_id, &conn).await
-                else {
+                let Some(membership) = Membership::find_by_user_and_org(&user.uuid, &org_id, &conn).await else {
                     err_handler!("The current user isn't member of the organization");
                 };
 

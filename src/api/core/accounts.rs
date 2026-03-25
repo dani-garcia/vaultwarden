@@ -106,7 +106,6 @@ pub struct RegisterData {
 
     name: Option<String>,
 
-    #[allow(dead_code)]
     organization_user_id: Option<MembershipId>,
 
     // Used only from the register/finish endpoint
@@ -581,7 +580,6 @@ fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
     Ok(())
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AuthenticationData {
@@ -590,7 +588,6 @@ struct AuthenticationData {
     master_password_authentication_hash: String,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UnlockData {
@@ -599,11 +596,12 @@ struct UnlockData {
     master_key_wrapped_user_key: String,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ChangeKdfData {
+    #[allow(dead_code)]
     new_master_password_hash: String,
+    #[allow(dead_code)]
     key: String,
     authentication_data: AuthenticationData,
     unlock_data: UnlockData,

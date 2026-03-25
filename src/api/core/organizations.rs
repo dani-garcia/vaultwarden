@@ -233,30 +233,30 @@ async fn post_delete_organization(
 }
 
 #[post("/organizations/<org_id>/leave")]
-async fn leave_organization(org_id: OrganizationId, headers: Headers, conn: DbConn) -> EmptyResult {
-    match Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
-        None => err!("User not part of organization"),
-        Some(member) => {
-            if member.atype == MembershipType::Owner
-                && Membership::count_confirmed_by_org_and_type(&org_id, MembershipType::Owner, &conn).await <= 1
-            {
-                err!("The last owner can't leave")
-            }
-
-            log_event(
-                EventType::OrganizationUserLeft as i32,
-                &member.uuid,
-                &org_id,
-                &headers.user.uuid,
-                headers.device.atype,
-                &headers.ip.ip,
-                &conn,
-            )
-            .await;
-
-            member.delete(&conn).await
-        }
+async fn leave_organization(org_id: OrganizationId, headers: OrgMemberHeaders, conn: DbConn) -> EmptyResult {
+    if headers.membership.status != MembershipStatus::Confirmed as i32 {
+        err!("You need to be a Member of the Organization to call this endpoint")
     }
+    let membership = headers.membership;
+
+    if membership.atype == MembershipType::Owner
+        && Membership::count_confirmed_by_org_and_type(&org_id, MembershipType::Owner, &conn).await <= 1
+    {
+        err!("The last owner can't leave")
+    }
+
+    log_event(
+        EventType::OrganizationUserLeft as i32,
+        &membership.uuid,
+        &org_id,
+        &headers.user.uuid,
+        headers.device.atype,
+        &headers.ip.ip,
+        &conn,
+    )
+    .await;
+
+    membership.delete(&conn).await
 }
 
 #[get("/organizations/<org_id>")]
@@ -1273,20 +1273,20 @@ async fn accept_invite(
 
     // skip invitation logic when we were invited via the /admin panel
     if **member_id != FAKE_ADMIN_UUID {
-        let Some(mut member) = Membership::find_by_uuid_and_org(member_id, &claims.org_id, &conn).await else {
+        let Some(mut membership) = Membership::find_by_uuid_and_org(member_id, &claims.org_id, &conn).await else {
             err!("Error accepting the invitation")
         };
 
-        let reset_password_key = match OrgPolicy::org_is_reset_password_auto_enroll(&member.org_uuid, &conn).await {
+        let reset_password_key = match OrgPolicy::org_is_reset_password_auto_enroll(&membership.org_uuid, &conn).await {
             true if data.reset_password_key.is_none() => err!("Reset password key is required, but not provided."),
             true => data.reset_password_key,
             false => None,
         };
 
         // In case the user was invited before the mail was saved in db.
-        member.invited_by_email = member.invited_by_email.or(claims.invited_by_email);
+        membership.invited_by_email = membership.invited_by_email.or(claims.invited_by_email);
 
-        accept_org_invite(&headers.user, member, reset_password_key, &conn).await?;
+        accept_org_invite(&headers.user, membership, reset_password_key, &conn).await?;
     } else if CONFIG.mail_enabled() {
         // User was invited from /admin, so they are automatically confirmed
         let org_name = CONFIG.invitation_org_name();
@@ -1520,9 +1520,8 @@ async fn edit_member(
             && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
             && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
-    let mut member_to_edit = match Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await {
-        Some(member) => member,
-        None => err!("The specified user isn't member of the organization"),
+    let Some(mut member_to_edit) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
+        err!("The specified user isn't member of the organization")
     };
 
     if new_type != member_to_edit.atype
@@ -1839,7 +1838,6 @@ async fn post_org_import(
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 struct BulkCollectionsData {
     organization_id: OrganizationId,
     cipher_ids: Vec<CipherId>,
@@ -1852,6 +1850,10 @@ struct BulkCollectionsData {
 #[post("/ciphers/bulk-collections", data = "<data>")]
 async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: BulkCollectionsData = data.into_inner();
+
+    if Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &data.organization_id, &conn).await.is_none() {
+        err!("You need to be a Member of the Organization to call this endpoint")
+    }
 
     // Get all the collection available to the user in one query
     // Also filter based upon the provided collections
@@ -1941,7 +1943,7 @@ async fn list_policies_token(org_id: OrganizationId, token: &str, conn: DbConn) 
 // Called during the SSO enrollment.
 // Return the org policy if it exists, otherwise use the default one.
 #[get("/organizations/<org_id>/policies/master-password", rank = 1)]
-async fn get_master_password_policy(org_id: OrganizationId, _headers: Headers, conn: DbConn) -> JsonResult {
+async fn get_master_password_policy(org_id: OrganizationId, _headers: OrgMemberHeaders, conn: DbConn) -> JsonResult {
     let policy =
         OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::MasterPassword, &conn).await.unwrap_or_else(|| {
             let (enabled, data) = match CONFIG.sso_master_password_policy_value() {
@@ -2149,13 +2151,13 @@ fn get_plans() -> Json<Value> {
 }
 
 #[get("/organizations/<_org_id>/billing/metadata")]
-fn get_billing_metadata(_org_id: OrganizationId, _headers: Headers) -> Json<Value> {
+fn get_billing_metadata(_org_id: OrganizationId, _headers: OrgMemberHeaders) -> Json<Value> {
     // Prevent a 404 error, which also causes Javascript errors.
     Json(_empty_data_json())
 }
 
 #[get("/organizations/<_org_id>/billing/vnext/warnings")]
-fn get_billing_warnings(_org_id: OrganizationId, _headers: Headers) -> Json<Value> {
+fn get_billing_warnings(_org_id: OrganizationId, _headers: OrgMemberHeaders) -> Json<Value> {
     Json(json!({
         "freeTrial":null,
         "inactiveSubscription":null,
@@ -2963,7 +2965,8 @@ async fn put_reset_password_enrollment(
         err!("User to enroll isn't member of required organization", "The user_id and acting user do not match");
     }
 
-    let Some(mut membership) = Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, &conn).await else {
+    let Some(mut membership) = Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, &conn).await
+    else {
         err!("User to enroll isn't member of required organization")
     };
 
@@ -2999,7 +3002,8 @@ async fn put_reset_password_enrollment(
         EventType::OrganizationUserResetPasswordWithdraw as i32
     };
 
-    log_event(event_type, &membership.uuid, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+    log_event(event_type, &membership.uuid, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
+        .await;
 
     Ok(())
 }
