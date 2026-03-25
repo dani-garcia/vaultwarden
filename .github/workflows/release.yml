@@ -235,7 +235,7 @@ jobs:
 
       # Upload artifacts to Github Actions and Attest the binaries
       - name: Attest binaries
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-path: vaultwarden-${{ env.NORMALIZED_ARCH }}
 
@@ -361,7 +361,7 @@ jobs:
       # Attest container images
       - name: Attest - docker.io - ${{ matrix.base_image }}
         if: ${{ vars.DOCKERHUB_REPO != '' && env.DIGEST_SHA != ''}}
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-name: ${{ vars.DOCKERHUB_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -369,7 +369,7 @@ jobs:
 
       - name: Attest - ghcr.io - ${{ matrix.base_image }}
         if: ${{ vars.GHCR_REPO != '' && env.DIGEST_SHA != ''}}
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-name: ${{ vars.GHCR_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
@@ -377,7 +377,7 @@ jobs:
 
       - name: Attest - quay.io - ${{ matrix.base_image }}
         if: ${{ vars.QUAY_REPO != '' && env.DIGEST_SHA != ''}}
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-name: ${{ vars.QUAY_REPO }}
           subject-digest: ${{ env.DIGEST_SHA }}
