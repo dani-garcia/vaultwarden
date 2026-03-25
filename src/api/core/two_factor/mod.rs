@@ -56,7 +56,7 @@ pub fn is_twofactor_provider_usable(provider_type: i32, provider_data: Option<&s
         x if x == TwoFactorType::YubiKey as i32 => {
             CONFIG._enable_yubico() && CONFIG.yubico_client_id().is_some() && CONFIG.yubico_secret_key().is_some()
         }
-        x if x == TwoFactorType::Webauthn as i32 => CONFIG.domain_set(),
+        x if x == TwoFactorType::Webauthn as i32 => CONFIG.is_webauthn_2fa_supported(),
         x if x == TwoFactorType::Remember as i32 => !CONFIG.disable_2fa_remember(),
         x if x == TwoFactorType::RecoveryCode as i32 => true,
         _ => false,

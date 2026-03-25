@@ -887,7 +887,7 @@ async fn _json_err_twofactor(
         match TwoFactorType::from_i32(*provider) {
             Some(TwoFactorType::Authenticator) => { /* Nothing to do for TOTP */ }
 
-            Some(TwoFactorType::Webauthn) if CONFIG.domain_set() => {
+            Some(TwoFactorType::Webauthn) if CONFIG.is_webauthn_2fa_supported() => {
                 let request = webauthn::generate_webauthn_login(user_id, conn).await?;
                 result["TwoFactorProviders2"][provider.to_string()] = request.0;
             }
