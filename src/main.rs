@@ -558,6 +558,11 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
     let basepath = &CONFIG.domain_path();
 
     let mut config = rocket::Config::from(rocket::Config::figment());
+
+    // We install our own signal handlers below; disable Rocket's built-in handlers
+    config.shutdown.ctrlc = false;
+    config.shutdown.signals.clear();
+
     config.temp_dir = canonicalize(CONFIG.tmp_folder()).unwrap().into();
     config.cli_colors = false; // Make sure Rocket does not color any values for logging.
     config.limits = Limits::new()
@@ -632,7 +637,7 @@ fn spawn_shutdown_signal_handler() {
             _ = sigquit.recv() => "SIGQUIT",
         };
 
-        info!("Received {signal_name}, starting graceful shutdown");
+        info!("Received {signal_name}, initiating graceful shutdown");
         CONFIG.shutdown();
     });
 }
@@ -641,7 +646,7 @@ fn spawn_shutdown_signal_handler() {
 fn spawn_shutdown_signal_handler() {
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("Error setting Ctrl-C handler");
-        info!("Received Ctrl-C, starting graceful shutdown");
+        info!("Received Ctrl-C, initiating graceful shutdown");
         CONFIG.shutdown();
     });
 }
