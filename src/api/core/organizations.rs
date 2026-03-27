@@ -131,6 +131,24 @@ struct FullCollectionData {
     external_id: Option<String>,
 }
 
+impl FullCollectionData {
+    pub async fn validate(&self, org_id: &OrganizationId, conn: &DbConn) -> EmptyResult {
+        let org_groups = Group::find_by_organization(org_id, conn).await;
+        let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|c| &c.uuid).collect();
+        if let Some(e) = self.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
+            err!("Invalid group", format!("Group {} does not belong to organization {}!", e.id, org_id))
+        }
+
+        let org_memberships = Membership::find_by_org(org_id, conn).await;
+        let org_membership_ids: HashSet<&MembershipId> = org_memberships.iter().map(|m| &m.uuid).collect();
+        if let Some(e) = self.users.iter().find(|m| !org_membership_ids.contains(&m.id)) {
+            err!("Invalid member", format!("Member {} does not belong to organization {}!", e.id, org_id))
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CollectionGroupData {
@@ -480,12 +498,9 @@ async fn post_organization_collections(
         err!("Organization not found", "Organization id's do not match");
     }
     let data: FullCollectionData = data.into_inner();
+    data.validate(&org_id, &conn).await?;
 
-    let Some(org) = Organization::find_by_uuid(&org_id, &conn).await else {
-        err!("Can't find organization details")
-    };
-
-    let collection = Collection::new(org.uuid, data.name, data.external_id);
+    let collection = Collection::new(org_id.clone(), data.name, data.external_id);
     collection.save(&conn).await?;
 
     log_event(
@@ -501,7 +516,7 @@ async fn post_organization_collections(
 
     for group in data.groups {
         CollectionGroup::new(collection.uuid.clone(), group.id, group.read_only, group.hide_passwords, group.manage)
-            .save(&conn)
+            .save(&org_id, &conn)
             .await?;
     }
 
@@ -579,10 +594,10 @@ async fn post_bulk_access_collections(
         )
         .await;
 
-        CollectionGroup::delete_all_by_collection(&col_id, &conn).await?;
+        CollectionGroup::delete_all_by_collection(&col_id, &org_id, &conn).await?;
         for group in &data.groups {
             CollectionGroup::new(col_id.clone(), group.id.clone(), group.read_only, group.hide_passwords, group.manage)
-                .save(&conn)
+                .save(&org_id, &conn)
                 .await?;
         }
 
@@ -627,6 +642,7 @@ async fn post_organization_collection_update(
         err!("Organization not found", "Organization id's do not match");
     }
     let data: FullCollectionData = data.into_inner();
+    data.validate(&org_id, &conn).await?;
 
     if Organization::find_by_uuid(&org_id, &conn).await.is_none() {
         err!("Can't find organization details")
@@ -655,11 +671,11 @@ async fn post_organization_collection_update(
     )
     .await;
 
-    CollectionGroup::delete_all_by_collection(&col_id, &conn).await?;
+    CollectionGroup::delete_all_by_collection(&col_id, &org_id, &conn).await?;
 
     for group in data.groups {
         CollectionGroup::new(col_id.clone(), group.id, group.read_only, group.hide_passwords, group.manage)
-            .save(&conn)
+            .save(&org_id, &conn)
             .await?;
     }
 
@@ -1003,6 +1019,24 @@ struct InviteData {
     permissions: HashMap<String, Value>,
 }
 
+impl InviteData {
+    async fn validate(&self, org_id: &OrganizationId, conn: &DbConn) -> EmptyResult {
+        let org_collections = Collection::find_by_organization(org_id, conn).await;
+        let org_collection_ids: HashSet<&CollectionId> = org_collections.iter().map(|c| &c.uuid).collect();
+        if let Some(e) = self.collections.iter().flatten().find(|c| !org_collection_ids.contains(&c.id)) {
+            err!("Invalid collection", format!("Collection {} does not belong to organization {}!", e.id, org_id))
+        }
+
+        let org_groups = Group::find_by_organization(org_id, conn).await;
+        let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|c| &c.uuid).collect();
+        if let Some(e) = self.groups.iter().find(|g| !org_group_ids.contains(g)) {
+            err!("Invalid group", format!("Group {} does not belong to organization {}!", e, org_id))
+        }
+
+        Ok(())
+    }
+}
+
 #[post("/organizations/<org_id>/users/invite", data = "<data>")]
 async fn send_invite(
     org_id: OrganizationId,
@@ -1014,6 +1048,7 @@ async fn send_invite(
         err!("Organization not found", "Organization id's do not match");
     }
     let data: InviteData = data.into_inner();
+    data.validate(&org_id, &conn).await?;
 
     // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
     // The from_str() will convert the custom role type into a manager role type
@@ -2429,6 +2464,23 @@ impl GroupRequest {
 
         group
     }
+
+    /// Validate if all the collections and members belong to the provided organization
+    pub async fn validate(&self, org_id: &OrganizationId, conn: &DbConn) -> EmptyResult {
+        let org_collections = Collection::find_by_organization(org_id, conn).await;
+        let org_collection_ids: HashSet<&CollectionId> = org_collections.iter().map(|c| &c.uuid).collect();
+        if let Some(e) = self.collections.iter().find(|c| !org_collection_ids.contains(&c.id)) {
+            err!("Invalid collection", format!("Collection {} does not belong to organization {}!", e.id, org_id))
+        }
+
+        let org_memberships = Membership::find_by_org(org_id, conn).await;
+        let org_membership_ids: HashSet<&MembershipId> = org_memberships.iter().map(|m| &m.uuid).collect();
+        if let Some(e) = self.users.iter().find(|m| !org_membership_ids.contains(m)) {
+            err!("Invalid member", format!("Member {} does not belong to organization {}!", e, org_id))
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -2472,6 +2524,8 @@ async fn post_groups(
     }
 
     let group_request = data.into_inner();
+    group_request.validate(&org_id, &conn).await?;
+
     let group = group_request.to_group(&org_id);
 
     log_event(
@@ -2508,10 +2562,12 @@ async fn put_group(
     };
 
     let group_request = data.into_inner();
+    group_request.validate(&org_id, &conn).await?;
+
     let updated_group = group_request.update_group(group);
 
-    CollectionGroup::delete_all_by_group(&group_id, &conn).await?;
-    GroupUser::delete_all_by_group(&group_id, &conn).await?;
+    CollectionGroup::delete_all_by_group(&group_id, &org_id, &conn).await?;
+    GroupUser::delete_all_by_group(&group_id, &org_id, &conn).await?;
 
     log_event(
         EventType::GroupUpdated as i32,
@@ -2539,7 +2595,7 @@ async fn add_update_group(
 
     for col_selection in collections {
         let mut collection_group = col_selection.to_collection_group(group.uuid.clone());
-        collection_group.save(conn).await?;
+        collection_group.save(&org_id, conn).await?;
     }
 
     for assigned_member in members {
@@ -2632,7 +2688,7 @@ async fn _delete_group(
     )
     .await;
 
-    group.delete(conn).await
+    group.delete(org_id, conn).await
 }
 
 #[delete("/organizations/<org_id>/groups", data = "<data>")]
@@ -2691,7 +2747,7 @@ async fn get_group_members(
         err!("Group could not be found!", "Group uuid is invalid or does not belong to the organization")
     };
 
-    let group_members: Vec<MembershipId> = GroupUser::find_by_group(&group_id, &conn)
+    let group_members: Vec<MembershipId> = GroupUser::find_by_group(&group_id, &org_id, &conn)
         .await
         .iter()
         .map(|entry| entry.users_organizations_uuid.clone())
@@ -2719,9 +2775,15 @@ async fn put_group_members(
         err!("Group could not be found!", "Group uuid is invalid or does not belong to the organization")
     };
 
-    GroupUser::delete_all_by_group(&group_id, &conn).await?;
-
     let assigned_members = data.into_inner();
+
+    let org_memberships = Membership::find_by_org(&org_id, &conn).await;
+    let org_membership_ids: HashSet<&MembershipId> = org_memberships.iter().map(|m| &m.uuid).collect();
+    if let Some(e) = assigned_members.iter().find(|m| !org_membership_ids.contains(m)) {
+        err!("Invalid member", format!("Member {} does not belong to organization {}!", e, org_id))
+    }
+
+    GroupUser::delete_all_by_group(&group_id, &org_id, &conn).await?;
     for assigned_member in assigned_members {
         let mut user_entry = GroupUser::new(group_id.clone(), assigned_member.clone());
         user_entry.save(&conn).await?;
