@@ -296,7 +296,7 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, conn:
 
     set_kdf_data(&mut user, &data.kdf)?;
 
-    user.set_password(&data.master_password_hash, Some(data.key), true, None);
+    user.set_password(&data.master_password_hash, Some(data.key), true, None, &conn).await?;
     user.password_hint = password_hint;
 
     // Add extra fields if present
@@ -364,7 +364,9 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
         Some(data.key),
         false,
         Some(vec![String::from("revision_date")]), // We need to allow revision-date to use the old security_timestamp
-    );
+        &conn,
+    )
+    .await?;
     user.password_hint = password_hint;
 
     if let Some(keys) = data.keys {
@@ -532,7 +534,9 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
             String::from("get_public_keys"),
             String::from("get_api_webauthn"),
         ]),
-    );
+        &conn,
+    )
+    .await?;
 
     let save_result = user.save(&conn).await;
 
@@ -633,7 +637,9 @@ async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, conn: DbConn, nt:
         Some(data.unlock_data.master_key_wrapped_user_key),
         true,
         None,
-    );
+        &conn,
+    )
+    .await?;
     let save_result = user.save(&conn).await;
 
     nt.send_logout(&user, Some(headers.device.uuid.clone()), &conn).await;
@@ -900,7 +906,9 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         Some(data.account_unlock_data.master_password_unlock_data.master_key_encrypted_user_key),
         true,
         None,
-    );
+        &conn,
+    )
+    .await?;
 
     let save_result = user.save(&conn).await;
 
@@ -920,7 +928,7 @@ async fn post_sstamp(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbCo
     data.validate(&user, true, &conn).await?;
 
     Device::delete_all_by_user(&user.uuid, &conn).await?;
-    user.reset_security_stamp();
+    user.reset_security_stamp(&conn).await?;
     let save_result = user.save(&conn).await;
 
     nt.send_logout(&user, None, &conn).await;
@@ -1042,7 +1050,7 @@ async fn post_email(data: Json<ChangeEmailData>, headers: Headers, conn: DbConn,
     user.email_new = None;
     user.email_new_token = None;
 
-    user.set_password(&data.new_master_password_hash, Some(data.key), true, None);
+    user.set_password(&data.new_master_password_hash, Some(data.key), true, None, &conn).await?;
 
     let save_result = user.save(&conn).await;
 
@@ -1254,7 +1262,7 @@ struct SecretVerificationRequest {
 pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &DbConn) -> ApiResult<()> {
     if user.password_iterations < CONFIG.password_iterations() {
         user.password_iterations = CONFIG.password_iterations();
-        user.set_password(pwd_hash, None, false, None);
+        user.set_password(pwd_hash, None, false, None, conn).await?;
 
         if let Err(e) = user.save(conn).await {
             error!("Error updating user: {e:#?}");

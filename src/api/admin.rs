@@ -472,7 +472,7 @@ async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Noti
     }
 
     Device::delete_all_by_user(&user.uuid, &conn).await?;
-    user.reset_security_stamp();
+    user.reset_security_stamp(&conn).await?;
 
     user.save(&conn).await
 }
@@ -481,7 +481,7 @@ async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Noti
 async fn disable_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &conn).await?;
     Device::delete_all_by_user(&user.uuid, &conn).await?;
-    user.reset_security_stamp();
+    user.reset_security_stamp(&conn).await?;
     user.enabled = false;
 
     let save_result = user.save(&conn).await;
