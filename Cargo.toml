@@ -103,7 +103,7 @@ ring = "0.17.14"
 subtle = "2.6.1"
 
 # UUID generation
-uuid = { version = "1.22.0", features = ["v4"] }
+uuid = { version = "1.23.0", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.44", features = ["clock", "serde"], default-features = false }
@@ -136,7 +136,7 @@ webauthn-rs-core = "0.5.4"
 url = "2.5.8"
 
 # Email libraries
-lettre = { version = "0.11.19", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "hostname", "tracing", "tokio1-rustls", "ring", "rustls-native-certs"], default-features = false }
+lettre = { version = "0.11.20", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "hostname", "tracing", "tokio1-rustls", "ring", "rustls-native-certs"], default-features = false }
 percent-encoding = "2.3.2" # URL encoding library used for URL's in the emails
 email_address = "0.2.9"
 
