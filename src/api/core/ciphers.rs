@@ -167,26 +167,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         api::core::_get_eq_domains(&headers, true).into_inner()
     };
 
-    // This is very similar to the the userDecryptionOptions sent in connect/token,
-    // but as of 2025-12-19 they're both using different casing conventions.
-    let has_master_password = !headers.user.password_hash.is_empty();
-    let master_password_unlock = if has_master_password {
-        json!({
-            "kdf": {
-                "kdfType": headers.user.client_kdf_type,
-                "iterations": headers.user.client_kdf_iter,
-                "memory": headers.user.client_kdf_memory,
-                "parallelism": headers.user.client_kdf_parallelism
-            },
-            // This field is named inconsistently and will be removed and replaced by the "wrapped" variant in the apps.
-            // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
-            "masterKeyEncryptedUserKey": headers.user.akey,
-            "masterKeyWrappedUserKey": headers.user.akey,
-            "salt": headers.user.email
-        })
-    } else {
-        Value::Null
-    };
+    let user_decryption = api::user_decryption::build_sync_user_decryption(&headers.user, &headers.device, &conn).await;
 
     Ok(Json(json!({
         "profile": user_json,
@@ -196,9 +177,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "ciphers": ciphers_json,
         "domains": domains_json,
         "sends": sends_json,
-        "userDecryption": {
-            "masterPasswordUnlock": master_password_unlock,
-        },
+        "userDecryption": user_decryption,
         "object": "sync"
     })))
 }
