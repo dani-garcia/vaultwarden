@@ -110,7 +110,6 @@ pub struct RegisterData {
 
     name: Option<String>,
 
-    #[allow(dead_code)]
     organization_user_id: Option<MembershipId>,
 
     // Used only from the register/finish endpoint
@@ -380,14 +379,12 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
 
     if let Some(identifier) = data.org_identifier {
         if identifier != crate::sso::FAKE_IDENTIFIER && identifier != crate::api::admin::FAKE_ADMIN_UUID {
-            let org = match Organization::find_by_uuid(&identifier.into(), &conn).await {
-                None => err!("Failed to retrieve the associated organization"),
-                Some(org) => org,
+            let Some(org) = Organization::find_by_uuid(&identifier.into(), &conn).await else {
+                err!("Failed to retrieve the associated organization")
             };
 
-            let membership = match Membership::find_by_user_and_org(&user.uuid, &org.uuid, &conn).await {
-                None => err!("Failed to retrieve the invitation"),
-                Some(org) => org,
+            let Some(membership) = Membership::find_by_user_and_org(&user.uuid, &org.uuid, &conn).await else {
+                err!("Failed to retrieve the invitation")
             };
 
             accept_org_invite(&user, membership, None, &conn).await?;
@@ -587,7 +584,6 @@ fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
     Ok(())
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AuthenticationData {
@@ -596,7 +592,6 @@ struct AuthenticationData {
     master_password_authentication_hash: String,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UnlockData {
@@ -605,11 +600,12 @@ struct UnlockData {
     master_key_wrapped_user_key: String,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ChangeKdfData {
+    #[allow(dead_code)]
     new_master_password_hash: String,
+    #[allow(dead_code)]
     key: String,
     authentication_data: AuthenticationData,
     unlock_data: UnlockData,
