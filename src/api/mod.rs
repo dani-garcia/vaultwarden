@@ -4,6 +4,7 @@ mod icons;
 mod identity;
 mod notifications;
 mod push;
+pub(crate) mod user_decryption;
 mod web;
 
 use rocket::serde::json::Json;

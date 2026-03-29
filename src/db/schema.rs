@@ -55,6 +55,9 @@ table! {
         push_token -> Nullable<Text>,
         refresh_token -> Text,
         twofactor_remember -> Nullable<Text>,
+        encrypted_private_key -> Nullable<Text>,
+        encrypted_public_key -> Nullable<Text>,
+        encrypted_user_key -> Nullable<Text>,
     }
 }
 
