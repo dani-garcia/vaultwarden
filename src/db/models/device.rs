@@ -49,9 +49,14 @@ impl Device {
 
             push_uuid: Some(PushId(get_uuid())),
             push_token: None,
-            refresh_token: crypto::encode_random_bytes::<64>(&BASE64URL),
+            refresh_token: Device::generate_refresh_token(),
             twofactor_remember: None,
         }
+    }
+
+    #[inline(always)]
+    pub fn generate_refresh_token() -> String {
+        crypto::encode_random_bytes::<64>(&BASE64URL)
     }
 
     pub fn to_json(&self) -> Value {
@@ -259,6 +264,17 @@ impl Device {
             .ok()
             .unwrap_or(0) != 0
         }}
+    }
+
+    pub async fn rotate_refresh_tokens_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+        // Generate a new token per device.
+        // We cannot do a single UPDATE with one value because each device needs a unique token.
+        let devices = Self::find_by_user(user_uuid, conn).await;
+        for mut device in devices {
+            device.refresh_token = Device::generate_refresh_token();
+            device.save(false, conn).await?;
+        }
+        Ok(())
     }
 }
 
