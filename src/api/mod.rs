@@ -6,6 +6,7 @@ mod notifications;
 mod push;
 #[cfg(feature = "unsafe_test_mode")]
 mod test_seeder;
+pub(crate) mod user_decryption;
 mod web;
 
 #[cfg(feature = "unsafe_test_mode")]
