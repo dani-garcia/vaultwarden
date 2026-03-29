@@ -304,7 +304,7 @@ async fn _sso_login(
     // We passed 2FA get auth tokens
     let auth_tokens = sso::redeem(&device, &user, data.client_id, sso_user, sso_auth, user_infos, conn).await?;
 
-    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
+    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip, true).await
 }
 
 async fn _password_login(
@@ -426,7 +426,7 @@ async fn _password_login(
 
     let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password, data.client_id);
 
-    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
+    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip, false).await
 }
 
 async fn authenticated_response(
@@ -436,6 +436,7 @@ async fn authenticated_response(
     twofactor_token: Option<String>,
     conn: &DbConn,
     ip: &ClientIp,
+    sso_login: bool,
 ) -> JsonResult {
     if CONFIG.mail_enabled() && device.is_new() {
         let now = Utc::now().naive_utc();
@@ -463,24 +464,8 @@ async fn authenticated_response(
 
     let master_password_policy = master_password_policy(user, conn).await;
 
-    let has_master_password = !user.password_hash.is_empty();
-    let master_password_unlock = if has_master_password {
-        json!({
-            "Kdf": {
-                "KdfType": user.client_kdf_type,
-                "Iterations": user.client_kdf_iter,
-                "Memory": user.client_kdf_memory,
-                "Parallelism": user.client_kdf_parallelism
-            },
-            // This field is named inconsistently and will be removed and replaced by the "wrapped" variant in the apps.
-            // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
-            "MasterKeyEncryptedUserKey": user.akey,
-            "MasterKeyWrappedUserKey": user.akey,
-            "Salt": user.email
-        })
-    } else {
-        Value::Null
-    };
+    let user_decryption_options =
+        super::user_decryption::build_token_user_decryption_options(user, device, conn, sso_login).await;
 
     let account_keys = if user.private_key.is_some() {
         json!({
@@ -510,11 +495,7 @@ async fn authenticated_response(
         "MasterPasswordPolicy": master_password_policy,
         "scope": auth_tokens.scope(),
         "AccountKeys": account_keys,
-        "UserDecryptionOptions": {
-            "HasMasterPassword": has_master_password,
-            "MasterPasswordUnlock": master_password_unlock,
-            "Object": "userDecryptionOptions"
-        },
+        "UserDecryptionOptions": user_decryption_options,
     });
 
     if !user.akey.is_empty() {
@@ -614,24 +595,8 @@ async fn _user_api_key_login(
 
     info!("User {} logged in successfully via API key. IP: {}", user.email, ip.ip);
 
-    let has_master_password = !user.password_hash.is_empty();
-    let master_password_unlock = if has_master_password {
-        json!({
-            "Kdf": {
-                "KdfType": user.client_kdf_type,
-                "Iterations": user.client_kdf_iter,
-                "Memory": user.client_kdf_memory,
-                "Parallelism": user.client_kdf_parallelism
-            },
-            // This field is named inconsistently and will be removed and replaced by the "wrapped" variant in the apps.
-            // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
-            "MasterKeyEncryptedUserKey": user.akey,
-            "MasterKeyWrappedUserKey": user.akey,
-            "Salt": user.email
-        })
-    } else {
-        Value::Null
-    };
+    let user_decryption_options =
+        super::user_decryption::build_token_user_decryption_options(&user, &device, conn, false).await;
 
     let account_keys = if user.private_key.is_some() {
         json!({
@@ -663,11 +628,7 @@ async fn _user_api_key_login(
         "ForcePasswordReset": false,
         "scope": AuthMethod::UserApiKey.scope(),
         "AccountKeys": account_keys,
-        "UserDecryptionOptions": {
-            "HasMasterPassword": has_master_password,
-            "MasterPasswordUnlock": master_password_unlock,
-            "Object": "userDecryptionOptions"
-        },
+        "UserDecryptionOptions": user_decryption_options,
     });
 
     Ok(Json(result))

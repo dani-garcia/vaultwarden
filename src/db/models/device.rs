@@ -31,6 +31,13 @@ pub struct Device {
 
     pub refresh_token: String,
     pub twofactor_remember: Option<String>,
+
+    /// Device private key encrypted with the device key (trusted-device / TDE).
+    pub encrypted_private_key: Option<String>,
+    /// Device public key encrypted with the user key.
+    pub encrypted_public_key: Option<String>,
+    /// User symmetric key encrypted with the device public key.
+    pub encrypted_user_key: Option<String>,
 }
 
 /// Local methods
@@ -51,12 +58,23 @@ impl Device {
             push_token: None,
             refresh_token: Device::generate_refresh_token(),
             twofactor_remember: None,
+
+            encrypted_private_key: None,
+            encrypted_public_key: None,
+            encrypted_user_key: None,
         }
     }
 
     #[inline(always)]
     pub fn generate_refresh_token() -> String {
         crypto::encode_random_bytes::<64>(&BASE64URL)
+    }
+
+    /// Matches upstream `DeviceExtensions.IsTrusted` / device list responses.
+    pub fn is_trusted(&self) -> bool {
+        self.encrypted_user_key.as_ref().is_some_and(|s| !s.is_empty())
+            && self.encrypted_public_key.as_ref().is_some_and(|s| !s.is_empty())
+            && self.encrypted_private_key.as_ref().is_some_and(|s| !s.is_empty())
     }
 
     pub fn to_json(&self) -> Value {
@@ -66,9 +84,18 @@ impl Device {
             "type": self.atype,
             "identifier": self.uuid,
             "creationDate": format_date(&self.created_at),
-            "isTrusted": false,
+            "isTrusted": self.is_trusted(),
+            "encryptedUserKey": Self::enc_string_json(&self.encrypted_user_key),
+            "encryptedPublicKey": Self::enc_string_json(&self.encrypted_public_key),
             "object":"device"
         })
+    }
+
+    fn enc_string_json(v: &Option<String>) -> Value {
+        match v {
+            Some(s) if !s.is_empty() => Value::String(s.clone()),
+            _ => Value::Null,
+        }
     }
 
     pub fn refresh_twofactor_remember(&mut self) -> String {
@@ -121,9 +148,9 @@ impl DeviceWithAuthRequest {
             "identifier": self.device.uuid,
             "creationDate": format_date(&self.device.created_at),
             "devicePendingAuthRequest": auth_request,
-            "isTrusted": false,
-            "encryptedPublicKey": null,
-            "encryptedUserKey": null,
+            "isTrusted": self.device.is_trusted(),
+            "encryptedPublicKey": Device::enc_string_json(&self.device.encrypted_public_key),
+            "encryptedUserKey": Device::enc_string_json(&self.device.encrypted_user_key),
             "object": "device",
         })
     }

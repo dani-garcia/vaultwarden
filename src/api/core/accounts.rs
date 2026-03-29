@@ -65,6 +65,10 @@ pub fn routes() -> Vec<rocket::Route> {
         put_device_token,
         put_clear_device_token,
         post_clear_device_token,
+        put_device_keys,
+        post_device_keys,
+        put_device_keys_by_uuid,
+        post_device_keys_by_uuid,
         get_tasks,
         post_auth_request,
         get_auth_request,
@@ -1450,6 +1454,51 @@ async fn put_clear_device_token(device_id: DeviceId, conn: DbConn) -> EmptyResul
 #[post("/devices/identifier/<device_id>/clear-token")]
 async fn post_clear_device_token(device_id: DeviceId, conn: DbConn) -> EmptyResult {
     put_clear_device_token(device_id, conn).await
+}
+
+// https://github.com/bitwarden/server/blob/v2026.3.1/src/Api/Controllers/DevicesController.cs
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceKeysData {
+    encrypted_user_key: String,
+    encrypted_public_key: String,
+    encrypted_private_key: String,
+}
+
+#[put("/devices/identifier/<device_id>/keys", data = "<data>")]
+async fn put_device_keys(device_id: DeviceId, data: Json<DeviceKeysData>, headers: Headers, conn: DbConn) -> JsonResult {
+    if headers.device.uuid != device_id {
+        err!("No device found");
+    }
+    let Some(mut device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &conn).await else {
+        err!("No device found");
+    };
+    let data = data.into_inner();
+    if data.encrypted_user_key.is_empty() || data.encrypted_public_key.is_empty() || data.encrypted_private_key.is_empty()
+    {
+        err!("Invalid device keys");
+    }
+    device.encrypted_user_key = Some(data.encrypted_user_key);
+    device.encrypted_public_key = Some(data.encrypted_public_key);
+    device.encrypted_private_key = Some(data.encrypted_private_key);
+    device.save(true, &conn).await?;
+    Ok(Json(device.to_json()))
+}
+
+#[post("/devices/identifier/<device_id>/keys", data = "<data>")]
+async fn post_device_keys(device_id: DeviceId, data: Json<DeviceKeysData>, headers: Headers, conn: DbConn) -> JsonResult {
+    put_device_keys(device_id, data, headers, conn).await
+}
+
+// Bitwarden server: `PUT|POST devices/{identifier}/keys` (not `devices/identifier/.../keys`).
+#[put("/devices/<device_id>/keys", data = "<data>")]
+async fn put_device_keys_by_uuid(device_id: DeviceId, data: Json<DeviceKeysData>, headers: Headers, conn: DbConn) -> JsonResult {
+    put_device_keys(device_id, data, headers, conn).await
+}
+
+#[post("/devices/<device_id>/keys", data = "<data>")]
+async fn post_device_keys_by_uuid(device_id: DeviceId, data: Json<DeviceKeysData>, headers: Headers, conn: DbConn) -> JsonResult {
+    put_device_keys(device_id, data, headers, conn).await
 }
 
 #[get("/tasks")]
