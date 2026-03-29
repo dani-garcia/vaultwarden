@@ -156,7 +156,7 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
                 }
             };
 
-            GroupUser::delete_all_by_group(&group_uuid, &conn).await?;
+            GroupUser::delete_all_by_group(&group_uuid, &org_id, &conn).await?;
 
             for ext_id in &group_data.member_external_ids {
                 if let Some(member) = Membership::find_by_external_id_and_org(ext_id, &org_id, &conn).await {

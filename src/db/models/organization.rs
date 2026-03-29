@@ -1073,7 +1073,9 @@ impl Membership {
             .left_join(collections_groups::table.on(
                 collections_groups::groups_uuid.eq(groups_users::groups_uuid)
             ))
-            .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)))
+            .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
+            ))
             .left_join(ciphers_collections::table.on(
                     ciphers_collections::collection_uuid.eq(collections_groups::collections_uuid).and(ciphers_collections::cipher_uuid.eq(&cipher_uuid))
 
