@@ -100,7 +100,7 @@ impl Fairing for AppHeaders {
                     form-action 'self'; \
                     media-src 'self'; \
                     object-src 'self' blob:; \
-                    script-src 'self' 'wasm-unsafe-eval' 'sha256-ZswfTY7H35rbv8WC7NXBoiC7WNu86vSzCDChNWwZZDM='; \
+                    script-src 'self' 'wasm-unsafe-eval'; \
                     style-src 'self' 'unsafe-inline'; \
                     child-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
                     frame-src 'self' https://*.duosecurity.com https://*.duofederal.com; \
