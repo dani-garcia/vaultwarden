@@ -1,13 +1,16 @@
-name: Build Vaultwarden for macOS M4 (ARM64)
+name: Build and Release Vaultwarden for macOS M4
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    tags:
+      - 'v*' # 当推送以 v 开头的 tag 时触发 (如 v1.0.0)
+  workflow_dispatch: # 允许手动触发测试
 
 jobs:
   build:
     runs-on: macos-latest
+    permissions: # 赋予写入 Release 的权限
+      contents: write
     
     steps:
       - name: Checkout code
@@ -20,29 +23,17 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          # 1. 安装所有必需的数据库客户端和工具
           brew install openssl mysql-client libpq pkg-config
-          
-          # 2. 设置 OpenSSL 路径
-          OPENSSL_PATH=$(brew --prefix openssl)
-          echo "OPENSSL_ROOT_DIR=$OPENSSL_PATH" >> $GITHUB_ENV
-          
-          # 3. 设置 MySQL 路径与环境变量
-          MYSQL_PATH=$(brew --prefix mysql-client)
-          echo "MYSQLCLIENT_LIB_DIR=$MYSQL_PATH/lib" >> $GITHUB_ENV
-          echo "MYSQLCLIENT_VERSION=8.0" >> $GITHUB_ENV
-          echo "$MYSQL_PATH/bin" >> $GITHUB_PATH
-
-          # 4. 设置 PostgreSQL (libpq) 路径
-          # libpq 同样是 keg-only 的，必须手动导出路径给链接器
-          PQ_PATH=$(brew --prefix libpq)
-          echo "LDFLAGS=-L$PQ_PATH/lib" >> $GITHUB_ENV
-          echo "CPPFLAGS=-I$PQ_PATH/include" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=$PQ_PATH/lib/pkgconfig" >> $GITHUB_ENV
-          # 这一步很关键：将 libpq 的 bin 目录加入 PATH
-          echo "$PQ_PATH/bin" >> $GITHUB_PATH
-          # 显式给 Rust 的链接器指定库文件路径
-          echo "LIBRARY_PATH=$PQ_PATH/lib" >> $GITHUB_ENV
+          {
+            echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl)"
+            echo "MYSQLCLIENT_LIB_DIR=$(brew --prefix mysql-client)/lib"
+            echo "MYSQLCLIENT_VERSION=8.0"
+            echo "LIBRARY_PATH=$(brew --prefix libpq)/lib"
+            echo "PKG_CONFIG_PATH=$(brew --prefix libpq)/lib/pkgconfig"
+            echo "LIBSQLITE3_SYS_BUNDLED=1" 
+          } >> $GITHUB_ENV
+          echo "$(brew --prefix mysql-client)/bin" >> $GITHUB_PATH
+          echo "$(brew --prefix libpq)/bin" >> $GITHUB_PATH
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
@@ -53,13 +44,21 @@ jobs:
             --target aarch64-apple-darwin \
             --features sqlite,mysql,postgresql
 
-      - name: Prepare Artifact
+      - name: Prepare Assets
         run: |
-          mkdir -p output
-          cp target/aarch64-apple-darwin/release/vaultwarden ./output/
+          mkdir -p publish
+          # 将二进制文件重命名，方便用户识别架构
+          cp target/aarch64-apple-darwin/release/vaultwarden ./publish/vaultwarden-macos-arm64
+          # 进入目录进行压缩 (可选，推荐压缩以减小体积)
+          cd publish && tar -czvf vaultwarden-macos-arm64.tar.gz vaultwarden-macos-arm64
 
-      - name: Upload Binary
-        uses: actions/upload-artifact@v4
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          name: vaultwarden-macos-m4
-          path: ./output/vaultwarden
+          files: ./publish/vaultwarden-macos-arm64.tar.gz
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
