@@ -1,0 +1,49 @@
+name: Build Vaultwarden for macOS M4 (ARM64)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  build:
+    runs-on: macos-latest # 使用 GitHub 提供的 Apple Silicon 运行器
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Install Dependencies
+        run: |
+          brew install openssl pkg-config
+          # 设置 OpenSSL 环境变量，这是编译 Rust 网络应用的关键
+          echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl)" >> $GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=$(brew --prefix openssl)/lib" >> $GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$(brew --prefix openssl)/include" >> $GITHUB_ENV
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Vaultwarden
+        run: |
+          # 开启所有必要的 features，例如 sqlite/mysql/postgresql
+          # --release 模式生成优化后的二进制文件
+          cargo build --release --target aarch64-apple-darwin --features sqlite,mysql,postgresql
+
+      - name: Prepare Artifact
+        run: |
+          mkdir -p output
+          cp target/aarch64-apple-darwin/release/vaultwarden ./output/
+          # 复制 web-vault (如果你的仓库里没有集成，可能需要单独处理前端)
+          # 注意：Vaultwarden 运行通常需要 web-vault 静态文件
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: vaultwarden-macos-m4
+          path: ./output/vaultwarden
