@@ -1,15 +1,16 @@
-name: Build and Release Vaultwarden for macOS M4
+name: Build Vaultwarden
+# name: Build and Release Vaultwarden Full Package (macOS M4)
 
 on:
   push:
     tags:
-      - 'v*' # 当推送以 v 开头的 tag 时触发 (如 v1.0.0)
-  workflow_dispatch: # 允许手动触发测试
+      - 'v*' # 当推送 v1.0.0 等标签时触发
+  workflow_dispatch: # 支持手动点击运行
 
 jobs:
   build:
     runs-on: macos-latest
-    permissions: # 赋予写入 Release 的权限
+    permissions:
       contents: write
     
     steps:
@@ -24,6 +25,7 @@ jobs:
       - name: Install Dependencies
         run: |
           brew install openssl mysql-client libpq pkg-config
+          
           {
             echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl)"
             echo "MYSQLCLIENT_LIB_DIR=$(brew --prefix mysql-client)/lib"
@@ -32,33 +34,61 @@ jobs:
             echo "PKG_CONFIG_PATH=$(brew --prefix libpq)/lib/pkgconfig"
             echo "LIBSQLITE3_SYS_BUNDLED=1" 
           } >> $GITHUB_ENV
+          
           echo "$(brew --prefix mysql-client)/bin" >> $GITHUB_PATH
           echo "$(brew --prefix libpq)/bin" >> $GITHUB_PATH
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Build Vaultwarden
+      - name: Build Vaultwarden Backend
         run: |
           cargo build --release \
             --target aarch64-apple-darwin \
             --features sqlite,mysql,postgresql
 
-      - name: Prepare Assets
+      - name: Prepare Full Package (Backend + Frontend)
         run: |
-          mkdir -p publish
-          # 将二进制文件重命名，方便用户识别架构
-          cp target/aarch64-apple-darwin/release/vaultwarden ./publish/vaultwarden-macos-arm64
-          # 进入目录进行压缩 (可选，推荐压缩以减小体积)
-          cd publish && tar -czvf vaultwarden-macos-arm64.tar.gz vaultwarden-macos-arm64
+          # 1. 创建打包目录
+          mkdir -p vaultwarden-macos-m4
+          
+          # 2. 复制二进制文件
+          cp target/aarch64-apple-darwin/release/vaultwarden ./vaultwarden-macos-m4/
+          
+          # 3. 下载并解压最新的 Web Vault (前端界面)
+          # 使用 GitHub API 获取最新版下载链接
+          WEB_VAULT_URL=$(curl -s https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest | grep "browser_download_url.*tar.gz" | cut -d '"' -f 4)
+          echo "Downloading Web Vault from: $WEB_VAULT_URL"
+          curl -L "$WEB_VAULT_URL" -o web-vault.tar.gz
+          tar -xzf web-vault.tar.gz -C ./vaultwarden-macos-m4/
+          rm web-vault.tar.gz
+
+          # 4. 准备默认环境变量模板
+          cat <<EOF > ./vaultwarden-macos-m4/.env
+# Vaultwarden Configuration
+DOMAIN=http://localhost:8080
+SIGNUPS_ALLOWED=true
+WEB_VAULT_ENABLED=true
+WEB_VAULT_FOLDER=web-vault
+DATABASE_URL=data/db.sqlite3
+IP_HEADER=X-Real-IP
+EOF
+
+          # 5. 打包成 ZIP
+          zip -r vaultwarden-macos-m4-full.zip vaultwarden-macos-m4/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: ./publish/vaultwarden-macos-arm64.tar.gz
-          name: Release ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: vaultwarden-macos-m4-full.zip
+          body: |
+            ## Vaultwarden for macOS (Apple Silicon M1/M2/M3/M4)
+            
+            此版本包含：
+            - **Vaultwarden Binary**: 针对 `aarch64-apple-darwin` 编译
+            - **Web Vault**: 自动集成的最新前端界面
+            - **Database Support**: 支持 SQLite (内置), MySQL, PostgreSQL
+            
+            **使用说明：**
+            1. 下载
