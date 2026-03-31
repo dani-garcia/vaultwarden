@@ -3,11 +3,11 @@ name: Build Vaultwarden for macOS M4 (ARM64)
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-latest # 使用 GitHub 提供的 Apple Silicon 运行器
+    runs-on: macos-latest
     
     steps:
       - name: Checkout code
@@ -20,27 +20,37 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          brew install openssl pkg-config
-          # 设置 OpenSSL 环境变量，这是编译 Rust 网络应用的关键
-          echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl)" >> $GITHUB_ENV
-          echo "OPENSSL_LIB_DIR=$(brew --prefix openssl)/lib" >> $GITHUB_ENV
-          echo "OPENSSL_INCLUDE_DIR=$(brew --prefix openssl)/include" >> $GITHUB_ENV
+          # 安装编译所需的依赖
+          brew install openssl mysql-client pkg-config
+          
+          # 获取 brew 安装路径的动态变量
+          MYSQL_PATH=$(brew --prefix mysql-client)
+          OPENSSL_PATH=$(brew --prefix openssl)
+
+          # 设置 MySQL 相关的环境变量，让 mysqlclient-sys 能找到库
+          echo "MYSQLCLIENT_LIB_DIR=$MYSQL_PATH/lib" >> $GITHUB_ENV
+          echo "MYSQLCLIENT_VERSION=8.0" >> $GITHUB_ENV # 这里的版本号通常跟随主版本
+          
+          # 将 mysql_config 加入 PATH，这是许多库寻找 mysql 配置的备选方案
+          echo "$MYSQL_PATH/bin" >> $GITHUB_PATH
+
+          # 设置 OpenSSL 环境变量
+          echo "OPENSSL_ROOT_DIR=$OPENSSL_PATH" >> $GITHUB_ENV
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
       - name: Build Vaultwarden
         run: |
-          # 开启所有必要的 features，例如 sqlite/mysql/postgresql
-          # --release 模式生成优化后的二进制文件
-          cargo build --release --target aarch64-apple-darwin --features sqlite,mysql,postgresql
+          # 显式指定 target 并开启 features
+          cargo build --release \
+            --target aarch64-apple-darwin \
+            --features sqlite,mysql,postgresql
 
       - name: Prepare Artifact
         run: |
           mkdir -p output
           cp target/aarch64-apple-darwin/release/vaultwarden ./output/
-          # 复制 web-vault (如果你的仓库里没有集成，可能需要单独处理前端)
-          # 注意：Vaultwarden 运行通常需要 web-vault 静态文件
 
       - name: Upload Binary
         uses: actions/upload-artifact@v4
