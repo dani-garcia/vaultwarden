@@ -22,7 +22,7 @@ use crate::{
         DbConn,
     },
     mail,
-    util::{format_date, NumberOrString},
+    util::{deser_opt_nonempty_str, format_date, NumberOrString},
     CONFIG,
 };
 
@@ -649,6 +649,7 @@ struct UpdateFolderData {
     // There is a bug in 2024.3.x which adds a `null` item.
     // To bypass this we allow a Option here, but skip it during the updates
     // See: https://github.com/bitwarden/clients/issues/8453
+    #[serde(default, deserialize_with = "deser_opt_nonempty_str")]
     id: Option<FolderId>,
     name: String,
 }
