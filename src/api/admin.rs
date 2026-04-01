@@ -480,13 +480,14 @@ async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Noti
 #[post("/users/<user_id>/disable", format = "application/json")]
 async fn disable_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &conn).await?;
-    Device::delete_all_by_user(&user.uuid, &conn).await?;
     user.reset_security_stamp(&conn).await?;
     user.enabled = false;
 
     let save_result = user.save(&conn).await;
 
     nt.send_logout(&user, None, &conn).await;
+
+    Device::delete_all_by_user(&user.uuid, &conn).await?;
 
     save_result
 }
