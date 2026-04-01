@@ -131,6 +131,9 @@ impl Send {
             data["size"] = Value::String(size.to_string());
         }
 
+        // Determine authType based on Bitwarden's AuthType enum: Email=0, Password=1, None=2
+        let auth_type = if self.password_hash.is_some() { 1 } else { 2 };
+
         json!({
             "id": self.uuid,
             "accessId": BASE64URL_NOPAD.encode(Uuid::parse_str(&self.uuid).unwrap_or_default().as_bytes()),
@@ -145,6 +148,7 @@ impl Send {
             "maxAccessCount": self.max_access_count,
             "accessCount": self.access_count,
             "password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
+            "authType": auth_type,
             "disabled": self.disabled,
             "hideEmail": self.hide_email,
 
