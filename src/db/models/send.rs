@@ -46,6 +46,16 @@ pub enum SendType {
     File = 1,
 }
 
+enum SendAuthType {
+    #[allow(dead_code)]
+    // Send requires email OTP verification
+    Email = 0, // Not yet supported by Vaultwarden
+    // Send requires a password
+    Password = 1,
+    // Send requires no auth
+    None = 2,
+}
+
 impl Send {
     pub fn new(atype: i32, name: String, data: String, akey: String, deletion_date: NaiveDateTime) -> Self {
         let now = Utc::now().naive_utc();
@@ -145,6 +155,7 @@ impl Send {
             "maxAccessCount": self.max_access_count,
             "accessCount": self.access_count,
             "password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
+            "authType": if self.password_hash.is_some() { SendAuthType::Password as i32 } else { SendAuthType::None as i32 },
             "disabled": self.disabled,
             "hideEmail": self.hide_email,
 
