@@ -358,7 +358,7 @@ impl WebSocketUsers {
         }
     }
 
-    pub async fn send_logout(&self, user: &User, device: Option<&Device>, conn: &DbConn) {
+    pub async fn send_logout(&self, user: &User, acting_device: Option<&Device>, conn: &DbConn) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;

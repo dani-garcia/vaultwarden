@@ -188,7 +188,7 @@ pub async fn push_cipher_update(ut: UpdateType, cipher: &Cipher, device: &Device
     }
 }
 
-pub async fn push_logout(user: &User, device: Option<&Device>, conn: &DbConn) {
+pub async fn push_logout(user: &User, acting_device: Option<&Device>, conn: &DbConn) {
     if Device::check_user_has_push_device(&user.uuid, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": user.uuid,
