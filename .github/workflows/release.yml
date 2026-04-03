@@ -38,7 +38,9 @@ jobs:
   docker-build:
     name: Build Vaultwarden containers
     if: ${{ github.repository == 'dani-garcia/vaultwarden' }}
-    environment: release
+    environment: 
+      name: release
+      deployment: false
     permissions:
       packages: write # Needed to upload packages and artifacts
       contents: read
@@ -249,7 +251,9 @@ jobs:
     name: Merge manifests
     runs-on: ubuntu-latest
     needs: docker-build
-    environment: release
+    environment: 
+      name: release
+      deployment: false
     permissions:
       packages: write # Needed to upload packages and artifacts
       attestations: write # Needed to generate an artifact attestation for a build

@@ -634,6 +634,21 @@ fn _process_key(key: &str) -> String {
     }
 }
 
+pub fn deser_opt_nonempty_str<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: From<String>,
+{
+    use serde::Deserialize;
+    Ok(Option::<String>::deserialize(deserializer)?.and_then(|s| {
+        if s.is_empty() {
+            None
+        } else {
+            Some(T::from(s))
+        }
+    }))
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum NumberOrString {

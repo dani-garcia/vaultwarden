@@ -11,7 +11,7 @@ use rocket::{
 use serde_json::Value;
 
 use crate::auth::ClientVersion;
-use crate::util::{save_temp_file, NumberOrString};
+use crate::util::{deser_opt_nonempty_str, save_temp_file, NumberOrString};
 use crate::{
     api::{self, core::log_event, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType},
     auth::{Headers, OrgIdGuard, OwnerHeaders},
@@ -248,6 +248,7 @@ pub struct CipherData {
     // Id is optional as it is included only in bulk share
     pub id: Option<CipherId>,
     // Folder id is not included in import
+    #[serde(default, deserialize_with = "deser_opt_nonempty_str")]
     pub folder_id: Option<FolderId>,
     // TODO: Some of these might appear all the time, no need for Option
     #[serde(alias = "organizationID")]
@@ -297,6 +298,7 @@ pub struct CipherData {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PartialCipherData {
+    #[serde(default, deserialize_with = "deser_opt_nonempty_str")]
     folder_id: Option<FolderId>,
     favorite: bool,
 }
@@ -1569,6 +1571,7 @@ async fn restore_cipher_selected(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MoveCipherData {
+    #[serde(default, deserialize_with = "deser_opt_nonempty_str")]
     folder_id: Option<FolderId>,
     ids: Vec<CipherId>,
 }
