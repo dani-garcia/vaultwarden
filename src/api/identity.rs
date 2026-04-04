@@ -15,7 +15,8 @@ use crate::{
             accounts::{PreloginData, RegisterData, _prelogin, _register, kdf_upgrade},
             log_user_event,
             two_factor::{
-                authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn, yubikey,
+                authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn,
+                yubikey,
             },
         },
         master_password_policy,
@@ -743,8 +744,10 @@ async fn twofactor_auth(
 
     let twofactor_ids: Vec<_> = twofactors
         .iter()
-        .filter(|tf| tf.enabled && is_twofactor_provider_usable(tf.atype, Some(&tf.data)))
-        .map(|tf| tf.atype)
+        .filter_map(|tf| {
+            let provider_type = TwoFactorType::from_i32(tf.atype)?;
+            (tf.enabled && is_twofactor_provider_usable(provider_type, Some(&tf.data))).then_some(tf.atype)
+        })
         .collect();
     if twofactor_ids.is_empty() {
         err!("No enabled and usable two factor providers are available for this account")
