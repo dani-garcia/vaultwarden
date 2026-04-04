@@ -193,8 +193,8 @@ pub async fn push_logout(user: &User, acting_device: Option<&Device>, conn: &DbC
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": user.uuid,
             "organizationId": (),
-            "deviceId": device.and_then(|d| d.push_uuid.as_ref()),
-            "identifier": device.map(|d| &d.uuid),
+            "deviceId": acting_device.and_then(|d| d.push_uuid.as_ref()),
+            "identifier": acting_device.map(|d| &d.uuid),
             "type": UpdateType::LogOut as i32,
             "payload": {
                 "userId": user.uuid,

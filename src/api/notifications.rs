@@ -363,7 +363,7 @@ impl WebSocketUsers {
         if *NOTIFICATIONS_DISABLED {
             return;
         }
-        let acting_device_id = device.map(|d| d.uuid.clone());
+        let acting_device_id = acting_device.map(|d| d.uuid.clone());
         let data = create_update(
             vec![("UserId".into(), user.uuid.to_string().into()), ("Date".into(), serialize_date(user.updated_at))],
             UpdateType::LogOut,
@@ -375,7 +375,7 @@ impl WebSocketUsers {
         }
 
         if CONFIG.push_enabled() {
-            push_logout(user, device, conn).await;
+            push_logout(user, acting_device, conn).await;
         }
     }
 
