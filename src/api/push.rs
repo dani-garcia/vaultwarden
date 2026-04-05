@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 use crate::{
     api::{ApiResult, EmptyResult, UpdateType},
     db::{
-        models::{AuthRequestId, Cipher, Device, DeviceId, Folder, PushId, Send, User, UserId},
+        models::{AuthRequestId, Cipher, Device, Folder, PushId, Send, User, UserId},
         DbConn,
     },
     http_client::make_http_request,
@@ -188,15 +188,13 @@ pub async fn push_cipher_update(ut: UpdateType, cipher: &Cipher, device: &Device
     }
 }
 
-pub async fn push_logout(user: &User, acting_device_id: Option<DeviceId>, conn: &DbConn) {
-    let acting_device_id: Value = acting_device_id.map(|v| v.to_string().into()).unwrap_or_else(|| Value::Null);
-
+pub async fn push_logout(user: &User, acting_device: Option<&Device>, conn: &DbConn) {
     if Device::check_user_has_push_device(&user.uuid, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": user.uuid,
             "organizationId": (),
-            "deviceId": acting_device_id,
-            "identifier": acting_device_id,
+            "deviceId": acting_device.and_then(|d| d.push_uuid.as_ref()),
+            "identifier": acting_device.map(|d| &d.uuid),
             "type": UpdateType::LogOut as i32,
             "payload": {
                 "userId": user.uuid,

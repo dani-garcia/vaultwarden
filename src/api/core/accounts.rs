@@ -540,7 +540,7 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
-    nt.send_logout(&user, Some(headers.device.uuid.clone()), &conn).await;
+    nt.send_logout(&user, Some(&headers.device), &conn).await;
 
     save_result
 }
@@ -638,7 +638,7 @@ async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, conn: DbConn, nt:
     .await?;
     let save_result = user.save(&conn).await;
 
-    nt.send_logout(&user, Some(headers.device.uuid.clone()), &conn).await;
+    nt.send_logout(&user, Some(&headers.device), &conn).await;
 
     save_result
 }
@@ -912,7 +912,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
-    nt.send_logout(&user, Some(headers.device.uuid.clone()), &conn).await;
+    nt.send_logout(&user, Some(&headers.device), &conn).await;
 
     save_result
 }
@@ -924,11 +924,12 @@ async fn post_sstamp(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbCo
 
     data.validate(&user, true, &conn).await?;
 
-    Device::delete_all_by_user(&user.uuid, &conn).await?;
     user.reset_security_stamp(&conn).await?;
     let save_result = user.save(&conn).await;
 
     nt.send_logout(&user, None, &conn).await;
+
+    Device::delete_all_by_user(&user.uuid, &conn).await?;
 
     save_result
 }
