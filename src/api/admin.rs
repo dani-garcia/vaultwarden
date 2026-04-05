@@ -385,8 +385,13 @@ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<Stri
 
 #[get("/users/by-mail/<mail>")]
 async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> JsonResult {
-    if let Some((u, sso)) = SsoUser::find_by_mail(mail, &conn).await {
-        let user_json = enrich_users_json(vec![(u, sso)], &conn).await[0].clone();
+    if let Some((user, sso_user)) = SsoUser::find_by_mail(mail, &conn).await {
+        let user_json = enrich_users_json(vec![(user, sso_user)], &conn)
+            .await
+            .into_iter()
+            .next()
+            .clone()
+            .ok_or(Error::new("Could not build user JSON", "").with_code(Status::InternalServerError.code))?;
         Ok(Json(user_json))
     } else {
         err_code!("User doesn't exist", Status::NotFound.code);
@@ -397,7 +402,12 @@ async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> 
 async fn get_user_json(user_id: UserId, _token: AdminToken, conn: DbConn) -> JsonResult {
     let user = get_user_or_404(&user_id, &conn).await?;
     let sso_user = SsoUser::find_by_uuid(&user_id, &conn).await;
-    let user_json = enrich_users_json(vec![(user, sso_user)], &conn).await[0].clone();
+    let user_json = enrich_users_json(vec![(user, sso_user)], &conn)
+        .await
+        .into_iter()
+        .next()
+        .clone()
+        .ok_or(Error::new("Could not build user JSON", "").with_code(Status::InternalServerError.code))?;
 
     Ok(Json(user_json))
 }
@@ -581,7 +591,7 @@ async fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<H
         org["collection_count"] = json!(Collection::count_by_org(&o.uuid, &conn).await);
         org["group_count"] = json!(Group::count_by_org(&o.uuid, &conn).await);
         org["event_count"] = json!(Event::count_by_org(&o.uuid, &conn).await);
-        org["attachment_count"] = json!(Attachment::count_by_org(&o.uuid, &conn).await);
+        org["attachmentCount"] = json!(Attachment::count_by_org(&o.uuid, &conn).await);
         org["attachment_size"] = json!(get_display_size(Attachment::size_by_org(&o.uuid, &conn).await));
         organizations_json.push(org);
     }
