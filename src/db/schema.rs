@@ -349,6 +349,8 @@ table! {
     }
 }
 
+joinable!(archives -> users (user_uuid));
+joinable!(archives -> ciphers (cipher_uuid));
 joinable!(attachments -> ciphers (cipher_uuid));
 joinable!(ciphers -> organizations (organization_uuid));
 joinable!(ciphers -> users (user_uuid));
@@ -380,6 +382,7 @@ joinable!(auth_requests -> users (user_uuid));
 joinable!(sso_users -> users (user_uuid));
 
 allow_tables_to_appear_in_same_query!(
+    archives,
     attachments,
     ciphers,
     ciphers_collections,
