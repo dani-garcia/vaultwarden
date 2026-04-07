@@ -534,9 +534,8 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
 
     use data_url::DataUrl;
 
-    for (i, icon) in icon_result.iconlist.iter().take(5).enumerate() {
-        let is_last = i == icon_result.iconlist.iter().take(5).count() - 1;
-
+    let mut icons = icon_result.iconlist.iter().take(5).peekable();
+    while let Some(icon) = icons.next() {
         if icon.href.starts_with("data:image") {
             let Ok(datauri) = DataUrl::process(&icon.href) else {
                 continue;
@@ -568,7 +567,7 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
             // Make sure all icons are checked before returning error
             let res = match get_page_with_referer(&icon.href, &icon_result.referer).await {
                 Ok(r) => r,
-                Err(e) if is_last => return Err(e.into()),
+                Err(e) if icons.peek().is_none() => return Err(e.into()),
                 Err(e) if CustomHttpClientError::downcast_ref(&e).is_some() => return Err(e.into()), // If blacklisted stop immediately instead of checking the rest of the icons. see explanation and actual handling inside get_icon()
                 Err(e) => {
                     warn!("Unable to download icon: {e:?}");
