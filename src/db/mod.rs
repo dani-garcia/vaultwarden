@@ -288,12 +288,12 @@ impl DbConnType {
                 if std::path::Path::new(url).exists() {
                     return Ok(DbConnType::Sqlite);
                 }
-                panic!(
+                err!(format!(
                     "`DATABASE_URL` does not match any known database scheme (mysql://, postgresql://, sqlite://) \
                      and no existing SQLite database was found at '{url}'. \
                      If you intend to use SQLite, use an explicit `sqlite://` prefix in your `DATABASE_URL`. \
                      Otherwise, check your DATABASE_URL for typos or quoting issues."
-                );
+                ))
             }
 
             #[cfg(not(sqlite))]
