@@ -521,7 +521,7 @@ async fn post_organization_collections(
     }
 
     if headers.membership.atype == MembershipType::Manager && !headers.membership.access_all {
-        CollectionUser::save(&headers.membership.user_uuid, &collection.uuid, false, false, false, &conn).await?;
+        CollectionUser::save(&headers.membership.user_uuid, &collection.uuid, false, false, true, &conn).await?;
     }
 
     Ok(Json(collection.to_json_details(&headers.membership.user_uuid, None, &conn).await))
