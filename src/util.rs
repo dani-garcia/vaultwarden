@@ -483,8 +483,11 @@ pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
     expiry_time.to_rfc2822().replace("+0000", "GMT")
 }
 
-pub fn parse_date(date: &str) -> NaiveDateTime {
-    DateTime::parse_from_rfc3339(date).unwrap().naive_utc()
+pub fn parse_date(date: &str) -> Result<NaiveDateTime, crate::Error> {
+    match DateTime::parse_from_rfc3339(date) {
+        Ok(dt) => Ok(dt.naive_utc()),
+        Err(e) => err!(format!("Invalid RFC3339 date '{date}': {e}")),
+    }
 }
 
 /// Returns true or false if an email address is valid or not

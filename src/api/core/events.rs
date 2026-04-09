@@ -41,11 +41,11 @@ async fn get_org_events(org_id: OrganizationId, data: EventRange, headers: Admin
     let events_json: Vec<Value> = if !CONFIG.org_events_enabled() {
         Vec::with_capacity(0)
     } else {
-        let start_date = parse_date(&data.start);
+        let start_date = parse_date(&data.start)?;
         let end_date = if let Some(before_date) = &data.continuation_token {
-            parse_date(before_date)
+            parse_date(before_date)?
         } else {
-            parse_date(&data.end)
+            parse_date(&data.end)?
         };
 
         Event::find_by_organization_uuid(&org_id, &start_date, &end_date, &conn)
@@ -71,11 +71,11 @@ async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Heade
     } else {
         let mut events_json = Vec::with_capacity(0);
         if Membership::user_has_ge_admin_access_to_cipher(&headers.user.uuid, &cipher_id, &conn).await {
-            let start_date = parse_date(&data.start);
+            let start_date = parse_date(&data.start)?;
             let end_date = if let Some(before_date) = &data.continuation_token {
-                parse_date(before_date)
+                parse_date(before_date)?
             } else {
-                parse_date(&data.end)
+                parse_date(&data.end)?
             };
 
             events_json = Event::find_by_cipher_uuid(&cipher_id, &start_date, &end_date, &conn)
@@ -110,11 +110,11 @@ async fn get_user_events(
     let events_json: Vec<Value> = if !CONFIG.org_events_enabled() {
         Vec::with_capacity(0)
     } else {
-        let start_date = parse_date(&data.start);
+        let start_date = parse_date(&data.start)?;
         let end_date = if let Some(before_date) = &data.continuation_token {
-            parse_date(before_date)
+            parse_date(before_date)?
         } else {
-            parse_date(&data.end)
+            parse_date(&data.end)?
         };
 
         Event::find_by_org_and_member(&org_id, &member_id, &start_date, &end_date, &conn)
@@ -173,7 +173,7 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
     }
 
     for event in data.iter() {
-        let event_date = parse_date(&event.date);
+        let event_date = parse_date(&event.date)?;
         match event.r#type {
             1000..=1099 => {
                 _log_user_event(
