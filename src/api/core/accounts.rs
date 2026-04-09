@@ -22,7 +22,7 @@ use crate::{
         DbConn,
     },
     mail,
-    util::{format_date, NumberOrString},
+    util::{deser_opt_nonempty_str, format_date, NumberOrString},
     CONFIG,
 };
 
@@ -33,7 +33,6 @@ use rocket::{
 
 pub fn routes() -> Vec<rocket::Route> {
     routes![
-        register,
         profile,
         put_profile,
         post_profile,
@@ -107,7 +106,6 @@ pub struct RegisterData {
 
     name: Option<String>,
 
-    #[allow(dead_code)]
     organization_user_id: Option<MembershipId>,
 
     // Used only from the register/finish endpoint
@@ -166,11 +164,6 @@ async fn is_email_2fa_required(member_id: Option<MembershipId>, conn: &DbConn) -
         return OrgPolicy::is_enabled_for_member(&member_id, OrgPolicyType::TwoFactorAuthentication, conn).await;
     }
     false
-}
-
-#[post("/accounts/register", data = "<data>")]
-async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
-    _register(data, false, conn).await
 }
 
 pub async fn _register(data: Json<RegisterData>, email_verification: bool, conn: DbConn) -> JsonResult {
@@ -302,7 +295,7 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, conn:
 
     set_kdf_data(&mut user, &data.kdf)?;
 
-    user.set_password(&data.master_password_hash, Some(data.key), true, None);
+    user.set_password(&data.master_password_hash, Some(data.key), true, None, &conn).await?;
     user.password_hint = password_hint;
 
     // Add extra fields if present
@@ -370,7 +363,9 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
         Some(data.key),
         false,
         Some(vec![String::from("revision_date")]), // We need to allow revision-date to use the old security_timestamp
-    );
+        &conn,
+    )
+    .await?;
     user.password_hint = password_hint;
 
     if let Some(keys) = data.keys {
@@ -380,14 +375,12 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
 
     if let Some(identifier) = data.org_identifier {
         if identifier != crate::sso::FAKE_IDENTIFIER && identifier != crate::api::admin::FAKE_ADMIN_UUID {
-            let org = match Organization::find_by_uuid(&identifier.into(), &conn).await {
-                None => err!("Failed to retrieve the associated organization"),
-                Some(org) => org,
+            let Some(org) = Organization::find_by_uuid(&identifier.into(), &conn).await else {
+                err!("Failed to retrieve the associated organization")
             };
 
-            let membership = match Membership::find_by_user_and_org(&user.uuid, &org.uuid, &conn).await {
-                None => err!("Failed to retrieve the invitation"),
-                Some(org) => org,
+            let Some(membership) = Membership::find_by_user_and_org(&user.uuid, &org.uuid, &conn).await else {
+                err!("Failed to retrieve the invitation")
             };
 
             accept_org_invite(&user, membership, None, &conn).await?;
@@ -538,14 +531,16 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
             String::from("get_public_keys"),
             String::from("get_api_webauthn"),
         ]),
-    );
+        &conn,
+    )
+    .await?;
 
     let save_result = user.save(&conn).await;
 
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
-    nt.send_logout(&user, Some(headers.device.uuid.clone()), &conn).await;
+    nt.send_logout(&user, Some(&headers.device), &conn).await;
 
     save_result
 }
@@ -585,7 +580,6 @@ fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
     Ok(())
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AuthenticationData {
@@ -594,7 +588,6 @@ struct AuthenticationData {
     master_password_authentication_hash: String,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UnlockData {
@@ -603,11 +596,12 @@ struct UnlockData {
     master_key_wrapped_user_key: String,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ChangeKdfData {
+    #[allow(dead_code)]
     new_master_password_hash: String,
+    #[allow(dead_code)]
     key: String,
     authentication_data: AuthenticationData,
     unlock_data: UnlockData,
@@ -639,10 +633,12 @@ async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, conn: DbConn, nt:
         Some(data.unlock_data.master_key_wrapped_user_key),
         true,
         None,
-    );
+        &conn,
+    )
+    .await?;
     let save_result = user.save(&conn).await;
 
-    nt.send_logout(&user, Some(headers.device.uuid.clone()), &conn).await;
+    nt.send_logout(&user, Some(&headers.device), &conn).await;
 
     save_result
 }
@@ -653,6 +649,7 @@ struct UpdateFolderData {
     // There is a bug in 2024.3.x which adds a `null` item.
     // To bypass this we allow a Option here, but skip it during the updates
     // See: https://github.com/bitwarden/clients/issues/8453
+    #[serde(default, deserialize_with = "deser_opt_nonempty_str")]
     id: Option<FolderId>,
     name: String,
 }
@@ -906,14 +903,16 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         Some(data.account_unlock_data.master_password_unlock_data.master_key_encrypted_user_key),
         true,
         None,
-    );
+        &conn,
+    )
+    .await?;
 
     let save_result = user.save(&conn).await;
 
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
-    nt.send_logout(&user, Some(headers.device.uuid.clone()), &conn).await;
+    nt.send_logout(&user, Some(&headers.device), &conn).await;
 
     save_result
 }
@@ -925,11 +924,12 @@ async fn post_sstamp(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbCo
 
     data.validate(&user, true, &conn).await?;
 
-    Device::delete_all_by_user(&user.uuid, &conn).await?;
-    user.reset_security_stamp();
+    user.reset_security_stamp(&conn).await?;
     let save_result = user.save(&conn).await;
 
     nt.send_logout(&user, None, &conn).await;
+
+    Device::delete_all_by_user(&user.uuid, &conn).await?;
 
     save_result
 }
@@ -1048,7 +1048,7 @@ async fn post_email(data: Json<ChangeEmailData>, headers: Headers, conn: DbConn,
     user.email_new = None;
     user.email_new_token = None;
 
-    user.set_password(&data.new_master_password_hash, Some(data.key), true, None);
+    user.set_password(&data.new_master_password_hash, Some(data.key), true, None, &conn).await?;
 
     let save_result = user.save(&conn).await;
 
@@ -1260,7 +1260,7 @@ struct SecretVerificationRequest {
 pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &DbConn) -> ApiResult<()> {
     if user.password_iterations < CONFIG.password_iterations() {
         user.password_iterations = CONFIG.password_iterations();
-        user.set_password(pwd_hash, None, false, None);
+        user.set_password(pwd_hash, None, false, None, conn).await?;
 
         if let Err(e) = user.save(conn).await {
             error!("Error updating user: {e:#?}");
@@ -1334,6 +1334,11 @@ impl<'r> FromRequest<'r> for KnownDevice {
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let email = if let Some(email_b64) = req.headers().get_one("X-Request-Email") {
+            // Bitwarden seems to send padded Base64 strings since 2026.2.1
+            // Since these values are not streamed and Headers are always split by newlines
+            // we can safely ignore padding here and remove any '=' appended.
+            let email_b64 = email_b64.trim_end_matches('=');
+
             let Ok(email_bytes) = data_encoding::BASE64URL_NOPAD.decode(email_b64.as_bytes()) else {
                 return Outcome::Error((Status::BadRequest, "X-Request-Email value failed to decode as base64url"));
             };

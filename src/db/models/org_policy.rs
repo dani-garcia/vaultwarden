@@ -269,7 +269,7 @@ impl OrgPolicy {
                 continue;
             }
 
-            if let Some(user) = Membership::find_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
+            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
                 if user.atype < MembershipType::Admin {
                     return true;
                 }
@@ -332,7 +332,7 @@ impl OrgPolicy {
         for policy in
             OrgPolicy::find_confirmed_by_user_and_active_policy(user_uuid, OrgPolicyType::SendOptions, conn).await
         {
-            if let Some(user) = Membership::find_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
+            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
                 if user.atype < MembershipType::Admin {
                     match serde_json::from_str::<SendOptionsPolicyData>(&policy.data) {
                         Ok(opts) => {

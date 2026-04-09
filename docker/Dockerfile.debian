@@ -19,15 +19,15 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2026.1.1
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2026.1.1
-#     [docker.io/vaultwarden/web-vault@sha256:062fcf0d5dc37247dae61b0ee1ba5d20f9296e290d7ad1f6114ea5888f5738a7]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2026.2.0
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2026.2.0
+#     [docker.io/vaultwarden/web-vault@sha256:37c8661fa59dcdfbd3baa8366b6e950ef292b15adfeff1f57812b075c1fd3447]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:062fcf0d5dc37247dae61b0ee1ba5d20f9296e290d7ad1f6114ea5888f5738a7
-#     [docker.io/vaultwarden/web-vault:v2026.1.1]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:37c8661fa59dcdfbd3baa8366b6e950ef292b15adfeff1f57812b075c1fd3447
+#     [docker.io/vaultwarden/web-vault:v2026.2.0]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:062fcf0d5dc37247dae61b0ee1ba5d20f9296e290d7ad1f6114ea5888f5738a7 AS vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:37c8661fa59dcdfbd3baa8366b6e950ef292b15adfeff1f57812b075c1fd3447 AS vault
 
 ########################## Cross Compile Docker Helper Scripts ##########################
 ## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
@@ -36,7 +36,7 @@ FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:c64defb9ed5a91eacb37f
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.93.1-slim-trixie AS build
+FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.94.1-slim-trixie AS build
 COPY --from=xx / /
 ARG TARGETARCH
 ARG TARGETVARIANT

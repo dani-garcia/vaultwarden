@@ -1,7 +1,9 @@
 use chrono::{TimeDelta, Utc};
 use data_encoding::BASE32;
+use num_traits::FromPrimitive;
 use rocket::serde::json::Json;
 use rocket::Route;
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
@@ -9,12 +11,12 @@ use crate::{
         core::{log_event, log_user_event},
         EmptyResult, JsonResult, PasswordOrOtpData,
     },
-    auth::{ClientHeaders, Headers},
+    auth::Headers,
     crypto,
     db::{
         models::{
             DeviceType, EventType, Membership, MembershipType, OrgPolicyType, Organization, OrganizationId, TwoFactor,
-            TwoFactorIncomplete, User, UserId,
+            TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
         DbConn, DbPool,
     },
@@ -31,11 +33,47 @@ pub mod protected_actions;
 pub mod webauthn;
 pub mod yubikey;
 
+fn has_global_duo_credentials() -> bool {
+    CONFIG._enable_duo() && CONFIG.duo_host().is_some() && CONFIG.duo_ikey().is_some() && CONFIG.duo_skey().is_some()
+}
+
+pub fn is_twofactor_provider_usable(provider_type: TwoFactorType, provider_data: Option<&str>) -> bool {
+    #[derive(Deserialize)]
+    struct DuoProviderData {
+        host: String,
+        ik: String,
+        sk: String,
+    }
+
+    match provider_type {
+        TwoFactorType::Authenticator => true,
+        TwoFactorType::Email => CONFIG._enable_email_2fa(),
+        TwoFactorType::Duo | TwoFactorType::OrganizationDuo => {
+            provider_data
+                .and_then(|raw| serde_json::from_str::<DuoProviderData>(raw).ok())
+                .is_some_and(|duo| !duo.host.is_empty() && !duo.ik.is_empty() && !duo.sk.is_empty())
+                || has_global_duo_credentials()
+        }
+        TwoFactorType::YubiKey => {
+            CONFIG._enable_yubico() && CONFIG.yubico_client_id().is_some() && CONFIG.yubico_secret_key().is_some()
+        }
+        TwoFactorType::Webauthn => CONFIG.is_webauthn_2fa_supported(),
+        TwoFactorType::Remember => !CONFIG.disable_2fa_remember(),
+        TwoFactorType::RecoveryCode => true,
+        TwoFactorType::U2f
+        | TwoFactorType::U2fRegisterChallenge
+        | TwoFactorType::U2fLoginChallenge
+        | TwoFactorType::EmailVerificationChallenge
+        | TwoFactorType::WebauthnRegisterChallenge
+        | TwoFactorType::WebauthnLoginChallenge
+        | TwoFactorType::ProtectedActions => false,
+    }
+}
+
 pub fn routes() -> Vec<Route> {
     let mut routes = routes![
         get_twofactor,
         get_recover,
-        recover,
         disable_twofactor,
         disable_twofactor_put,
         get_device_verification_settings,
@@ -54,7 +92,13 @@ pub fn routes() -> Vec<Route> {
 #[get("/two-factor")]
 async fn get_twofactor(headers: Headers, conn: DbConn) -> Json<Value> {
     let twofactors = TwoFactor::find_by_user(&headers.user.uuid, &conn).await;
-    let twofactors_json: Vec<Value> = twofactors.iter().map(TwoFactor::to_json_provider).collect();
+    let twofactors_json: Vec<Value> = twofactors
+        .iter()
+        .filter_map(|tf| {
+            let provider_type = TwoFactorType::from_i32(tf.atype)?;
+            is_twofactor_provider_usable(provider_type, Some(&tf.data)).then(|| TwoFactor::to_json_provider(tf))
+        })
+        .collect();
 
     Json(json!({
         "data": twofactors_json,
@@ -74,54 +118,6 @@ async fn get_recover(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbCo
         "code": user.totp_recover,
         "object": "twoFactorRecover"
     })))
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RecoverTwoFactor {
-    master_password_hash: String,
-    email: String,
-    recovery_code: String,
-}
-
-#[post("/two-factor/recover", data = "<data>")]
-async fn recover(data: Json<RecoverTwoFactor>, client_headers: ClientHeaders, conn: DbConn) -> JsonResult {
-    let data: RecoverTwoFactor = data.into_inner();
-
-    use crate::db::models::User;
-
-    // Get the user
-    let Some(mut user) = User::find_by_mail(&data.email, &conn).await else {
-        err!("Username or password is incorrect. Try again.")
-    };
-
-    // Check password
-    if !user.check_valid_password(&data.master_password_hash) {
-        err!("Username or password is incorrect. Try again.")
-    }
-
-    // Check if recovery code is correct
-    if !user.check_valid_recovery_code(&data.recovery_code) {
-        err!("Recovery code is incorrect. Try again.")
-    }
-
-    // Remove all twofactors from the user
-    TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
-    enforce_2fa_policy(&user, &user.uuid, client_headers.device_type, &client_headers.ip.ip, &conn).await?;
-
-    log_user_event(
-        EventType::UserRecovered2fa as i32,
-        &user.uuid,
-        client_headers.device_type,
-        &client_headers.ip.ip,
-        &conn,
-    )
-    .await;
-
-    // Remove the recovery code, not needed without twofactors
-    user.totp_recover = None;
-    user.save(&conn).await?;
-    Ok(Json(Value::Object(serde_json::Map::new())))
 }
 
 async fn _generate_recover_code(user: &mut User, conn: &DbConn) {

@@ -16,7 +16,10 @@ use tokio::{
     time::{sleep, Duration},
 };
 
-use crate::{config::PathType, CONFIG};
+use crate::{
+    config::{PathType, SUPPORTED_FEATURE_FLAGS},
+    CONFIG,
+};
 
 pub struct AppHeaders();
 
@@ -153,9 +156,11 @@ impl Cors {
     fn get_allowed_origin(headers: &HeaderMap<'_>) -> Option<String> {
         let origin = Cors::get_header(headers, "Origin");
         let safari_extension_origin = "file://";
+        let desktop_custom_file_origin = "bw-desktop-file://bundle";
 
         if origin == CONFIG.domain_origin()
             || origin == safari_extension_origin
+            || origin == desktop_custom_file_origin
             || (CONFIG.sso_enabled() && origin == CONFIG.sso_authority())
         {
             Some(origin)
@@ -629,6 +634,21 @@ fn _process_key(key: &str) -> String {
     }
 }
 
+pub fn deser_opt_nonempty_str<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: From<String>,
+{
+    use serde::Deserialize;
+    Ok(Option::<String>::deserialize(deserializer)?.and_then(|s| {
+        if s.is_empty() {
+            None
+        } else {
+            Some(T::from(s))
+        }
+    }))
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum NumberOrString {
@@ -763,21 +783,28 @@ pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
     }
 }
 
+pub enum FeatureFlagFilter {
+    #[allow(dead_code)]
+    Unfiltered,
+    ValidOnly,
+    InvalidOnly,
+}
+
 /// Parses the experimental client feature flags string into a HashMap.
-pub fn parse_experimental_client_feature_flags(experimental_client_feature_flags: &str) -> HashMap<String, bool> {
-    // These flags could still be configured, but are deprecated and not used anymore
-    // To prevent old installations from starting filter these out and not error out
-    const DEPRECATED_FLAGS: &[&str] =
-        &["autofill-overlay", "autofill-v2", "browser-fileless-import", "extension-refresh", "fido2-vault-credentials"];
+pub fn parse_experimental_client_feature_flags(
+    experimental_client_feature_flags: &str,
+    filter_mode: FeatureFlagFilter,
+) -> HashMap<String, bool> {
     experimental_client_feature_flags
         .split(',')
-        .filter_map(|f| {
-            let flag = f.trim();
-            if !flag.is_empty() && !DEPRECATED_FLAGS.contains(&flag) {
-                return Some((flag.to_owned(), true));
-            }
-            None
+        .map(str::trim)
+        .filter(|flag| !flag.is_empty())
+        .filter(|flag| match filter_mode {
+            FeatureFlagFilter::Unfiltered => true,
+            FeatureFlagFilter::ValidOnly => SUPPORTED_FEATURE_FLAGS.contains(flag),
+            FeatureFlagFilter::InvalidOnly => !SUPPORTED_FEATURE_FLAGS.contains(flag),
         })
+        .map(|flag| (flag.to_owned(), true))
         .collect()
 }
 

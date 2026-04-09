@@ -299,6 +299,7 @@ pub fn increment_auth_attempts(_method: &str, _status: &str) {}
 pub fn update_user_sessions(_user_type: &str, _count: i64) {}
 
 #[cfg(not(feature = "enable_metrics"))]
+#[allow(clippy::unused_async)]
 pub async fn update_business_metrics(_conn: &mut DbConn) -> Result<(), Error> {
     Ok(())
 }

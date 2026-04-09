@@ -191,7 +191,7 @@ impl Collection {
         self.update_users_revision(conn).await;
         CollectionCipher::delete_all_by_collection(&self.uuid, conn).await?;
         CollectionUser::delete_all_by_collection(&self.uuid, conn).await?;
-        CollectionGroup::delete_all_by_collection(&self.uuid, conn).await?;
+        CollectionGroup::delete_all_by_collection(&self.uuid, &self.org_uuid, conn).await?;
 
         db_run! { conn: {
             diesel::delete(collections::table.filter(collections::uuid.eq(self.uuid)))
@@ -239,8 +239,8 @@ impl Collection {
                 .left_join(groups_users::table.on(
                     groups_users::users_organizations_uuid.eq(users_organizations::uuid)
                 ))
-                .left_join(groups::table.on(
-                    groups::uuid.eq(groups_users::groups_uuid)
+                .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                    .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
                 ))
                 .left_join(collections_groups::table.on(
                     collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
@@ -355,8 +355,8 @@ impl Collection {
                 .left_join(groups_users::table.on(
                     groups_users::users_organizations_uuid.eq(users_organizations::uuid)
                 ))
-                .left_join(groups::table.on(
-                    groups::uuid.eq(groups_users::groups_uuid)
+                .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                    .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
                 ))
                 .left_join(collections_groups::table.on(
                     collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
@@ -422,8 +422,8 @@ impl Collection {
                     .left_join(groups_users::table.on(
                         groups_users::users_organizations_uuid.eq(users_organizations::uuid)
                     ))
-                    .left_join(groups::table.on(
-                        groups::uuid.eq(groups_users::groups_uuid)
+                    .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                        .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
                     ))
                     .left_join(collections_groups::table.on(
                         collections_groups::groups_uuid.eq(groups_users::groups_uuid)
@@ -484,8 +484,8 @@ impl Collection {
             .left_join(groups_users::table.on(
                 groups_users::users_organizations_uuid.eq(users_organizations::uuid)
             ))
-            .left_join(groups::table.on(
-                groups::uuid.eq(groups_users::groups_uuid)
+            .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
             ))
             .left_join(collections_groups::table.on(
                 collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
@@ -513,7 +513,8 @@ impl Collection {
         }}
     }
 
-    pub async fn is_manageable_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
+    pub async fn is_coll_manageable_by_user(uuid: &CollectionId, user_uuid: &UserId, conn: &DbConn) -> bool {
+        let uuid = uuid.to_string();
         let user_uuid = user_uuid.to_string();
         db_run! { conn: {
             collections::table
@@ -530,17 +531,17 @@ impl Collection {
             .left_join(groups_users::table.on(
                 groups_users::users_organizations_uuid.eq(users_organizations::uuid)
             ))
-            .left_join(groups::table.on(
-                groups::uuid.eq(groups_users::groups_uuid)
+            .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
             ))
             .left_join(collections_groups::table.on(
                 collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
                     collections_groups::collections_uuid.eq(collections::uuid)
                 )
             ))
-            .filter(collections::uuid.eq(&self.uuid))
+            .filter(collections::uuid.eq(&uuid))
             .filter(
-                users_collections::collection_uuid.eq(&self.uuid).and(users_collections::manage.eq(true)).or(// Directly accessed collection
+                users_collections::collection_uuid.eq(&uuid).and(users_collections::manage.eq(true)).or(// Directly accessed collection
                     users_organizations::access_all.eq(true).or( // access_all in Organization
                         users_organizations::atype.le(MembershipType::Admin as i32) // Org admin or owner
                 )).or(
@@ -557,6 +558,10 @@ impl Collection {
             .ok()
             .unwrap_or(0) != 0
         }}
+    }
+
+    pub async fn is_manageable_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
+        Self::is_coll_manageable_by_user(&self.uuid, user_uuid, conn).await
     }
 }
 

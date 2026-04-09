@@ -108,8 +108,8 @@ impl WebauthnRegistration {
 
 #[post("/two-factor/get-webauthn", data = "<data>")]
 async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
-    if !CONFIG.domain_set() {
-        err!("`DOMAIN` environment variable is not set. Webauthn disabled")
+    if !CONFIG.is_webauthn_2fa_supported() {
+        err!("Configured `DOMAIN` is not compatible with Webauthn")
     }
 
     let data: PasswordOrOtpData = data.into_inner();
@@ -438,7 +438,7 @@ pub async fn validate_webauthn_login(user_id: &UserId, response: &str, conn: &Db
     // We need to check for and update the backup_eligible flag when needed.
     // Vaultwarden did not have knowledge of this flag prior to migrating to webauthn-rs v0.5.x
     // Because of this we check the flag at runtime and update the registrations and state when needed
-    check_and_update_backup_eligible(user_id, &rsp, &mut registrations, &mut state, conn).await?;
+    let backup_flags_updated = check_and_update_backup_eligible(&rsp, &mut registrations, &mut state)?;
 
     let authentication_result = WEBAUTHN.finish_passkey_authentication(&rsp, &state)?;
 
@@ -446,7 +446,8 @@ pub async fn validate_webauthn_login(user_id: &UserId, response: &str, conn: &Db
         if ct_eq(reg.credential.cred_id(), authentication_result.cred_id()) {
             // If the cred id matches and the credential is updated, Some(true) is returned
             // In those cases, update the record, else leave it alone
-            if reg.credential.update_credential(&authentication_result) == Some(true) {
+            let credential_updated = reg.credential.update_credential(&authentication_result) == Some(true);
+            if credential_updated || backup_flags_updated {
                 TwoFactor::new(user_id.clone(), TwoFactorType::Webauthn, serde_json::to_string(&registrations)?)
                     .save(conn)
                     .await?;
@@ -463,13 +464,11 @@ pub async fn validate_webauthn_login(user_id: &UserId, response: &str, conn: &Db
     )
 }
 
-async fn check_and_update_backup_eligible(
-    user_id: &UserId,
+fn check_and_update_backup_eligible(
     rsp: &PublicKeyCredential,
     registrations: &mut Vec<WebauthnRegistration>,
     state: &mut PasskeyAuthentication,
-    conn: &DbConn,
-) -> EmptyResult {
+) -> Result<bool, Error> {
     // The feature flags from the response
     // For details see: https://www.w3.org/TR/webauthn-3/#sctn-authenticator-data
     const FLAG_BACKUP_ELIGIBLE: u8 = 0b0000_1000;
@@ -486,16 +485,7 @@ async fn check_and_update_backup_eligible(
             let rsp_id = rsp.raw_id.as_slice();
             for reg in &mut *registrations {
                 if ct_eq(reg.credential.cred_id().as_slice(), rsp_id) {
-                    // Try to update the key, and if needed also update the database, before the actual state check is done
                     if reg.set_backup_eligible(backup_eligible, backup_state) {
-                        TwoFactor::new(
-                            user_id.clone(),
-                            TwoFactorType::Webauthn,
-                            serde_json::to_string(&registrations)?,
-                        )
-                        .save(conn)
-                        .await?;
-
                         // We also need to adjust the current state which holds the challenge used to start the authentication verification
                         // Because Vaultwarden supports multiple keys, we need to loop through the deserialized state and check which key to update
                         let mut raw_state = serde_json::to_value(&state)?;
@@ -517,11 +507,12 @@ async fn check_and_update_backup_eligible(
                         }
 
                         *state = serde_json::from_value(raw_state)?;
+                        return Ok(true);
                     }
                     break;
                 }
             }
         }
     }
-    Ok(())
+    Ok(false)
 }
