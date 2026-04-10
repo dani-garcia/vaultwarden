@@ -1102,6 +1102,11 @@ async fn send_invite(
                     if !CONFIG.mail_enabled() && !user.password_hash.is_empty() {
                         member_status = MembershipStatus::Accepted as i32;
                     }
+                    // SSO_ONLY users have no master password and cannot use the email invite
+                    // acceptance flow, so automatically accept them
+                    if CONFIG.sso_enabled() && CONFIG.sso_only() && user.password_hash.is_empty() {
+                        member_status = MembershipStatus::Accepted as i32;
+                    }
                     user
                 }
             }
@@ -1113,7 +1118,10 @@ async fn send_invite(
         new_member.status = member_status;
         new_member.save(&conn).await?;
 
-        if CONFIG.mail_enabled() {
+        // Only send the invite email if the member is still in the Invited state.
+        // SSO_ONLY users are auto-accepted above and should not receive an invite
+        // email with a link they cannot use.
+        if CONFIG.mail_enabled() && member_status == MembershipStatus::Invited as i32 {
             let org_name = match Organization::find_by_uuid(&org_id, &conn).await {
                 Some(org) => org.name,
                 None => err!("Error looking up organization"),
@@ -1249,12 +1257,18 @@ async fn _reinvite_member(
         err!("Invitations are not allowed.")
     }
 
-    let org_name = match Organization::find_by_uuid(org_id, conn).await {
-        Some(org) => org.name,
-        None => err!("Error looking up organization."),
-    };
-
-    if CONFIG.mail_enabled() {
+    if CONFIG.sso_enabled() && CONFIG.sso_only() && user.password_hash.is_empty() {
+        // SSO_ONLY users have no master password and cannot use the email invite
+        // acceptance flow, so automatically accept them
+        Invitation::take(&user.email, conn).await;
+        let mut member = member;
+        member.status = MembershipStatus::Accepted as i32;
+        member.save(conn).await?;
+    } else if CONFIG.mail_enabled() {
+        let org_name = match Organization::find_by_uuid(org_id, conn).await {
+            Some(org) => org.name,
+            None => err!("Error looking up organization."),
+        };
         mail::send_invite(&user, org_id.clone(), member.uuid, &org_name, Some(invited_by_email.to_string())).await?;
     } else if user.password_hash.is_empty() {
         let invitation = Invitation::new(&user.email);
