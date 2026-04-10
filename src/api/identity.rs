@@ -131,7 +131,7 @@ async fn login(
     login_result
 }
 
-// Return Status::Unauthorized to trigger logout
+// Return an OAuth2-compliant invalid_grant error to trigger client logout on refresh failure
 async fn _refresh_login(data: ConnectData, conn: &DbConn, ip: &ClientIp) -> JsonResult {
     // Extract token
     let refresh_token = match data.refresh_token {
@@ -147,7 +147,20 @@ async fn _refresh_login(data: ConnectData, conn: &DbConn, ip: &ClientIp) -> Json
     // let members = Membership::find_confirmed_by_user(&user.uuid, conn).await;
     match auth::refresh_tokens(ip, &refresh_token, data.client_id, conn).await {
         Err(err) => {
-            err_code!(format!("Unable to refresh login credentials: {}", err.message()), Status::Unauthorized.code)
+            // Return an OAuth2-compliant `invalid_grant` error response so that
+            // Bitwarden clients recognize the expired/invalid refresh token and
+            // prompt the user to re-authenticate. See: #7060
+            let msg = format!("Unable to refresh login credentials: {}", err.message());
+            error!("{msg}");
+            let result = json!({
+                "error": "invalid_grant",
+                "error_description": msg,
+                "ErrorModel": {
+                    "Message": msg,
+                    "Object": "error"
+                }
+            });
+            return Err(("invalid_grant", result).into());
         }
         Ok((mut device, auth_tokens)) => {
             // Save to update `device.updated_at` to track usage and toggle new status
