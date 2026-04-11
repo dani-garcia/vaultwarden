@@ -1905,7 +1905,7 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
             })
             .collect();
 
-    // Verify if all the collections requested exists and are writeable for the user, else abort
+    // Verify if all the collections requested exists and are writable for the user, else abort
     for collection_uuid in &data.collection_ids {
         match user_collections.get(collection_uuid) {
             Some(collection) if collection.is_writable_by_user(&headers.user.uuid, &conn).await => (),
