@@ -559,7 +559,7 @@ impl Cipher {
                 if let Some(cached_member) = cipher_sync_data.members.get(org_uuid) {
                     return cached_member.has_full_access();
                 }
-            } else if let Some(member) = Membership::find_by_user_and_org(user_uuid, org_uuid, conn).await {
+            } else if let Some(member) = Membership::find_confirmed_by_user_and_org(user_uuid, org_uuid, conn).await {
                 return member.has_full_access();
             }
         }
@@ -668,10 +668,12 @@ impl Cipher {
             ciphers::table
                 .filter(ciphers::uuid.eq(&self.uuid))
                 .inner_join(ciphers_collections::table.on(
-                    ciphers::uuid.eq(ciphers_collections::cipher_uuid)))
+                    ciphers::uuid.eq(ciphers_collections::cipher_uuid)
+                ))
                 .inner_join(users_collections::table.on(
                     ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
-                        .and(users_collections::user_uuid.eq(user_uuid))))
+                        .and(users_collections::user_uuid.eq(user_uuid))
+                ))
                 .select((users_collections::read_only, users_collections::hide_passwords, users_collections::manage))
                 .load::<(bool, bool, bool)>(conn)
                 .expect("Error getting user access restrictions")
@@ -696,6 +698,9 @@ impl Cipher {
                 ))
                 .inner_join(users_organizations::table.on(
                     users_organizations::uuid.eq(groups_users::users_organizations_uuid)
+                ))
+                .inner_join(groups::table.on(groups::uuid.eq(collections_groups::groups_uuid)
+                    .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
                 ))
                 .filter(users_organizations::user_uuid.eq(user_uuid))
                 .select((collections_groups::read_only, collections_groups::hide_passwords, collections_groups::manage))
@@ -795,28 +800,28 @@ impl Cipher {
                 let mut query = ciphers::table
                     .left_join(ciphers_collections::table.on(
                             ciphers::uuid.eq(ciphers_collections::cipher_uuid)
-                            ))
+                    ))
                     .left_join(users_organizations::table.on(
-                            ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable())
+                        ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable())
                             .and(users_organizations::user_uuid.eq(user_uuid))
                             .and(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
-                            ))
+                    ))
                     .left_join(users_collections::table.on(
-                            ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
+                        ciphers_collections::collection_uuid.eq(users_collections::collection_uuid)
                             // Ensure that users_collections::user_uuid is NULL for unconfirmed users.
                             .and(users_organizations::user_uuid.eq(users_collections::user_uuid))
-                            ))
+                    ))
                     .left_join(groups_users::table.on(
-                            groups_users::users_organizations_uuid.eq(users_organizations::uuid)
-                            ))
-                    .left_join(groups::table.on(
-                            groups::uuid.eq(groups_users::groups_uuid)
-                            ))
+                        groups_users::users_organizations_uuid.eq(users_organizations::uuid)
+                    ))
+                    .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                        // Ensure that group and membership belong to the same org
+                        .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
+                    ))
                     .left_join(collections_groups::table.on(
-                            collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid).and(
-                                collections_groups::groups_uuid.eq(groups::uuid)
-                                )
-                            ))
+                        collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
+                            .and(collections_groups::groups_uuid.eq(groups::uuid))
+                    ))
                     .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
                     .or_filter(users_organizations::access_all.eq(true)) // access_all in org
                     .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
@@ -986,7 +991,9 @@ impl Cipher {
                     .left_join(groups_users::table.on(
                         groups_users::users_organizations_uuid.eq(users_organizations::uuid)
                     ))
-                    .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)))
+                    .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                        .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
+                    ))
                     .left_join(collections_groups::table.on(
                         collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
                         .and(collections_groups::groups_uuid.eq(groups::uuid))
@@ -1047,7 +1054,9 @@ impl Cipher {
                     .left_join(groups_users::table.on(
                         groups_users::users_organizations_uuid.eq(users_organizations::uuid)
                     ))
-                    .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)))
+                    .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                        .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
+                    ))
                     .left_join(collections_groups::table.on(
                         collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid)
                         .and(collections_groups::groups_uuid.eq(groups::uuid))
@@ -1115,8 +1124,8 @@ impl Cipher {
             .left_join(groups_users::table.on(
                 groups_users::users_organizations_uuid.eq(users_organizations::uuid)
             ))
-            .left_join(groups::table.on(
-                groups::uuid.eq(groups_users::groups_uuid)
+            .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
             ))
             .left_join(collections_groups::table.on(
                 collections_groups::collections_uuid.eq(ciphers_collections::collection_uuid).and(

@@ -358,15 +358,16 @@ impl WebSocketUsers {
         }
     }
 
-    pub async fn send_logout(&self, user: &User, acting_device_id: Option<DeviceId>, conn: &DbConn) {
+    pub async fn send_logout(&self, user: &User, acting_device: Option<&Device>, conn: &DbConn) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
         }
+        let acting_device_id = acting_device.map(|d| d.uuid.clone());
         let data = create_update(
             vec![("UserId".into(), user.uuid.to_string().into()), ("Date".into(), serialize_date(user.updated_at))],
             UpdateType::LogOut,
-            acting_device_id.clone(),
+            acting_device_id,
         );
 
         if CONFIG.enable_websocket() {
@@ -374,7 +375,7 @@ impl WebSocketUsers {
         }
 
         if CONFIG.push_enabled() {
-            push_logout(user, acting_device_id.clone(), conn).await;
+            push_logout(user, acting_device, conn).await;
         }
     }
 

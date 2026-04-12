@@ -11,10 +11,10 @@ use rocket::{
 use serde_json::Value;
 
 use crate::auth::ClientVersion;
-use crate::util::{save_temp_file, NumberOrString};
+use crate::util::{deser_opt_nonempty_str, save_temp_file, NumberOrString};
 use crate::{
     api::{self, core::log_event, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType},
-    auth::Headers,
+    auth::{Headers, OrgIdGuard, OwnerHeaders},
     config::PathType,
     crypto,
     db::{
@@ -86,7 +86,8 @@ pub fn routes() -> Vec<Route> {
         restore_cipher_put_admin,
         restore_cipher_selected,
         restore_cipher_selected_admin,
-        delete_all,
+        purge_org_vault,
+        purge_personal_vault,
         move_cipher_selected,
         move_cipher_selected_put,
         put_collections2_update,
@@ -247,6 +248,7 @@ pub struct CipherData {
     // Id is optional as it is included only in bulk share
     pub id: Option<CipherId>,
     // Folder id is not included in import
+    #[serde(default, deserialize_with = "deser_opt_nonempty_str")]
     pub folder_id: Option<FolderId>,
     // TODO: Some of these might appear all the time, no need for Option
     #[serde(alias = "organizationID")]
@@ -296,6 +298,7 @@ pub struct CipherData {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PartialCipherData {
+    #[serde(default, deserialize_with = "deser_opt_nonempty_str")]
     folder_id: Option<FolderId>,
     favorite: bool,
 }
@@ -425,7 +428,7 @@ pub async fn update_cipher_from_data(
     let transfer_cipher = cipher.organization_uuid.is_none() && data.organization_id.is_some();
 
     if let Some(org_id) = data.organization_id {
-        match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, conn).await {
+        match Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, conn).await {
             None => err!("You don't have permission to add item to organization"),
             Some(member) => {
                 if shared_to_collections.is_some()
@@ -1568,6 +1571,7 @@ async fn restore_cipher_selected(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MoveCipherData {
+    #[serde(default, deserialize_with = "deser_opt_nonempty_str")]
     folder_id: Option<FolderId>,
     ids: Vec<CipherId>,
 }
@@ -1642,9 +1646,51 @@ struct OrganizationIdData {
     org_id: OrganizationId,
 }
 
+// Use the OrgIdGuard here, to ensure there an organization id present.
+// If there is no organization id present, it should be forwarded to purge_personal_vault.
+// This guard needs to be the first argument, else OwnerHeaders will be triggered which will logout the user.
 #[post("/ciphers/purge?<organization..>", data = "<data>")]
-async fn delete_all(
-    organization: Option<OrganizationIdData>,
+async fn purge_org_vault(
+    _org_id_guard: OrgIdGuard,
+    organization: OrganizationIdData,
+    data: Json<PasswordOrOtpData>,
+    headers: OwnerHeaders,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    if organization.org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+
+    let data: PasswordOrOtpData = data.into_inner();
+    let user = headers.user;
+
+    data.validate(&user, true, &conn).await?;
+
+    match Membership::find_confirmed_by_user_and_org(&user.uuid, &organization.org_id, &conn).await {
+        Some(member) if member.atype == MembershipType::Owner => {
+            Cipher::delete_all_by_organization(&organization.org_id, &conn).await?;
+            nt.send_user_update(UpdateType::SyncVault, &user, &headers.device.push_uuid, &conn).await;
+
+            log_event(
+                EventType::OrganizationPurgedVault as i32,
+                &organization.org_id,
+                &organization.org_id,
+                &user.uuid,
+                headers.device.atype,
+                &headers.ip.ip,
+                &conn,
+            )
+            .await;
+
+            Ok(())
+        }
+        _ => err!("You don't have permission to purge the organization vault"),
+    }
+}
+
+#[post("/ciphers/purge", data = "<data>")]
+async fn purge_personal_vault(
     data: Json<PasswordOrOtpData>,
     headers: Headers,
     conn: DbConn,
@@ -1655,52 +1701,18 @@ async fn delete_all(
 
     data.validate(&user, true, &conn).await?;
 
-    match organization {
-        Some(org_data) => {
-            // Organization ID in query params, purging organization vault
-            match Membership::find_by_user_and_org(&user.uuid, &org_data.org_id, &conn).await {
-                None => err!("You don't have permission to purge the organization vault"),
-                Some(member) => {
-                    if member.atype == MembershipType::Owner {
-                        Cipher::delete_all_by_organization(&org_data.org_id, &conn).await?;
-                        nt.send_user_update(UpdateType::SyncVault, &user, &headers.device.push_uuid, &conn).await;
-
-                        log_event(
-                            EventType::OrganizationPurgedVault as i32,
-                            &org_data.org_id,
-                            &org_data.org_id,
-                            &user.uuid,
-                            headers.device.atype,
-                            &headers.ip.ip,
-                            &conn,
-                        )
-                        .await;
-
-                        Ok(())
-                    } else {
-                        err!("You don't have permission to purge the organization vault");
-                    }
-                }
-            }
-        }
-        None => {
-            // No organization ID in query params, purging user vault
-            // Delete ciphers and their attachments
-            for cipher in Cipher::find_owned_by_user(&user.uuid, &conn).await {
-                cipher.delete(&conn).await?;
-            }
-
-            // Delete folders
-            for f in Folder::find_by_user(&user.uuid, &conn).await {
-                f.delete(&conn).await?;
-            }
-
-            user.update_revision(&conn).await?;
-            nt.send_user_update(UpdateType::SyncVault, &user, &headers.device.push_uuid, &conn).await;
-
-            Ok(())
-        }
+    for cipher in Cipher::find_owned_by_user(&user.uuid, &conn).await {
+        cipher.delete(&conn).await?;
     }
+
+    for f in Folder::find_by_user(&user.uuid, &conn).await {
+        f.delete(&conn).await?;
+    }
+
+    user.update_revision(&conn).await?;
+    nt.send_user_update(UpdateType::SyncVault, &user, &headers.device.push_uuid, &conn).await;
+
+    Ok(())
 }
 
 #[derive(PartialEq)]
@@ -1980,8 +1992,11 @@ impl CipherSyncData {
         }
 
         // Generate a HashMap with the Organization UUID as key and the Membership record
-        let members: HashMap<OrganizationId, Membership> =
-            Membership::find_by_user(user_id, conn).await.into_iter().map(|m| (m.org_uuid.clone(), m)).collect();
+        let members: HashMap<OrganizationId, Membership> = Membership::find_confirmed_by_user(user_id, conn)
+            .await
+            .into_iter()
+            .map(|m| (m.org_uuid.clone(), m))
+            .collect();
 
         // Generate a HashMap with the User_Collections UUID as key and the CollectionUser record
         let user_collections: HashMap<CollectionId, CollectionUser> = CollectionUser::find_by_user(user_id, conn)

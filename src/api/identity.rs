@@ -14,7 +14,10 @@ use crate::{
         core::{
             accounts::{PreloginData, RegisterData, _prelogin, _register, kdf_upgrade},
             log_user_event,
-            two_factor::{authenticator, duo, duo_oidc, email, enforce_2fa_policy, webauthn, yubikey},
+            two_factor::{
+                authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn,
+                yubikey,
+            },
         },
         master_password_policy,
         push::register_push_device,
@@ -739,8 +742,24 @@ async fn twofactor_auth(
 
     TwoFactorIncomplete::mark_incomplete(&user.uuid, &device.uuid, &device.name, device.atype, ip, conn).await?;
 
-    let twofactor_ids: Vec<_> = twofactors.iter().map(|tf| tf.atype).collect();
+    let twofactor_ids: Vec<_> = twofactors
+        .iter()
+        .filter_map(|tf| {
+            let provider_type = TwoFactorType::from_i32(tf.atype)?;
+            (tf.enabled && is_twofactor_provider_usable(provider_type, Some(&tf.data))).then_some(tf.atype)
+        })
+        .collect();
+    if twofactor_ids.is_empty() {
+        err!("No enabled and usable two factor providers are available for this account")
+    }
+
     let selected_id = data.two_factor_provider.unwrap_or(twofactor_ids[0]); // If we aren't given a two factor provider, assume the first one
+    if !twofactor_ids.contains(&selected_id) {
+        err_json!(
+            _json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
+            "Invalid two factor provider"
+        )
+    }
 
     let twofactor_code = match data.two_factor_token {
         Some(ref code) => code,
@@ -757,7 +776,6 @@ async fn twofactor_auth(
     use crate::crypto::ct_eq;
 
     let selected_data = _selected_data(selected_twofactor);
-    let mut remember = data.two_factor_remember.unwrap_or(0);
 
     match TwoFactorType::from_i32(selected_id) {
         Some(TwoFactorType::Authenticator) => {
@@ -789,13 +807,23 @@ async fn twofactor_auth(
         }
         Some(TwoFactorType::Remember) => {
             match device.twofactor_remember {
-                Some(ref code) if !CONFIG.disable_2fa_remember() && ct_eq(code, twofactor_code) => {
-                    remember = 1; // Make sure we also return the token here, otherwise it will only remember the first time
-                }
+                // When a 2FA Remember token is used, check and validate this JWT token, if it is valid, just continue
+                // If it is invalid we need to trigger the 2FA Login prompt
+                Some(ref token)
+                    if !CONFIG.disable_2fa_remember()
+                        && (ct_eq(token, twofactor_code)
+                            && auth::decode_2fa_remember(twofactor_code)
+                                .is_ok_and(|t| t.sub == device.uuid && t.user_uuid == user.uuid)) => {}
                 _ => {
+                    // Always delete the current twofactor remember token here if it exists
+                    if device.twofactor_remember.is_some() {
+                        device.delete_twofactor_remember();
+                        // We need to save here, since we send a err_json!() which prevents saving `device` at a later stage
+                        device.save(true, conn).await?;
+                    }
                     err_json!(
                         _json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
-                        "2FA Remember token not provided"
+                        "2FA Remember token not provided or expired"
                     )
                 }
             }
@@ -826,10 +854,10 @@ async fn twofactor_auth(
 
     TwoFactorIncomplete::mark_complete(&user.uuid, &device.uuid, conn).await?;
 
+    let remember = data.two_factor_remember.unwrap_or(0);
     let two_factor = if !CONFIG.disable_2fa_remember() && remember == 1 {
         Some(device.refresh_twofactor_remember())
     } else {
-        device.delete_twofactor_remember();
         None
     };
     Ok(two_factor)
@@ -862,7 +890,7 @@ async fn _json_err_twofactor(
         match TwoFactorType::from_i32(*provider) {
             Some(TwoFactorType::Authenticator) => { /* Nothing to do for TOTP */ }
 
-            Some(TwoFactorType::Webauthn) if CONFIG.domain_set() => {
+            Some(TwoFactorType::Webauthn) if CONFIG.is_webauthn_2fa_supported() => {
                 let request = webauthn::generate_webauthn_login(user_id, conn).await?;
                 result["TwoFactorProviders2"][provider.to_string()] = request.0;
             }

@@ -191,7 +191,7 @@ impl Collection {
         self.update_users_revision(conn).await;
         CollectionCipher::delete_all_by_collection(&self.uuid, conn).await?;
         CollectionUser::delete_all_by_collection(&self.uuid, conn).await?;
-        CollectionGroup::delete_all_by_collection(&self.uuid, conn).await?;
+        CollectionGroup::delete_all_by_collection(&self.uuid, &self.org_uuid, conn).await?;
 
         db_run! { conn: {
             diesel::delete(collections::table.filter(collections::uuid.eq(self.uuid)))
@@ -239,8 +239,8 @@ impl Collection {
                 .left_join(groups_users::table.on(
                     groups_users::users_organizations_uuid.eq(users_organizations::uuid)
                 ))
-                .left_join(groups::table.on(
-                    groups::uuid.eq(groups_users::groups_uuid)
+                .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                    .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
                 ))
                 .left_join(collections_groups::table.on(
                     collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
@@ -355,8 +355,8 @@ impl Collection {
                 .left_join(groups_users::table.on(
                     groups_users::users_organizations_uuid.eq(users_organizations::uuid)
                 ))
-                .left_join(groups::table.on(
-                    groups::uuid.eq(groups_users::groups_uuid)
+                .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                    .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
                 ))
                 .left_join(collections_groups::table.on(
                     collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
@@ -422,8 +422,8 @@ impl Collection {
                     .left_join(groups_users::table.on(
                         groups_users::users_organizations_uuid.eq(users_organizations::uuid)
                     ))
-                    .left_join(groups::table.on(
-                        groups::uuid.eq(groups_users::groups_uuid)
+                    .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                        .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
                     ))
                     .left_join(collections_groups::table.on(
                         collections_groups::groups_uuid.eq(groups_users::groups_uuid)
@@ -484,8 +484,8 @@ impl Collection {
             .left_join(groups_users::table.on(
                 groups_users::users_organizations_uuid.eq(users_organizations::uuid)
             ))
-            .left_join(groups::table.on(
-                groups::uuid.eq(groups_users::groups_uuid)
+            .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
             ))
             .left_join(collections_groups::table.on(
                 collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(
@@ -531,8 +531,8 @@ impl Collection {
             .left_join(groups_users::table.on(
                 groups_users::users_organizations_uuid.eq(users_organizations::uuid)
             ))
-            .left_join(groups::table.on(
-                groups::uuid.eq(groups_users::groups_uuid)
+            .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
             ))
             .left_join(collections_groups::table.on(
                 collections_groups::groups_uuid.eq(groups_users::groups_uuid).and(

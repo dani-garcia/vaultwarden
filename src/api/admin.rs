@@ -32,7 +32,7 @@ use crate::{
     mail,
     util::{
         container_base_image, format_naive_datetime_local, get_active_web_release, get_display_size,
-        is_running_in_container, NumberOrString,
+        is_running_in_container, parse_experimental_client_feature_flags, FeatureFlagFilter, NumberOrString,
     },
     CONFIG, VERSION,
 };
@@ -472,7 +472,7 @@ async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Noti
     }
 
     Device::delete_all_by_user(&user.uuid, &conn).await?;
-    user.reset_security_stamp();
+    user.reset_security_stamp(&conn).await?;
 
     user.save(&conn).await
 }
@@ -480,13 +480,14 @@ async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Noti
 #[post("/users/<user_id>/disable", format = "application/json")]
 async fn disable_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &conn).await?;
-    Device::delete_all_by_user(&user.uuid, &conn).await?;
-    user.reset_security_stamp();
+    user.reset_security_stamp(&conn).await?;
     user.enabled = false;
 
     let save_result = user.save(&conn).await;
 
     nt.send_logout(&user, None, &conn).await;
+
+    Device::delete_all_by_user(&user.uuid, &conn).await?;
 
     save_result
 }
@@ -637,7 +638,6 @@ use cached::proc_macro::cached;
 /// Cache this function to prevent API call rate limit. Github only allows 60 requests per hour, and we use 3 here already
 /// It will cache this function for 600 seconds (10 minutes) which should prevent the exhaustion of the rate limit
 /// Any cache will be lost if Vaultwarden is restarted
-use std::time::Duration; // Needed for cached
 #[cached(time = 600, sync_writes = "default")]
 async fn get_release_info(has_http_access: bool) -> (String, String, String) {
     // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
@@ -734,6 +734,13 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
 
     let ip_header_name = &ip_header.0.unwrap_or_default();
 
+    let invalid_feature_flags: Vec<String> = parse_experimental_client_feature_flags(
+        &CONFIG.experimental_client_feature_flags(),
+        FeatureFlagFilter::InvalidOnly,
+    )
+    .into_keys()
+    .collect();
+
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
         "current_release": VERSION,
@@ -756,6 +763,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
         "db_version": get_sql_server_version(&conn).await,
         "admin_url": format!("{}/diagnostics", admin_url()),
         "overrides": &CONFIG.get_overrides().join(", "),
+        "invalid_feature_flags": invalid_feature_flags,
         "host_arch": env::consts::ARCH,
         "host_os":  env::consts::OS,
         "tz_env": env::var("TZ").unwrap_or_default(),
