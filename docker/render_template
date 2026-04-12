@@ -10,7 +10,7 @@ import jinja2
 with open("DockerSettings.yaml", 'r') as yaml_file:
 	yaml_data = yaml.safe_load(yaml_file)
 
-settings_env = jinja2.Environment(
+settings_env = jinja2.sandbox.SandboxedEnvironment(
 	loader=jinja2.FileSystemLoader(os.getcwd()),
 )
 settings_yaml = yaml.safe_load(settings_env.get_template("DockerSettings.yaml").render(yaml_data))
@@ -24,7 +24,7 @@ cli_args = args_parser.parse_args()
 render_vars = json.loads(cli_args.render_vars)
 settings_yaml.update(render_vars)
 
-environment = jinja2.Environment(
+environment = jinja2.sandbox.SandboxedEnvironment(
 	loader=jinja2.FileSystemLoader(os.getcwd()),
 	trim_blocks=True,
 )
