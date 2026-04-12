@@ -742,7 +742,7 @@ async fn twofactor_auth(
 
     TwoFactorIncomplete::mark_incomplete(&user.uuid, &device.uuid, &device.name, device.atype, ip, conn).await?;
 
-    let twofactor_ids: Vec<_> = twofactors
+    let mut twofactor_ids: Vec<_> = twofactors
         .iter()
         .filter_map(|tf| {
             let provider_type = TwoFactorType::from_i32(tf.atype)?;
@@ -752,6 +752,18 @@ async fn twofactor_auth(
     if twofactor_ids.is_empty() {
         err!("No enabled and usable two factor providers are available for this account")
     }
+
+    // Add TwoFactorTypes which are not stored as a record but might be enabled
+    // Since these types could also be not valid, we do some custom checks here
+    twofactor_ids.extend(
+        [
+            (!CONFIG.disable_2fa_remember() && device.twofactor_remember.is_some())
+                .then_some(TwoFactorType::Remember as i32),
+            user.totp_recover.is_some().then_some(TwoFactorType::RecoveryCode as i32),
+        ]
+        .into_iter()
+        .flatten(),
+    );
 
     let selected_id = data.two_factor_provider.unwrap_or(twofactor_ids[0]); // If we aren't given a two factor provider, assume the first one
     if !twofactor_ids.contains(&selected_id) {
