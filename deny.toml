@@ -18,11 +18,6 @@ ignore = [
     # wrapper around rustls-pki-types and pulled in transitively via rustls 0.21.x.
     # Removing it requires upstream crates to drop their rustls 0.21 dependency.
     { id = "RUSTSEC-2025-0134", reason = "Transitive via rustls 0.21.x compat chain; blocked on upstream upgrade." },
-
-    # CRL validation bug in rustls-webpki: fix requires >=0.103.10, but rustls-webpki
-    # 0.101.x is pinned by the rustls 0.21.x compatibility stack.
-    # Track upstream rustls upgrade to resolve both occurrences.
-    { id = "RUSTSEC-2026-0049", reason = "rustls-webpki 0.101.x locked by rustls 0.21.x compat chain; track upstream rustls upgrade." },
 ]
 
 # =============================================================================
@@ -34,18 +29,13 @@ ignore = [
 allow = [
     "0BSD",
     "Apache-2.0",
-    "Apache-2.0 WITH LLVM-exception",
-    "BSD-1-Clause",
-    "BSD-2-Clause",
     "BSD-3-Clause",
-    "BSL-1.0",           # Boost Software License (ryu)
-    "CDLA-Permissive-2.0", # Community Data License Agreement (webpki-roots)
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
     "ISC",
-    "LGPL-2.1-or-later", # r-efi (Windows-only UEFI crate; dynamically linked)
     "MIT",
-    "MPL-2.0",           # webauthn-rs crates (file-level copyleft, compatible)
+    "MPL-2.0",
     "Unicode-3.0",
-    "Unlicense",
     "Zlib",
 ]
 
@@ -59,11 +49,9 @@ ignore = true
 [bans]
 # Warn on duplicate versions; many arise from transitive deps and require
 # upstream changes to resolve. Promote to "deny" once the dep tree stabilises.
-multiple-versions = "warn"
-# Warn on wildcard version requirements. "deny" would also flag internal
-# workspace path dependencies (macros = { path = "./macros" }), which have
-# no version specifier by design, so "warn" is used instead.
-wildcards = "warn"
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
 highlight = "all"
 
 # =============================================================================
