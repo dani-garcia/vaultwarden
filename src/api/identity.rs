@@ -756,13 +756,8 @@ async fn twofactor_auth(
     // Add TwoFactorTypes which are not stored as a record but might be enabled
     // Since these types could also be not valid, we do some custom checks here
     twofactor_ids.extend(
-        [
-            (!CONFIG.disable_2fa_remember() && device.twofactor_remember.is_some())
-                .then_some(TwoFactorType::Remember as i32),
-            user.totp_recover.is_some().then_some(TwoFactorType::RecoveryCode as i32),
-        ]
-        .into_iter()
-        .flatten(),
+        (!CONFIG.disable_2fa_remember() && device.twofactor_remember.is_some())
+            .then_some(TwoFactorType::Remember as i32),
     );
 
     let selected_id = data.two_factor_provider.unwrap_or(twofactor_ids[0]); // If we aren't given a two factor provider, assume the first one
