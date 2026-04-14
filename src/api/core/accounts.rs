@@ -374,7 +374,7 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     }
 
     if let Some(identifier) = data.org_identifier {
-        if identifier != crate::sso::FAKE_IDENTIFIER && identifier != crate::api::admin::FAKE_ADMIN_UUID {
+        if identifier != crate::sso::FAKE_SSO_IDENTIFIER && identifier != crate::api::admin::FAKE_ADMIN_UUID {
             let Some(org) = Organization::find_by_uuid(&identifier.into(), &conn).await else {
                 err!("Failed to retrieve the associated organization")
             };
