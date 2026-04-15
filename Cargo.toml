@@ -85,6 +85,7 @@ tokio-util = { version = "0.7.18", features = ["compat"]}
 # A generic serialization/deserialization framework
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
+serde_with = "3.16.1"
 
 # A safe, extensible ORM and Query builder
 # Currently pinned diesel to v2.3.3 as newer version break MySQL/MariaDB compatibility

@@ -1204,6 +1204,7 @@ pub struct RefreshJwtClaims {
 pub struct AuthTokens {
     pub refresh_claims: RefreshJwtClaims,
     pub access_claims: LoginJwtClaims,
+    pub is_admin: bool,
 }
 
 impl AuthTokens {
@@ -1247,6 +1248,7 @@ impl AuthTokens {
         Self {
             refresh_claims,
             access_claims,
+            is_admin: false,
         }
     }
 }
@@ -1256,7 +1258,7 @@ pub async fn refresh_tokens(
     refresh_token: &str,
     client_id: Option<String>,
     conn: &DbConn,
-) -> ApiResult<(Device, AuthTokens)> {
+) -> ApiResult<(User, Device, AuthTokens)> {
     let refresh_claims = match decode_refresh(refresh_token) {
         Err(err) => {
             error!("Failed to decode {} refresh_token: {refresh_token}: {err:?}", ip.ip);
@@ -1296,7 +1298,7 @@ pub async fn refresh_tokens(
             AuthTokens::new(&device, &user, refresh_claims.sub, client_id)
         }
         AuthMethod::Sso if CONFIG.sso_enabled() => {
-            sso::exchange_refresh_token(&device, &user, client_id, refresh_claims).await?
+            sso::exchange_refresh_token(&user, &device, client_id, refresh_claims).await?
         }
         AuthMethod::Sso => err!("SSO is now disabled, Login again using email and master password"),
         AuthMethod::Password if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO is now required, Login again"),
@@ -1304,5 +1306,5 @@ pub async fn refresh_tokens(
         _ => err!("Invalid auth method, cannot refresh token"),
     };
 
-    Ok((device, auth_tokens))
+    Ok((user, device, auth_tokens))
 }
