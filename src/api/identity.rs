@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{
-            accounts::{PreloginData, RegisterData, _prelogin, _register, kdf_upgrade},
+            accounts::{_prelogin, _register, kdf_upgrade, PreloginData, RegisterData},
             log_user_event,
             two_factor::{
                 authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn,
