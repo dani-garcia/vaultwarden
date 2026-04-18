@@ -1,1 +1,1 @@
-DROP TABLE archives;
+DROP TABLE IF EXISTS archives;
