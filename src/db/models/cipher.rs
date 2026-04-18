@@ -751,13 +751,12 @@ impl Cipher {
         Archive::get_archived_at(&self.uuid, user_uuid, conn).await
     }
 
-    pub async fn set_archived_at(
-        &self,
-        archived_at: Option<NaiveDateTime>,
-        user_uuid: &UserId,
-        conn: &DbConn,
-    ) -> EmptyResult {
-        Archive::set_archived_at(archived_at, &self.uuid, user_uuid, conn).await
+    pub async fn set_archived_at(&self, archived_at: NaiveDateTime, user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+        Archive::save(user_uuid, &self.uuid, archived_at, conn).await
+    }
+
+    pub async fn unarchive(&self, user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+        Archive::delete_by_cipher(user_uuid, &self.uuid, conn).await
     }
 
     pub async fn get_folder_uuid(&self, user_uuid: &UserId, conn: &DbConn) -> Option<FolderId> {

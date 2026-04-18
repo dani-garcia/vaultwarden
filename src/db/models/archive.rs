@@ -28,59 +28,53 @@ impl Archive {
         }}
     }
 
-    // Sets the specified cipher to be archived or unarchived
-    pub async fn set_archived_at(
-        archived_at: Option<NaiveDateTime>,
-        cipher_uuid: &CipherId,
+    // Saves (inserts or updates) an archive record with the provided timestamp
+    pub async fn save(
         user_uuid: &UserId,
+        cipher_uuid: &CipherId,
+        archived_at: NaiveDateTime,
         conn: &DbConn,
     ) -> EmptyResult {
-        let existing = Self::get_archived_at(cipher_uuid, user_uuid, conn).await;
-
-        match (existing, archived_at) {
-            // Not archived - archive at the provided timestamp
-            (None, Some(dt)) => {
-                User::update_uuid_revision(user_uuid, conn).await;
-                db_run! { conn: {
+        User::update_uuid_revision(user_uuid, conn).await;
+        db_run! { conn:
+            sqlite, mysql {
+                diesel::replace_into(archives::table)
+                    .values((
+                        archives::user_uuid.eq(user_uuid),
+                        archives::cipher_uuid.eq(cipher_uuid),
+                        archives::archived_at.eq(archived_at),
+                    ))
+                    .execute(conn)
+                    .map_res("Error saving archive")
+            }
+            postgresql {
                 diesel::insert_into(archives::table)
                     .values((
                         archives::user_uuid.eq(user_uuid),
                         archives::cipher_uuid.eq(cipher_uuid),
-                        archives::archived_at.eq(dt),
+                        archives::archived_at.eq(archived_at),
                     ))
+                    .on_conflict((archives::user_uuid, archives::cipher_uuid))
+                    .do_update()
+                    .set(archives::archived_at.eq(archived_at))
                     .execute(conn)
-                    .map_res("Error archiving")
-                }}
+                    .map_res("Error saving archive")
             }
-            // Already archived - update with the provided timestamp
-            (Some(_), Some(dt)) => {
-                User::update_uuid_revision(user_uuid, conn).await;
-                db_run! { conn: {
-                    diesel::update(
-                        archives::table
-                            .filter(archives::user_uuid.eq(user_uuid))
-                            .filter(archives::cipher_uuid.eq(cipher_uuid))
-                    )
-                    .set(archives::archived_at.eq(dt))
-                    .execute(conn)
-                    .map_res("Error updating archive date")
-                }}
-            }
-            (Some(_), None) => {
-                User::update_uuid_revision(user_uuid, conn).await;
-                db_run! { conn: {
-                    diesel::delete(
-                        archives::table
-                            .filter(archives::user_uuid.eq(user_uuid))
-                            .filter(archives::cipher_uuid.eq(cipher_uuid))
-                    )
-                    .execute(conn)
-                    .map_res("Error unarchiving")
-                }}
-            }
-            // Otherwise, the archived status is already what it should be
-            _ => Ok(()),
         }
+    }
+
+    // Deletes an archive record for a specific cipher
+    pub async fn delete_by_cipher(user_uuid: &UserId, cipher_uuid: &CipherId, conn: &DbConn) -> EmptyResult {
+        User::update_uuid_revision(user_uuid, conn).await;
+        db_run! { conn: {
+            diesel::delete(
+                archives::table
+                    .filter(archives::user_uuid.eq(user_uuid))
+                    .filter(archives::cipher_uuid.eq(cipher_uuid))
+            )
+            .execute(conn)
+            .map_res("Error deleting archive")
+        }}
     }
 
     /// Return a vec with (cipher_uuid, archived_at)

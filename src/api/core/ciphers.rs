@@ -538,17 +538,13 @@ pub async fn update_cipher_from_data(
     cipher.save(conn).await?;
     cipher.move_to_folder(data.folder_id, &headers.user.uuid, conn).await?;
     cipher.set_favorite(data.favorite, &headers.user.uuid, conn).await?;
-    let archived_at = match data.archived_date {
-        Some(dt_str) => match NaiveDateTime::parse_from_str(&dt_str, "%+") {
-            Ok(dt) => Some(dt),
-            Err(err) => {
-                warn!("Error parsing ArchivedDate '{dt_str}': {err}");
-                None
-            }
-        },
-        None => None,
-    };
-    cipher.set_archived_at(archived_at, &headers.user.uuid, conn).await?;
+
+    if let Some(dt_str) = data.archived_date {
+        match NaiveDateTime::parse_from_str(&dt_str, "%+") {
+            Ok(dt) => cipher.set_archived_at(dt, &headers.user.uuid, conn).await?,
+            Err(err) => warn!("Error parsing ArchivedDate '{dt_str}': {err}"),
+        }
+    }
 
     if ut != UpdateType::None {
         // Only log events for organizational ciphers
@@ -1733,7 +1729,7 @@ async fn purge_personal_vault(
 
 #[put("/ciphers/<cipher_id>/archive")]
 async fn archive_cipher_put(cipher_id: CipherId, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    set_archived_cipher_by_uuid(&cipher_id, &headers, true, false, &conn, &nt).await
+    archive_cipher(&cipher_id, &headers, false, &conn, &nt).await
 }
 
 #[put("/ciphers/archive", data = "<data>")]
@@ -1743,12 +1739,12 @@ async fn archive_cipher_selected(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    set_archived_multiple_ciphers(data, &headers, true, &conn, &nt).await
+    archive_multiple_ciphers(data, &headers, &conn, &nt).await
 }
 
 #[put("/ciphers/<cipher_id>/unarchive")]
 async fn unarchive_cipher_put(cipher_id: CipherId, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    set_archived_cipher_by_uuid(&cipher_id, &headers, false, false, &conn, &nt).await
+    unarchive_cipher(&cipher_id, &headers, false, &conn, &nt).await
 }
 
 #[put("/ciphers/unarchive", data = "<data>")]
@@ -1758,7 +1754,7 @@ async fn unarchive_cipher_selected(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    set_archived_multiple_ciphers(data, &headers, false, &conn, &nt).await
+    unarchive_multiple_ciphers(data, &headers, &conn, &nt).await
 }
 
 #[derive(PartialEq)]
@@ -1979,10 +1975,9 @@ async fn _delete_cipher_attachment_by_id(
     Ok(Json(json!({"cipher":cipher_json})))
 }
 
-async fn set_archived_cipher_by_uuid(
+async fn archive_cipher(
     cipher_id: &CipherId,
     headers: &Headers,
-    archived: bool,
     multi_archive: bool,
     conn: &DbConn,
     nt: &Notify<'_>,
@@ -1995,12 +1990,7 @@ async fn set_archived_cipher_by_uuid(
         err!("Cipher is not accessible for the current user")
     }
 
-    let archived_at = if archived {
-        Some(Utc::now().naive_utc())
-    } else {
-        None
-    };
-    cipher.set_archived_at(archived_at, &headers.user.uuid, conn).await?;
+    cipher.set_archived_at(Utc::now().naive_utc(), &headers.user.uuid, conn).await?;
 
     if !multi_archive {
         nt.send_cipher_update(
@@ -2017,10 +2007,41 @@ async fn set_archived_cipher_by_uuid(
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await?))
 }
 
-async fn set_archived_multiple_ciphers(
+async fn unarchive_cipher(
+    cipher_id: &CipherId,
+    headers: &Headers,
+    multi_unarchive: bool,
+    conn: &DbConn,
+    nt: &Notify<'_>,
+) -> JsonResult {
+    let Some(cipher) = Cipher::find_by_uuid(cipher_id, conn).await else {
+        err!("Cipher doesn't exist")
+    };
+
+    if !cipher.is_accessible_to_user(&headers.user.uuid, conn).await {
+        err!("Cipher is not accessible for the current user")
+    }
+
+    cipher.unarchive(&headers.user.uuid, conn).await?;
+
+    if !multi_unarchive {
+        nt.send_cipher_update(
+            UpdateType::SyncCipherUpdate,
+            &cipher,
+            &cipher.update_users_revision(conn).await,
+            &headers.device,
+            None,
+            conn,
+        )
+        .await;
+    }
+
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await?))
+}
+
+async fn archive_multiple_ciphers(
     data: Json<CipherIdsData>,
     headers: &Headers,
-    archived: bool,
     conn: &DbConn,
     nt: &Notify<'_>,
 ) -> JsonResult {
@@ -2028,13 +2049,39 @@ async fn set_archived_multiple_ciphers(
 
     let mut ciphers: Vec<Value> = Vec::new();
     for cipher_id in data.ids {
-        match set_archived_cipher_by_uuid(&cipher_id, headers, archived, true, conn, nt).await {
+        match archive_cipher(&cipher_id, headers, true, conn, nt).await {
             Ok(json) => ciphers.push(json.into_inner()),
             err => return err,
         }
     }
 
-    // Multi archive actions do not send out a push for each cipher, we need to send a general sync here
+    // Multi archive does not send out a push for each cipher, we need to send a general sync here
+    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, conn).await;
+
+    Ok(Json(json!({
+      "data": ciphers,
+      "object": "list",
+      "continuationToken": null
+    })))
+}
+
+async fn unarchive_multiple_ciphers(
+    data: Json<CipherIdsData>,
+    headers: &Headers,
+    conn: &DbConn,
+    nt: &Notify<'_>,
+) -> JsonResult {
+    let data = data.into_inner();
+
+    let mut ciphers: Vec<Value> = Vec::new();
+    for cipher_id in data.ids {
+        match unarchive_cipher(&cipher_id, headers, true, conn, nt).await {
+            Ok(json) => ciphers.push(json.into_inner()),
+            err => return err,
+        }
+    }
+
+    // Multi unarchive does not send out a push for each cipher, we need to send a general sync here
     nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, conn).await;
 
     Ok(Json(json!({
@@ -2072,7 +2119,7 @@ impl CipherSyncData {
         let cipher_favorites: HashSet<CipherId>;
         let cipher_archives: HashMap<CipherId, NaiveDateTime>;
         match sync_type {
-            // User Sync supports Folders and Favorites
+            // User Sync supports Folders, Favorites, and Archives
             CipherSyncType::User => {
                 // Generate a HashMap with the Cipher UUID as key and the Folder UUID as value
                 cipher_folders = FolderCipher::find_by_user(user_id, conn).await.into_iter().collect();
@@ -2083,7 +2130,7 @@ impl CipherSyncData {
                 // Generate a HashMap with the Cipher UUID as key and the archived date time as value
                 cipher_archives = Archive::find_by_user(user_id, conn).await.into_iter().collect();
             }
-            // Organization Sync does not support Folders and Favorites.
+            // Organization Sync does not support Folders, Favorites, or Archives.
             // If these are set, it will cause issues in the web-vault.
             CipherSyncType::Organization => {
                 cipher_folders = HashMap::with_capacity(0);
