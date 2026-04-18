@@ -184,22 +184,19 @@ impl CustomDnsResolver {
     }
 
     fn new() -> Arc<Self> {
-        match TokioResolver::builder(TokioRuntimeProvider::default()) {
-            Ok(mut builder) => {
+        TokioResolver::builder(TokioRuntimeProvider::default())
+            .and_then(|mut builder| {
                 // Hickory's default since v0.26 is `Ipv6AndIpv4`, which sorts IPv6 first
                 // This might cause issues on IPv4 only systems or containers
                 // Unless someone enabled DNS_PREFER_IPV6, use Ipv4AndIpv6, which returns IPv4 first which was our previous default
                 if !CONFIG.dns_prefer_ipv6() {
                     builder.options_mut().ip_strategy = hickory_resolver::config::LookupIpStrategy::Ipv4AndIpv6;
                 }
-                let resolver = builder.build().expect("Building Hickory resolver failed");
-                Arc::new(Self::Hickory(Arc::new(resolver)))
-            }
-            Err(e) => {
-                warn!("Error creating Hickory resolver, falling back to default: {e:?}");
-                Arc::new(Self::Default())
-            }
-        }
+                builder.build()
+            })
+            .inspect_err(|e| warn!("Error creating Hickory resolver, falling back to default: {e:?}"))
+            .map(|resolver| Arc::new(Self::Hickory(Arc::new(resolver))))
+            .unwrap_or_else(|_| Arc::new(Self::Default()))
     }
 
     // Note that we get an iterator of addresses, but we only grab the first one for convenience
