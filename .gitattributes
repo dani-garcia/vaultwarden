@@ -1,3 +1,2 @@
 # Ignore vendored scripts in GitHub stats
 src/static/scripts/* linguist-vendored
-
