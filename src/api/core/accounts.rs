@@ -1238,7 +1238,7 @@ pub async fn _prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
 
     let (kdf_type, kdf_iter, kdf_mem, kdf_para) = match User::find_by_mail(&data.email, &conn).await {
         Some(user) => (user.client_kdf_type, user.client_kdf_iter, user.client_kdf_memory, user.client_kdf_parallelism),
-        None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+        None => (User::client_kdf_type_default(), User::client_kdf_iter_default(), User::client_kdf_memory_default(), User::client_kdf_parallelism_default()),
     };
 
     Json(json!({
