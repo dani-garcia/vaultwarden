@@ -23,7 +23,7 @@ use crate::{
 
 const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer available";
 static ANON_PUSH_DEVICE: LazyLock<Device> = LazyLock::new(|| {
-    let dt = crate::util::parse_date("1970-01-01T00:00:00.000000Z");
+    let dt = crate::util::parse_date("1970-01-01T00:00:00.000000Z").expect("hardcoded epoch date is always valid");
     Device {
         uuid: String::from("00000000-0000-0000-0000-000000000000").into(),
         created_at: dt,
