@@ -181,8 +181,8 @@ impl Drop for DbPool {
 }
 
 impl DbPool {
-    // For the given database URL, guess its type, run migrations, create pool, and return it
-    pub fn from_config() -> Result<Self, Error> {
+    // For the given database URL, guess its type, optionally run migrations, create pool, and return it
+    pub fn from_config_with_migrations(run_migrations: bool) -> Result<Self, Error> {
         let db_url = CONFIG.database_url();
         let conn_type = DbConnType::from_url(&db_url)?;
 
@@ -194,18 +194,20 @@ impl DbPool {
             drop(diesel::connection::set_default_instrumentation(query_logger::simple_logger));
         }
 
-        match conn_type {
-            #[cfg(mysql)]
-            DbConnType::Mysql => {
-                mysql_migrations::run_migrations(&db_url)?;
-            }
-            #[cfg(postgresql)]
-            DbConnType::Postgresql => {
-                postgresql_migrations::run_migrations(&db_url)?;
-            }
-            #[cfg(sqlite)]
-            DbConnType::Sqlite => {
-                sqlite_migrations::run_migrations(&db_url)?;
+        if run_migrations {
+            match conn_type {
+                #[cfg(mysql)]
+                DbConnType::Mysql => {
+                    mysql_migrations::run_migrations(&db_url)?;
+                }
+                #[cfg(postgresql)]
+                DbConnType::Postgresql => {
+                    postgresql_migrations::run_migrations(&db_url)?;
+                }
+                #[cfg(sqlite)]
+                DbConnType::Sqlite => {
+                    sqlite_migrations::run_migrations(&db_url)?;
+                }
             }
         }
 
@@ -231,6 +233,16 @@ impl DbPool {
             pool: Some(pool),
             semaphore: Arc::new(Semaphore::new(max_conns as usize)),
         })
+    }
+
+    // For the given database URL, guess its type, run migrations, create pool, and return it
+    pub fn from_config() -> Result<Self, Error> {
+        Self::from_config_with_migrations(true)
+    }
+
+    // For the given database URL, guess its type, skip migrations, create pool, and return it
+    pub fn from_config_no_migrations() -> Result<Self, Error> {
+        Self::from_config_with_migrations(false)
     }
 
     // Get a connection from the pool
