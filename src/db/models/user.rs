@@ -561,4 +561,13 @@ impl SsoUser {
                 .map_res("Error deleting sso user")
         }}
     }
+
+    pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Option<Self> {
+        db_run! { conn: {
+            sso_users::table
+                .filter(sso_users::user_uuid.eq(user_uuid))
+                .first::<Self>(conn)
+                .ok()
+        }}
+    }
 }
