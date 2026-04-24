@@ -1,6 +1,6 @@
 [workspace.package]
 edition = "2021"
-rust-version = "1.92.0"
+rust-version = "1.93.0"
 license = "AGPL-3.0-only"
 repository = "https://github.com/dani-garcia/vaultwarden"
 publish = false
@@ -79,7 +79,7 @@ dashmap = "6.1.0"
 
 # Async futures
 futures = "0.3.32"
-tokio = { version = "1.51.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio = { version = "1.52.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 tokio-util = { version = "0.7.18", features = ["compat"]}
 
 # A generic serialization/deserialization framework
@@ -103,7 +103,7 @@ ring = "0.17.14"
 subtle = "2.6.1"
 
 # UUID generation
-uuid = { version = "1.23.0", features = ["v4"] }
+uuid = { version = "1.23.1", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.44", features = ["clock", "serde"], default-features = false }
@@ -145,7 +145,7 @@ handlebars = { version = "6.4.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
 reqwest = { version = "0.12.28", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
-hickory-resolver = "0.25.2"
+hickory-resolver = "0.26.0"
 
 # Favicon extraction libraries
 html5gum = "0.8.3"
@@ -162,7 +162,7 @@ cookie = "0.18.1"
 cookie_store = "0.22.1"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.76"
+openssl = "0.10.78"
 
 # CLI argument parsing
 pico-args = "0.5.0"
@@ -180,7 +180,7 @@ semver = "1.0.28"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.48", features = ["secure"], default-features = false, optional = true }
+mimalloc = { version = "0.1.50", features = ["secure"], default-features = false, optional = true }
 
 which = "8.0.2"
 
@@ -198,9 +198,9 @@ opendal = { version = "0.55.0", features = ["services-fs"], default-features = f
 
 # For retrieving AWS credentials, including temporary SSO credentials
 anyhow = { version = "1.0.102", optional = true }
-aws-config = { version = "1.8.15", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
+aws-config = { version = "1.8.16", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
 aws-credential-types = { version = "1.2.14", optional = true }
-aws-smithy-runtime-api = { version = "1.11.6", optional = true }
+aws-smithy-runtime-api = { version = "1.12.0", optional = true }
 http = { version = "1.4.0", optional = true }
 reqsign = { version = "0.16.5", optional = true }
 

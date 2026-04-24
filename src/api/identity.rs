@@ -2,7 +2,6 @@ use chrono::Utc;
 use num_traits::FromPrimitive;
 use rocket::{
     form::{Form, FromForm},
-    http::Status,
     response::Redirect,
     serde::json::Json,
     Route,
@@ -12,7 +11,7 @@ use serde_json::Value;
 use crate::{
     api::{
         core::{
-            accounts::{PreloginData, RegisterData, _prelogin, _register, kdf_upgrade},
+            accounts::{_prelogin, _register, kdf_upgrade, PreloginData, RegisterData},
             log_user_event,
             two_factor::{
                 authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn,
@@ -131,12 +130,14 @@ async fn login(
     login_result
 }
 
-// Return Status::Unauthorized to trigger logout
 async fn _refresh_login(data: ConnectData, conn: &DbConn, ip: &ClientIp) -> JsonResult {
-    // Extract token
-    let refresh_token = match data.refresh_token {
-        Some(token) => token,
-        None => err_code!("Missing refresh_token", Status::Unauthorized.code),
+    // When a refresh token is invalid or missing we need to respond with an HTTP BadRequest (400)
+    // It also needs to return a json which holds at least a key `error` with the value `invalid_grant`
+    // See the link below for details
+    // https://github.com/bitwarden/clients/blob/2ee158e720a5e7dbe3641caf80b569e97a1dd91b/libs/common/src/services/api.service.ts#L1786-L1797
+
+    let Some(refresh_token) = data.refresh_token else {
+        err_json!(json!({"error": "invalid_grant"}), "Missing refresh_token")
     };
 
     // ---
@@ -147,7 +148,10 @@ async fn _refresh_login(data: ConnectData, conn: &DbConn, ip: &ClientIp) -> Json
     // let members = Membership::find_confirmed_by_user(&user.uuid, conn).await;
     match auth::refresh_tokens(ip, &refresh_token, data.client_id, conn).await {
         Err(err) => {
-            err_code!(format!("Unable to refresh login credentials: {}", err.message()), Status::Unauthorized.code)
+            err_json!(
+                json!({"error": "invalid_grant"}),
+                format!("Unable to refresh login credentials: {}", err.message())
+            )
         }
         Ok((mut device, auth_tokens)) => {
             // Save to update `device.updated_at` to track usage and toggle new status
@@ -742,7 +746,7 @@ async fn twofactor_auth(
 
     TwoFactorIncomplete::mark_incomplete(&user.uuid, &device.uuid, &device.name, device.atype, ip, conn).await?;
 
-    let mut twofactor_ids: Vec<_> = twofactors
+    let twofactor_ids: Vec<_> = twofactors
         .iter()
         .filter_map(|tf| {
             let provider_type = TwoFactorType::from_i32(tf.atype)?;
@@ -753,15 +757,11 @@ async fn twofactor_auth(
         err!("No enabled and usable two factor providers are available for this account")
     }
 
-    // Add TwoFactorTypes which are not stored as a record but might be enabled
-    // Since these types could also be not valid, we do some custom checks here
-    twofactor_ids.extend(
-        (!CONFIG.disable_2fa_remember() && device.twofactor_remember.is_some())
-            .then_some(TwoFactorType::Remember as i32),
-    );
-
     let selected_id = data.two_factor_provider.unwrap_or(twofactor_ids[0]); // If we aren't given a two factor provider, assume the first one
-    if !twofactor_ids.contains(&selected_id) {
+                                                                            // Ignore Remember and RecoveryCode Types during this check, these are special
+    if ![TwoFactorType::Remember as i32, TwoFactorType::RecoveryCode as i32].contains(&selected_id)
+        && !twofactor_ids.contains(&selected_id)
+    {
         err_json!(
             _json_err_twofactor(&twofactor_ids, &user.uuid, data, client_version, conn).await?,
             "Invalid two factor provider"

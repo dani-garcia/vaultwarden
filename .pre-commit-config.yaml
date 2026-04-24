@@ -1,58 +1,60 @@
 ---
 repos:
--   repo: https://github.com/pre-commit/pre-commit-hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
     hooks:
-    - id: check-yaml
-    - id: check-json
-    - id: check-toml
-    - id: mixed-line-ending
-      args: ["--fix=no"]
-    - id: end-of-file-fixer
-      exclude: "(.*js$|.*css$)"
-    - id: check-case-conflict
-    - id: check-merge-conflict
-    - id: detect-private-key
-    - id: check-symlinks
-    - id: forbid-submodules
--   repo: local
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: mixed-line-ending
+        args: [ "--fix=no" ]
+      - id: end-of-file-fixer
+        exclude: "(.*js$|.*css$)"
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-symlinks
+      - id: forbid-submodules
+
+  # When this version is updated, do not forget to update this in `.github/workflows/typos.yaml` too
+  - repo: https://github.com/crate-ci/typos
+    rev: cf5f1c29a8ac336af8568821ec41919923b05a83 # v1.45.1
     hooks:
-    - id: fmt
-      name: fmt
-      description: Format files with cargo fmt.
-      entry: cargo fmt
-      language: system
-      always_run: true
-      pass_filenames: false
-      args: ["--", "--check"]
-    - id: cargo-test
-      name: cargo test
-      description: Test the package for errors.
-      entry: cargo test
-      language: system
-      args: ["--features", "sqlite,mysql,postgresql", "--"]
-      types_or: [rust, file]
-      files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
-      pass_filenames: false
-    - id: cargo-clippy
-      name: cargo clippy
-      description: Lint Rust sources
-      entry: cargo clippy
-      language: system
-      args: ["--features", "sqlite,mysql,postgresql", "--", "-D", "warnings"]
-      types_or: [rust, file]
-      files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
-      pass_filenames: false
-    - id: check-docker-templates
-      name: check docker templates
-      description: Check if the Docker templates are updated
-      language: system
-      entry: sh
-      args:
-        - "-c"
-        - "cd docker && make"
-# When this version is updated, do not forget to update this in `.github/workflows/typos.yaml` too
-- repo: https://github.com/crate-ci/typos
-  rev: 02ea592e44b3a53c302f697cddca7641cd051c3d # v1.45.0
-  hooks:
-    - id: typos
+      - id: typos
+
+  - repo: local
+    hooks:
+      - id: fmt
+        name: fmt
+        description: Format files with cargo fmt.
+        entry: cargo fmt
+        language: system
+        always_run: true
+        pass_filenames: false
+        args: [ "--", "--check" ]
+      - id: cargo-test
+        name: cargo test
+        description: Test the package for errors.
+        entry: cargo test
+        language: system
+        args: [ "--features", "sqlite,mysql,postgresql", "--" ]
+        types_or: [ rust, file ]
+        files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        description: Lint Rust sources
+        entry: cargo clippy
+        language: system
+        args: [ "--features", "sqlite,mysql,postgresql", "--", "-D", "warnings" ]
+        types_or: [ rust, file ]
+        files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
+        pass_filenames: false
+      - id: check-docker-templates
+        name: check docker templates
+        description: Check if the Docker templates are updated
+        language: system
+        entry: sh
+        args:
+          - "-c"
+          - "cd docker && make"

@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use hickory_resolver::{name_server::TokioConnectionProvider, TokioResolver};
+use hickory_resolver::{net::runtime::TokioRuntimeProvider, TokioResolver};
 use regex::Regex;
 use reqwest::{
     dns::{Name, Resolve, Resolving},
@@ -184,35 +184,35 @@ impl CustomDnsResolver {
     }
 
     fn new() -> Arc<Self> {
-        match TokioResolver::builder(TokioConnectionProvider::default()) {
-            Ok(mut builder) => {
-                if CONFIG.dns_prefer_ipv6() {
-                    builder.options_mut().ip_strategy = hickory_resolver::config::LookupIpStrategy::Ipv6thenIpv4;
+        TokioResolver::builder(TokioRuntimeProvider::default())
+            .and_then(|mut builder| {
+                // Hickory's default since v0.26 is `Ipv6AndIpv4`, which sorts IPv6 first
+                // This might cause issues on IPv4 only systems or containers
+                // Unless someone enabled DNS_PREFER_IPV6, use Ipv4AndIpv6, which returns IPv4 first which was our previous default
+                if !CONFIG.dns_prefer_ipv6() {
+                    builder.options_mut().ip_strategy = hickory_resolver::config::LookupIpStrategy::Ipv4AndIpv6;
                 }
-                let resolver = builder.build();
-                Arc::new(Self::Hickory(Arc::new(resolver)))
-            }
-            Err(e) => {
-                warn!("Error creating Hickory resolver, falling back to default: {e:?}");
-                Arc::new(Self::Default())
-            }
-        }
+                builder.build()
+            })
+            .inspect_err(|e| warn!("Error creating Hickory resolver, falling back to default: {e:?}"))
+            .map(|resolver| Arc::new(Self::Hickory(Arc::new(resolver))))
+            .unwrap_or_else(|_| Arc::new(Self::Default()))
     }
 
     // Note that we get an iterator of addresses, but we only grab the first one for convenience
-    async fn resolve_domain(&self, name: &str) -> Result<Option<SocketAddr>, BoxError> {
+    async fn resolve_domain(&self, name: &str) -> Result<Vec<SocketAddr>, BoxError> {
         pre_resolve(name)?;
 
-        let result = match self {
-            Self::Default() => tokio::net::lookup_host(name).await?.next(),
-            Self::Hickory(r) => r.lookup_ip(name).await?.iter().next().map(|a| SocketAddr::new(a, 0)),
+        let results: Vec<SocketAddr> = match self {
+            Self::Default() => tokio::net::lookup_host((name, 0)).await?.collect(),
+            Self::Hickory(r) => r.lookup_ip(name).await?.iter().map(|i| SocketAddr::new(i, 0)).collect(),
         };
 
-        if let Some(addr) = &result {
+        for addr in &results {
             post_resolve(name, addr.ip())?;
         }
 
-        Ok(result)
+        Ok(results)
     }
 }
 
@@ -242,8 +242,11 @@ impl Resolve for CustomDnsResolver {
         let this = self.clone();
         Box::pin(async move {
             let name = name.as_str();
-            let result = this.resolve_domain(name).await?;
-            Ok::<reqwest::dns::Addrs, _>(Box::new(result.into_iter()))
+            let results = this.resolve_domain(name).await?;
+            if results.is_empty() {
+                warn!("Unable to resolve {name} to any valid IP address");
+            }
+            Ok::<reqwest::dns::Addrs, _>(Box::new(results.into_iter()))
         })
     }
 }
