@@ -283,7 +283,7 @@ pub async fn exchange_code(
 
     let email_verified = id_claims.email_verified().or(user_info.email_verified());
 
-    let user_name = id_claims.preferred_username().map(|un| un.to_string());
+    let user_name = id_claims.preferred_username().or(user_info.preferred_username()).map(|un| un.to_string());
 
     let refresh_token = token_response.refresh_token().map(|t| t.secret());
     if refresh_token.is_none() && CONFIG.sso_scopes_vec().contains(&"offline_access".to_string()) {
