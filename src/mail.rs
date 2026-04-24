@@ -18,8 +18,26 @@ use crate::{
     },
     db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId},
     error::Error,
+    serde_json,
+    serde_json::json,
     CONFIG,
 };
+
+/// Creates a serde_json::Map directly from JSON syntax.
+/// Usage: json_map!({ "key1": value1, "key2": value2 })
+#[macro_export]
+macro_rules! json_map {
+    ({ $($key:literal: $value:expr),* $(,)? }) => {
+        {
+            #[allow(unused_mut)]
+            let mut map = $crate::serde_json::Map::new();
+            $(
+                map.insert($key.to_string(), $crate::serde_json::json!($value));
+            )*
+            map
+        }
+    };
+}
 
 fn sendmail_transport() -> AsyncSendmailTransport<Tokio1Executor> {
     if let Some(command) = CONFIG.sendmail_command() {
@@ -146,6 +164,22 @@ fn get_template(template_name: &str, data: &serde_json::Value) -> Result<(String
     Ok((subject, body))
 }
 
+pub async fn send_template_email(
+    address: &str,
+    template_name: &'static str,
+    data: serde_json::Map<String, serde_json::Value>,
+) -> EmptyResult {
+    let mut obj = data;
+    if !obj.contains_key("url") {
+        obj.insert("url".to_string(), json!(CONFIG.domain()));
+    }
+    obj.insert("img_src".to_string(), json!(CONFIG._smtp_img_src()));
+
+    let (subject, body_html, body_text) = get_text(template_name, serde_json::Value::Object(obj))?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_password_hint(address: &str, hint: Option<String>) -> EmptyResult {
     let template_name = if hint.is_some() {
         "email/pw_hint_some"
@@ -153,128 +187,85 @@ pub async fn send_password_hint(address: &str, hint: Option<String>) -> EmptyRes
         "email/pw_hint_none"
     };
 
-    let (subject, body_html, body_text) = get_text(
-        template_name,
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-            "hint": hint,
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, template_name, json_map!({ "hint": hint })).await
 }
 
 pub async fn send_delete_account(address: &str, user_id: &UserId) -> EmptyResult {
     let claims = generate_delete_claims(user_id.to_string());
     let delete_token = encode_jwt(&claims);
 
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/delete_account",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
+        json_map!({
             "user_id": user_id,
             "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "token": delete_token,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_verify_email(address: &str, user_id: &UserId) -> EmptyResult {
     let claims = generate_verify_email_claims(user_id);
     let verify_email_token = encode_jwt(&claims);
 
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/verify_email",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
+        json_map!({
             "user_id": user_id,
             "email": percent_encode(address.as_bytes(), NON_ALPHANUMERIC).to_string(),
             "token": verify_email_token,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_register_verify_email(email: &str, token: &str) -> EmptyResult {
     let mut query = url::Url::parse("https://query.builder").unwrap();
     query.query_pairs_mut().append_pair("email", email).append_pair("token", token);
-    let query_string = match query.query() {
-        None => err!("Failed to build verify URL query parameters"),
-        Some(query) => query,
+    let Some(query_string) = query.query() else {
+        err!("Failed to build verify URL query parameters")
     };
 
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        email,
         "email/register_verify_email",
-        json!({
+        json_map!({
             // `url.Url` would place the anchor `#` after the query parameters
             "url": format!("{}/#/finish-signup/?{query_string}", CONFIG.domain()),
-            "img_src": CONFIG._smtp_img_src(),
             "email": email,
         }),
-    )?;
-
-    send_email(email, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_welcome(address: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/welcome",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, "email/welcome", json_map!({})).await
 }
 
 pub async fn send_welcome_must_verify(address: &str, user_id: &UserId) -> EmptyResult {
     let claims = generate_verify_email_claims(user_id);
     let verify_email_token = encode_jwt(&claims);
 
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/welcome_must_verify",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
+        json_map!({
             "user_id": user_id,
             "token": verify_email_token,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_2fa_removed_from_org(address: &str, org_name: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/send_2fa_removed_from_org",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-            "org_name": org_name,
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, "email/send_2fa_removed_from_org", json_map!({ "org_name": org_name })).await
 }
 
 pub async fn send_single_org_removed_from_org(address: &str, org_name: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/send_single_org_removed_from_org",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-            "org_name": org_name,
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, "email/send_single_org_removed_from_org", json_map!({ "org_name": org_name })).await
 }
 
 pub async fn send_invite(
@@ -314,17 +305,16 @@ pub async fn send_invite(
         err!("Failed to build invite URL query parameters")
     };
 
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        &user.email,
         "email/send_org_invite",
-        json!({
+        json_map!({
             // `url.Url` would place the anchor `#` after the query parameters
             "url": format!("{}/#/accept-organization/?{query_string}", CONFIG.domain()),
-            "img_src": CONFIG._smtp_img_src(),
             "org_name": org_name,
         }),
-    )?;
-
-    send_email(&user.email, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_emergency_access_invite(
@@ -357,56 +347,28 @@ pub async fn send_emergency_access_invite(
         err!("Failed to build emergency invite URL query parameters")
     };
 
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/send_emergency_access_invite",
-        json!({
+        json_map!({
             // `url.Url` would place the anchor `#` after the query parameters
             "url": format!("{}/#/accept-emergency/?{query_string}", CONFIG.domain()),
-            "img_src": CONFIG._smtp_img_src(),
             "grantor_name": grantor_name,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_emergency_access_invite_accepted(address: &str, grantee_email: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/emergency_access_invite_accepted",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-            "grantee_email": grantee_email,
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, "email/emergency_access_invite_accepted", json_map!({ "grantee_email": grantee_email })).await
 }
 
 pub async fn send_emergency_access_invite_confirmed(address: &str, grantor_name: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/emergency_access_invite_confirmed",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-            "grantor_name": grantor_name,
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, "email/emergency_access_invite_confirmed", json_map!({ "grantor_name": grantor_name })).await
 }
 
 pub async fn send_emergency_access_recovery_approved(address: &str, grantor_name: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/emergency_access_recovery_approved",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-            "grantor_name": grantor_name,
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, "email/emergency_access_recovery_approved", json_map!({ "grantor_name": grantor_name })).await
 }
 
 pub async fn send_emergency_access_recovery_initiated(
@@ -415,18 +377,16 @@ pub async fn send_emergency_access_recovery_initiated(
     atype: &str,
     wait_time_days: &i32,
 ) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/emergency_access_recovery_initiated",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
+        json_map!({
             "grantee_name": grantee_name,
             "atype": atype,
             "wait_time_days": wait_time_days,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_emergency_access_recovery_reminder(
@@ -435,91 +395,65 @@ pub async fn send_emergency_access_recovery_reminder(
     atype: &str,
     days_left: &str,
 ) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/emergency_access_recovery_reminder",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
+        json_map!({
             "grantee_name": grantee_name,
             "atype": atype,
             "days_left": days_left,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_emergency_access_recovery_rejected(address: &str, grantor_name: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/emergency_access_recovery_rejected",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-            "grantor_name": grantor_name,
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, "email/emergency_access_recovery_rejected", json_map!({ "grantor_name": grantor_name })).await
 }
 
 pub async fn send_emergency_access_recovery_timed_out(address: &str, grantee_name: &str, atype: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/emergency_access_recovery_timed_out",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
+        json_map!({
             "grantee_name": grantee_name,
             "atype": atype,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_invite_accepted(new_user_email: &str, address: &str, org_name: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/invite_accepted",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
+        json_map!({
             "email": new_user_email,
             "org_name": org_name,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/invite_confirmed",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-            "org_name": org_name,
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, "email/invite_confirmed", json_map!({ "org_name": org_name })).await
 }
 
 pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, device: &Device) -> EmptyResult {
-    use crate::util::upcase_first;
+    use crate::util::{format_naive_datetime_local, upcase_first};
 
     let fmt = "%A, %B %_d, %Y at %r %Z";
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/new_device_logged_in",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
+        json_map!({
             "ip": ip,
             "device_name": upcase_first(&device.name),
             "device_type": DeviceType::from_i32(device.atype).to_string(),
-            "datetime": crate::util::format_naive_datetime_local(dt, fmt),
+            "datetime": format_naive_datetime_local(dt, fmt),
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_incomplete_2fa_login(
@@ -529,127 +463,78 @@ pub async fn send_incomplete_2fa_login(
     device_name: &str,
     device_type: &str,
 ) -> EmptyResult {
-    use crate::util::upcase_first;
+    use crate::util::{format_naive_datetime_local, upcase_first};
 
     let fmt = "%A, %B %_d, %Y at %r %Z";
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/incomplete_2fa_login",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
+        json_map!({
             "ip": ip,
             "device_name": upcase_first(device_name),
             "device_type": device_type,
-            "datetime": crate::util::format_naive_datetime_local(dt, fmt),
+            "datetime": format_naive_datetime_local(dt, fmt),
             "time_limit": CONFIG.incomplete_2fa_time_limit(),
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_token(address: &str, token: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/twofactor_email",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-            "token": token,
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, "email/twofactor_email", json_map!({ "token": token })).await
 }
 
 pub async fn send_change_email(address: &str, token: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/change_email",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-            "token": token,
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, "email/change_email", json_map!({ "token": token })).await
 }
 
 pub async fn send_change_email_existing(address: &str, acting_address: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/change_email_existing",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
+        json_map!({
             "existing_address": address,
             "acting_address": acting_address,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_change_email_invited(address: &str, acting_address: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/change_email_invited",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
+        json_map!({
             "existing_address": address,
             "acting_address": acting_address,
         }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_sso_change_email(address: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/sso_change_email",
-        json!({
-            "url": format!("{}/#/settings/account", CONFIG.domain()),
-            "img_src": CONFIG._smtp_img_src(),
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    let url =  format!("{}/#/settings/account", CONFIG.domain());
+    send_template_email(address, "email/sso_change_email", json_map!({ "url": url })).await
 }
 
 pub async fn send_test(address: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/smtp_test",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, "email/smtp_test", json_map!({})).await
 }
 
 pub async fn send_admin_reset_password(address: &str, user_name: &str, org_name: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
+    send_template_email(
+        address,
         "email/admin_reset_password",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
+        json_map!({
             "user_name": user_name,
             "org_name": org_name,
         }),
-    )?;
-    send_email(address, &subject, body_html, body_text).await
+    )
+    .await
 }
 
 pub async fn send_protected_action_token(address: &str, token: &str) -> EmptyResult {
-    let (subject, body_html, body_text) = get_text(
-        "email/protected_action",
-        json!({
-            "url": CONFIG.domain(),
-            "img_src": CONFIG._smtp_img_src(),
-            "token": token,
-        }),
-    )?;
-
-    send_email(address, &subject, body_html, body_text).await
+    send_template_email(address, "email/protected_action", json_map!({ "token": token })).await
 }
 
 async fn send_with_selected_transport(email: Message) -> EmptyResult {
