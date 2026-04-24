@@ -834,6 +834,18 @@ make_config! {
         sso_debug_tokens:               bool,   true,   def,    false;
     },
 
+    /// SSO Cookie Vendor settings
+    sso_cookie_vendor {
+        /// Enabled |> Enable the SSO cookie vendor endpoint for native app support behind authenticating reverse proxies
+        sso_cookie_vendor_enabled:          bool,   true,   def,    false;
+        /// IdP Login URL |> The URL the client should navigate to for IdP authentication (e.g. Cloudflare Access login URL)
+        sso_cookie_vendor_idp_login_url:    String, true,   def,    String::new();
+        /// Cookie Name |> The name of the cookie set by the authenticating reverse proxy (e.g. CF_Authorization)
+        sso_cookie_vendor_cookie_name:      String, true,   def,    String::new();
+        /// Cookie Domain |> The domain scope of the proxy auth cookie (e.g. vault.example.com)
+        sso_cookie_vendor_cookie_domain:    String, true,   def,    String::new();
+    },
+
     /// Yubikey settings
     yubico: _enable_yubico {
         /// Enabled
@@ -1077,6 +1089,15 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
         validate_sso_master_password_policy(&cfg.sso_master_password_policy)?;
+    }
+
+    if cfg.sso_cookie_vendor_enabled {
+        if cfg.sso_cookie_vendor_idp_login_url.is_empty()
+            || cfg.sso_cookie_vendor_cookie_name.is_empty()
+            || cfg.sso_cookie_vendor_cookie_domain.is_empty()
+        {
+            err!("`SSO_COOKIE_VENDOR_IDP_LOGIN_URL`, `SSO_COOKIE_VENDOR_COOKIE_NAME` and `SSO_COOKIE_VENDOR_COOKIE_DOMAIN` must be set when SSO cookie vendor is enabled")
+        }
     }
 
     if cfg._enable_yubico {
