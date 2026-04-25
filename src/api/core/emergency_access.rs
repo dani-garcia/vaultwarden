@@ -90,9 +90,10 @@ async fn get_emergency_access(emer_id: EmergencyAccessId, headers: Headers, conn
     check_emergency_access_enabled()?;
 
     match EmergencyAccess::find_by_uuid_and_grantor_uuid(&emer_id, &headers.user.uuid, &conn).await {
-        Some(emergency_access) => Ok(Json(
-            emergency_access.to_json_grantee_details(&conn).await.expect("Grantee user should exist but does not!"),
-        )),
+        Some(emergency_access) => match emergency_access.to_json_grantee_details(&conn).await {
+            Some(details) => Ok(Json(details)),
+            None => err!("Grantee user does not exist for this emergency access."),
+        },
         None => err!("Emergency access not valid."),
     }
 }
@@ -257,8 +258,11 @@ async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, co
     new_emergency_access.save(&conn).await?;
 
     if CONFIG.mail_enabled() {
+        let Some(invite_email) = new_emergency_access.email.clone() else {
+            err!("Grantee email does not exist on emergency access record")
+        };
         mail::send_emergency_access_invite(
-            &new_emergency_access.email.expect("Grantee email does not exists"),
+            &invite_email,
             grantee_user.uuid,
             new_emergency_access.uuid,
             &grantor_user.name,
@@ -702,8 +706,7 @@ fn is_valid_request(
     requesting_user_id: &UserId,
     requested_access_type: EmergencyAccessType,
 ) -> bool {
-    emergency_access.grantee_uuid.is_some()
-        && emergency_access.grantee_uuid.as_ref().unwrap() == requesting_user_id
+    emergency_access.grantee_uuid.as_ref() == Some(requesting_user_id)
         && emergency_access.status == EmergencyAccessStatus::RecoveryApproved as i32
         && emergency_access.atype == requested_access_type as i32
 }
@@ -731,37 +734,58 @@ pub async fn emergency_request_timeout_job(pool: DbPool) {
         let now = Utc::now().naive_utc();
         for mut emer in emergency_access_list {
             // The find_all_recoveries_initiated already checks if the recovery_initiated_at is not null (None)
-            let recovery_allowed_at =
-                emer.recovery_initiated_at.unwrap() + TimeDelta::try_days(i64::from(emer.wait_time_days)).unwrap();
+            let Some(recovery_initiated_at) = emer.recovery_initiated_at else {
+                error!("Emergency access {} has no recovery_initiated_at; skipping", emer.uuid);
+                continue;
+            };
+            let Some(wait_time) = TimeDelta::try_days(i64::from(emer.wait_time_days)) else {
+                error!("Emergency access {} has invalid wait_time_days={}; skipping", emer.uuid, emer.wait_time_days);
+                continue;
+            };
+            let recovery_allowed_at = recovery_initiated_at + wait_time;
             if recovery_allowed_at.le(&now) {
                 // Only update the access status
                 // Updating the whole record could cause issues when the emergency_notification_reminder_job is also active
-                emer.update_access_status_and_save(EmergencyAccessStatus::RecoveryApproved as i32, &now, &conn)
+                if let Err(e) = emer
+                    .update_access_status_and_save(EmergencyAccessStatus::RecoveryApproved as i32, &now, &conn)
                     .await
-                    .expect("Unable to update emergency access status");
+                {
+                    error!("Unable to update emergency access {} status: {e:?}", emer.uuid);
+                    continue;
+                }
 
                 if CONFIG.mail_enabled() {
                     // get grantor user to send Accepted email
-                    let grantor_user =
-                        User::find_by_uuid(&emer.grantor_uuid, &conn).await.expect("Grantor user not found");
+                    let Some(grantor_user) = User::find_by_uuid(&emer.grantor_uuid, &conn).await else {
+                        error!("Grantor user {} not found for emergency access {}", emer.grantor_uuid, emer.uuid);
+                        continue;
+                    };
 
                     // get grantee user to send Accepted email
-                    let grantee_user =
-                        User::find_by_uuid(&emer.grantee_uuid.clone().expect("Grantee user invalid"), &conn)
-                            .await
-                            .expect("Grantee user not found");
+                    let Some(grantee_uuid) = emer.grantee_uuid.as_ref() else {
+                        error!("Grantee uuid missing for emergency access {}", emer.uuid);
+                        continue;
+                    };
+                    let Some(grantee_user) = User::find_by_uuid(grantee_uuid, &conn).await else {
+                        error!("Grantee user {grantee_uuid} not found for emergency access {}", emer.uuid);
+                        continue;
+                    };
 
-                    mail::send_emergency_access_recovery_timed_out(
+                    if let Err(e) = mail::send_emergency_access_recovery_timed_out(
                         &grantor_user.email,
                         &grantee_user.name,
                         emer.get_type_as_str(),
                     )
                     .await
-                    .expect("Error on sending email");
+                    {
+                        error!("Error sending recovery timed out email for {}: {e:?}", emer.uuid);
+                    }
 
-                    mail::send_emergency_access_recovery_approved(&grantee_user.email, &grantor_user.name)
-                        .await
-                        .expect("Error on sending email");
+                    if let Err(e) =
+                        mail::send_emergency_access_recovery_approved(&grantee_user.email, &grantor_user.name).await
+                    {
+                        error!("Error sending recovery approved email for {}: {e:?}", emer.uuid);
+                    }
                 }
             }
         }
@@ -784,43 +808,66 @@ pub async fn emergency_notification_reminder_job(pool: DbPool) {
         }
 
         let now = Utc::now().naive_utc();
+        let one_day = match TimeDelta::try_days(1) {
+            Some(d) => d,
+            None => {
+                error!("Failed to construct 1-day TimeDelta; aborting reminder job");
+                return;
+            }
+        };
         for mut emer in emergency_access_list {
             // The find_all_recoveries_initiated already checks if the recovery_initiated_at is not null (None)
             // Calculate the day before the recovery will become active
-            let final_recovery_reminder_at =
-                emer.recovery_initiated_at.unwrap() + TimeDelta::try_days(i64::from(emer.wait_time_days - 1)).unwrap();
+            let Some(recovery_initiated_at) = emer.recovery_initiated_at else {
+                error!("Emergency access {} has no recovery_initiated_at; skipping", emer.uuid);
+                continue;
+            };
+            let Some(wait_time) = TimeDelta::try_days(i64::from(emer.wait_time_days - 1)) else {
+                error!("Emergency access {} has invalid wait_time_days={}; skipping", emer.uuid, emer.wait_time_days);
+                continue;
+            };
+            let final_recovery_reminder_at = recovery_initiated_at + wait_time;
             // Calculate if a day has passed since the previous notification, else no notification has been sent before
             let next_recovery_reminder_at = if let Some(last_notification_at) = emer.last_notification_at {
-                last_notification_at + TimeDelta::try_days(1).unwrap()
+                last_notification_at + one_day
             } else {
                 now
             };
             if final_recovery_reminder_at.le(&now) && next_recovery_reminder_at.le(&now) {
                 // Only update the last notification date
                 // Updating the whole record could cause issues when the emergency_request_timeout_job is also active
-                emer.update_last_notification_date_and_save(&now, &conn)
-                    .await
-                    .expect("Unable to update emergency access notification date");
+                if let Err(e) = emer.update_last_notification_date_and_save(&now, &conn).await {
+                    error!("Unable to update emergency access {} notification date: {e:?}", emer.uuid);
+                    continue;
+                }
 
                 if CONFIG.mail_enabled() {
                     // get grantor user to send Accepted email
-                    let grantor_user =
-                        User::find_by_uuid(&emer.grantor_uuid, &conn).await.expect("Grantor user not found");
+                    let Some(grantor_user) = User::find_by_uuid(&emer.grantor_uuid, &conn).await else {
+                        error!("Grantor user {} not found for emergency access {}", emer.grantor_uuid, emer.uuid);
+                        continue;
+                    };
 
                     // get grantee user to send Accepted email
-                    let grantee_user =
-                        User::find_by_uuid(&emer.grantee_uuid.clone().expect("Grantee user invalid"), &conn)
-                            .await
-                            .expect("Grantee user not found");
+                    let Some(grantee_uuid) = emer.grantee_uuid.as_ref() else {
+                        error!("Grantee uuid missing for emergency access {}", emer.uuid);
+                        continue;
+                    };
+                    let Some(grantee_user) = User::find_by_uuid(grantee_uuid, &conn).await else {
+                        error!("Grantee user {grantee_uuid} not found for emergency access {}", emer.uuid);
+                        continue;
+                    };
 
-                    mail::send_emergency_access_recovery_reminder(
+                    if let Err(e) = mail::send_emergency_access_recovery_reminder(
                         &grantor_user.email,
                         &grantee_user.name,
                         emer.get_type_as_str(),
                         "1", // This notification is only triggered one day before the activation
                     )
                     .await
-                    .expect("Error on sending email");
+                    {
+                        error!("Error sending recovery reminder email for {}: {e:?}", emer.uuid);
+                    }
                 }
             }
         }
