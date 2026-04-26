@@ -507,7 +507,7 @@ make_config! {
         ///  Data folder |> Main data folder
         data_folder:            String, false,  def,    "data".to_string();
         /// Database URL
-        database_url:           String, false,  auto,   |c| format!("{}/db.sqlite3", c.data_folder);
+        database_url:           String, false,  auto,   |c| format!("sqlite://{}/db.sqlite3", c.data_folder);
         /// Icon cache folder
         icon_cache_folder:      String, false,  auto,   |c| format!("{}/icon_cache", c.data_folder);
         /// Attachments folder
@@ -929,14 +929,17 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     {
         use crate::db::DbConnType;
         let url = &cfg.database_url;
-        if DbConnType::from_url(url)? == DbConnType::Sqlite && url.contains('/') {
-            let path = std::path::Path::new(&url);
-            if let Some(parent) = path.parent() {
-                if !parent.is_dir() {
-                    err!(format!(
-                        "SQLite database directory `{}` does not exist or is not a directory",
-                        parent.display()
-                    ));
+        if DbConnType::from_url(url)? == DbConnType::Sqlite {
+            let file_path = url.strip_prefix("sqlite://").unwrap_or(url);
+            if file_path.contains('/') {
+                let path = std::path::Path::new(file_path);
+                if let Some(parent) = path.parent() {
+                    if !parent.is_dir() {
+                        err!(format!(
+                            "SQLite database directory `{}` does not exist or is not a directory",
+                            parent.display()
+                        ));
+                    }
                 }
             }
         }
