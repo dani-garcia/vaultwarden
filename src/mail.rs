@@ -15,6 +15,7 @@ use lettre::{
 use percent_encoding::{NON_ALPHANUMERIC, percent_encode};
 
 use crate::{
+<<<<<<< HEAD
     CONFIG,
     api::EmptyResult,
     auth::{
@@ -24,6 +25,12 @@ use crate::{
     db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId},
     error::Error,
     util::{get_env_str_value, upcase_first},
+=======
+    CONFIG, api::EmptyResult, auth::{
+        encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
+        generate_verify_email_claims,
+    }, db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId}, error::Error, util::get_env
+>>>>>>> f829426d (Corrections on env and naming.)
 };
 
 fn sendmail_transport() -> AsyncSendmailTransport<Tokio1Executor> {
@@ -704,6 +711,7 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
     }
 }
 pub fn check_dkim() -> Result<Option<DkimConfig>, String> {
+<<<<<<< HEAD
     match (
         CONFIG.dkim_signing_key().and_then(|a| get_env_str_value(&a)),
         CONFIG.dkim_domain().and_then(|a| get_env_str_value(&a)),
@@ -730,6 +738,27 @@ pub fn check_dkim() -> Result<Option<DkimConfig>, String> {
         _ => Err(
             "DKIM setting is badly implemented. One config is missing or invalid (DKIM signature or DKIM infos or DKIM signing key).".to_owned(),
         ),
+=======
+    match (get_env::<String>("dkim_privatekey"), CONFIG.dkim_infos()) {
+        (Some(pk), Some(infos)) => {
+                let algo = if CONFIG.dkim_use_rsa() {DkimSigningAlgorithm::Rsa } else { DkimSigningAlgorithm::Ed25519 };
+                let (selector, domain, privatekey) = match (DkimSigningKey::new(pk.as_str(), algo), infos.split(':').collect::<Vec<&str>>()) {
+                    (Ok(sig), split2) if split2.len() == 2 => {
+                        let (selector, domain, sig) =
+                            (String::from(*split2.first().unwrap()), String::from(*split2.last().unwrap()), sig);
+                        (selector, domain, sig)
+                    }
+                    _ => {
+                        return Err("DKIM issue, invalid domain, selector.".to_string());
+                    }
+                };
+                return Ok(Some(DkimConfig::default_config(selector, domain, privatekey)));
+        },
+        (None, None) => Ok(None),
+        _ => {
+            Err("DKIM setting is badly implemented. One config is missing (DKIM signature or DKIM infos).".to_string())
+        }
+>>>>>>> f829426d (Corrections on env and naming.)
     }
 }
 async fn send_email(address: &str, subject: &str, body_html: String, body_text: String) -> EmptyResult {
