@@ -14,14 +14,10 @@ use lettre::{
 };
 
 use crate::{
-    api::EmptyResult,
-    auth::{
+    CONFIG, api::EmptyResult, auth::{
         encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
         generate_verify_email_claims,
-    },
-    db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId},
-    error::Error,
-    CONFIG,
+    }, db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId}, error::Error, util::get_env
 };
 
 fn sendmail_transport() -> AsyncSendmailTransport<Tokio1Executor> {
@@ -707,23 +703,11 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
     }
 }
 pub fn check_dkim() -> Result<Option<DkimConfig>, String> {
-    match (CONFIG.dkim_signature(), CONFIG.dkim_infos()) {
-        (Some(sig), Some(infos)) => {
-            let config = {
+    match (get_env::<String>("dkim_privatekey"), CONFIG.dkim_infos()) {
+        (Some(pk), Some(infos)) => {
                 let algo = if CONFIG.dkim_use_rsa() {DkimSigningAlgorithm::Rsa } else { DkimSigningAlgorithm::Ed25519 };
-                let sig = match std::fs::read_to_string(sig) {
-                    Err(e) => {
-                        return Err(format!("Cannot read DKIM key. Err is {:?}", e));
-                    }
-                    Ok(key) => match DkimSigningKey::new(&key, algo) {
-                        Ok(d) => d,
-                        Err(e) => {
-                            return Err(format!("DKIM key is invalid. Err is {:?}", e));
-                        }
-                    },
-                };
-                match (sig, infos.split(':').collect::<Vec<&str>>()) {
-                    (sig, split2) if split2.len() == 2 => {
+                let (selector, domain, privatekey) = match (DkimSigningKey::new(pk.as_str(), algo), infos.split(':').collect::<Vec<&str>>()) {
+                    (Ok(sig), split2) if split2.len() == 2 => {
                         let (selector, domain, sig) =
                             (String::from(*split2.first().unwrap()), String::from(*split2.last().unwrap()), sig);
                         (selector, domain, sig)
@@ -731,10 +715,9 @@ pub fn check_dkim() -> Result<Option<DkimConfig>, String> {
                     _ => {
                         return Err("DKIM issue, invalid domain, selector.".to_string());
                     }
-                }
-            };
-            Ok(Some(DkimConfig::default_config(config.0, config.1, config.2)))
-        }
+                };
+                return Ok(Some(DkimConfig::default_config(selector, domain, privatekey)));
+        },
         (None, None) => Ok(None),
         _ => {
             Err("DKIM setting is badly implemented. One config is missing (DKIM signature or DKIM infos).".to_string())

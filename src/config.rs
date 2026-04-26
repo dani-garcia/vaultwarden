@@ -886,8 +886,8 @@ make_config! {
         smtp_username:                 String, true,   option;
         /// Password
         smtp_password:                 Pass,   true,   option;
-        /// Dkim signature (type:privatekey). Private must be base64-encoded ed key or PKCS#1 format RSA key.
-        dkim_signature:                String, true,   option;
+        /// Dkim private key (type:privatekey). Private must be base64-encoded ed key or PKCS#1 format RSA key.
+        dkim_privatekey:                String, true,   option;
         /// Dkim algo (true if RSA else ed25519)
         dkim_use_rsa:                  bool,   true,   def,   false;
         /// Dkim infos (selector:domain)
