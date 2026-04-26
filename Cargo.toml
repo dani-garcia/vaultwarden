@@ -136,7 +136,7 @@ webauthn-rs-core = "0.5.4"
 url = "2.5.8"
 
 # Email libraries
-lettre = { version = "0.11.21", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "hostname", "tracing", "tokio1-rustls", "ring", "rustls-native-certs"], default-features = false }
+lettre = { version = "0.11.21", features = ["smtp-transport", "sendmail-transport", "dkim", "builder", "serde", "hostname", "tracing", "tokio1-rustls", "ring", "rustls-native-certs"], default-features = false }
 percent-encoding = "2.3.2" # URL encoding library used for URL's in the emails
 email_address = "0.2.9"
 

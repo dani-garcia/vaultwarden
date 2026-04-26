@@ -13,11 +13,9 @@ use reqwest::Url;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 
 use crate::{
-    error::Error,
-    util::{
-        get_active_web_release, get_env, get_env_bool, is_valid_email, parse_experimental_client_feature_flags,
-        FeatureFlagFilter,
-    },
+    error::Error, mail::check_dkim, util::{
+        FeatureFlagFilter, get_active_web_release, get_env, get_env_bool, is_valid_email, parse_experimental_client_feature_flags
+    }
 };
 
 static CONFIG_FILE: LazyLock<String> = LazyLock::new(|| {
@@ -888,6 +886,12 @@ make_config! {
         smtp_username:                 String, true,   option;
         /// Password
         smtp_password:                 Pass,   true,   option;
+        /// Dkim signature (type:privatekey). Private must be base64-encoded ed key or PKCS#1 format RSA key.
+        dkim_signature:                String, true,   option;
+        /// Dkim algo (true if RSA else ed25519)
+        dkim_use_rsa:                  bool,   true,   def,   false;
+        /// Dkim infos (selector:domain)
+        dkim_infos:                    String, true,   option;
         /// SMTP Auth mechanism |> Defaults for SSL is "Plain" and "Login" and nothing for Non-SSL connections. Possible values: ["Plain", "Login", "Xoauth2"]. Multiple options need to be separated by a comma ','.
         smtp_auth_mechanism:           String, true,   option;
         /// SMTP connection timeout |> Number of seconds when to stop trying to connect to the SMTP server
@@ -1149,6 +1153,9 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
 
         if cfg._enable_email_2fa && cfg.email_token_size < 6 {
             err!("`EMAIL_TOKEN_SIZE` has a minimum size of 6")
+        }
+        if let Err(e) = check_dkim() {
+            err!(format!("DKIM config fails. {}",e))
         }
     }
 
