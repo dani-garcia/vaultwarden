@@ -101,6 +101,7 @@ pub fn routes() -> Vec<Route> {
         get_billing_metadata,
         get_billing_warnings,
         get_auto_enroll_status,
+        get_self_host_billing_metadata,
     ]
 }
 
@@ -2210,6 +2211,15 @@ fn get_billing_warnings(_org_id: OrganizationId, _headers: OrgMemberHeaders) -> 
         "inactiveSubscription":null,
         "resellerRenewal":null,
         "taxId":null,
+    }))
+}
+
+#[get("/organizations/<_org_id>/billing/vnext/self-host/metadata")]
+fn get_self_host_billing_metadata(_org_id: OrganizationId, _headers: OrgMemberHeaders) -> Json<Value> {
+    // Prevent a 404 error, which also causes Javascript errors.
+    Json(json!({
+        "isOnSecretsManagerStandalone": false, // Secrets Manager is not supported by Vaultwarden
+        "organizationOccupiedSeats": 0 // Vaultwarden does not count seats
     }))
 }
 
