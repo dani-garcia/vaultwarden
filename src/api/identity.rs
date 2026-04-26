@@ -230,7 +230,33 @@ async fn _sso_login(
                     }
                 )
             }
-            Some((user, None)) => Some((user, None)),
+            Some((user, None)) => match user_infos.email_verified {
+                None if !CONFIG.sso_allow_unknown_email_verification() => {
+                    error!(
+                        "Login failure ({}), existing non SSO user ({}) with same email ({}) and email verification status is unknown",
+                        user_infos.identifier, user.uuid, user.email
+                    );
+                    err_silent!(
+                        "Email verification status is unknown",
+                        ErrorEvent {
+                            event: EventType::UserFailedLogIn
+                        }
+                    )
+                }
+                Some(false) => {
+                    error!(
+                        "Login failure ({}), existing non SSO user ({}) with same email ({}) and email is not verified",
+                        user_infos.identifier, user.uuid, user.email
+                    );
+                    err_silent!(
+                        "Email is not verified by the SSO provider",
+                        ErrorEvent {
+                            event: EventType::UserFailedLogIn
+                        }
+                    )
+                }
+                _ => Some((user, None)),
+            },
         },
         Some((user, sso_user)) => Some((user, Some(sso_user))),
     };
