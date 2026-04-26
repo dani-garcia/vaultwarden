@@ -2,6 +2,7 @@ use chrono::Utc;
 use num_traits::FromPrimitive;
 use rocket::{
     form::{Form, FromForm},
+    http::{Cookie, CookieJar, SameSite},
     response::Redirect,
     serde::json::Json,
     Route,
@@ -23,7 +24,8 @@ use crate::{
         ApiResult, EmptyResult, JsonResult,
     },
     auth,
-    auth::{generate_organization_api_key_login_claims, AuthMethod, ClientHeaders, ClientIp, ClientVersion},
+    auth::{generate_organization_api_key_login_claims, AuthMethod, ClientHeaders, ClientIp, ClientVersion, Secure},
+    crypto,
     db::{
         models::{
             AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeWrapper, OrganizationApiKey,
@@ -1133,13 +1135,16 @@ fn prevalidate() -> JsonResult {
     }
 }
 
+const SSO_BINDING_COOKIE: &str = "VW_SSO_BINDING";
+
 #[get("/connect/oidc-signin?<code>&<state>", rank = 1)]
-async fn oidcsignin(code: OIDCCode, state: String, mut conn: DbConn) -> ApiResult<Redirect> {
+async fn oidcsignin(code: OIDCCode, state: String, cookies: &CookieJar<'_>, mut conn: DbConn) -> ApiResult<Redirect> {
     _oidcsignin_redirect(
         state,
         OIDCCodeWrapper::Ok {
             code,
         },
+        cookies,
         &mut conn,
     )
     .await
@@ -1152,6 +1157,7 @@ async fn oidcsignin_error(
     state: String,
     error: String,
     error_description: Option<String>,
+    cookies: &CookieJar<'_>,
     mut conn: DbConn,
 ) -> ApiResult<Redirect> {
     _oidcsignin_redirect(
@@ -1160,6 +1166,7 @@ async fn oidcsignin_error(
             error,
             error_description,
         },
+        cookies,
         &mut conn,
     )
     .await
@@ -1171,6 +1178,7 @@ async fn oidcsignin_error(
 async fn _oidcsignin_redirect(
     base64_state: String,
     code_response: OIDCCodeWrapper,
+    cookies: &CookieJar<'_>,
     conn: &mut DbConn,
 ) -> ApiResult<Redirect> {
     let state = sso::decode_state(&base64_state)?;
@@ -1179,6 +1187,17 @@ async fn _oidcsignin_redirect(
         None => err!(format!("Cannot retrieve sso_auth for {state}")),
         Some(sso_auth) => sso_auth,
     };
+
+    // Browser-binding check
+    // The cookie was set on /connect/authorize and must come from the same browser that initiated the flow.
+    let cookie_value = cookies.get(SSO_BINDING_COOKIE).map(|c| c.value().to_string());
+    let provided_hash = cookie_value.as_deref().map(|v| crypto::sha256_hex(v.as_bytes()));
+    match (sso_auth.binding_hash.as_deref(), provided_hash.as_deref()) {
+        (Some(expected), Some(actual)) if crypto::ct_eq(expected, actual) => {}
+        _ => err!(format!("SSO session binding mismatch for {state}")),
+    }
+    cookies.remove(Cookie::build(SSO_BINDING_COOKIE).path("/identity/connect/").build());
+
     sso_auth.code_response = Some(code_response);
     sso_auth.updated_at = Utc::now().naive_utc();
     sso_auth.save(conn).await?;
@@ -1225,7 +1244,7 @@ struct AuthorizeData {
 
 // The `redirect_uri` will change depending of the client (web, android, ios ..)
 #[get("/connect/authorize?<data..>")]
-async fn authorize(data: AuthorizeData, conn: DbConn) -> ApiResult<Redirect> {
+async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure, conn: DbConn) -> ApiResult<Redirect> {
     let AuthorizeData {
         client_id,
         redirect_uri,
@@ -1239,7 +1258,23 @@ async fn authorize(data: AuthorizeData, conn: DbConn) -> ApiResult<Redirect> {
         err!("Unsupported code challenge method");
     }
 
-    let auth_url = sso::authorize_url(state, code_challenge, &client_id, &redirect_uri, conn).await?;
+    // Generate browser-binding token. Stored hashed in DB; raw value handed to the browser as a cookie.
+    // Validated on /connect/oidc-signin
+    let binding_token = data_encoding::BASE64URL_NOPAD.encode(&crypto::get_random_bytes::<32>());
+    let binding_hash = crypto::sha256_hex(binding_token.as_bytes());
+
+    let auth_url =
+        sso::authorize_url(state, code_challenge, &client_id, &redirect_uri, Some(binding_hash), conn).await?;
+
+    cookies.add(
+        Cookie::build((SSO_BINDING_COOKIE, binding_token))
+            .path("/identity/connect/")
+            .max_age(time::Duration::seconds(sso::SSO_AUTH_EXPIRATION.num_seconds()))
+            .same_site(SameSite::Lax) // Lax is needed because the IdP runs on a different FQDN
+            .http_only(true)
+            .secure(secure.https)
+            .build(),
+    );
 
     Ok(Redirect::temporary(String::from(auth_url)))
 }
