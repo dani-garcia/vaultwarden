@@ -3,7 +3,10 @@ use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
 use std::{env::consts::EXE_SUFFIX, str::FromStr};
 
 use lettre::{
-    message::{Attachment, Body, Mailbox, Message, MultiPart, SinglePart},
+    message::{
+        dkim::{DkimConfig, DkimSigningAlgorithm, DkimSigningKey},
+        dkim_sign, Attachment, Body, Mailbox, Message, MultiPart, SinglePart,
+    },
     transport::smtp::authentication::{Credentials, Mechanism as SmtpAuthMechanism},
     transport::smtp::client::{Tls, TlsParameters},
     transport::smtp::extension::ClientId,
@@ -703,7 +706,41 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
         }
     }
 }
-
+pub fn check_dkim() -> Result<Option<DkimConfig>, String> {
+    match (CONFIG.dkim_signature(), CONFIG.dkim_infos()) {
+        (Some(sig), Some(infos)) => {
+            let config = {
+                let algo = if CONFIG.dkim_use_rsa() {DkimSigningAlgorithm::Rsa } else { DkimSigningAlgorithm::Ed25519 };
+                let sig = match std::fs::read_to_string(sig) {
+                    Err(e) => {
+                        return Err(format!("Cannot read DKIM key. Err is {:?}", e));
+                    }
+                    Ok(key) => match DkimSigningKey::new(&key, algo) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            return Err(format!("DKIM key is invalid. Err is {:?}", e));
+                        }
+                    },
+                };
+                match (sig, infos.split(':').collect::<Vec<&str>>()) {
+                    (sig, split2) if split2.len() == 2 => {
+                        let (selector, domain, sig) =
+                            (String::from(*split2.first().unwrap()), String::from(*split2.last().unwrap()), sig);
+                        (selector, domain, sig)
+                    }
+                    _ => {
+                        return Err("DKIM issue, invalid domain, selector.".to_string());
+                    }
+                }
+            };
+            Ok(Some(DkimConfig::default_config(config.0, config.1, config.2)))
+        }
+        (None, None) => Ok(None),
+        _ => {
+            Err("DKIM setting is badly implemented. One config is missing (DKIM signature or DKIM infos).".to_string())
+        }
+    }
+}
 async fn send_email(address: &str, subject: &str, body_html: String, body_text: String) -> EmptyResult {
     let smtp_from = Address::from_str(&CONFIG.smtp_from())?;
 
@@ -726,12 +763,14 @@ async fn send_email(address: &str, subject: &str, body_html: String, body_text: 
         MultiPart::alternative_plain_html(body_text, body_html)
     };
 
-    let email = Message::builder()
+    let mut email = Message::builder()
         .message_id(Some(format!("<{}@{}>", crate::util::get_uuid(), smtp_from.domain())))
         .to(Mailbox::new(None, Address::from_str(address)?))
         .from(Mailbox::new(Some(CONFIG.smtp_from_name()), smtp_from))
         .subject(subject)
         .multipart(body)?;
-
+    if let Ok(Some(sig)) = check_dkim() {
+        dkim_sign(&mut email, &sig);
+    }
     send_with_selected_transport(email).await
 }
