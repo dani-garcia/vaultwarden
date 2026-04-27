@@ -64,43 +64,43 @@ async fn login(
 
     let login_result = match data.grant_type.as_ref() {
         "refresh_token" => {
-            _check_is_some(&data.refresh_token, "refresh_token cannot be blank")?;
+            _check_is_some(data.refresh_token.as_ref(), "refresh_token cannot be blank")?;
             _refresh_login(data, &conn, &client_header.ip).await
         }
         "password" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
         "password" => {
-            _check_is_some(&data.client_id, "client_id cannot be blank")?;
-            _check_is_some(&data.password, "password cannot be blank")?;
-            _check_is_some(&data.scope, "scope cannot be blank")?;
-            _check_is_some(&data.username, "username cannot be blank")?;
+            _check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
+            _check_is_some(data.password.as_ref(), "password cannot be blank")?;
+            _check_is_some(data.scope.as_ref(), "scope cannot be blank")?;
+            _check_is_some(data.username.as_ref(), "username cannot be blank")?;
 
-            _check_is_some(&data.device_identifier, "device_identifier cannot be blank")?;
-            _check_is_some(&data.device_name, "device_name cannot be blank")?;
-            _check_is_some(&data.device_type, "device_type cannot be blank")?;
+            _check_is_some(data.device_identifier.as_ref(), "device_identifier cannot be blank")?;
+            _check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
+            _check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
-            _password_login(data, &mut user_id, &conn, &client_header.ip, &client_version).await
+            _password_login(data, &mut user_id, &conn, &client_header.ip, client_version.as_ref()).await
         }
         "client_credentials" => {
-            _check_is_some(&data.client_id, "client_id cannot be blank")?;
-            _check_is_some(&data.client_secret, "client_secret cannot be blank")?;
-            _check_is_some(&data.scope, "scope cannot be blank")?;
+            _check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
+            _check_is_some(data.client_secret.as_ref(), "client_secret cannot be blank")?;
+            _check_is_some(data.scope.as_ref(), "scope cannot be blank")?;
 
-            _check_is_some(&data.device_identifier, "device_identifier cannot be blank")?;
-            _check_is_some(&data.device_name, "device_name cannot be blank")?;
-            _check_is_some(&data.device_type, "device_type cannot be blank")?;
+            _check_is_some(data.device_identifier.as_ref(), "device_identifier cannot be blank")?;
+            _check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
+            _check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
             _api_key_login(data, &mut user_id, &conn, &client_header.ip).await
         }
         "authorization_code" if CONFIG.sso_enabled() => {
-            _check_is_some(&data.client_id, "client_id cannot be blank")?;
-            _check_is_some(&data.code, "code cannot be blank")?;
-            _check_is_some(&data.code_verifier, "code verifier cannot be blank")?;
+            _check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
+            _check_is_some(data.code.as_ref(), "code cannot be blank")?;
+            _check_is_some(data.code_verifier.as_ref(), "code verifier cannot be blank")?;
 
-            _check_is_some(&data.device_identifier, "device_identifier cannot be blank")?;
-            _check_is_some(&data.device_name, "device_name cannot be blank")?;
-            _check_is_some(&data.device_type, "device_type cannot be blank")?;
+            _check_is_some(data.device_identifier.as_ref(), "device_identifier cannot be blank")?;
+            _check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
+            _check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
-            _sso_login(data, &mut user_id, &conn, &client_header.ip, &client_version).await
+            _sso_login(data, &mut user_id, &conn, &client_header.ip, client_version.as_ref()).await
         }
         "authorization_code" => err!("SSO sign-in is not available"),
         t => err!("Invalid type", t),
@@ -176,7 +176,7 @@ async fn _sso_login(
     user_id: &mut Option<UserId>,
     conn: &DbConn,
     ip: &ClientIp,
-    client_version: &Option<ClientVersion>,
+    client_version: Option<&ClientVersion>,
 ) -> JsonResult {
     AuthMethod::Sso.check_scope(data.scope.as_ref())?;
 
@@ -319,7 +319,7 @@ async fn _password_login(
     user_id: &mut Option<UserId>,
     conn: &DbConn,
     ip: &ClientIp,
-    client_version: &Option<ClientVersion>,
+    client_version: Option<&ClientVersion>,
 ) -> JsonResult {
     // Validate scope
     AuthMethod::Password.check_scope(data.scope.as_ref())?;
@@ -733,7 +733,7 @@ async fn twofactor_auth(
     data: &ConnectData,
     device: &mut Device,
     ip: &ClientIp,
-    client_version: &Option<ClientVersion>,
+    client_version: Option<&ClientVersion>,
     conn: &DbConn,
 ) -> ApiResult<Option<String>> {
     let twofactors = TwoFactor::find_by_user(&user.uuid, conn).await;
@@ -878,7 +878,7 @@ async fn _json_err_twofactor(
     providers: &[i32],
     user_id: &UserId,
     data: &ConnectData,
-    client_version: &Option<ClientVersion>,
+    client_version: Option<&ClientVersion>,
     conn: &DbConn,
 ) -> ApiResult<Value> {
     let mut result = json!({
@@ -1108,7 +1108,7 @@ struct ConnectData {
     #[field(name = uncased("code_verifier"))]
     code_verifier: Option<OIDCCodeVerifier>,
 }
-fn _check_is_some<T>(value: &Option<T>, msg: &str) -> EmptyResult {
+fn _check_is_some<T>(value: Option<&T>, msg: &str) -> EmptyResult {
     if value.is_none() {
         err!(msg)
     }
