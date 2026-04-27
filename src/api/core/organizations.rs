@@ -907,36 +907,21 @@ async fn _get_org_details(
     Ok(json!(ciphers_json))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OrgDomainDetails {
-    email: String,
-}
-
 // Returning a Domain/Organization here allow to prefill it and prevent prompting the user
-// So we either return an Org name associated to the user or a dummy value.
+// So we return a dummy value, since we only support a single SSO integration, and do not use the response anywhere
 // In use since `v2025.6.0`, appears to use only the first `organizationIdentifier`
-#[post("/organizations/domain/sso/verified", data = "<data>")]
-async fn get_org_domain_sso_verified(data: Json<OrgDomainDetails>, conn: DbConn) -> JsonResult {
-    let data: OrgDomainDetails = data.into_inner();
-
-    let identifiers = match Organization::find_org_user_email(&data.email, &conn)
-        .await
-        .into_iter()
-        .map(|o| (o.name, o.uuid.to_string()))
-        .collect::<Vec<(String, String)>>()
-    {
-        v if !v.is_empty() => v,
-        _ => vec![(FAKE_SSO_IDENTIFIER.to_string(), FAKE_SSO_IDENTIFIER.to_string())],
-    };
-
+#[post("/organizations/domain/sso/verified")]
+fn get_org_domain_sso_verified() -> JsonResult {
+    // Always return a dummy value, no matter if SSO is enabled or not
     Ok(Json(json!({
         "object": "list",
-        "data": identifiers.into_iter().map(|(name, identifier)| json!({
-            "organizationName": name,           // appear unused
-            "organizationIdentifier": identifier,
-            "domainName": CONFIG.domain(),      // appear unused
-        })).collect::<Vec<Value>>()
+        "data": [{
+            "organizationIdentifier": FAKE_SSO_IDENTIFIER,
+            // These appear to be unused
+            "organizationName": FAKE_SSO_IDENTIFIER,
+            "domainName": CONFIG.domain()
+        }],
+        "continuationToken": null
     })))
 }
 
@@ -3049,10 +3034,7 @@ async fn put_reset_password_enrollment(
         err!("User to enroll isn't member of required organization", "The user_id and acting user do not match");
     }
 
-    let Some(mut membership) = Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, &conn).await
-    else {
-        err!("User to enroll isn't member of required organization")
-    };
+    let mut membership = headers.membership;
 
     check_reset_password_applicable(&org_id, &conn).await?;
 
