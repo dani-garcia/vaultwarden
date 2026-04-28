@@ -135,7 +135,7 @@ pub async fn register_push_device(device: &mut Device, conn: &DbConn) -> EmptyRe
     Ok(())
 }
 
-pub async fn unregister_push_device(push_id: &Option<PushId>) -> EmptyResult {
+pub async fn unregister_push_device(push_id: Option<&PushId>) -> EmptyResult {
     if !CONFIG.push_enabled() || push_id.is_none() {
         return Ok(());
     }
@@ -206,7 +206,7 @@ pub async fn push_logout(user: &User, acting_device: Option<&Device>, conn: &DbC
     }
 }
 
-pub async fn push_user_update(ut: UpdateType, user: &User, push_uuid: &Option<PushId>, conn: &DbConn) {
+pub async fn push_user_update(ut: UpdateType, user: &User, push_uuid: Option<&PushId>, conn: &DbConn) {
     if Device::check_user_has_push_device(&user.uuid, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": user.uuid,

@@ -137,7 +137,7 @@ struct KeysData {
 }
 
 /// Trims whitespace from password hints, and converts blank password hints to `None`.
-fn clean_password_hint(password_hint: &Option<String>) -> Option<String> {
+fn clean_password_hint(password_hint: Option<&String>) -> Option<String> {
     match password_hint {
         None => None,
         Some(h) => match h.trim() {
@@ -147,7 +147,7 @@ fn clean_password_hint(password_hint: &Option<String>) -> Option<String> {
     }
 }
 
-fn enforce_password_hint_setting(password_hint: &Option<String>) -> EmptyResult {
+fn enforce_password_hint_setting(password_hint: Option<&String>) -> EmptyResult {
     if password_hint.is_some() && !CONFIG.password_hints_allowed() {
         err!("Password hints have been disabled by the administrator. Remove the hint and try again.");
     }
@@ -245,8 +245,8 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, conn:
 
     // Check against the password hint setting here so if it fails, the user
     // can retry without losing their invitation below.
-    let password_hint = clean_password_hint(&data.master_password_hint);
-    enforce_password_hint_setting(&password_hint)?;
+    let password_hint = clean_password_hint(data.master_password_hint.as_ref());
+    enforce_password_hint_setting(password_hint.as_ref())?;
 
     let mut user = match User::find_by_mail(&email, &conn).await {
         Some(user) => {
@@ -353,8 +353,8 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
 
     // Check against the password hint setting here so if it fails,
     // the user can retry without losing their invitation below.
-    let password_hint = clean_password_hint(&data.master_password_hint);
-    enforce_password_hint_setting(&password_hint)?;
+    let password_hint = clean_password_hint(data.master_password_hint.as_ref());
+    enforce_password_hint_setting(password_hint.as_ref())?;
 
     set_kdf_data(&mut user, &data.kdf)?;
 
@@ -515,8 +515,8 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
         err!("Invalid password")
     }
 
-    user.password_hint = clean_password_hint(&data.master_password_hint);
-    enforce_password_hint_setting(&user.password_hint)?;
+    user.password_hint = clean_password_hint(data.master_password_hint.as_ref());
+    enforce_password_hint_setting(user.password_hint.as_ref())?;
 
     log_user_event(EventType::UserChangedPassword as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)
         .await;
@@ -1438,7 +1438,7 @@ async fn put_clear_device_token(device_id: DeviceId, conn: DbConn) -> EmptyResul
 
     if let Some(device) = Device::find_by_uuid(&device_id, &conn).await {
         Device::clear_push_token_by_uuid(&device_id, &conn).await?;
-        unregister_push_device(&device.push_uuid).await?;
+        unregister_push_device(device.push_uuid.as_ref()).await?;
     }
 
     Ok(())

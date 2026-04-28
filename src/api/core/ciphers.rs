@@ -630,7 +630,7 @@ async fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbC
 
     let mut user = headers.user;
     user.update_revision(&conn).await?;
-    nt.send_user_update(UpdateType::SyncVault, &user, &headers.device.push_uuid, &conn).await;
+    nt.send_user_update(UpdateType::SyncVault, &user, headers.device.push_uuid.as_ref(), &conn).await;
 
     Ok(())
 }
@@ -1005,7 +1005,7 @@ async fn put_cipher_share_selected(
     }
 
     // Multi share actions do not send out a push for each cipher, we need to send a general sync here
-    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, &conn).await;
+    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, headers.device.push_uuid.as_ref(), &conn).await;
 
     Ok(())
 }
@@ -1618,7 +1618,7 @@ async fn move_cipher_selected(
         .await;
     } else {
         // Multi move actions do not send out a push for each cipher, we need to send a general sync here
-        nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, &conn).await;
+        nt.send_user_update(UpdateType::SyncCiphers, &headers.user, headers.device.push_uuid.as_ref(), &conn).await;
     }
 
     if cipher_count != accessible_ciphers_count {
@@ -1670,7 +1670,7 @@ async fn purge_org_vault(
     match Membership::find_confirmed_by_user_and_org(&user.uuid, &organization.org_id, &conn).await {
         Some(member) if member.atype == MembershipType::Owner => {
             Cipher::delete_all_by_organization(&organization.org_id, &conn).await?;
-            nt.send_user_update(UpdateType::SyncVault, &user, &headers.device.push_uuid, &conn).await;
+            nt.send_user_update(UpdateType::SyncVault, &user, headers.device.push_uuid.as_ref(), &conn).await;
 
             log_event(
                 EventType::OrganizationPurgedVault as i32,
@@ -1710,7 +1710,7 @@ async fn purge_personal_vault(
     }
 
     user.update_revision(&conn).await?;
-    nt.send_user_update(UpdateType::SyncVault, &user, &headers.device.push_uuid, &conn).await;
+    nt.send_user_update(UpdateType::SyncVault, &user, headers.device.push_uuid.as_ref(), &conn).await;
 
     Ok(())
 }
@@ -1805,7 +1805,7 @@ async fn _delete_multiple_ciphers(
     }
 
     // Multi delete actions do not send out a push for each cipher, we need to send a general sync here
-    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, &conn).await;
+    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, headers.device.push_uuid.as_ref(), &conn).await;
 
     Ok(())
 }
@@ -1873,7 +1873,7 @@ async fn _restore_multiple_ciphers(
     }
 
     // Multi move actions do not send out a push for each cipher, we need to send a general sync here
-    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, conn).await;
+    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, headers.device.push_uuid.as_ref(), conn).await;
 
     Ok(Json(json!({
       "data": ciphers,

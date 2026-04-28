@@ -1463,7 +1463,7 @@ async fn _confirm_invite(
     let save_result = member_to_confirm.save(conn).await;
 
     if let Some(user) = User::find_by_uuid(&member_to_confirm.user_uuid, conn).await {
-        nt.send_user_update(UpdateType::SyncOrgKeys, &user, &headers.device.push_uuid, conn).await;
+        nt.send_user_update(UpdateType::SyncOrgKeys, &user, headers.device.push_uuid.as_ref(), conn).await;
     }
 
     save_result
@@ -1721,7 +1721,7 @@ async fn _delete_member(
     .await;
 
     if let Some(user) = User::find_by_uuid(&member_to_delete.user_uuid, conn).await {
-        nt.send_user_update(UpdateType::SyncOrgKeys, &user, &headers.device.push_uuid, conn).await;
+        nt.send_user_update(UpdateType::SyncOrgKeys, &user, headers.device.push_uuid.as_ref(), conn).await;
     }
 
     member_to_delete.delete(conn).await
