@@ -25,7 +25,7 @@ pub struct Device {
     pub user_uuid: UserId,
 
     pub name: String,
-    pub atype: i32, // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/Enums/DeviceType.cs
+    pub atype: i32, // https://github.com/bitwarden/server/blob/8d547dcc280babab70dd4a3c94ced6a34b12dfbf/src/Core/Enums/DeviceType.cs
     pub push_uuid: Option<PushId>,
     pub push_token: Option<String>,
 
@@ -332,6 +332,8 @@ pub enum DeviceType {
     MacOsCLI = 24,
     #[display("Linux CLI")]
     LinuxCLI = 25,
+    #[display("DuckDuckGo")]
+    DuckDuckGoBrowser = 26,
 }
 
 impl DeviceType {
@@ -363,6 +365,7 @@ impl DeviceType {
             23 => DeviceType::WindowsCLI,
             24 => DeviceType::MacOsCLI,
             25 => DeviceType::LinuxCLI,
+            26 => DeviceType::DuckDuckGoBrowser,
             _ => DeviceType::UnknownBrowser,
         }
     }
