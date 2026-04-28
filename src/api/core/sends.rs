@@ -574,7 +574,7 @@ async fn download_url(host: &Host, send_id: &SendId, file_id: &SendFileId) -> Re
 
         Ok(format!("{}/api/sends/{send_id}/{file_id}?t={token}", &host.host))
     } else {
-        Ok(operator.presign_read(&format!("{send_id}/{file_id}"), Duration::from_secs(5 * 60)).await?.uri().to_string())
+        Ok(operator.presign_read(&format!("{send_id}/{file_id}"), Duration::from_mins(5)).await?.uri().to_string())
     }
 }
 
