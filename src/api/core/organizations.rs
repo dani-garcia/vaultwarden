@@ -1979,7 +1979,7 @@ async fn list_policies_token(org_id: OrganizationId, token: &str, conn: DbConn) 
 }
 
 // Called during the SSO enrollment return the default policy
-#[get("/organizations/vaultwarden-dummy-oidc-identifier/policies/master-password", rank = 1)]
+#[get("/organizations/00000000-01DC-01DC-01DC-000000000000/policies/master-password", rank = 1)]
 fn get_dummy_master_password_policy() -> JsonResult {
     let (enabled, data) = match CONFIG.sso_master_password_policy_value() {
         Some(policy) if CONFIG.sso_enabled() => (true, policy.to_string()),
