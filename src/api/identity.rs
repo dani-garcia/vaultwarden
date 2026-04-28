@@ -41,6 +41,7 @@ pub fn routes() -> Vec<Route> {
     routes![
         login,
         prelogin,
+        prelogin_password,
         identity_register,
         register_verification_email,
         register_finish,
@@ -979,6 +980,11 @@ async fn _json_err_twofactor(
 
 #[post("/accounts/prelogin", data = "<data>")]
 async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
+    _prelogin(data, conn).await
+}
+
+#[post("/accounts/prelogin/password", data = "<data>")]
+async fn prelogin_password(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
     _prelogin(data, conn).await
 }
 
