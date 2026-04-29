@@ -1,7 +1,6 @@
 use std::{
     fmt,
     net::{IpAddr, SocketAddr},
-    str::FromStr,
     sync::{Arc, LazyLock, Mutex},
     time::Duration,
 };
@@ -59,16 +58,6 @@ pub fn get_reqwest_client_builder() -> ClientBuilder {
         .timeout(Duration::from_secs(10))
 }
 
-pub fn should_block_address(domain_or_ip: &str) -> bool {
-    if let Ok(ip) = IpAddr::from_str(domain_or_ip) {
-        if should_block_ip(ip) {
-            return true;
-        }
-    }
-
-    should_block_address_regex(domain_or_ip)
-}
-
 fn should_block_ip(ip: IpAddr) -> bool {
     if !CONFIG.http_request_block_non_global_ips() {
         return false;
@@ -100,11 +89,54 @@ fn should_block_address_regex(domain_or_ip: &str) -> bool {
     is_match
 }
 
-fn should_block_host(host: &Host<&str>) -> Result<(), CustomHttpClientError> {
+pub fn get_valid_host(host: &str) -> Result<Host, CustomHttpClientError> {
+    let Ok(host) = Host::parse(host) else {
+        return Err(CustomHttpClientError::Invalid {
+            domain: host.to_string(),
+        });
+    };
+
+    // Some extra checks to validate hosts
+    match host {
+        Host::Domain(ref domain) => {
+            // Host::parse() does not verify length or all possible invalid characters
+            // We do some extra checks here to prevent issues
+            if domain.len() > 253 {
+                debug!("Domain validation error: '{domain}' exceeds 253 characters");
+                return Err(CustomHttpClientError::Invalid {
+                    domain: host.to_string(),
+                });
+            }
+            if !domain.split('.').all(|label| {
+                !label.is_empty()
+                    // Labels can't be longer than 63 chars
+                    && label.len() <= 63
+                    // Labels are not allowed to start or end with a hyphen `-`
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    // Only ASCII Alphanumeric characters are allowed
+                    // We already received a punycoded domain back, so no unicode should exists here
+                    && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            }) {
+                debug!(
+                    "Domain validation error: '{domain}' labels contain invalid characters or exceed the maximum length"
+                );
+                return Err(CustomHttpClientError::Invalid {
+                    domain: host.to_string(),
+                });
+            }
+        }
+        Host::Ipv4(_) | Host::Ipv6(_) => {}
+    }
+
+    Ok(host)
+}
+
+pub fn should_block_host<S: AsRef<str>>(host: &Host<S>) -> Result<(), CustomHttpClientError> {
     let (ip, host_str): (Option<IpAddr>, String) = match host {
         Host::Ipv4(ip) => (Some(IpAddr::V4(*ip)), ip.to_string()),
         Host::Ipv6(ip) => (Some(IpAddr::V6(*ip)), ip.to_string()),
-        Host::Domain(d) => (None, (*d).to_string()),
+        Host::Domain(d) => (None, d.as_ref().to_string()),
     };
 
     if let Some(ip) = ip {
@@ -134,6 +166,9 @@ pub enum CustomHttpClientError {
         domain: Option<String>,
         ip: IpAddr,
     },
+    Invalid {
+        domain: String,
+    },
 }
 
 impl CustomHttpClientError {
@@ -155,7 +190,7 @@ impl fmt::Display for CustomHttpClientError {
         match self {
             Self::Blocked {
                 domain,
-            } => write!(f, "Blocked domain: {domain} matched HTTP_REQUEST_BLOCK_REGEX"),
+            } => write!(f, "Blocked domain: '{domain}' matched HTTP_REQUEST_BLOCK_REGEX"),
             Self::NonGlobalIp {
                 domain: Some(domain),
                 ip,
@@ -163,7 +198,10 @@ impl fmt::Display for CustomHttpClientError {
             Self::NonGlobalIp {
                 domain: None,
                 ip,
-            } => write!(f, "IP {ip} is not a global IP!"),
+            } => write!(f, "IP '{ip}' is not a global IP!"),
+            Self::Invalid {
+                domain,
+            } => write!(f, "Invalid host: '{domain}' contains invalid characters or exceeds the maximum length"),
         }
     }
 }
@@ -217,7 +255,13 @@ impl CustomDnsResolver {
 }
 
 fn pre_resolve(name: &str) -> Result<(), CustomHttpClientError> {
-    if should_block_address(name) {
+    let Ok(host) = get_valid_host(name) else {
+        return Err(CustomHttpClientError::Invalid {
+            domain: name.to_string(),
+        });
+    };
+
+    if should_block_host(&host).is_err() {
         return Err(CustomHttpClientError::Blocked {
             domain: name.to_string(),
         });
@@ -306,5 +350,211 @@ pub(crate) mod aws {
                 client: self.client.clone(),
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::is_global_hardcoded;
+    use std::net::Ipv4Addr;
+    use url::Host;
+
+    // ===
+    // IPv4 numeric-format normalization
+    fn parse_to_ip(s: &str) -> Option<IpAddr> {
+        match Host::parse(s).ok()? {
+            Host::Ipv4(v4) => Some(IpAddr::V4(v4)),
+            Host::Ipv6(v6) => Some(IpAddr::V6(v6)),
+            Host::Domain(_) => None,
+        }
+    }
+
+    #[test]
+    fn dotted_decimal_loopback_normalizes() {
+        let ip = parse_to_ip("127.0.0.1").unwrap();
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert!(!is_global_hardcoded(ip));
+    }
+
+    #[test]
+    fn single_decimal_loopback_normalizes() {
+        // 127.0.0.1 == 2130706433
+        let ip = parse_to_ip("2130706433").unwrap();
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert!(!is_global_hardcoded(ip));
+    }
+
+    #[test]
+    fn hex_loopback_normalizes() {
+        let ip = parse_to_ip("0x7f000001").unwrap();
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert!(!is_global_hardcoded(ip));
+    }
+
+    #[test]
+    fn dotted_hex_loopback_normalizes() {
+        let ip = parse_to_ip("0x7f.0.0.1").unwrap();
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert!(!is_global_hardcoded(ip));
+    }
+
+    #[test]
+    fn octal_loopback_normalizes() {
+        // 017700000001 == 127.0.0.1
+        let ip = parse_to_ip("017700000001").unwrap();
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert!(!is_global_hardcoded(ip));
+    }
+
+    #[test]
+    fn dotted_octal_loopback_normalizes() {
+        let ip = parse_to_ip("0177.0.0.01").unwrap();
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert!(!is_global_hardcoded(ip));
+    }
+
+    #[test]
+    fn aws_metadata_decimal_blocked() {
+        // 169.254.169.254 == 2852039166 (link-local, AWS IMDS)
+        let ip = parse_to_ip("2852039166").unwrap();
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)));
+        assert!(!is_global_hardcoded(ip));
+    }
+
+    #[test]
+    fn rfc1918_hex_blocked() {
+        // 10.0.0.1
+        let ip = parse_to_ip("0x0a000001").unwrap();
+        assert!(!is_global_hardcoded(ip));
+    }
+
+    #[test]
+    fn public_ip_decimal_allowed() {
+        // 8.8.8.8 == 134744072
+        let ip = parse_to_ip("134744072").unwrap();
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)));
+        assert!(is_global_hardcoded(ip));
+    }
+
+    // ===
+    // get_valid_host integration: numeric forms become Host::Ipv4
+    #[test]
+    fn get_valid_host_normalizes_decimal_int() {
+        let h = get_valid_host("2130706433").expect("valid");
+        assert!(matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::new(127, 0, 0, 1)));
+    }
+
+    #[test]
+    fn get_valid_host_normalizes_hex() {
+        let h = get_valid_host("0x7f000001").expect("valid");
+        assert!(matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::new(127, 0, 0, 1)));
+    }
+
+    #[test]
+    fn get_valid_host_normalizes_octal() {
+        let h = get_valid_host("017700000001").expect("valid");
+        assert!(matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::new(127, 0, 0, 1)));
+    }
+
+    // ===
+    // IPv6 formats
+    #[test]
+    fn ipv6_loopback_blocked() {
+        let h = get_valid_host("[::1]").expect("valid");
+        let Host::Ipv6(ip) = h else {
+            panic!("expected v6")
+        };
+        assert!(!is_global_hardcoded(IpAddr::V6(ip)));
+    }
+
+    #[test]
+    fn ipv4_mapped_in_ipv6_loopback_blocked() {
+        // ::ffff:127.0.0.1 — v4-mapped form; is_global_hardcoded blocks via ::ffff:0:0/96
+        let h = get_valid_host("[::ffff:127.0.0.1]").expect("valid");
+        let Host::Ipv6(ip) = h else {
+            panic!("expected v6")
+        };
+        assert!(!is_global_hardcoded(IpAddr::V6(ip)));
+    }
+
+    #[test]
+    fn ipv6_unique_local_blocked() {
+        let h = get_valid_host("[fc00::1]").expect("valid");
+        let Host::Ipv6(ip) = h else {
+            panic!("expected v6")
+        };
+        assert!(!is_global_hardcoded(IpAddr::V6(ip)));
+    }
+
+    // ===
+    // Punycode / IDN
+    #[test]
+    fn punycode_passthrough() {
+        let h = get_valid_host("xn--deadbeafcaf-lbb.test").expect("valid");
+        match h {
+            Host::Domain(d) => assert_eq!(d, "xn--deadbeafcaf-lbb.test"),
+            _ => panic!("expected domain"),
+        }
+    }
+
+    #[test]
+    fn idn_unicode_gets_punycoded() {
+        let h = get_valid_host("deadbeafcafé.test").expect("valid");
+        match h {
+            Host::Domain(d) => assert_eq!(d, "xn--deadbeafcaf-lbb.test"),
+            _ => panic!("expected domain"),
+        }
+    }
+
+    #[test]
+    fn idn_unicode_gets_punycoded_tld() {
+        let h = get_valid_host("deadbeaf.café").expect("valid");
+        match h {
+            Host::Domain(d) => assert_eq!(d, "deadbeaf.xn--caf-dma"),
+            _ => panic!("expected domain"),
+        }
+    }
+
+    #[test]
+    fn idn_emoji_gets_punycoded() {
+        let h = get_valid_host("xn--t88h.test").expect("valid"); // 🛡️.test
+        match h {
+            Host::Domain(d) => assert_eq!(d, "xn--t88h.test"),
+            _ => panic!("expected domain"),
+        }
+    }
+
+    #[test]
+    fn idn_unicode_to_punycode_roundtrip() {
+        let from_unicode = get_valid_host("🛡️.test").expect("valid");
+        let from_puny = get_valid_host("xn--t88h.test").expect("valid");
+        match (from_unicode, from_puny) {
+            (Host::Domain(a), Host::Domain(b)) => assert_eq!(a, b),
+            _ => panic!("expected domains"),
+        }
+    }
+
+    #[test]
+    fn invalid_punycode_rejected() {
+        // bare invalid punycode
+        assert!(get_valid_host("xn--").is_err());
+    }
+
+    #[test]
+    fn underscore_in_label_rejected() {
+        assert!(get_valid_host("dead_beaf.cafe").is_err());
+    }
+
+    #[test]
+    fn label_too_long_rejected() {
+        let label = "a".repeat(64);
+        assert!(get_valid_host(&format!("{label}.test")).is_err());
+    }
+
+    #[test]
+    fn domain_too_long_rejected() {
+        let big = "a.".repeat(130) + "test"; // > 253
+        assert!(get_valid_host(&big).is_err());
     }
 }
