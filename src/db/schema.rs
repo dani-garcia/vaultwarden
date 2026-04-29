@@ -265,6 +265,7 @@ table! {
         auth_response -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        binding_hash -> Nullable<Text>,
     }
 }
 
