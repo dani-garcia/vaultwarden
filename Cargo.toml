@@ -88,14 +88,14 @@ serde_json = "1.0.149"
 
 # A safe, extensible ORM and Query builder
 # Currently pinned diesel to v2.3.3 as newer version break MySQL/MariaDB compatibility
-diesel = { version = "2.3.7", features = ["chrono", "r2d2", "numeric"] }
-diesel_migrations = "2.3.1"
+diesel = { version = "2.3.8", features = ["chrono", "r2d2", "numeric"] }
+diesel_migrations = "2.3.2"
 
 derive_more = { version = "2.1.1", features = ["from", "into", "as_ref", "deref", "display"] }
 diesel-derive-newtype = "2.1.2"
 
 # Bundled/Static SQLite
-libsqlite3-sys = { version = "0.36.0", features = ["bundled"], optional = true }
+libsqlite3-sys = { version = "0.37.0", features = ["bundled"], optional = true }
 
 # Crypto-related libraries
 rand = "0.10.1"
@@ -114,7 +114,7 @@ time = "0.3.47"
 job_scheduler_ng = "2.4.0"
 
 # Data encoding library Hex/Base32/Base64
-data-encoding = "2.10.0"
+data-encoding = "2.11.0"
 
 # JWT library
 jsonwebtoken = { version = "10.3.0", features = ["use_pem", "rust_crypto"], default-features = false }
@@ -168,7 +168,7 @@ openssl = "0.10.78"
 pico-args = "0.5.0"
 
 # Macro ident concatenation
-pastey = "0.2.1"
+pastey = "0.2.2"
 governor = "0.10.4"
 
 # OIDC for SSO
@@ -188,7 +188,7 @@ which = "8.0.2"
 argon2 = "0.5.3"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
-rpassword = "7.4.0"
+rpassword = "7.5.1"
 
 # Loading a dynamic CSS Stylesheet
 grass_compiler = { version = "0.13.4", default-features = false }
