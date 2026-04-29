@@ -124,7 +124,7 @@ async fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: Db
 
     user.save(&conn).await?;
 
-    nt.send_user_update(UpdateType::SyncSettings, &user, &headers.device.push_uuid, &conn).await;
+    nt.send_user_update(UpdateType::SyncSettings, &user, headers.device.push_uuid.as_ref(), &conn).await;
 
     Ok(Json(json!({})))
 }
@@ -204,11 +204,11 @@ fn config() -> Json<Value> {
     // Client (v2026.2.1): https://github.com/bitwarden/clients/blob/f96380c3138291a028bdd2c7a5fee540d5c98ba5/libs/common/src/enums/feature-flag.enum.ts#L12
     // Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
     // iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
-    let feature_states = parse_experimental_client_feature_flags(
+    let mut feature_states = parse_experimental_client_feature_flags(
         &CONFIG.experimental_client_feature_flags(),
         FeatureFlagFilter::ValidOnly,
     );
-    // Add default feature_states here if needed, currently no features are needed by default.
+    feature_states.insert("pm-19148-innovation-archive".to_string(), true);
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns

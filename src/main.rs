@@ -561,6 +561,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
 
     // We install our own signal handlers below; disable Rocket's built-in handlers
     config.shutdown.ctrlc = false;
+    #[cfg(unix)]
     config.shutdown.signals.clear();
 
     config.temp_dir = canonicalize(CONFIG.tmp_folder()).unwrap().into();

@@ -38,7 +38,7 @@ static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
     let webauthn = WebauthnBuilder::new(&rp_id, &rp_origin)
         .expect("Creating WebauthnBuilder failed")
         .rp_name(&domain)
-        .timeout(Duration::from_millis(60000));
+        .timeout(Duration::from_mins(1));
 
     webauthn.build().expect("Building Webauthn failed")
 });

@@ -20,7 +20,8 @@ use crate::{
         DbConn,
     },
     mail,
-    util::{convert_json_key_lcase_first, get_uuid, NumberOrString},
+    sso::FAKE_SSO_IDENTIFIER,
+    util::{convert_json_key_lcase_first, NumberOrString},
     CONFIG,
 };
 
@@ -64,6 +65,7 @@ pub fn routes() -> Vec<Route> {
         post_org_import,
         list_policies,
         list_policies_token,
+        get_dummy_master_password_policy,
         get_master_password_policy,
         get_policy,
         put_policy,
@@ -99,6 +101,7 @@ pub fn routes() -> Vec<Route> {
         get_billing_metadata,
         get_billing_warnings,
         get_auto_enroll_status,
+        get_self_host_billing_metadata,
     ]
 }
 
@@ -353,7 +356,7 @@ async fn get_user_collections(headers: Headers, conn: DbConn) -> Json<Value> {
 // The returned `Id` will then be passed to `get_master_password_policy` which will mainly ignore it
 #[get("/organizations/<identifier>/auto-enroll-status")]
 async fn get_auto_enroll_status(identifier: &str, headers: Headers, conn: DbConn) -> JsonResult {
-    let org = if identifier == crate::sso::FAKE_IDENTIFIER {
+    let org = if identifier == FAKE_SSO_IDENTIFIER {
         match Membership::find_main_user_org(&headers.user.uuid, &conn).await {
             Some(member) => Organization::find_by_uuid(&member.org_uuid, &conn).await,
             None => None,
@@ -363,7 +366,7 @@ async fn get_auto_enroll_status(identifier: &str, headers: Headers, conn: DbConn
     };
 
     let (id, identifier, rp_auto_enroll) = match org {
-        None => (get_uuid(), identifier.to_string(), false),
+        None => (identifier.to_string(), identifier.to_string(), false),
         Some(org) => (
             org.uuid.to_string(),
             org.uuid.to_string(),
@@ -904,36 +907,21 @@ async fn _get_org_details(
     Ok(json!(ciphers_json))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OrgDomainDetails {
-    email: String,
-}
-
 // Returning a Domain/Organization here allow to prefill it and prevent prompting the user
-// So we either return an Org name associated to the user or a dummy value.
+// So we return a dummy value, since we only support a single SSO integration, and do not use the response anywhere
 // In use since `v2025.6.0`, appears to use only the first `organizationIdentifier`
-#[post("/organizations/domain/sso/verified", data = "<data>")]
-async fn get_org_domain_sso_verified(data: Json<OrgDomainDetails>, conn: DbConn) -> JsonResult {
-    let data: OrgDomainDetails = data.into_inner();
-
-    let identifiers = match Organization::find_org_user_email(&data.email, &conn)
-        .await
-        .into_iter()
-        .map(|o| (o.name, o.uuid.to_string()))
-        .collect::<Vec<(String, String)>>()
-    {
-        v if !v.is_empty() => v,
-        _ => vec![(crate::sso::FAKE_IDENTIFIER.to_string(), crate::sso::FAKE_IDENTIFIER.to_string())],
-    };
-
+#[post("/organizations/domain/sso/verified")]
+fn get_org_domain_sso_verified() -> JsonResult {
+    // Always return a dummy value, no matter if SSO is enabled or not
     Ok(Json(json!({
         "object": "list",
-        "data": identifiers.into_iter().map(|(name, identifier)| json!({
-            "organizationName": name,           // appear unused
-            "organizationIdentifier": identifier,
-            "domainName": CONFIG.domain(),      // appear unused
-        })).collect::<Vec<Value>>()
+        "data": [{
+            "organizationIdentifier": FAKE_SSO_IDENTIFIER,
+            // These appear to be unused
+            "organizationName": FAKE_SSO_IDENTIFIER,
+            "domainName": CONFIG.domain()
+        }],
+        "continuationToken": null
     })))
 }
 
@@ -1460,7 +1448,7 @@ async fn _confirm_invite(
     let save_result = member_to_confirm.save(conn).await;
 
     if let Some(user) = User::find_by_uuid(&member_to_confirm.user_uuid, conn).await {
-        nt.send_user_update(UpdateType::SyncOrgKeys, &user, &headers.device.push_uuid, conn).await;
+        nt.send_user_update(UpdateType::SyncOrgKeys, &user, headers.device.push_uuid.as_ref(), conn).await;
     }
 
     save_result
@@ -1718,7 +1706,7 @@ async fn _delete_member(
     .await;
 
     if let Some(user) = User::find_by_uuid(&member_to_delete.user_uuid, conn).await {
-        nt.send_user_update(UpdateType::SyncOrgKeys, &user, &headers.device.push_uuid, conn).await;
+        nt.send_user_update(UpdateType::SyncOrgKeys, &user, headers.device.push_uuid.as_ref(), conn).await;
     }
 
     member_to_delete.delete(conn).await
@@ -1905,7 +1893,7 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
             })
             .collect();
 
-    // Verify if all the collections requested exists and are writeable for the user, else abort
+    // Verify if all the collections requested exists and are writable for the user, else abort
     for collection_uuid in &data.collection_ids {
         match user_collections.get(collection_uuid) {
             Some(collection) if collection.is_writable_by_user(&headers.user.uuid, &conn).await => (),
@@ -1975,9 +1963,19 @@ async fn list_policies_token(org_id: OrganizationId, token: &str, conn: DbConn) 
     })))
 }
 
-// Called during the SSO enrollment.
-// Return the org policy if it exists, otherwise use the default one.
-#[get("/organizations/<org_id>/policies/master-password", rank = 1)]
+// Called during the SSO enrollment return the default policy
+#[get("/organizations/00000000-01DC-01DC-01DC-000000000000/policies/master-password", rank = 1)]
+fn get_dummy_master_password_policy() -> JsonResult {
+    let (enabled, data) = match CONFIG.sso_master_password_policy_value() {
+        Some(policy) if CONFIG.sso_enabled() => (true, policy.to_string()),
+        _ => (false, "null".to_string()),
+    };
+    let policy = OrgPolicy::new(FAKE_SSO_IDENTIFIER.into(), OrgPolicyType::MasterPassword, enabled, data);
+    Ok(Json(policy.to_json()))
+}
+
+// Called during the SSO enrollment return the org policy if it exists
+#[get("/organizations/<org_id>/policies/master-password", rank = 2)]
 async fn get_master_password_policy(org_id: OrganizationId, _headers: OrgMemberHeaders, conn: DbConn) -> JsonResult {
     let policy =
         OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::MasterPassword, &conn).await.unwrap_or_else(|| {
@@ -1992,7 +1990,7 @@ async fn get_master_password_policy(org_id: OrganizationId, _headers: OrgMemberH
     Ok(Json(policy.to_json()))
 }
 
-#[get("/organizations/<org_id>/policies/<pol_type>", rank = 2)]
+#[get("/organizations/<org_id>/policies/<pol_type>", rank = 3)]
 async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
@@ -2198,6 +2196,15 @@ fn get_billing_warnings(_org_id: OrganizationId, _headers: OrgMemberHeaders) -> 
         "inactiveSubscription":null,
         "resellerRenewal":null,
         "taxId":null,
+    }))
+}
+
+#[get("/organizations/<_org_id>/billing/vnext/self-host/metadata")]
+fn get_self_host_billing_metadata(_org_id: OrganizationId, _headers: OrgMemberHeaders) -> Json<Value> {
+    // Prevent a 404 error, which also causes Javascript errors.
+    Json(json!({
+        "isOnSecretsManagerStandalone": false, // Secrets Manager is not supported by Vaultwarden
+        "organizationOccupiedSeats": 0 // Vaultwarden does not count seats
     }))
 }
 
@@ -3027,10 +3034,7 @@ async fn put_reset_password_enrollment(
         err!("User to enroll isn't member of required organization", "The user_id and acting user do not match");
     }
 
-    let Some(mut membership) = Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, &conn).await
-    else {
-        err!("User to enroll isn't member of required organization")
-    };
+    let mut membership = headers.membership;
 
     check_reset_password_applicable(&org_id, &conn).await?;
 

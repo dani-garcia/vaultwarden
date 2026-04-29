@@ -1,6 +1,6 @@
 [workspace.package]
 edition = "2021"
-rust-version = "1.92.0"
+rust-version = "1.93.0"
 license = "AGPL-3.0-only"
 repository = "https://github.com/dani-garcia/vaultwarden"
 publish = false
@@ -81,7 +81,7 @@ dashmap = "6.1.0"
 
 # Async futures
 futures = "0.3.32"
-tokio = { version = "1.50.0", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio = { version = "1.52.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 tokio-util = { version = "0.7.18", features = ["compat"]}
 
 # A generic serialization/deserialization framework
@@ -90,22 +90,22 @@ serde_json = "1.0.149"
 
 # A safe, extensible ORM and Query builder
 # Currently pinned diesel to v2.3.3 as newer version break MySQL/MariaDB compatibility
-diesel = { version = "2.3.7", features = ["chrono", "r2d2", "numeric"] }
-diesel_migrations = "2.3.1"
+diesel = { version = "2.3.8", features = ["chrono", "r2d2", "numeric"] }
+diesel_migrations = "2.3.2"
 
 derive_more = { version = "2.1.1", features = ["from", "into", "as_ref", "deref", "display"] }
 diesel-derive-newtype = "2.1.2"
 
 # SQLite, statically bundled unless the `sqlite_system` feature is enabled
-libsqlite3-sys = { version = "0.36.0", optional = true }
+libsqlite3-sys = { version = "0.37.0", optional = true }
 
 # Crypto-related libraries
-rand = "0.10.0"
+rand = "0.10.1"
 ring = "0.17.14"
 subtle = "2.6.1"
 
 # UUID generation
-uuid = { version = "1.23.0", features = ["v4"] }
+uuid = { version = "1.23.1", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.44", features = ["clock", "serde"], default-features = false }
@@ -116,7 +116,7 @@ time = "0.3.47"
 job_scheduler_ng = "2.4.0"
 
 # Data encoding library Hex/Base32/Base64
-data-encoding = "2.10.0"
+data-encoding = "2.11.0"
 
 # JWT library
 jsonwebtoken = { version = "10.3.0", features = ["use_pem", "rust_crypto"], default-features = false }
@@ -138,7 +138,7 @@ webauthn-rs-core = "0.5.4"
 url = "2.5.8"
 
 # Email libraries
-lettre = { version = "0.11.20", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "hostname", "tracing", "tokio1-rustls", "ring", "rustls-native-certs"], default-features = false }
+lettre = { version = "0.11.21", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "hostname", "tracing", "tokio1-rustls", "ring", "rustls-native-certs"], default-features = false }
 percent-encoding = "2.3.2" # URL encoding library used for URL's in the emails
 email_address = "0.2.9"
 
@@ -147,7 +147,7 @@ handlebars = { version = "6.4.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
 reqwest = { version = "0.12.28", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
-hickory-resolver = "0.25.2"
+hickory-resolver = "0.26.0"
 
 # Favicon extraction libraries
 html5gum = "0.8.3"
@@ -164,13 +164,13 @@ cookie = "0.18.1"
 cookie_store = "0.22.1"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.76"
+openssl = "0.10.78"
 
 # CLI argument parsing
 pico-args = "0.5.0"
 
 # Macro ident concatenation
-pastey = "0.2.1"
+pastey = "0.2.2"
 governor = "0.10.4"
 
 # OIDC for SSO
@@ -178,11 +178,11 @@ openidconnect = { version = "4.0.1", features = ["reqwest", "rustls-tls"] }
 moka = { version = "0.12.15", features = ["future"] }
 
 # Check client versions for specific features.
-semver = "1.0.27"
+semver = "1.0.28"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.48", features = ["secure"], default-features = false, optional = true }
+mimalloc = { version = "0.1.50", features = ["secure"], default-features = false, optional = true }
 
 which = "8.0.2"
 
@@ -190,7 +190,7 @@ which = "8.0.2"
 argon2 = "0.5.3"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
-rpassword = "7.4.0"
+rpassword = "7.5.1"
 
 # Loading a dynamic CSS Stylesheet
 grass_compiler = { version = "0.13.4", default-features = false }
@@ -200,9 +200,9 @@ opendal = { version = "0.55.0", features = ["services-fs"], default-features = f
 
 # For retrieving AWS credentials, including temporary SSO credentials
 anyhow = { version = "1.0.102", optional = true }
-aws-config = { version = "1.8.15", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
+aws-config = { version = "1.8.16", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
 aws-credential-types = { version = "1.2.14", optional = true }
-aws-smithy-runtime-api = { version = "1.11.6", optional = true }
+aws-smithy-runtime-api = { version = "1.12.0", optional = true }
 http = { version = "1.4.0", optional = true }
 reqsign = { version = "0.16.5", optional = true }
 
@@ -303,6 +303,7 @@ branches_sharing_code = "deny"
 case_sensitive_file_extension_comparisons = "deny"
 cast_lossless = "deny"
 clone_on_ref_ptr = "deny"
+duration_suboptimal_units = "deny"
 equatable_if_let = "deny"
 excessive_precision = "deny"
 filter_map_next = "deny"
@@ -324,6 +325,7 @@ needless_continue = "deny"
 needless_lifetimes = "deny"
 option_option = "deny"
 redundant_clone = "deny"
+ref_option = "deny"
 string_add_assign = "deny"
 unnecessary_join = "deny"
 unnecessary_self_imports = "deny"
