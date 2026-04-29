@@ -265,6 +265,7 @@ table! {
         auth_response -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        binding_hash -> Nullable<Text>,
     }
 }
 
@@ -341,6 +342,16 @@ table! {
     }
 }
 
+table! {
+    archives (user_uuid, cipher_uuid) {
+        user_uuid -> Text,
+        cipher_uuid -> Text,
+        archived_at -> Timestamp,
+    }
+}
+
+joinable!(archives -> users (user_uuid));
+joinable!(archives -> ciphers (cipher_uuid));
 joinable!(attachments -> ciphers (cipher_uuid));
 joinable!(ciphers -> organizations (organization_uuid));
 joinable!(ciphers -> users (user_uuid));
@@ -372,6 +383,7 @@ joinable!(auth_requests -> users (user_uuid));
 joinable!(sso_users -> users (user_uuid));
 
 allow_tables_to_appear_in_same_query!(
+    archives,
     attachments,
     ciphers,
     ciphers_collections,

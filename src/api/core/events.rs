@@ -240,7 +240,7 @@ async fn _log_user_event(
     ip: &IpAddr,
     conn: &DbConn,
 ) {
-    let memberships = Membership::find_by_user(user_id, conn).await;
+    let memberships = Membership::find_confirmed_by_user(user_id, conn).await;
     let mut events: Vec<Event> = Vec::with_capacity(memberships.len() + 1); // We need an event per org and one without an org
 
     // Upstream saves the event also without any org_id.

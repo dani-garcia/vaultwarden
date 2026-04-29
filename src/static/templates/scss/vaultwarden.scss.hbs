@@ -137,6 +137,14 @@ bit-nav-logo bit-nav-item .bwi-shield {
 app-user-layout app-danger-zone button:nth-child(1) {
   @extend %vw-hide;
 }
+
+/* Hide unsupported Forwarding email alias options */
+ng-dropdown-panel div.ng-dropdown-panel-items div:has(> [title="Firefox Relay"]) {
+  @extend %vw-hide;
+}
+ng-dropdown-panel div.ng-dropdown-panel-items div:has(> [title="DuckDuckGo"]) {
+  @extend %vw-hide;
+}
 /**** END Static Vaultwarden Changes ****/
 /**** START Dynamic Vaultwarden Changes ****/
 {{#if signup_disabled}}

@@ -387,7 +387,6 @@ pub mod models;
 #[cfg(sqlite)]
 pub fn backup_sqlite() -> Result<String, Error> {
     use diesel::Connection;
-    use std::{fs::File, io::Write};
 
     let db_url = CONFIG.database_url();
     if DbConnType::from_url(&CONFIG.database_url()).map(|t| t == DbConnType::Sqlite).unwrap_or(false) {
@@ -401,16 +400,13 @@ pub fn backup_sqlite() -> Result<String, Error> {
             .to_string_lossy()
             .into_owned();
 
-        match File::create(backup_file.clone()) {
-            Ok(mut f) => {
-                let serialized_db = conn.serialize_database_to_buffer();
-                f.write_all(serialized_db.as_slice()).expect("Error writing SQLite backup");
-                Ok(backup_file)
-            }
-            Err(e) => {
-                err_silent!(format!("Unable to save SQLite backup: {e:?}"))
-            }
-        }
+        diesel::sql_query("VACUUM INTO ?")
+            .bind::<diesel::sql_types::Text, _>(&backup_file)
+            .execute(&mut conn)
+            .map(|_| ())
+            .map_res("VACUUM INTO failed")?;
+
+        Ok(backup_file)
     } else {
         err_silent!("The database type is not SQLite. Backups only works for SQLite databases")
     }

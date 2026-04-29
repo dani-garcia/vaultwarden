@@ -1,6 +1,6 @@
 use chrono::{NaiveDateTime, Utc};
 
-use data_encoding::{BASE64, BASE64URL};
+use data_encoding::BASE64URL;
 use derive_more::{Display, From};
 use serde_json::Value;
 
@@ -25,7 +25,7 @@ pub struct Device {
     pub user_uuid: UserId,
 
     pub name: String,
-    pub atype: i32, // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/Enums/DeviceType.cs
+    pub atype: i32, // https://github.com/bitwarden/server/blob/8d547dcc280babab70dd4a3c94ced6a34b12dfbf/src/Core/Enums/DeviceType.cs
     pub push_uuid: Option<PushId>,
     pub push_token: Option<String>,
 
@@ -49,9 +49,14 @@ impl Device {
 
             push_uuid: Some(PushId(get_uuid())),
             push_token: None,
-            refresh_token: crypto::encode_random_bytes::<64>(&BASE64URL),
+            refresh_token: Device::generate_refresh_token(),
             twofactor_remember: None,
         }
+    }
+
+    #[inline(always)]
+    pub fn generate_refresh_token() -> String {
+        crypto::encode_random_bytes::<64>(&BASE64URL)
     }
 
     pub fn to_json(&self) -> Value {
@@ -67,10 +72,13 @@ impl Device {
     }
 
     pub fn refresh_twofactor_remember(&mut self) -> String {
-        let twofactor_remember = crypto::encode_random_bytes::<180>(&BASE64);
-        self.twofactor_remember = Some(twofactor_remember.clone());
+        use crate::auth::{encode_jwt, generate_2fa_remember_claims};
 
-        twofactor_remember
+        let two_factor_remember_claim = generate_2fa_remember_claims(self.uuid.clone(), self.user_uuid.clone());
+        let two_factor_remember_string = encode_jwt(&two_factor_remember_claim);
+        self.twofactor_remember = Some(two_factor_remember_string.clone());
+
+        two_factor_remember_string
     }
 
     pub fn delete_twofactor_remember(&mut self) {
@@ -257,6 +265,17 @@ impl Device {
             .unwrap_or(0) != 0
         }}
     }
+
+    pub async fn rotate_refresh_tokens_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+        // Generate a new token per device.
+        // We cannot do a single UPDATE with one value because each device needs a unique token.
+        let devices = Self::find_by_user(user_uuid, conn).await;
+        for mut device in devices {
+            device.refresh_token = Device::generate_refresh_token();
+            device.save(false, conn).await?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Display)]
@@ -313,6 +332,8 @@ pub enum DeviceType {
     MacOsCLI = 24,
     #[display("Linux CLI")]
     LinuxCLI = 25,
+    #[display("DuckDuckGo")]
+    DuckDuckGoBrowser = 26,
 }
 
 impl DeviceType {
@@ -344,6 +365,7 @@ impl DeviceType {
             23 => DeviceType::WindowsCLI,
             24 => DeviceType::MacOsCLI,
             25 => DeviceType::LinuxCLI,
+            26 => DeviceType::DuckDuckGoBrowser,
             _ => DeviceType::UnknownBrowser,
         }
     }
