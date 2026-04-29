@@ -2064,7 +2064,7 @@ async fn archive_multiple_ciphers(
     }
 
     // Multi archive does not send out a push for each cipher, we need to send a general sync here
-    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, conn).await;
+    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, headers.device.push_uuid.as_ref(), conn).await;
 
     Ok(Json(json!({
       "data": ciphers,
@@ -2090,7 +2090,7 @@ async fn unarchive_multiple_ciphers(
     }
 
     // Multi unarchive does not send out a push for each cipher, we need to send a general sync here
-    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, &headers.device.push_uuid, conn).await;
+    nt.send_user_update(UpdateType::SyncCiphers, &headers.user, headers.device.push_uuid.as_ref(), conn).await;
 
     Ok(Json(json!({
       "data": ciphers,
