@@ -20,7 +20,6 @@ pub struct TwoFactor {
     pub last_used: i64,
 }
 
-#[allow(dead_code)]
 #[derive(num_derive::FromPrimitive)]
 pub enum TwoFactorType {
     Authenticator = 0,

@@ -514,7 +514,8 @@ impl Membership {
             "familySponsorshipValidUntil": null,
             "familySponsorshipToDelete": null,
             "accessSecretsManager": false,
-            "limitCollectionCreation": self.atype < MembershipType::Manager, // If less then a manager return true, to limit collection creations
+            // limit collection creation to managers with access_all permission to prevent issues
+            "limitCollectionCreation": self.atype < MembershipType::Manager || !self.access_all,
             "limitCollectionDeletion": true,
             "limitItemDeletion": false,
             "allowAdminAccessToAllCollectionItems": true,
@@ -1073,7 +1074,9 @@ impl Membership {
             .left_join(collections_groups::table.on(
                 collections_groups::groups_uuid.eq(groups_users::groups_uuid)
             ))
-            .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)))
+            .left_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)
+                .and(groups::organizations_uuid.eq(users_organizations::org_uuid))
+            ))
             .left_join(ciphers_collections::table.on(
                     ciphers_collections::collection_uuid.eq(collections_groups::collections_uuid).and(ciphers_collections::cipher_uuid.eq(&cipher_uuid))
 

@@ -38,7 +38,7 @@ static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
     let webauthn = WebauthnBuilder::new(&rp_id, &rp_origin)
         .expect("Creating WebauthnBuilder failed")
         .rp_name(&domain)
-        .timeout(Duration::from_millis(60000));
+        .timeout(Duration::from_mins(1));
 
     webauthn.build().expect("Building Webauthn failed")
 });
@@ -108,8 +108,8 @@ impl WebauthnRegistration {
 
 #[post("/two-factor/get-webauthn", data = "<data>")]
 async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
-    if !CONFIG.domain_set() {
-        err!("`DOMAIN` environment variable is not set. Webauthn disabled")
+    if !CONFIG.is_webauthn_2fa_supported() {
+        err!("Configured `DOMAIN` is not compatible with Webauthn")
     }
 
     let data: PasswordOrOtpData = data.into_inner();

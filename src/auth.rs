@@ -46,6 +46,7 @@ static JWT_FILE_DOWNLOAD_ISSUER: LazyLock<String> =
     LazyLock::new(|| format!("{}|file_download", CONFIG.domain_origin()));
 static JWT_REGISTER_VERIFY_ISSUER: LazyLock<String> =
     LazyLock::new(|| format!("{}|register_verify", CONFIG.domain_origin()));
+static JWT_2FA_REMEMBER_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|2faremember", CONFIG.domain_origin()));
 
 static PRIVATE_RSA_KEY: OnceLock<EncodingKey> = OnceLock::new();
 static PUBLIC_RSA_KEY: OnceLock<DecodingKey> = OnceLock::new();
@@ -158,6 +159,10 @@ pub fn decode_file_download(token: &str) -> Result<FileDownloadClaims, Error> {
 
 pub fn decode_register_verify(token: &str) -> Result<RegisterVerifyClaims, Error> {
     decode_jwt(token, JWT_REGISTER_VERIFY_ISSUER.to_string())
+}
+
+pub fn decode_2fa_remember(token: &str) -> Result<TwoFactorRememberClaims, Error> {
+    decode_jwt(token, JWT_2FA_REMEMBER_ISSUER.to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -440,6 +445,31 @@ pub fn generate_register_verify_claims(email: String, name: Option<String>, veri
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct TwoFactorRememberClaims {
+    // Not before
+    pub nbf: i64,
+    // Expiration time
+    pub exp: i64,
+    // Issuer
+    pub iss: String,
+    // Subject
+    pub sub: DeviceId,
+    // UserId
+    pub user_uuid: UserId,
+}
+
+pub fn generate_2fa_remember_claims(device_uuid: DeviceId, user_uuid: UserId) -> TwoFactorRememberClaims {
+    let time_now = Utc::now();
+    TwoFactorRememberClaims {
+        nbf: time_now.timestamp(),
+        exp: (time_now + TimeDelta::try_days(30).unwrap()).timestamp(),
+        iss: JWT_2FA_REMEMBER_ISSUER.to_string(),
+        sub: device_uuid,
+        user_uuid,
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BasicJwtClaims {
     // Not before
@@ -674,10 +704,9 @@ pub struct OrgHeaders {
 
 impl OrgHeaders {
     fn is_member(&self) -> bool {
-        // NOTE: we don't care about MembershipStatus at the moment because this is only used
-        // where an invited, accepted or confirmed user is expected if this ever changes or
-        // if from_i32 is changed to return Some(Revoked) this check needs to be changed accordingly
-        self.membership_type >= MembershipType::User
+        // Only allow not revoked members, we can not use the Confirmed status here
+        // as some endpoints can be triggered by invited users during joining
+        self.membership_status != MembershipStatus::Revoked && self.membership_type >= MembershipType::User
     }
     fn is_confirmed_and_admin(&self) -> bool {
         self.membership_status == MembershipStatus::Confirmed && self.membership_type >= MembershipType::Admin
@@ -690,6 +719,36 @@ impl OrgHeaders {
     }
 }
 
+// org_id is usually the second path param ("/organizations/<org_id>"),
+// but there are cases where it is a query value.
+// First check the path, if this is not a valid uuid, try the query values.
+fn get_org_id(request: &Request<'_>) -> Option<OrganizationId> {
+    if let Some(Ok(org_id)) = request.param::<OrganizationId>(1) {
+        Some(org_id)
+    } else if let Some(Ok(org_id)) = request.query_value::<OrganizationId>("organizationId") {
+        Some(org_id)
+    } else {
+        None
+    }
+}
+
+// Special Guard to ensure that there is an organization id present
+// If there is no org id trigger the Outcome::Forward.
+// This is useful for endpoints which work for both organization and personal vaults, like purge.
+pub struct OrgIdGuard;
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for OrgIdGuard {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        match get_org_id(request) {
+            Some(_) => Outcome::Success(OrgIdGuard),
+            None => Outcome::Forward(rocket::http::Status::NotFound),
+        }
+    }
+}
+
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for OrgHeaders {
     type Error = &'static str;
@@ -697,18 +756,8 @@ impl<'r> FromRequest<'r> for OrgHeaders {
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(Headers::from_request(request).await);
 
-        // org_id is usually the second path param ("/organizations/<org_id>"),
-        // but there are cases where it is a query value.
-        // First check the path, if this is not a valid uuid, try the query values.
-        let url_org_id: Option<OrganizationId> = {
-            if let Some(Ok(org_id)) = request.param::<OrganizationId>(1) {
-                Some(org_id)
-            } else if let Some(Ok(org_id)) = request.query_value::<OrganizationId>("organizationId") {
-                Some(org_id)
-            } else {
-                None
-            }
-        };
+        // Extract the org_id from the request
+        let url_org_id = get_org_id(request);
 
         match url_org_id {
             Some(org_id) if uuid::Uuid::parse_str(&org_id).is_ok() => {

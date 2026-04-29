@@ -85,7 +85,8 @@ impl EmergencyAccess {
     pub async fn to_json_grantee_details(&self, conn: &DbConn) -> Option<Value> {
         let grantee_user = if let Some(grantee_uuid) = &self.grantee_uuid {
             User::find_by_uuid(grantee_uuid, conn).await.expect("Grantee user not found.")
-        } else if let Some(email) = self.email.as_deref() {
+        } else {
+            let email = self.email.as_deref()?;
             match User::find_by_mail(email, conn).await {
                 Some(user) => user,
                 None => {
@@ -94,8 +95,6 @@ impl EmergencyAccess {
                     return None;
                 }
             }
-        } else {
-            return None;
         };
 
         Some(json!({
