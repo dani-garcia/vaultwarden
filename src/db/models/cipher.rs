@@ -403,7 +403,7 @@ impl Cipher {
             3 => "card",
             4 => "identity",
             5 => "sshKey",
-            _ => panic!("Wrong type"),
+            _ => err!(format!("Cipher {} has an invalid type {}", self.uuid, self.atype)),
         };
 
         json_object[key] = type_data_json;
