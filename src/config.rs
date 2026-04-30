@@ -1238,7 +1238,10 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                     err!(format!("The configured Argon2 PHC in `ADMIN_TOKEN` is invalid: '{e}'"))
                 }
             }
-            Some(_) => {
+            Some(t) => {
+                if t.trim().len() < 20 {
+                    err!("`ADMIN_TOKEN` is too short. Please use a token with at least 20 characters, or use an Argon2 PHC string.");
+                }
                 println!(
                     "[NOTICE] You are using a plain text `ADMIN_TOKEN` which is insecure.\n\
                 Please generate a secure Argon2 PHC string by using `vaultwarden hash` or `argon2`.\n\
