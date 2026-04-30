@@ -19,15 +19,15 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2026.3.1
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2026.3.1
-#     [docker.io/vaultwarden/web-vault@sha256:c1b1f212333f95bff4ef8d00e8e3589c4ae8eda018691f28f8bddc7e971dd767]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2026.4.1
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2026.4.1
+#     [docker.io/vaultwarden/web-vault@sha256:ca2a4251c4e63c9ad428262b4dd452789a1b9f6fce71da351e93dceed0d2edbe]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:c1b1f212333f95bff4ef8d00e8e3589c4ae8eda018691f28f8bddc7e971dd767
-#     [docker.io/vaultwarden/web-vault:v2026.3.1]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:ca2a4251c4e63c9ad428262b4dd452789a1b9f6fce71da351e93dceed0d2edbe
+#     [docker.io/vaultwarden/web-vault:v2026.4.1]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:c1b1f212333f95bff4ef8d00e8e3589c4ae8eda018691f28f8bddc7e971dd767 AS vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:ca2a4251c4e63c9ad428262b4dd452789a1b9f6fce71da351e93dceed0d2edbe AS vault
 
 ########################## ALPINE BUILD IMAGES ##########################
 ## NOTE: The Alpine Base Images do not support other platforms then linux/amd64 and linux/arm64
