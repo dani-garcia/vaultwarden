@@ -17,7 +17,7 @@ use crate::{
     CONFIG,
 };
 
-pub static FAKE_SSO_IDENTIFIER: &str = "vaultwarden-dummy-oidc-identifier";
+pub static FAKE_SSO_IDENTIFIER: &str = "00000000-01DC-01DC-01DC-000000000000";
 
 static SSO_JWT_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|sso", CONFIG.domain_origin()));
 
@@ -188,6 +188,7 @@ pub async fn authorize_url(
     client_challenge: OIDCCodeChallenge,
     client_id: &str,
     raw_redirect_uri: &str,
+    binding_hash: Option<String>,
     conn: DbConn,
 ) -> ApiResult<Url> {
     let redirect_uri = match client_id {
@@ -203,7 +204,7 @@ pub async fn authorize_url(
         _ => err!(format!("Unsupported client {client_id}")),
     };
 
-    let (auth_url, sso_auth) = Client::authorize_url(state, client_challenge, redirect_uri).await?;
+    let (auth_url, sso_auth) = Client::authorize_url(state, client_challenge, redirect_uri, binding_hash).await?;
     sso_auth.save(&conn).await?;
     Ok(auth_url)
 }
@@ -283,7 +284,7 @@ pub async fn exchange_code(
 
     let email_verified = id_claims.email_verified().or(user_info.email_verified());
 
-    let user_name = id_claims.preferred_username().map(|un| un.to_string());
+    let user_name = id_claims.preferred_username().or(user_info.preferred_username()).map(|un| un.to_string());
 
     let refresh_token = token_response.refresh_token().map(|t| t.secret());
     if refresh_token.is_none() && CONFIG.sso_scopes_vec().contains(&"offline_access".to_string()) {

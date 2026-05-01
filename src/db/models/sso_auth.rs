@@ -54,11 +54,18 @@ pub struct SsoAuth {
     pub auth_response: Option<OIDCAuthenticatedUser>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub binding_hash: Option<String>,
 }
 
 /// Local methods
 impl SsoAuth {
-    pub fn new(state: OIDCState, client_challenge: OIDCCodeChallenge, nonce: String, redirect_uri: String) -> Self {
+    pub fn new(
+        state: OIDCState,
+        client_challenge: OIDCCodeChallenge,
+        nonce: String,
+        redirect_uri: String,
+        binding_hash: Option<String>,
+    ) -> Self {
         let now = Utc::now().naive_utc();
 
         SsoAuth {
@@ -70,6 +77,7 @@ impl SsoAuth {
             updated_at: now,
             code_response: None,
             auth_response: None,
+            binding_hash,
         }
     }
 }

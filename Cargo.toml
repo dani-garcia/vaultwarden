@@ -23,15 +23,17 @@ publish.workspace = true
 
 [features]
 default = [
-    # "sqlite",
+    # "sqlite" or "sqlite_system",
     # "mysql",
     # "postgresql",
 ]
 # Empty to keep compatibility, prefer to set USE_SYSLOG=true
 enable_syslog = []
+# Please enable at least one of these DB backends.
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
 postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
-sqlite = ["diesel/sqlite", "diesel_migrations/sqlite", "dep:libsqlite3-sys"]
+sqlite_system = ["diesel/sqlite", "diesel_migrations/sqlite"]
+sqlite = ["sqlite_system", "libsqlite3-sys/bundled"] # Alternative to the above, statically linked SQLite into the binary instead of dynamically.
 # Enable to use a vendored and statically linked openssl
 vendored_openssl = ["openssl/vendored"]
 # Enable MiMalloc memory allocator to replace the default malloc
@@ -88,14 +90,14 @@ serde_json = "1.0.149"
 
 # A safe, extensible ORM and Query builder
 # Currently pinned diesel to v2.3.3 as newer version break MySQL/MariaDB compatibility
-diesel = { version = "2.3.7", features = ["chrono", "r2d2", "numeric"] }
-diesel_migrations = "2.3.1"
+diesel = { version = "2.3.9", features = ["chrono", "r2d2", "numeric"] }
+diesel_migrations = "2.3.2"
 
 derive_more = { version = "2.1.1", features = ["from", "into", "as_ref", "deref", "display"] }
 diesel-derive-newtype = "2.1.2"
 
-# Bundled/Static SQLite
-libsqlite3-sys = { version = "0.36.0", features = ["bundled"], optional = true }
+# SQLite, statically bundled unless the `sqlite_system` feature is enabled
+libsqlite3-sys = { version = "0.37.0", optional = true }
 
 # Crypto-related libraries
 rand = "0.10.1"
@@ -114,7 +116,7 @@ time = "0.3.47"
 job_scheduler_ng = "2.4.0"
 
 # Data encoding library Hex/Base32/Base64
-data-encoding = "2.10.0"
+data-encoding = "2.11.0"
 
 # JWT library
 jsonwebtoken = { version = "10.3.0", features = ["use_pem", "rust_crypto"], default-features = false }
@@ -128,9 +130,9 @@ yubico = { package = "yubico_ng", version = "0.14.1", features = ["online-tokio"
 # WebAuthn libraries
 # danger-allow-state-serialisation is needed to save the state in the db
 # danger-credential-internals is needed to support U2F to Webauthn migration
-webauthn-rs = { version = "0.5.4", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
-webauthn-rs-proto = "0.5.4"
-webauthn-rs-core = "0.5.4"
+webauthn-rs = { version = "0.5.5", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
+webauthn-rs-proto = "0.5.5"
+webauthn-rs-core = "0.5.5"
 
 # Handling of URL's for WebAuthn and favicons
 url = "2.5.8"
@@ -168,7 +170,7 @@ openssl = "0.10.78"
 pico-args = "0.5.0"
 
 # Macro ident concatenation
-pastey = "0.2.1"
+pastey = "0.2.2"
 governor = "0.10.4"
 
 # OIDC for SSO
@@ -188,7 +190,7 @@ which = "8.0.2"
 argon2 = "0.5.3"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
-rpassword = "7.4.0"
+rpassword = "7.5.1"
 
 # Loading a dynamic CSS Stylesheet
 grass_compiler = { version = "0.13.4", default-features = false }
@@ -301,6 +303,7 @@ branches_sharing_code = "deny"
 case_sensitive_file_extension_comparisons = "deny"
 cast_lossless = "deny"
 clone_on_ref_ptr = "deny"
+duration_suboptimal_units = "deny"
 equatable_if_let = "deny"
 excessive_precision = "deny"
 filter_map_next = "deny"
@@ -322,6 +325,7 @@ needless_continue = "deny"
 needless_lifetimes = "deny"
 option_option = "deny"
 redundant_clone = "deny"
+ref_option = "deny"
 string_add_assign = "deny"
 unnecessary_join = "deny"
 unnecessary_self_imports = "deny"

@@ -19,7 +19,7 @@ use svg_hush::{data_url_filter, Filter};
 use crate::{
     config::PathType,
     error::Error,
-    http_client::{get_reqwest_client_builder, should_block_address, CustomHttpClientError},
+    http_client::{get_reqwest_client_builder, get_valid_host, should_block_host, CustomHttpClientError},
     util::Cached,
     CONFIG,
 };
@@ -81,19 +81,19 @@ static ICON_SIZE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?x)(\d+
 // The function name `icon_external` is checked in the `on_response` function in `AppHeaders`
 // It is used to prevent sending a specific header which breaks icon downloads.
 // If this function needs to be renamed, also adjust the code in `util.rs`
-#[get("/<domain>/icon.png")]
-fn icon_external(domain: &str) -> Cached<Option<Redirect>> {
-    if !is_valid_domain(domain) {
-        warn!("Invalid domain: {domain}");
+#[get("/<host>/icon.png")]
+fn icon_external(host: &str) -> Cached<Option<Redirect>> {
+    let Ok(host) = get_valid_host(host) else {
+        warn!("Invalid host: {host}");
+        return Cached::ttl(None, CONFIG.icon_cache_negttl(), true);
+    };
+
+    if should_block_host(&host).is_err() {
+        warn!("Blocked address: {host}");
         return Cached::ttl(None, CONFIG.icon_cache_negttl(), true);
     }
 
-    if should_block_address(domain) {
-        warn!("Blocked address: {domain}");
-        return Cached::ttl(None, CONFIG.icon_cache_negttl(), true);
-    }
-
-    let url = CONFIG._icon_service_url().replace("{}", domain);
+    let url = CONFIG._icon_service_url().replace("{}", &host.to_string());
     let redir = match CONFIG.icon_redirect_code() {
         301 => Some(Redirect::moved(url)), // legacy permanent redirect
         302 => Some(Redirect::found(url)), // legacy temporary redirect
@@ -107,12 +107,21 @@ fn icon_external(domain: &str) -> Cached<Option<Redirect>> {
     Cached::ttl(redir, CONFIG.icon_cache_ttl(), true)
 }
 
-#[get("/<domain>/icon.png")]
-async fn icon_internal(domain: &str) -> Cached<(ContentType, Vec<u8>)> {
+#[get("/<host>/icon.png")]
+async fn icon_internal(host: &str) -> Cached<(ContentType, Vec<u8>)> {
     const FALLBACK_ICON: &[u8] = include_bytes!("../static/images/fallback-icon.png");
 
-    if !is_valid_domain(domain) {
-        warn!("Invalid domain: {domain}");
+    let Ok(host) = get_valid_host(host) else {
+        warn!("Invalid host: {host}");
+        return Cached::ttl(
+            (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
+            CONFIG.icon_cache_negttl(),
+            true,
+        );
+    };
+
+    if should_block_host(&host).is_err() {
+        warn!("Blocked address: {host}");
         return Cached::ttl(
             (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
             CONFIG.icon_cache_negttl(),
@@ -120,57 +129,12 @@ async fn icon_internal(domain: &str) -> Cached<(ContentType, Vec<u8>)> {
         );
     }
 
-    if should_block_address(domain) {
-        warn!("Blocked address: {domain}");
-        return Cached::ttl(
-            (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
-            CONFIG.icon_cache_negttl(),
-            true,
-        );
-    }
-
-    match get_icon(domain).await {
+    match get_icon(&host.to_string()).await {
         Some((icon, icon_type)) => {
             Cached::ttl((ContentType::new("image", icon_type), icon), CONFIG.icon_cache_ttl(), true)
         }
         _ => Cached::ttl((ContentType::new("image", "png"), FALLBACK_ICON.to_vec()), CONFIG.icon_cache_negttl(), true),
     }
-}
-
-/// Returns if the domain provided is valid or not.
-///
-/// This does some manual checks and makes use of Url to do some basic checking.
-/// domains can't be larger then 63 characters (not counting multiple subdomains) according to the RFC's, but we limit the total size to 255.
-fn is_valid_domain(domain: &str) -> bool {
-    const ALLOWED_CHARS: &str = "-.";
-
-    // If parsing the domain fails using Url, it will not work with reqwest.
-    if let Err(parse_error) = url::Url::parse(format!("https://{domain}").as_str()) {
-        debug!("Domain parse error: '{domain}' - {parse_error:?}");
-        return false;
-    } else if domain.is_empty()
-        || domain.contains("..")
-        || domain.starts_with('.')
-        || domain.starts_with('-')
-        || domain.ends_with('-')
-    {
-        debug!(
-            "Domain validation error: '{domain}' is either empty, contains '..', starts with an '.', starts or ends with a '-'"
-        );
-        return false;
-    } else if domain.len() > 255 {
-        debug!("Domain validation error: '{domain}' exceeds 255 characters");
-        return false;
-    }
-
-    for c in domain.chars() {
-        if !c.is_alphanumeric() && !ALLOWED_CHARS.contains(c) {
-            debug!("Domain validation error: '{domain}' contains an invalid character '{c}'");
-            return false;
-        }
-    }
-
-    true
 }
 
 async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
@@ -367,7 +331,7 @@ async fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
                             tld = domain_parts.next_back().unwrap(),
                             base = domain_parts.next_back().unwrap()
                         );
-                        if is_valid_domain(&base_domain) {
+                        if get_valid_host(&base_domain).is_ok() {
                             let sslbase = format!("https://{base_domain}");
                             let httpbase = format!("http://{base_domain}");
                             debug!("[get_icon_url]: Trying without subdomains '{base_domain}'");
@@ -378,7 +342,7 @@ async fn get_icon_url(domain: &str) -> Result<IconUrlResult, Error> {
                     // When the domain is not an IP, and has less then 2 dots, try to add www. infront of it.
                     } else if is_ip.is_err() && domain.matches('.').count() < 2 {
                         let www_domain = format!("www.{domain}");
-                        if is_valid_domain(&www_domain) {
+                        if get_valid_host(&www_domain).is_ok() {
                             let sslwww = format!("https://{www_domain}");
                             let httpwww = format!("http://{www_domain}");
                             debug!("[get_icon_url]: Trying with www. prefix '{www_domain}'");
@@ -532,7 +496,8 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
 
     use data_url::DataUrl;
 
-    for icon in icon_result.iconlist.iter().take(5) {
+    let mut icons = icon_result.iconlist.iter().take(5).peekable();
+    while let Some(icon) = icons.next() {
         if icon.href.starts_with("data:image") {
             let Ok(datauri) = DataUrl::process(&icon.href) else {
                 continue;
@@ -560,11 +525,23 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
                 _ => debug!("Extracted icon from data:image uri is invalid"),
             };
         } else {
-            let res = get_page_with_referer(&icon.href, &icon_result.referer).await?;
+            debug!("Trying {}", icon.href);
+            // Make sure all icons are checked before returning error
+            let res = match get_page_with_referer(&icon.href, &icon_result.referer).await {
+                Ok(r) => r,
+                Err(e) if icons.peek().is_none() => return Err(e),
+                Err(e) if CustomHttpClientError::downcast_ref(&e).is_some() => return Err(e), // If blacklisted stop immediately instead of checking the rest of the icons. see explanation and actual handling inside get_icon()
+                Err(e) => {
+                    warn!("Unable to download icon: {e:?}");
+
+                    // Continue to next icon
+                    continue;
+                }
+            };
 
             buffer = stream_to_bytes_limit(res, 5120 * 1024).await?; // 5120KB/5MB for each icon max (Same as icons.bitwarden.net)
 
-            // Check if the icon type is allowed, else try an icon from the list.
+            // Check if the icon type is allowed, else try another icon from the list.
             icon_type = get_icon_type(&buffer);
             if icon_type.is_none() {
                 buffer.clear();
@@ -618,14 +595,17 @@ fn get_icon_type(bytes: &[u8]) -> Option<&'static str> {
         None
     }
 
+    // Some details can be found here:
+    // - https://www.garykessler.net/library/file_sigs_GCK_latest.html
+    // - https://en.wikipedia.org/wiki/List_of_file_signatures
     match bytes {
-        [137, 80, 78, 71, ..] => Some("png"),
-        [0, 0, 1, 0, ..] => Some("x-icon"),
-        [82, 73, 70, 70, ..] => Some("webp"),
-        [255, 216, 255, ..] => Some("jpeg"),
-        [71, 73, 70, 56, ..] => Some("gif"),
-        [66, 77, ..] => Some("bmp"),
-        [60, 115, 118, 103, ..] => Some("svg+xml"), // Normal svg
+        [137, 80, 78, 71, 13, 10, 26, 10, ..] => Some("png"),
+        [0, 0, 1, 0, n1, n2, ..] if u16::from_le_bytes([*n1, *n2]) > 0 => Some("x-icon"), // https://en.wikipedia.org/wiki/ICO_(file_format)
+        [82, 73, 70, 70, _, _, _, _, 87, 69, 66, 80, ..] => Some("webp"),                 // Only match WebP Images
+        [255, 216, 255, b, ..] if *b >= 0xC0 => Some("jpeg"),
+        [71, 73, 70, 56, 55 | 57, 97, ..] => Some("gif"),
+        [66, 77, _, _, _, _, 0, 0, 0, 0, ..] => Some("bmp"), // https://en.wikipedia.org/wiki/BMP_file_format
+        [60, 115, 118, 103, ..] => Some("svg+xml"),          // Normal svg
         [60, 63, 120, 109, 108, ..] => check_svg_after_xml_declaration(bytes), // An svg starting with <?xml
         _ => None,
     }

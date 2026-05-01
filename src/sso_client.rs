@@ -117,6 +117,7 @@ impl Client {
         state: OIDCState,
         client_challenge: OIDCCodeChallenge,
         redirect_uri: String,
+        binding_hash: Option<String>,
     ) -> ApiResult<(Url, SsoAuth)> {
         let scopes = CONFIG.sso_scopes_vec().into_iter().map(Scope::new);
         let base64_state = data_encoding::BASE64.encode(state.to_string().as_bytes());
@@ -139,7 +140,7 @@ impl Client {
         }
 
         let (auth_url, _, nonce) = auth_req.url();
-        Ok((auth_url, SsoAuth::new(state, client_challenge, nonce.secret().clone(), redirect_uri)))
+        Ok((auth_url, SsoAuth::new(state, client_challenge, nonce.secret().clone(), redirect_uri, binding_hash)))
     }
 
     pub async fn exchange_code(
