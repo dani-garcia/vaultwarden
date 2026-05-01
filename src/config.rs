@@ -1404,7 +1404,10 @@ fn opendal_s3_operator_for_path(path: &str) -> Result<opendal::Operator, Error> 
 
     #[async_trait]
     impl reqsign::AwsCredentialLoad for OpenDALS3CredentialLoader {
-        async fn load_credential(&self, _client: reqwest::Client) -> anyhow::Result<Option<reqsign::AwsCredential>> {
+        async fn load_credential(
+            &self,
+            _client: openidconnect::reqwest::Client,
+        ) -> anyhow::Result<Option<reqsign::AwsCredential>> {
             use aws_credential_types::provider::ProvideCredentials as _;
             use tokio::sync::OnceCell;
 
