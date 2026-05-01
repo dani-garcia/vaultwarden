@@ -69,10 +69,7 @@ fn sso_cookie_vendor(cookies: &CookieJar<'_>) -> Result<Redirect, (Status, Html<
 ///
 /// Checks for a single (non-sharded) cookie first. If found, it takes precedence.
 /// Otherwise, checks for sharded cookies ({name}-0 through {name}-19).
-fn build_redirect_uri(
-    cookie_name: &str,
-    cookies: &HashMap<String, String>,
-) -> Result<String, (Status, Html<String>)> {
+fn build_redirect_uri(cookie_name: &str, cookies: &HashMap<String, String>) -> Result<String, (Status, Html<String>)> {
     // Check for the single (non-sharded) cookie — takes precedence over shards
     if let Some(value) = cookies.get(cookie_name) {
         let encoded_value = url_encode(value);

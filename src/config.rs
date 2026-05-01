@@ -1091,13 +1091,12 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
     }
 
-    if cfg.sso_cookie_vendor_enabled {
-        if cfg.sso_cookie_vendor_idp_login_url.is_empty()
+    if cfg.sso_cookie_vendor_enabled
+        && (cfg.sso_cookie_vendor_idp_login_url.is_empty()
             || cfg.sso_cookie_vendor_cookie_name.is_empty()
-            || cfg.sso_cookie_vendor_cookie_domain.is_empty()
-        {
-            err!("`SSO_COOKIE_VENDOR_IDP_LOGIN_URL`, `SSO_COOKIE_VENDOR_COOKIE_NAME` and `SSO_COOKIE_VENDOR_COOKIE_DOMAIN` must be set when SSO cookie vendor is enabled")
-        }
+            || cfg.sso_cookie_vendor_cookie_domain.is_empty())
+    {
+        err!("`SSO_COOKIE_VENDOR_IDP_LOGIN_URL`, `SSO_COOKIE_VENDOR_COOKIE_NAME` and `SSO_COOKIE_VENDOR_COOKIE_DOMAIN` must be set when SSO cookie vendor is enabled")
     }
 
     if cfg._enable_yubico {
