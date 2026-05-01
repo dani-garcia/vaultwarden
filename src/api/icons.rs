@@ -534,14 +534,14 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
 
     use data_url::DataUrl;
 
-    let mut iconlist: Vec<Icon> = icon_result.iconlist.into_iter().take(5).collect();
-    // add URL from Fallback Icon service
-    if !CONFIG.icon_service_fallback().is_empty() {
-        let fallback_url = CONFIG._icon_service_fallback_url().replace("{}", domain);
-        iconlist.push(Icon::new(0, fallback_url));
-    }
+    let fallback_icon = if CONFIG.icon_service_fallback().is_empty() {
+        None
+    } else {
+        Some(Icon::new(0, CONFIG._icon_service_fallback_url().replace("{}", domain)))
+    };
+    let mut icons = icon_result.iconlist.into_iter().take(5).chain(fallback_icon.into_iter()).peekable();
 
-    for icon in iconlist.iter() {
+    while let Some(icon) = icons.next() {
         if icon.href.starts_with("data:image") {
             let Ok(datauri) = DataUrl::process(&icon.href) else {
                 continue;
