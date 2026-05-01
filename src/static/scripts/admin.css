@@ -1,6 +1,17 @@
 body {
     padding-top: 75px;
 }
+/* Some extra width's for the main layout */
+@media (min-width: 1600px) {
+  .container-xxl {
+    max-width: 1520px;
+  }
+}
+@media (min-width: 1800px) {
+  .container-xxl {
+    max-width: 1720px;
+  }
+}
 img {
     width: 48px;
     height: 48px;
@@ -38,8 +49,8 @@ img {
     max-width: 130px;
 }
 #users-table .vw-actions, #orgs-table .vw-actions {
-    min-width: 155px;
-    max-width: 160px;
+    min-width: 170px;
+    max-width: 180px;
 }
 #users-table .vw-org-cell {
     max-height: 120px;

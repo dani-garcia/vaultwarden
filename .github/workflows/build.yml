@@ -62,7 +62,7 @@ jobs:
 
       # Checkout the repo
       - name: "Checkout"
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 #v6.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -85,32 +85,23 @@ jobs:
       # End Determine rust-toolchain version
 
 
-      # Only install the clippy and rustfmt components on the default rust-toolchain
-      - name: "Install rust-toolchain version"
-        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # master @ Feb 13, 2026, 3:46 AM GMT+1
-        if: ${{ matrix.channel == 'rust-toolchain' }}
-        with:
-          toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
-          components: clippy, rustfmt
-      # End Uses the rust-toolchain file to determine version
-
-
-      # Install the any other channel to be used for which we do not execute clippy and rustfmt
-      - name: "Install MSRV version"
-        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # master @ Feb 13, 2026, 3:46 AM GMT+1
-        if: ${{ matrix.channel != 'rust-toolchain' }}
-        with:
-          toolchain: "${{steps.toolchain.outputs.RUST_TOOLCHAIN}}"
-      # End Install the MSRV channel to be used
-
-      # Set the current matrix toolchain version as default
-      - name: "Set toolchain ${{steps.toolchain.outputs.RUST_TOOLCHAIN}} as default"
+      - name: "Install toolchain ${{steps.toolchain.outputs.RUST_TOOLCHAIN}} as default"
         env:
+          CHANNEL: ${{ matrix.channel }}
           RUST_TOOLCHAIN: ${{steps.toolchain.outputs.RUST_TOOLCHAIN}}
         run: |
           # Remove the rust-toolchain.toml
           rm rust-toolchain.toml
-          # Set the default
+
+          # Install the correct toolchain version
+          rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal --no-self-update
+
+          # If this matrix is the `rust-toolchain` flow, also install rustfmt and clippy
+          if [[ "${CHANNEL}" == 'rust-toolchain' ]]; then
+            rustup component add --toolchain "${RUST_TOOLCHAIN}" rustfmt clippy
+          fi
+
+          # Set as the default toolchain
           rustup default "${RUST_TOOLCHAIN}"
 
       # Show environment
@@ -122,7 +113,7 @@ jobs:
 
       # Enable Rust Caching
       - name: Rust Caching
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           # Use a custom prefix-key to force a fresh start. This is sometimes needed with bigger changes.
           # Like changing the build host from Ubuntu 20.04 to 22.04 for example.

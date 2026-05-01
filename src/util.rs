@@ -16,7 +16,10 @@ use tokio::{
     time::{sleep, Duration},
 };
 
-use crate::{config::PathType, CONFIG};
+use crate::{
+    config::{PathType, SUPPORTED_FEATURE_FLAGS},
+    CONFIG,
+};
 
 pub struct AppHeaders();
 
@@ -153,9 +156,11 @@ impl Cors {
     fn get_allowed_origin(headers: &HeaderMap<'_>) -> Option<String> {
         let origin = Cors::get_header(headers, "Origin");
         let safari_extension_origin = "file://";
+        let desktop_custom_file_origin = "bw-desktop-file://bundle";
 
         if origin == CONFIG.domain_origin()
             || origin == safari_extension_origin
+            || origin == desktop_custom_file_origin
             || (CONFIG.sso_enabled() && origin == CONFIG.sso_authority())
         {
             Some(origin)
@@ -629,6 +634,21 @@ fn _process_key(key: &str) -> String {
     }
 }
 
+pub fn deser_opt_nonempty_str<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: From<String>,
+{
+    use serde::Deserialize;
+    Ok(Option::<String>::deserialize(deserializer)?.and_then(|s| {
+        if s.is_empty() {
+            None
+        } else {
+            Some(T::from(s))
+        }
+    }))
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum NumberOrString {
@@ -714,7 +734,7 @@ where
 
                 warn!("Can't connect to database, retrying: {e:?}");
 
-                sleep(Duration::from_millis(1_000)).await;
+                sleep(Duration::from_secs(1)).await;
             }
         }
     }
@@ -763,21 +783,28 @@ pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
     }
 }
 
+pub enum FeatureFlagFilter {
+    #[allow(dead_code)]
+    Unfiltered,
+    ValidOnly,
+    InvalidOnly,
+}
+
 /// Parses the experimental client feature flags string into a HashMap.
-pub fn parse_experimental_client_feature_flags(experimental_client_feature_flags: &str) -> HashMap<String, bool> {
-    // These flags could still be configured, but are deprecated and not used anymore
-    // To prevent old installations from starting filter these out and not error out
-    const DEPRECATED_FLAGS: &[&str] =
-        &["autofill-overlay", "autofill-v2", "browser-fileless-import", "extension-refresh", "fido2-vault-credentials"];
+pub fn parse_experimental_client_feature_flags(
+    experimental_client_feature_flags: &str,
+    filter_mode: FeatureFlagFilter,
+) -> HashMap<String, bool> {
     experimental_client_feature_flags
         .split(',')
-        .filter_map(|f| {
-            let flag = f.trim();
-            if !flag.is_empty() && !DEPRECATED_FLAGS.contains(&flag) {
-                return Some((flag.to_owned(), true));
-            }
-            None
+        .map(str::trim)
+        .filter(|flag| !flag.is_empty())
+        .filter(|flag| match filter_mode {
+            FeatureFlagFilter::Unfiltered => true,
+            FeatureFlagFilter::ValidOnly => SUPPORTED_FEATURE_FLAGS.contains(flag),
+            FeatureFlagFilter::InvalidOnly => !SUPPORTED_FEATURE_FLAGS.contains(flag),
         })
+        .map(|flag| (flag.to_owned(), true))
         .collect()
 }
 
@@ -791,14 +818,18 @@ pub fn is_global_hardcoded(ip: std::net::IpAddr) -> bool {
         std::net::IpAddr::V4(ip) => {
             !(ip.octets()[0] == 0 // "This network"
             || ip.is_private()
-            || (ip.octets()[0] == 100 && (ip.octets()[1] & 0b1100_0000 == 0b0100_0000)) //ip.is_shared()
+            || (ip.octets()[0] == 100 && (ip.octets()[1] & 0b1100_0000 == 0b0100_0000)) // ip.is_shared()
             || ip.is_loopback()
             || ip.is_link_local()
             // addresses reserved for future protocols (`192.0.0.0/24`)
-            ||(ip.octets()[0] == 192 && ip.octets()[1] == 0 && ip.octets()[2] == 0)
+            // .9 and .10 are documented as globally reachable so they're excluded
+            || (
+                ip.octets()[0] == 192 && ip.octets()[1] == 0 && ip.octets()[2] == 0
+                && ip.octets()[3] != 9 && ip.octets()[3] != 10
+            )
             || ip.is_documentation()
             || (ip.octets()[0] == 198 && (ip.octets()[1] & 0xfe) == 18) // ip.is_benchmarking()
-            || (ip.octets()[0] & 240 == 240 && !ip.is_broadcast()) //ip.is_reserved()
+            || (ip.octets()[0] & 240 == 240 && !ip.is_broadcast()) // ip.is_reserved()
             || ip.is_broadcast())
         }
         std::net::IpAddr::V6(ip) => {
@@ -822,11 +853,17 @@ pub fn is_global_hardcoded(ip: std::net::IpAddr) -> bool {
                     // AS112-v6 (`2001:4:112::/48`)
                     || matches!(ip.segments(), [0x2001, 4, 0x112, _, _, _, _, _])
                     // ORCHIDv2 (`2001:20::/28`)
-                    || matches!(ip.segments(), [0x2001, b, _, _, _, _, _, _] if (0x20..=0x2F).contains(&b))
+                    // Drone Remote ID Protocol Entity Tags (DETs) Prefix (`2001:30::/28`)`
+                    || matches!(ip.segments(), [0x2001, b, _, _, _, _, _, _] if (0x20..=0x3F).contains(&b))
                 ))
-            || ((ip.segments()[0] == 0x2001) && (ip.segments()[1] == 0xdb8)) // ip.is_documentation()
-            || ((ip.segments()[0] & 0xfe00) == 0xfc00) //ip.is_unique_local()
-            || ((ip.segments()[0] & 0xffc0) == 0xfe80)) //ip.is_unicast_link_local()
+            // 6to4 (`2002::/16`) – it's not explicitly documented as globally reachable,
+            // IANA says N/A.
+            || matches!(ip.segments(), [0x2002, _, _, _, _, _, _, _])
+            || matches!(ip.segments(), [0x2001, 0xdb8, ..] | [0x3fff, 0..=0x0fff, ..]) // ip.is_documentation()
+            // Segment Routing (SRv6) SIDs (`5f00::/16`)
+            || matches!(ip.segments(), [0x5f00, ..])
+            || ip.is_unique_local()
+            || ip.is_unicast_link_local())
         }
     }
 }
