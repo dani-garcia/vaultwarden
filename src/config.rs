@@ -1208,8 +1208,12 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                 }
                 match icon_service_fallback.matches("{}").count() {
                     1 => (), // nominal
-                    0 => err!(format!("Fallback Icon service URL `{icon_service_fallback}` has no placeholder \"{{}}\"")),
-                    _ => err!(format!("Fallback Icon service URL `{icon_service_fallback}` has more than one placeholder \"{{}}\"")),
+                    0 => {
+                        err!(format!("Fallback Icon service URL `{icon_service_fallback}` has no placeholder \"{{}}\""))
+                    }
+                    _ => {
+                        err!(format!("Fallback Icon service URL `{icon_service_fallback}` has more than one placeholder \"{{}}\""))
+                    }
                 }
             }
         }
