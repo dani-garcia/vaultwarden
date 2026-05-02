@@ -29,7 +29,7 @@ impl TwoFactorDuoContext {
         let exists = Self::find_by_state(state, conn).await;
         if exists.is_some() {
             return Ok(());
-        };
+        }
 
         let exp = Utc::now().timestamp() + ttl;
 

@@ -1,21 +1,21 @@
 use chrono::Utc;
 use data_encoding::HEXLOWER;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use reqwest::{header, StatusCode};
-use ring::digest::{digest, Digest, SHA512_256};
+use reqwest::{StatusCode, header};
+use ring::digest::{Digest, SHA512_256, digest};
 use serde::Serialize;
 use std::collections::HashMap;
 
 use crate::{
-    api::{core::two_factor::duo::get_duo_keys_email, EmptyResult},
+    CONFIG,
+    api::{EmptyResult, core::two_factor::duo::get_duo_keys_email},
     crypto,
     db::{
-        models::{DeviceId, EventType, TwoFactorDuoContext},
         DbConn, DbPool,
+        models::{DeviceId, EventType, TwoFactorDuoContext},
     },
     error::Error,
     http_client::make_http_request,
-    CONFIG,
 };
 use url::Url;
 
@@ -124,7 +124,7 @@ impl DuoClient {
         ClientAssertion {
             iss: self.client_id.clone(),
             sub: self.client_id.clone(),
-            aud: url.to_string(),
+            aud: url.to_owned(),
             exp: now + JWT_VALIDITY_SECS,
             jti: jwt_id,
             iat: now,
@@ -302,7 +302,7 @@ impl DuoClient {
 
         if !(matching_nonces && matching_usernames) {
             err!("Error validating Duo authorization, nonce or username mismatch.")
-        };
+        }
 
         Ok(())
     }
@@ -347,7 +347,7 @@ pub async fn purge_duo_contexts(pool: DbPool) {
     if let Ok(conn) = pool.get().await {
         TwoFactorDuoContext::purge_expired_duo_contexts(&conn).await;
     } else {
-        error!("Failed to get DB connection while purging expired Duo authentications")
+        error!("Failed to get DB connection while purging expired Duo authentications");
     }
 }
 
@@ -394,7 +394,7 @@ pub async fn get_duo_auth_url(
     match client.health_check().await {
         Ok(()) => {}
         Err(e) => return Err(e),
-    };
+    }
 
     // Generate random OAuth2 state and OIDC Nonce
     let state: String = crypto::get_random_string_alphanum(STATE_LENGTH);
@@ -438,16 +438,13 @@ pub async fn validate_duo_login(
 
     // Get the context by the state reported by the client. If we don't have one,
     // it means the context is either missing or expired.
-    let ctx = match extract_context(state, conn).await {
-        Some(c) => c,
-        None => {
-            err!(
-                "Error validating duo authentication",
-                ErrorEvent {
-                    event: EventType::UserFailedLogIn2fa
-                }
-            )
-        }
+    let Some(ctx) = extract_context(state, conn).await else {
+        err!(
+            "Error validating duo authentication",
+            ErrorEvent {
+                event: EventType::UserFailedLogIn2fa
+            }
+        )
     };
 
     // Context validation steps
@@ -476,13 +473,13 @@ pub async fn validate_duo_login(
     match client.health_check().await {
         Ok(()) => {}
         Err(e) => return Err(e),
-    };
+    }
 
     let d: Digest = digest(&SHA512_256, format!("{}{device_identifier}", ctx.nonce).as_bytes());
     let hash: String = HEXLOWER.encode(d.as_ref());
 
     match client.exchange_authz_code_for_result(code, email, hash.as_str()).await {
-        Ok(_) => Ok(()),
+        Ok(()) => Ok(()),
         Err(_) => {
             err!(
                 "Error validating duo authentication",

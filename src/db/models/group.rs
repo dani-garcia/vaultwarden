@@ -1,7 +1,7 @@
 use super::{CollectionId, Membership, MembershipId, OrganizationId, User, UserId};
 use crate::api::EmptyResult;
-use crate::db::schema::{collections, collections_groups, groups, groups_users, users_organizations};
 use crate::db::DbConn;
+use crate::db::schema::{collections, collections_groups, groups, groups_users, users_organizations};
 use crate::error::MapResult;
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
@@ -288,12 +288,12 @@ impl Group {
     }
 
     pub async fn update_revision(uuid: &GroupId, conn: &DbConn) {
-        if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn).await {
+        if let Err(e) = Self::update_revision_impl(uuid, &Utc::now().naive_utc(), conn).await {
             warn!("Failed to update revision for {uuid}: {e:#?}");
         }
     }
 
-    async fn _update_revision(uuid: &GroupId, date: &NaiveDateTime, conn: &DbConn) -> EmptyResult {
+    async fn update_revision_impl(uuid: &GroupId, date: &NaiveDateTime, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             crate::util::retry(|| {
                 diesel::update(groups::table.filter(groups::uuid.eq(uuid)))
@@ -606,7 +606,7 @@ impl GroupUser {
         match Membership::find_by_uuid(member_uuid, conn).await {
             Some(member) => User::update_uuid_revision(&member.user_uuid, conn).await,
             None => warn!("Member could not be found!"),
-        };
+        }
 
         db_run! { conn: {
             diesel::delete(groups_users::table)

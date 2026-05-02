@@ -1,21 +1,21 @@
 use std::path::{Path, PathBuf};
 
 use rocket::{
+    Catcher, Route,
     fs::NamedFile,
     http::ContentType,
-    response::{content::RawCss as Css, content::RawHtml as Html, Redirect},
+    response::{Redirect, content::RawCss as Css, content::RawHtml as Html},
     serde::json::Json,
-    Catcher, Route,
 };
 use serde_json::Value;
 
 use crate::{
-    api::{core::now, ApiResult, EmptyResult},
+    CONFIG,
+    api::{ApiResult, EmptyResult, core::now},
     auth::decode_file_download,
     db::models::{AttachmentId, CipherId},
     error::Error,
     util::Cached,
-    CONFIG,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -28,7 +28,7 @@ pub fn routes() -> Vec<Route> {
 
     #[cfg(debug_assertions)]
     if CONFIG.reload_templates() {
-        routes.append(&mut routes![_static_files_dev]);
+        routes.append(&mut routes![static_files_dev]);
     }
 
     routes
@@ -197,7 +197,7 @@ fn alive_head(_conn: DbConn) -> EmptyResult {
 // NOTE: Do not forget to add any new files added to the `static_files` function below!
 #[cfg(debug_assertions)]
 #[get("/vw_static/<filename>", rank = 1)]
-pub async fn _static_files_dev(filename: PathBuf) -> Option<NamedFile> {
+pub async fn static_files_dev(filename: PathBuf) -> Option<NamedFile> {
     warn!("LOADING STATIC FILES FROM DISK");
     let file = filename.to_str().unwrap_or_default();
     let ext = filename.extension().unwrap_or_default();
@@ -210,7 +210,7 @@ pub async fn _static_files_dev(filename: PathBuf) -> Option<NamedFile> {
 
     if let Ok(path) = path {
         return NamedFile::open(path).await.ok();
-    };
+    }
     None
 }
 

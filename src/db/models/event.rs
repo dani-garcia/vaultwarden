@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use super::{CipherId, CollectionId, GroupId, MembershipId, OrgPolicyId, OrganizationId, UserId};
 use crate::db::schema::{event, users_organizations};
-use crate::{api::EmptyResult, db::DbConn, error::MapResult, CONFIG};
+use crate::{CONFIG, api::EmptyResult, db::DbConn, error::MapResult};
 use diesel::prelude::*;
 
 // https://bitwarden.com/help/event-logs/

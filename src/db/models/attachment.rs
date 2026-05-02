@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use super::{CipherId, OrganizationId, UserId};
 use crate::db::schema::{attachments, ciphers};
-use crate::{config::PathType, CONFIG};
+use crate::{CONFIG, config::PathType};
 use macros::IdFromParam;
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]

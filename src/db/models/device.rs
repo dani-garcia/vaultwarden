@@ -337,6 +337,7 @@ pub enum DeviceType {
 }
 
 impl DeviceType {
+    #[expect(clippy::match_same_arms, reason = "Specifically define 14 and have a fallback for new types")]
     pub fn from_i32(value: i32) -> DeviceType {
         match value {
             0 => DeviceType::Android,

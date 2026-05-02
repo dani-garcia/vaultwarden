@@ -2,14 +2,14 @@ use chrono::{NaiveDateTime, Utc};
 
 use crate::db::schema::twofactor_incomplete;
 use crate::{
+    CONFIG,
     api::EmptyResult,
     auth::ClientIp,
     db::{
-        models::{DeviceId, UserId},
         DbConn,
+        models::{DeviceId, UserId},
     },
     error::MapResult,
-    CONFIG,
 };
 use diesel::prelude::*;
 

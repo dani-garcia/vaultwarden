@@ -3,8 +3,8 @@ use diesel::prelude::*;
 
 use super::{CipherId, User, UserId};
 use crate::api::EmptyResult;
-use crate::db::schema::archives;
 use crate::db::DbConn;
+use crate::db::schema::archives;
 use crate::error::MapResult;
 
 #[derive(Identifiable, Queryable, Insertable)]

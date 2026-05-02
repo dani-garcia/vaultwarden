@@ -5,17 +5,21 @@ use std::{
     time::Duration,
 };
 
-use hickory_resolver::{net::runtime::TokioRuntimeProvider, TokioResolver};
+use hickory_resolver::{TokioResolver, net::runtime::TokioRuntimeProvider};
 use regex::Regex;
 use reqwest::{
+    Client, ClientBuilder,
     dns::{Name, Resolve, Resolving},
-    header, Client, ClientBuilder,
+    header,
 };
 use url::Host;
 
-use crate::{util::is_global, CONFIG};
+use crate::{CONFIG, util::is_global};
 
 pub fn make_http_request(method: reqwest::Method, url: &str) -> Result<reqwest::RequestBuilder, crate::Error> {
+    static INSTANCE: LazyLock<Client> =
+        LazyLock::new(|| get_reqwest_client_builder().build().expect("Failed to build client"));
+
     let Ok(url) = url::Url::parse(url) else {
         err!("Invalid URL");
     };
@@ -24,9 +28,6 @@ pub fn make_http_request(method: reqwest::Method, url: &str) -> Result<reqwest::
     };
 
     should_block_host(&host)?;
-
-    static INSTANCE: LazyLock<Client> =
-        LazyLock::new(|| get_reqwest_client_builder().build().expect("Failed to build client"));
 
     Ok(INSTANCE.request(method, url))
 }
@@ -67,18 +68,19 @@ fn should_block_ip(ip: IpAddr) -> bool {
 }
 
 fn should_block_address_regex(domain_or_ip: &str) -> bool {
+    static COMPILED_REGEX: Mutex<Option<(String, Regex)>> = Mutex::new(None);
+
     let Some(block_regex) = CONFIG.http_request_block_regex() else {
         return false;
     };
 
-    static COMPILED_REGEX: Mutex<Option<(String, Regex)>> = Mutex::new(None);
     let mut guard = COMPILED_REGEX.lock().unwrap();
 
     // If the stored regex is up to date, use it
-    if let Some((value, regex)) = &*guard {
-        if value == &block_regex {
-            return regex.is_match(domain_or_ip);
-        }
+    if let Some((value, regex)) = &*guard
+        && value == &block_regex
+    {
+        return regex.is_match(domain_or_ip);
     }
 
     // If we don't have a regex stored, or it's not up to date, recreate it
@@ -92,7 +94,7 @@ fn should_block_address_regex(domain_or_ip: &str) -> bool {
 pub fn get_valid_host(host: &str) -> Result<Host, CustomHttpClientError> {
     let Ok(host) = Host::parse(host) else {
         return Err(CustomHttpClientError::Invalid {
-            domain: host.to_string(),
+            domain: host.to_owned(),
         });
     };
 
@@ -136,16 +138,16 @@ pub fn should_block_host<S: AsRef<str>>(host: &Host<S>) -> Result<(), CustomHttp
     let (ip, host_str): (Option<IpAddr>, String) = match host {
         Host::Ipv4(ip) => (Some(IpAddr::V4(*ip)), ip.to_string()),
         Host::Ipv6(ip) => (Some(IpAddr::V6(*ip)), ip.to_string()),
-        Host::Domain(d) => (None, d.as_ref().to_string()),
+        Host::Domain(d) => (None, d.as_ref().to_owned()),
     };
 
-    if let Some(ip) = ip {
-        if should_block_ip(ip) {
-            return Err(CustomHttpClientError::NonGlobalIp {
-                domain: None,
-                ip,
-            });
-        }
+    if let Some(ip) = ip
+        && should_block_ip(ip)
+    {
+        return Err(CustomHttpClientError::NonGlobalIp {
+            domain: None,
+            ip,
+        });
     }
 
     if should_block_address_regex(&host_str) {
@@ -233,8 +235,7 @@ impl CustomDnsResolver {
                 builder.build()
             })
             .inspect_err(|e| warn!("Error creating Hickory resolver, falling back to default: {e:?}"))
-            .map(|resolver| Arc::new(Self::Hickory(Arc::new(resolver))))
-            .unwrap_or_else(|_| Arc::new(Self::Default()))
+            .map_or_else(|_| Arc::new(Self::Default()), |resolver| Arc::new(Self::Hickory(Arc::new(resolver))))
     }
 
     // Note that we get an iterator of addresses, but we only grab the first one for convenience
@@ -257,13 +258,13 @@ impl CustomDnsResolver {
 fn pre_resolve(name: &str) -> Result<(), CustomHttpClientError> {
     let Ok(host) = get_valid_host(name) else {
         return Err(CustomHttpClientError::Invalid {
-            domain: name.to_string(),
+            domain: name.to_owned(),
         });
     };
 
     if should_block_host(&host).is_err() {
         return Err(CustomHttpClientError::Blocked {
-            domain: name.to_string(),
+            domain: name.to_owned(),
         });
     }
 
@@ -273,7 +274,7 @@ fn pre_resolve(name: &str) -> Result<(), CustomHttpClientError> {
 fn post_resolve(name: &str, ip: IpAddr) -> Result<(), CustomHttpClientError> {
     if should_block_ip(ip) {
         Err(CustomHttpClientError::NonGlobalIp {
-            domain: Some(name.to_string()),
+            domain: Some(name.to_owned()),
             ip,
         })
     } else {
@@ -318,7 +319,7 @@ pub(crate) mod aws {
             let future = async move {
                 let method = reqwest::Method::from_bytes(request.method().as_bytes())
                     .map_err(|e| ConnectorError::user(Box::new(e)))?;
-                let mut req_builder = client.request(method, request.uri().to_string());
+                let mut req_builder = client.request(method, request.uri().to_owned());
 
                 for (name, value) in request.headers() {
                     req_builder = req_builder.header(name, value);

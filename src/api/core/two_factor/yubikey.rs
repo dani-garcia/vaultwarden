@@ -1,20 +1,20 @@
-use rocket::serde::json::Json;
 use rocket::Route;
+use rocket::serde::json::Json;
 use serde_json::Value;
 use yubico::{config::Config, verify_async};
 
 use crate::{
+    CONFIG,
     api::{
-        core::{log_user_event, two_factor::_generate_recover_code},
         EmptyResult, JsonResult, PasswordOrOtpData,
+        core::{log_user_event, two_factor::generate_recover_code},
     },
     auth::Headers,
     db::{
-        models::{EventType, TwoFactor, TwoFactorType},
         DbConn,
+        models::{EventType, TwoFactor, TwoFactorType},
     },
     error::{Error, MapResult},
-    CONFIG,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -46,7 +46,7 @@ pub struct YubikeyMetadata {
 fn parse_yubikeys(data: &EnableYubikeyData) -> Vec<String> {
     let data_keys = [&data.key1, &data.key2, &data.key3, &data.key4, &data.key5];
 
-    data_keys.iter().filter_map(|e| e.as_ref().cloned()).collect()
+    data_keys.into_iter().flatten().cloned().collect()
 }
 
 fn jsonify_yubikeys(yubikeys: Vec<String>) -> Value {
@@ -64,9 +64,10 @@ fn get_yubico_credentials() -> Result<(String, String), Error> {
         err!("Yubico support is disabled");
     }
 
-    match (CONFIG.yubico_client_id(), CONFIG.yubico_secret_key()) {
-        (Some(id), Some(secret)) => Ok((id, secret)),
-        _ => err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled"),
+    if let (Some(id), Some(secret)) = (CONFIG.yubico_client_id(), CONFIG.yubico_secret_key()) {
+        Ok((id, secret))
+    } else {
+        err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled")
     }
 }
 
@@ -162,7 +163,7 @@ async fn activate_yubikey(data: Json<EnableYubikeyData>, headers: Headers, conn:
     yubikey_data.data = serde_json::to_string(&yubikey_metadata).unwrap();
     yubikey_data.save(&conn).await?;
 
-    _generate_recover_code(&mut user, &conn).await;
+    generate_recover_code(&mut user, &conn).await;
 
     log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 

@@ -5,20 +5,20 @@ use std::{collections::HashMap, io::Cursor, path::Path};
 
 use num_traits::ToPrimitive;
 use rocket::{
+    Data, Orbit, Request, Response, Rocket,
     fairing::{Fairing, Info, Kind},
     http::{ContentType, Header, HeaderMap, Method, Status},
     response::{self, Responder},
-    Data, Orbit, Request, Response, Rocket,
 };
 
 use tokio::{
     runtime::Handle,
-    time::{sleep, Duration},
+    time::{Duration, sleep},
 };
 
 use crate::{
-    config::{PathType, SUPPORTED_FEATURE_FLAGS},
     CONFIG,
+    config::{PathType, SUPPORTED_FEATURE_FLAGS},
 };
 
 pub struct AppHeaders();
@@ -75,11 +75,16 @@ impl Fairing for AppHeaders {
         // Do not send the Content-Security-Policy (CSP) Header and X-Frame-Options for the *-connector.html files.
         // This can cause issues when some MFA requests needs to open a popup or page within the clients like WebAuthn, or Duo.
         // This is the same behavior as upstream Bitwarden.
-        if !req_uri_path.ends_with("connector.html") {
+        if req_uri_path.ends_with("connector.html") {
+            // It looks like this header get's set somewhere else also, make sure this is not sent for these files, it will cause MFA issues.
+            res.remove_header("X-Frame-Options");
+        } else {
             let csp = if is_image {
                 // Prevent scripts, frames, objects, etc., from loading with images, mainly for SVG images, since these could contain JavaScript and other unsafe items.
                 // Even though we sanitize SVG images before storing and viewing them, it's better to prevent allowing these elements.
-                String::from("default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'none'; frame-src 'none'; object-src 'none")
+                String::from(
+                    "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'none'; frame-src 'none'; object-src 'none",
+                )
             } else {
                 // # Frame Ancestors:
                 // Chrome Web Store: https://chrome.google.com/webstore/detail/bitwarden-free-password-m/nngceckbapebfimnlniiiahkandclblb
@@ -129,9 +134,6 @@ impl Fairing for AppHeaders {
 
             res.set_raw_header("Content-Security-Policy", csp);
             res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
-        } else {
-            // It looks like this header get's set somewhere else also, make sure this is not sent for these files, it will cause MFA issues.
-            res.remove_header("X-Frame-Options");
         }
 
         // Disable cache unless otherwise specified
@@ -146,7 +148,7 @@ pub struct Cors();
 impl Cors {
     fn get_header(headers: &HeaderMap<'_>, name: &str) -> String {
         match headers.get_one(name) {
-            Some(h) => h.to_string(),
+            Some(h) => h.to_owned(),
             _ => String::new(),
         }
     }
@@ -212,7 +214,7 @@ impl<R> Cached<R> {
         Self {
             response,
             is_immutable,
-            ttl: 604800, // 7 days
+            ttl: 604_800, // 7 days
         }
     }
 
@@ -286,7 +288,7 @@ impl Fairing for BetterLogging {
         } else {
             "http"
         };
-        let addr = format!("{scheme}://{}:{}", &config.address, &config.port);
+        let addr = format!("{scheme}://{}:{}", config.address, config.port);
         info!(target: "start", "Rocket has launched from {addr}");
     }
 
@@ -303,7 +305,7 @@ impl Fairing for BetterLogging {
             match uri.query() {
                 Some(q) => info!(target: "request", "{method} {uri_path_str}?{}", &q[..q.len().min(30)]),
                 None => info!(target: "request", "{method} {uri_path_str}"),
-            };
+            }
         }
     }
 
@@ -316,10 +318,10 @@ impl Fairing for BetterLogging {
         let uri_subpath = uri_path_str.strip_prefix(&CONFIG.domain_path()).unwrap_or(&uri_path_str);
         if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
             let status = response.status();
-            if let Some(ref route) = request.route() {
-                info!(target: "response", "{route} => {status}")
+            if let Some(route) = request.route() {
+                info!(target: "response", "{route} => {status}");
             } else {
-                info!(target: "response", "{status}")
+                info!(target: "response", "{status}");
             }
         }
     }
@@ -402,7 +404,7 @@ pub fn get_env_str_value(key: &str) -> Option<String> {
         (Ok(_), Ok(_)) => panic!("You should not define both {key} and {key_file}!"),
         (Ok(v_env), Err(_)) => Some(v_env),
         (Err(_), Ok(v_file)) => match std::fs::read_to_string(v_file) {
-            Ok(content) => Some(content.trim().to_string()),
+            Ok(content) => Some(content.trim().to_owned()),
             Err(e) => panic!("Failed to load {key}: {e:?}"),
         },
         _ => None,
@@ -457,10 +459,10 @@ pub fn validate_and_format_date(dt: &str) -> String {
 pub fn format_datetime_local(dt: &DateTime<Local>, fmt: &str) -> String {
     // Try parsing the `TZ` environment variable to enable formatting `%Z` as
     // a time zone abbreviation.
-    if let Ok(tz) = env::var("TZ") {
-        if let Ok(tz) = tz.parse::<chrono_tz::Tz>() {
-            return dt.with_timezone(&tz).format(fmt).to_string();
-        }
+    if let Ok(tz) = env::var("TZ")
+        && let Ok(tz) = tz.parse::<chrono_tz::Tz>()
+    {
+        return dt.with_timezone(&tz).format(fmt).to_string();
     }
 
     // Otherwise, fall back to formatting `%Z` as a UTC offset.
@@ -512,6 +514,7 @@ pub fn is_valid_email(email: &str) -> bool {
 //
 
 /// Returns true if the program is running in Docker, Podman or Kubernetes.
+#[must_use]
 pub fn is_running_in_container() -> bool {
     Path::new("/.dockerenv").exists()
         || Path::new("/run/.containerenv").exists()
@@ -543,10 +546,10 @@ pub fn get_active_web_release() -> String {
     ];
 
     for version_file in version_files {
-        if let Ok(version_str) = std::fs::read_to_string(&version_file) {
-            if let Ok(version) = serde_json::from_str::<WebVaultVersion>(&version_str) {
-                return String::from(version.version.trim_start_matches('v'));
-            }
+        if let Ok(version_str) = std::fs::read_to_string(&version_file)
+            && let Ok(version) = serde_json::from_str::<WebVaultVersion>(&version_str)
+        {
+            return String::from(version.version.trim_start_matches('v'));
         }
     }
 
@@ -605,7 +608,7 @@ impl<'de> Visitor<'de> for LowerCaseVisitor {
         let mut result_map = JsonMap::new();
 
         while let Some((key, value)) = map.next_entry()? {
-            result_map.insert(_process_key(key), convert_json_key_lcase_first(value));
+            result_map.insert(process_json_key(key), convert_json_key_lcase_first(value));
         }
 
         Ok(Value::Object(result_map))
@@ -627,7 +630,7 @@ impl<'de> Visitor<'de> for LowerCaseVisitor {
 
 // Inner function to handle a special case for the 'ssn' key.
 // This key is part of the Identity Cipher (Social Security Number)
-fn _process_key(key: &str) -> String {
+fn process_json_key(key: &str) -> String {
     match key.to_lowercase().as_ref() {
         "ssn" => "ssn".into(),
         _ => lcase_first(key),
@@ -664,21 +667,24 @@ impl NumberOrString {
         }
     }
 
-    #[allow(clippy::wrong_self_convention)]
+    #[expect(clippy::wrong_self_convention)]
     pub fn into_i32(&self) -> Result<i32, crate::Error> {
         use std::num::ParseIntError as PIE;
         match self {
-            NumberOrString::Number(n) => match n.to_i32() {
-                Some(n) => Ok(n),
-                None => err!("Number does not fit in i32"),
-            },
+            NumberOrString::Number(n) => {
+                if let Some(n) = n.to_i32() {
+                    Ok(n)
+                } else {
+                    err!("Number does not fit in i32")
+                }
+            }
             NumberOrString::String(s) => {
                 s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string()))
             }
         }
     }
 
-    #[allow(clippy::wrong_self_convention)]
+    #[expect(clippy::wrong_self_convention)]
     pub fn into_i64(&self) -> Result<i64, crate::Error> {
         use std::num::ParseIntError as PIE;
         match self {
@@ -753,11 +759,11 @@ pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
 
         Value::Object(obj) => {
             let mut json_map = JsonMap::new();
-            for (key, value) in obj.into_iter() {
+            for (key, value) in obj {
                 match (key, value) {
                     (key, Value::Object(elm)) => {
                         let inner_value = convert_json_key_lcase_first(Value::Object(elm));
-                        json_map.insert(_process_key(&key), inner_value);
+                        json_map.insert(process_json_key(&key), inner_value);
                     }
 
                     (key, Value::Array(elm)) => {
@@ -767,11 +773,11 @@ pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
                             inner_array.push(convert_json_key_lcase_first(inner_obj));
                         }
 
-                        json_map.insert(_process_key(&key), Value::Array(inner_array));
+                        json_map.insert(process_json_key(&key), Value::Array(inner_array));
                     }
 
                     (key, value) => {
-                        json_map.insert(_process_key(&key), value);
+                        json_map.insert(process_json_key(&key), value);
                     }
                 }
             }
@@ -793,7 +799,7 @@ pub enum FeatureFlagFilter {
 /// Parses the experimental client feature flags string into a HashMap.
 pub fn parse_experimental_client_feature_flags(
     experimental_client_feature_flags: &str,
-    filter_mode: FeatureFlagFilter,
+    filter_mode: &FeatureFlagFilter,
 ) -> HashMap<String, bool> {
     experimental_client_feature_flags
         .split(',')
@@ -811,7 +817,8 @@ pub fn parse_experimental_client_feature_flags(
 /// TODO: This is extracted from IpAddr::is_global, which is unstable:
 /// https://doc.rust-lang.org/nightly/std/net/enum.IpAddr.html#method.is_global
 /// Remove once https://github.com/rust-lang/rust/issues/27709 is merged
-#[allow(clippy::nonminimal_bool)]
+// #[expect(clippy::nonminimal_bool, reason = "Mostly copy/paste from std, keep as-is")]
+#[expect(clippy::decimal_bitwise_operands, reason = "Mostly copy/paste from std, keep as-is")]
 #[cfg(any(not(feature = "unstable"), test))]
 pub fn is_global_hardcoded(ip: std::net::IpAddr) -> bool {
     match ip {

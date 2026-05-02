@@ -56,8 +56,8 @@ impl Folder {
 impl FolderCipher {
     pub fn new(folder_uuid: FolderId, cipher_uuid: CipherId) -> Self {
         Self {
-            folder_uuid,
             cipher_uuid,
+            folder_uuid,
         }
     }
 }

@@ -1,20 +1,21 @@
 use chrono::{DateTime, TimeDelta, Utc};
-use rocket::serde::json::Json;
 use rocket::Route;
+use rocket::serde::json::Json;
 
 use crate::{
+    CONFIG,
     api::{
-        core::{log_user_event, two_factor::_generate_recover_code},
         EmptyResult, JsonResult, PasswordOrOtpData,
+        core::{log_user_event, two_factor::generate_recover_code},
     },
     auth::{ClientHeaders, Headers},
     crypto,
     db::{
-        models::{AuthRequest, AuthRequestId, DeviceId, EventType, TwoFactor, TwoFactorType, User, UserId},
         DbConn,
+        models::{AuthRequest, AuthRequestId, DeviceId, EventType, TwoFactor, TwoFactorType, User, UserId},
     },
     error::{Error, MapResult},
-    mail, CONFIG,
+    mail,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -232,7 +233,7 @@ async fn email(data: Json<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
     twofactor.data = email_data.to_json();
     twofactor.save(&conn).await?;
 
-    _generate_recover_code(&mut user, &conn).await;
+    generate_recover_code(&mut user, &conn).await;
 
     log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
@@ -284,9 +285,9 @@ pub async fn validate_email_code_str(
     twofactor.data = email_data.to_json();
     twofactor.save(conn).await?;
 
-    let date = DateTime::from_timestamp(email_data.token_sent, 0).expect("Email token timestamp invalid.").naive_utc();
-    let max_time = CONFIG.email_expiration_time() as i64;
-    if date + TimeDelta::try_seconds(max_time).unwrap() < Utc::now().naive_utc() {
+    let dt = DateTime::from_timestamp(email_data.token_sent, 0).expect("Email token timestamp invalid.").naive_utc();
+    let max_time = CONFIG.email_expiration_time().cast_signed();
+    if dt + TimeDelta::try_seconds(max_time).unwrap() < Utc::now().naive_utc() {
         err!(
             "Token has expired",
             ErrorEvent {
@@ -342,9 +343,10 @@ impl EmailTokenData {
 
     pub fn from_json(string: &str) -> Result<EmailTokenData, Error> {
         let res: Result<EmailTokenData, serde_json::Error> = serde_json::from_str(string);
-        match res {
-            Ok(x) => Ok(x),
-            Err(_) => err!("Could not decode EmailTokenData from string"),
+        if let Ok(x) = res {
+            Ok(x)
+        } else {
+            err!("Could not decode EmailTokenData from string")
         }
     }
 }
@@ -362,18 +364,17 @@ pub async fn activate_email_2fa(user: &User, conn: &DbConn) -> EmptyResult {
 pub fn obscure_email(email: &str) -> String {
     let split: Vec<&str> = email.rsplitn(2, '@').collect();
 
-    let mut name = split[1].to_string();
+    let mut name = split[1].to_owned();
     let domain = &split[0];
 
     let name_size = name.chars().count();
 
-    let new_name = match name_size {
-        1..=3 => "*".repeat(name_size),
-        _ => {
-            let stars = "*".repeat(name_size - 2);
-            name.truncate(2);
-            format!("{name}{stars}")
-        }
+    let new_name = if let 1..=3 = name_size {
+        "*".repeat(name_size)
+    } else {
+        let stars = "*".repeat(name_size - 2);
+        name.truncate(2);
+        format!("{name}{stars}")
     };
 
     format!("{new_name}@{domain}")

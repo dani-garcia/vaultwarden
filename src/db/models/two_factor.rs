@@ -150,17 +150,16 @@ impl TwoFactor {
     }
 
     pub async fn migrate_u2f_to_webauthn(conn: &DbConn) -> EmptyResult {
+        use crate::api::core::two_factor::webauthn::{U2FRegistration, get_webauthn_registrations};
+        use webauthn_rs::prelude::{COSEEC2Key, COSEKey, COSEKeyType, ECDSACurve};
+        use webauthn_rs_proto::{COSEAlgorithm, UserVerificationPolicy};
+
         let u2f_factors = db_run! { conn: {
             twofactor::table
                 .filter(twofactor::atype.eq(TwoFactorType::U2f as i32))
                 .load::<Self>(conn)
                 .expect("Error loading twofactor")
         }};
-
-        use crate::api::core::two_factor::webauthn::U2FRegistration;
-        use crate::api::core::two_factor::webauthn::{get_webauthn_registrations, WebauthnRegistration};
-        use webauthn_rs::prelude::{COSEEC2Key, COSEKey, COSEKeyType, ECDSACurve};
-        use webauthn_rs_proto::{COSEAlgorithm, UserVerificationPolicy};
 
         for mut u2f in u2f_factors {
             let mut regs: Vec<U2FRegistration> = serde_json::from_str(&u2f.data)?;
@@ -241,7 +240,7 @@ impl TwoFactor {
                 continue;
             };
 
-            let regs = regs.into_iter().map(|r| r.into()).collect::<Vec<WebauthnRegistration>>();
+            let regs = regs.into_iter().map(Into::into).collect::<Vec<WebauthnRegistration>>();
 
             TwoFactor::new(webauthn_factor.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&regs)?)
                 .save(conn)

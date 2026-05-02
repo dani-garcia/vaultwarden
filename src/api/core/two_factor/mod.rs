@@ -1,28 +1,28 @@
 use chrono::{TimeDelta, Utc};
 use data_encoding::BASE32;
 use num_traits::FromPrimitive;
-use rocket::serde::json::Json;
 use rocket::Route;
+use rocket::serde::json::Json;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
+    CONFIG,
     api::{
-        core::{log_event, log_user_event},
         EmptyResult, JsonResult, PasswordOrOtpData,
+        core::{log_event, log_user_event},
     },
     auth::Headers,
     crypto,
     db::{
+        DbConn, DbPool,
         models::{
             DeviceType, EventType, Membership, MembershipType, OrgPolicyType, Organization, OrganizationId, TwoFactor,
             TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
-        DbConn, DbPool,
     },
     mail,
     util::NumberOrString,
-    CONFIG,
 };
 
 pub mod authenticator;
@@ -37,7 +37,7 @@ fn has_global_duo_credentials() -> bool {
     CONFIG._enable_duo() && CONFIG.duo_host().is_some() && CONFIG.duo_ikey().is_some() && CONFIG.duo_skey().is_some()
 }
 
-pub fn is_twofactor_provider_usable(provider_type: TwoFactorType, provider_data: Option<&str>) -> bool {
+pub fn is_twofactor_provider_usable(provider_type: &TwoFactorType, provider_data: Option<&str>) -> bool {
     #[derive(Deserialize)]
     struct DuoProviderData {
         host: String,
@@ -46,7 +46,7 @@ pub fn is_twofactor_provider_usable(provider_type: TwoFactorType, provider_data:
     }
 
     match provider_type {
-        TwoFactorType::Authenticator => true,
+        TwoFactorType::Authenticator | TwoFactorType::RecoveryCode => true,
         TwoFactorType::Email => CONFIG._enable_email_2fa(),
         TwoFactorType::Duo | TwoFactorType::OrganizationDuo => {
             provider_data
@@ -59,7 +59,6 @@ pub fn is_twofactor_provider_usable(provider_type: TwoFactorType, provider_data:
         }
         TwoFactorType::Webauthn => CONFIG.is_webauthn_2fa_supported(),
         TwoFactorType::Remember => !CONFIG.disable_2fa_remember(),
-        TwoFactorType::RecoveryCode => true,
         TwoFactorType::U2f
         | TwoFactorType::U2fRegisterChallenge
         | TwoFactorType::U2fLoginChallenge
@@ -96,7 +95,7 @@ async fn get_twofactor(headers: Headers, conn: DbConn) -> Json<Value> {
         .iter()
         .filter_map(|tf| {
             let provider_type = TwoFactorType::from_i32(tf.atype)?;
-            is_twofactor_provider_usable(provider_type, Some(&tf.data)).then(|| TwoFactor::to_json_provider(tf))
+            is_twofactor_provider_usable(&provider_type, Some(&tf.data)).then(|| TwoFactor::to_json_provider(tf))
         })
         .collect();
 
@@ -120,7 +119,7 @@ async fn get_recover(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbCo
     })))
 }
 
-async fn _generate_recover_code(user: &mut User, conn: &DbConn) {
+async fn generate_recover_code(user: &mut User, conn: &DbConn) {
     if user.totp_recover.is_none() {
         let totp_recover = crypto::encode_random_bytes::<20>(&BASE32);
         user.totp_recover = Some(totp_recover);
@@ -180,9 +179,7 @@ pub async fn enforce_2fa_policy(
     ip: &std::net::IpAddr,
     conn: &DbConn,
 ) -> EmptyResult {
-    for member in
-        Membership::find_by_user_and_policy(&user.uuid, OrgPolicyType::TwoFactorAuthentication, conn).await.into_iter()
-    {
+    for member in Membership::find_by_user_and_policy(&user.uuid, OrgPolicyType::TwoFactorAuthentication, conn).await {
         // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
         if member.atype < MembershipType::Admin {
             if CONFIG.mail_enabled() {
@@ -217,7 +214,7 @@ pub async fn enforce_2fa_policy_for_org(
     conn: &DbConn,
 ) -> EmptyResult {
     let org = Organization::find_by_uuid(org_id, conn).await.unwrap();
-    for member in Membership::find_confirmed_by_org(org_id, conn).await.into_iter() {
+    for member in Membership::find_confirmed_by_org(org_id, conn).await {
         // Don't enforce the policy for Admins and Owners.
         if member.atype < MembershipType::Admin && TwoFactor::find_by_user(&member.user_uuid, conn).await.is_empty() {
             if CONFIG.mail_enabled() {
@@ -251,12 +248,9 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
         return;
     }
 
-    let conn = match pool.get().await {
-        Ok(conn) => conn,
-        _ => {
-            error!("Failed to get DB connection in send_incomplete_2fa_notifications()");
-            return;
-        }
+    let Ok(conn) = pool.get().await else {
+        error!("Failed to get DB connection in send_incomplete_2fa_notifications()");
+        return;
     };
 
     let now = Utc::now().naive_utc();
@@ -278,7 +272,7 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
         )
         .await
         {
-            Ok(_) => {
+            Ok(()) => {
                 if let Err(e) = login.delete(&conn).await {
                     error!("Error deleting incomplete 2FA record: {e:#?}");
                 }

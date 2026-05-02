@@ -12,11 +12,11 @@ use super::{
     CipherId, Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy,
     OrgPolicyType, TwoFactor, User, UserId,
 };
+use crate::CONFIG;
 use crate::db::schema::{
     ciphers, ciphers_collections, collections_groups, groups, groups_users, org_policies, organization_api_key,
     organizations, users, users_collections, users_organizations,
 };
-use crate::CONFIG;
 use macros::UuidFromParam;
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -93,6 +93,10 @@ pub enum MembershipType {
 
 impl MembershipType {
     pub fn from_str(s: &str) -> Option<Self> {
+        #[expect(
+            clippy::match_same_arms,
+            reason = "Specifically define `4|Custom` since this is a hack, not a default"
+        )]
         match s {
             "0" | "Owner" => Some(MembershipType::Owner),
             "1" | "Admin" => Some(MembershipType::Admin),
@@ -333,7 +337,7 @@ impl Organization {
             err!(format!("BillingEmail {} is not a valid email address", self.billing_email))
         }
 
-        for member in Membership::find_by_org(&self.uuid, conn).await.iter() {
+        for member in &Membership::find_by_org(&self.uuid, conn).await {
             User::update_uuid_revision(&member.user_uuid, conn).await;
         }
 
@@ -802,10 +806,10 @@ impl Membership {
     }
 
     pub async fn find_by_email_and_org(email: &str, org_uuid: &OrganizationId, conn: &DbConn) -> Option<Membership> {
-        if let Some(user) = User::find_by_mail(email, conn).await {
-            if let Some(member) = Membership::find_by_user_and_org(&user.uuid, org_uuid, conn).await {
-                return Some(member);
-            }
+        if let Some(user) = User::find_by_mail(email, conn).await
+            && let Some(member) = Membership::find_by_user_and_org(&user.uuid, org_uuid, conn).await
+        {
+            return Some(member);
         }
 
         None

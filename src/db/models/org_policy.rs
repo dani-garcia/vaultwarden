@@ -2,12 +2,12 @@ use derive_more::{AsRef, From};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::api::core::two_factor;
-use crate::api::EmptyResult;
-use crate::db::schema::{org_policies, users_organizations};
-use crate::db::DbConn;
-use crate::error::MapResult;
 use crate::CONFIG;
+use crate::api::EmptyResult;
+use crate::api::core::two_factor;
+use crate::db::DbConn;
+use crate::db::schema::{org_policies, users_organizations};
+use crate::error::MapResult;
 use diesel::prelude::*;
 
 use super::{Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId, TwoFactor, UserId};
@@ -269,10 +269,10 @@ impl OrgPolicy {
                 continue;
             }
 
-            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
-                if user.atype < MembershipType::Admin {
-                    return true;
-                }
+            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await
+                && user.atype < MembershipType::Admin
+            {
+                return true;
             }
         }
         false
@@ -282,13 +282,13 @@ impl OrgPolicy {
         if m.atype < MembershipType::Admin && m.status > (MembershipStatus::Invited as i32) {
             // Enforce TwoFactor/TwoStep login
             if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::TwoFactorAuthentication, conn).await
+                && p.enabled
+                && TwoFactor::find_by_user(&m.user_uuid, conn).await.is_empty()
             {
-                if p.enabled && TwoFactor::find_by_user(&m.user_uuid, conn).await.is_empty() {
-                    if CONFIG.email_2fa_auto_fallback() {
-                        two_factor::email::find_and_activate_email_2fa(&m.user_uuid, conn).await?;
-                    } else {
-                        err!(format!("Cannot {} because 2FA is required (membership {})", action, m.uuid));
-                    }
+                if CONFIG.email_2fa_auto_fallback() {
+                    two_factor::email::find_and_activate_email_2fa(&m.user_uuid, conn).await?;
+                } else {
+                    err!(format!("Cannot {} because 2FA is required (membership {})", action, m.uuid));
                 }
             }
 
@@ -300,12 +300,14 @@ impl OrgPolicy {
                 ));
             }
 
-            if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::SingleOrg, conn).await {
-                if p.enabled
-                    && Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await > 0
-                {
-                    err!(format!("Cannot {} because the organization policy forbids being part of other organization (membership {})", action, m.uuid));
-                }
+            if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::SingleOrg, conn).await
+                && p.enabled
+                && Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await > 0
+            {
+                err!(format!(
+                    "Cannot {} because the organization policy forbids being part of other organization (membership {})",
+                    action, m.uuid
+                ));
             }
         }
 
@@ -332,16 +334,16 @@ impl OrgPolicy {
         for policy in
             OrgPolicy::find_confirmed_by_user_and_active_policy(user_uuid, OrgPolicyType::SendOptions, conn).await
         {
-            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
-                if user.atype < MembershipType::Admin {
-                    match serde_json::from_str::<SendOptionsPolicyData>(&policy.data) {
-                        Ok(opts) => {
-                            if opts.disable_hide_email {
-                                return true;
-                            }
+            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await
+                && user.atype < MembershipType::Admin
+            {
+                match serde_json::from_str::<SendOptionsPolicyData>(&policy.data) {
+                    Ok(opts) => {
+                        if opts.disable_hide_email {
+                            return true;
                         }
-                        _ => error!("Failed to deserialize SendOptionsPolicyData: {}", policy.data),
                     }
+                    _ => error!("Failed to deserialize SendOptionsPolicyData: {}", policy.data),
                 }
             }
         }
@@ -349,10 +351,10 @@ impl OrgPolicy {
     }
 
     pub async fn is_enabled_for_member(member_uuid: &MembershipId, policy_type: OrgPolicyType, conn: &DbConn) -> bool {
-        if let Some(member) = Membership::find_by_uuid(member_uuid, conn).await {
-            if let Some(policy) = OrgPolicy::find_by_org_and_type(&member.org_uuid, policy_type, conn).await {
-                return policy.enabled;
-            }
+        if let Some(member) = Membership::find_by_uuid(member_uuid, conn).await
+            && let Some(policy) = OrgPolicy::find_by_org_and_type(&member.org_uuid, policy_type, conn).await
+        {
+            return policy.enabled;
         }
         false
     }

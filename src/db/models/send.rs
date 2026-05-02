@@ -1,7 +1,7 @@
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
 
-use crate::{config::PathType, util::LowerCase, CONFIG};
+use crate::{CONFIG, config::PathType, util::LowerCase};
 
 use super::{OrganizationId, User, UserId};
 use crate::db::schema::sends;
@@ -107,23 +107,23 @@ impl Send {
     pub fn check_password(&self, password: &str) -> bool {
         match (&self.password_hash, &self.password_salt, self.password_iter) {
             (Some(hash), Some(salt), Some(iter)) => {
-                crate::crypto::verify_password_hash(password.as_bytes(), salt, hash, iter as u32)
+                crate::crypto::verify_password_hash(password.as_bytes(), salt, hash, iter.cast_unsigned())
             }
             _ => false,
         }
     }
 
     pub async fn creator_identifier(&self, conn: &DbConn) -> Option<String> {
-        if let Some(hide_email) = self.hide_email {
-            if hide_email {
-                return None;
-            }
+        if let Some(hide_email) = self.hide_email
+            && hide_email
+        {
+            return None;
         }
 
-        if let Some(user_uuid) = &self.user_uuid {
-            if let Some(user) = User::find_by_uuid(user_uuid, conn).await {
-                return Some(user.email);
-            }
+        if let Some(user_uuid) = &self.user_uuid
+            && let Some(user) = User::find_by_uuid(user_uuid, conn).await
+        {
+            return Some(user.email);
         }
 
         None
@@ -137,7 +137,7 @@ impl Send {
         let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
 
         // Mobile clients expect size to be a string instead of a number
-        if let Some(size) = data.get("size").and_then(|v| v.as_i64()) {
+        if let Some(size) = data.get("size").and_then(Value::as_i64) {
             data["size"] = Value::String(size.to_string());
         }
 
@@ -172,7 +172,7 @@ impl Send {
         let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
 
         // Mobile clients expect size to be a string instead of a number
-        if let Some(size) = data.get("size").and_then(|v| v.as_i64()) {
+        if let Some(size) = data.get("size").and_then(Value::as_i64) {
             data["size"] = Value::String(size.to_string());
         }
 
@@ -256,15 +256,12 @@ impl Send {
 
     pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<UserId> {
         let mut user_uuids = Vec::new();
-        match &self.user_uuid {
-            Some(user_uuid) => {
-                User::update_uuid_revision(user_uuid, conn).await;
-                user_uuids.push(user_uuid.clone())
-            }
-            None => {
-                // Belongs to Organization, not implemented
-            }
-        };
+        if let Some(user_uuid) = &self.user_uuid {
+            User::update_uuid_revision(user_uuid, conn).await;
+            user_uuids.push(user_uuid.clone());
+        } else {
+            // Belongs to Organization, not implemented
+        }
         user_uuids
     }
 
@@ -320,22 +317,20 @@ impl Send {
     }
 
     pub async fn size_by_user(user_uuid: &UserId, conn: &DbConn) -> Option<i64> {
-        let sends = Self::find_by_user(user_uuid, conn).await;
-
         #[derive(serde::Deserialize)]
         struct FileData {
             #[serde(rename = "size", alias = "Size")]
             size: NumberOrString,
         }
 
+        let sends = Self::find_by_user(user_uuid, conn).await;
         let mut total: i64 = 0;
         for send in sends {
-            if send.atype == SendType::File as i32 {
-                if let Ok(size) =
+            if send.atype == SendType::File as i32
+                && let Ok(size) =
                     serde_json::from_str::<FileData>(&send.data).map_err(Into::into).and_then(|d| d.size.into_i64())
-                {
-                    total = total.checked_add(size)?;
-                };
+            {
+                total = total.checked_add(size)?;
             }
         }
 

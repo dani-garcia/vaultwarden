@@ -87,13 +87,12 @@ impl EmergencyAccess {
             User::find_by_uuid(grantee_uuid, conn).await.expect("Grantee user not found.")
         } else {
             let email = self.email.as_deref()?;
-            match User::find_by_mail(email, conn).await {
-                Some(user) => user,
-                None => {
-                    // remove outstanding invitations which should not exist
-                    Self::delete_all_by_grantee_email(email, conn).await.ok();
-                    return None;
-                }
+            if let Some(user) = User::find_by_mail(email, conn).await {
+                user
+            } else {
+                // remove outstanding invitations which should not exist
+                Self::delete_all_by_grantee_email(email, conn).await.ok();
+                return None;
             }
         };
 

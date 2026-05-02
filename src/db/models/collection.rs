@@ -5,10 +5,10 @@ use super::{
     CipherId, CollectionGroup, GroupUser, Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId,
     User, UserId,
 };
+use crate::CONFIG;
 use crate::db::schema::{
     ciphers_collections, collections, collections_groups, groups, groups_users, users_collections, users_organizations,
 };
-use crate::CONFIG;
 use diesel::prelude::*;
 use macros::UuidFromParam;
 
@@ -74,7 +74,7 @@ impl Collection {
                 if external_id.is_empty() {
                     self.external_id = None;
                 } else {
-                    self.external_id = Some(external_id)
+                    self.external_id = Some(external_id);
                 }
             }
             None => self.external_id = None,
@@ -208,7 +208,7 @@ impl Collection {
     }
 
     pub async fn update_users_revision(&self, conn: &DbConn) {
-        for member in Membership::find_by_collection_and_org(&self.uuid, &self.org_uuid, conn).await.iter() {
+        for member in &Membership::find_by_collection_and_org(&self.uuid, &self.org_uuid, conn).await {
             User::update_uuid_revision(&member.user_uuid, conn).await;
         }
     }
@@ -597,7 +597,7 @@ impl CollectionUser {
                 .load::<Self>(conn)
                 .expect("Error loading users_collections")
         }};
-        col_users.into_iter().map(|c| c.into()).collect()
+        col_users.into_iter().map(Into::into).collect()
     }
 
     pub async fn save(
@@ -701,7 +701,7 @@ impl CollectionUser {
                 .load::<Self>(conn)
                 .expect("Error loading users_collections")
         }};
-        col_users.into_iter().map(|c| c.into()).collect()
+        col_users.into_iter().map(Into::into).collect()
     }
 
     pub async fn find_by_collection_and_user(
@@ -730,7 +730,7 @@ impl CollectionUser {
     }
 
     pub async fn delete_all_by_collection(collection_uuid: &CollectionId, conn: &DbConn) -> EmptyResult {
-        for collection in CollectionUser::find_by_collection(collection_uuid, conn).await.iter() {
+        for collection in &CollectionUser::find_by_collection(collection_uuid, conn).await {
             User::update_uuid_revision(&collection.user_uuid, conn).await;
         }
 

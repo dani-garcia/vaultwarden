@@ -6,17 +6,17 @@ use std::{
 
 use chrono::{NaiveDateTime, Utc};
 use rmpv::Value;
-use rocket::{futures::StreamExt, Route};
+use rocket::{Route, futures::StreamExt};
 use rocket_ws::{Message, WebSocket};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
+    CONFIG, Error,
     auth::{ClientIp, WsAccessTokenHeader},
     db::{
-        models::{AuthRequestId, Cipher, CollectionId, Device, DeviceId, Folder, PushId, Send as DbSend, User, UserId},
         DbConn,
+        models::{AuthRequestId, Cipher, CollectionId, Device, DeviceId, Folder, PushId, Send as DbSend, User, UserId},
     },
-    Error, CONFIG,
 };
 
 pub static WS_USERS: LazyLock<Arc<WebSocketUsers>> = LazyLock::new(|| {
@@ -102,7 +102,7 @@ impl Drop for WSAnonymousEntryMapGuard {
     }
 }
 
-#[allow(tail_expr_drop_order)]
+#[expect(tail_expr_drop_order)]
 #[get("/hub?<data..>")]
 fn websockets_hub<'r>(
     ws: WebSocket,
@@ -186,7 +186,7 @@ fn websockets_hub<'r>(
     })
 }
 
-#[allow(tail_expr_drop_order)]
+#[expect(tail_expr_drop_order)]
 #[get("/anonymous-hub?<token..>")]
 fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> Result<rocket_ws::Stream!['r], Error> {
     info!("Accepting Anonymous Rocket WS connection from {}", ip.ip);
@@ -268,14 +268,15 @@ fn serialize(val: &Value) -> Vec<u8> {
     let mut len_buf: Vec<u8> = Vec::new();
 
     loop {
-        let mut size_part = size & 0x7f;
+        #[expect(clippy::cast_possible_truncation, reason = "masked to 7 bits, fits u8")]
+        let mut size_part = (size & 0x7f) as u8;
         size >>= 7;
 
         if size > 0 {
             size_part |= 0x80;
         }
 
-        len_buf.push(size_part as u8);
+        len_buf.push(size_part);
 
         if size == 0 {
             break;
@@ -329,7 +330,7 @@ pub struct WebSocketUsers {
 impl WebSocketUsers {
     async fn send_update(&self, user_id: &UserId, data: &[u8]) {
         if let Some(user) = self.map.get(user_id.as_ref()).map(|v| v.clone()) {
-            for (_, sender) in user.iter() {
+            for (_, sender) in &user {
                 if let Err(e) = sender.send(Message::binary(data)).await {
                     error!("Error sending WS update {e}");
                 }
@@ -538,10 +539,10 @@ pub struct AnonymousWebSocketSubscriptions {
 
 impl AnonymousWebSocketSubscriptions {
     async fn send_update(&self, token: &str, data: &[u8]) {
-        if let Some(sender) = self.map.get(token).map(|v| v.clone()) {
-            if let Err(e) = sender.send(Message::binary(data)).await {
-                error!("Error sending WS update {e}");
-            }
+        if let Some(sender) = self.map.get(token).map(|v| v.clone())
+            && let Err(e) = sender.send(Message::binary(data)).await
+        {
+            error!("Error sending WS update {e}");
         }
     }
 
@@ -582,7 +583,7 @@ fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id:
         V::Nil,
         "ReceiveMessage".into(),
         V::Array(vec![V::Map(vec![
-            ("ContextId".into(), acting_device_id.map(|v| v.to_string().into()).unwrap_or_else(|| V::Nil)),
+            ("ContextId".into(), acting_device_id.map_or(V::Nil, |v| v.to_string().into())),
             ("Type".into(), (ut as i32).into()),
             ("Payload".into(), payload.into()),
         ])]),

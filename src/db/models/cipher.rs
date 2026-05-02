@@ -1,9 +1,9 @@
+use crate::CONFIG;
 use crate::db::schema::{
     ciphers, ciphers_collections, collections, collections_groups, folders, folders_ciphers, groups, groups_users,
     users_collections, users_organizations,
 };
 use crate::util::LowerCase;
-use crate::CONFIG;
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
@@ -91,27 +91,27 @@ impl Cipher {
             format!("The field Notes exceeds the maximum encrypted value length of {max_note_size} characters.");
         for (index, cipher) in cipher_data.iter().enumerate() {
             // Validate the note size and if it is exceeded return a warning
-            if let Some(note) = &cipher.notes {
-                if note.len() > max_note_size {
-                    validation_errors
-                        .insert(format!("Ciphers[{index}].Notes"), serde_json::to_value([&max_note_size_msg]).unwrap());
-                }
+            if let Some(note) = &cipher.notes
+                && note.len() > max_note_size
+            {
+                validation_errors
+                    .insert(format!("Ciphers[{index}].Notes"), serde_json::to_value([&max_note_size_msg]).unwrap());
             }
 
             // Validate the password history if it contains `null` values and if so, return a warning
             if let Some(Value::Array(password_history)) = &cipher.password_history {
                 for pwh in password_history {
-                    if let Value::Object(pwo) = pwh {
-                        if pwo.get("password").is_some_and(|p| !p.is_string()) {
-                            validation_errors.insert(
-                                format!("Ciphers[{index}].Notes"),
-                                serde_json::to_value([
-                                    "The password history contains a `null` value. Only strings are allowed.",
-                                ])
-                                .unwrap(),
-                            );
-                            break;
-                        }
+                    if let Value::Object(pwo) = pwh
+                        && pwo.get("password").is_some_and(|p| !p.is_string())
+                    {
+                        validation_errors.insert(
+                            format!("Ciphers[{index}].Notes"),
+                            serde_json::to_value([
+                                "The password history contains a `null` value. Only strings are allowed.",
+                            ])
+                            .unwrap(),
+                        );
+                        break;
                     }
                 }
             }
@@ -124,9 +124,9 @@ impl Cipher {
                 "object": "error"
             });
             err_json!(err_json, "Import validation errors")
-        } else {
-            Ok(())
         }
+
+        Ok(())
     }
 }
 
@@ -149,14 +149,14 @@ impl Cipher {
 
         let mut attachments_json: Value = Value::Null;
         if let Some(cipher_sync_data) = cipher_sync_data {
-            if let Some(attachments) = cipher_sync_data.cipher_attachments.get(&self.uuid) {
-                if !attachments.is_empty() {
-                    let mut attachments_json_vec = vec![];
-                    for attachment in attachments {
-                        attachments_json_vec.push(attachment.to_json(host).await?);
-                    }
-                    attachments_json = Value::Array(attachments_json_vec);
+            if let Some(attachments) = cipher_sync_data.cipher_attachments.get(&self.uuid)
+                && !attachments.is_empty()
+            {
+                let mut attachments_json_vec = vec![];
+                for attachment in attachments {
+                    attachments_json_vec.push(attachment.to_json(host).await?);
                 }
+                attachments_json = Value::Array(attachments_json_vec);
             }
         } else {
             let attachments = Attachment::find_by_cipher(&self.uuid, conn).await;
@@ -172,12 +172,11 @@ impl Cipher {
         // We don't need these values at all for Organizational syncs
         // Skip any other database calls if this is the case and just return false.
         let (read_only, hide_passwords, _) = if sync_type == CipherSyncType::User {
-            match self.get_access_restrictions(user_uuid, cipher_sync_data, conn).await {
-                Some((ro, hp, mn)) => (ro, hp, mn),
-                None => {
-                    error!("Cipher ownership assertion failure");
-                    (true, true, false)
-                }
+            if let Some((ro, hp, mn)) = self.get_access_restrictions(user_uuid, cipher_sync_data, conn).await {
+                (ro, hp, mn)
+            } else {
+                error!("Cipher ownership assertion failure");
+                (true, true, false)
             }
         } else {
             (false, false, false)
@@ -231,15 +230,14 @@ impl Cipher {
                         Some(p) if p.is_string() => Some(d.data),
                         _ => None,
                     })
-                    .map(|mut d| match d.get("lastUsedDate").and_then(|l| l.as_str()) {
-                        Some(l) => {
-                            d["lastUsedDate"] = json!(validate_and_format_date(l));
-                            d
-                        }
-                        _ => {
-                            d["lastUsedDate"] = json!("1970-01-01T00:00:00.000000Z");
-                            d
-                        }
+                    .map(|mut d| {
+                        let lud = if let Some(l) = d.get("lastUsedDate").and_then(|l| l.as_str()) {
+                            validate_and_format_date(l)
+                        } else {
+                            "1970-01-01T00:00:00.000000Z".to_owned()
+                        };
+                        d["lastUsedDate"] = json!(lud);
+                        d
                     })
                     .collect()
             })
@@ -247,32 +245,30 @@ impl Cipher {
 
         // Get the type_data or a default to an empty json object '{}'.
         // If not passing an empty object, mobile clients will crash.
-        let mut type_data_json =
-            serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_else(|_| {
-                warn!("Error parsing data field for {}", self.uuid);
-                Value::Object(serde_json::Map::new())
-            });
+        let mut type_data_json = serde_json::from_str::<LowerCase<Value>>(&self.data)
+            .inspect_err(|_| warn!("Error parsing data field for {}", self.uuid))
+            .map_or_else(|_| Value::Object(serde_json::Map::new()), |d| d.data);
 
         // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
         if self.atype == 1 {
             // Upstream always has an `uri` key/value
             type_data_json["uri"] = Value::Null;
-            if let Some(uris) = type_data_json["uris"].as_array_mut() {
-                if !uris.is_empty() {
-                    // Fix uri match values first, they are only allowed to be a number or null
-                    // If it is a string, convert it to an int or null if that fails
-                    for uri in &mut *uris {
-                        if uri["match"].is_string() {
-                            let match_value = match uri["match"].as_str().unwrap_or_default().parse::<u8>() {
-                                Ok(n) => json!(n),
-                                _ => Value::Null,
-                            };
-                            uri["match"] = match_value;
-                        }
+            if let Some(uris) = type_data_json["uris"].as_array_mut()
+                && !uris.is_empty()
+            {
+                // Fix uri match values first, they are only allowed to be a number or null
+                // If it is a string, convert it to an int or null if that fails
+                for uri in &mut *uris {
+                    if uri["match"].is_string() {
+                        let match_value = match uri["match"].as_str().unwrap_or_default().parse::<u8>() {
+                            Ok(n) => json!(n),
+                            _ => Value::Null,
+                        };
+                        uri["match"] = match_value;
                     }
-                    type_data_json["uri"] = uris[0]["uri"].clone();
                 }
+                type_data_json["uri"] = uris[0]["uri"].clone();
             }
 
             // Check if `passwordRevisionDate` is a valid date, else convert it
@@ -285,7 +281,7 @@ impl Cipher {
         // This breaks at least the native mobile clients
         if self.atype == 2 {
             match type_data_json {
-                Value::Object(ref t) if t.get("type").is_some_and(|t| t.is_number()) => {}
+                Value::Object(ref t) if t.get("type").is_some_and(Value::is_number) => {}
                 _ => {
                     type_data_json = json!({"type": 0});
                 }
@@ -297,9 +293,9 @@ impl Cipher {
         // The only way to fix this is by setting type_data_json to `null`
         // Opening this ssh-key in the mobile client will probably crash the client, but you can edit, save and afterwards delete it
         if self.atype == 5
-            && (type_data_json["keyFingerprint"].as_str().is_none_or(|v| v.is_empty())
-                || type_data_json["privateKey"].as_str().is_none_or(|v| v.is_empty())
-                || type_data_json["publicKey"].as_str().is_none_or(|v| v.is_empty()))
+            && (type_data_json["keyFingerprint"].as_str().is_none_or(str::is_empty)
+                || type_data_json["privateKey"].as_str().is_none_or(str::is_empty)
+                || type_data_json["publicKey"].as_str().is_none_or(str::is_empty))
         {
             warn!("Error parsing ssh-key, mandatory fields are invalid for {}", self.uuid);
             type_data_json = Value::Null;
@@ -415,7 +411,7 @@ impl Cipher {
         match self.user_uuid {
             Some(ref user_uuid) => {
                 User::update_uuid_revision(user_uuid, conn).await;
-                user_uuids.push(user_uuid.clone())
+                user_uuids.push(user_uuid.clone());
             }
             None => {
                 // Belongs to Organization, need to update affected users
@@ -430,11 +426,11 @@ impl Cipher {
                     }
                     for member in collection_users {
                         User::update_uuid_revision(&member.user_uuid, conn).await;
-                        user_uuids.push(member.user_uuid.clone())
+                        user_uuids.push(member.user_uuid.clone());
                     }
                 }
             }
-        };
+        }
         user_uuids
     }
 
@@ -531,9 +527,10 @@ impl Cipher {
 
             // Remove from folder
             (Some(old_folder), None) => {
-                match FolderCipher::find_by_folder_and_cipher(&old_folder, &self.uuid, conn).await {
-                    Some(old_folder) => old_folder.delete(conn).await,
-                    None => err!("Couldn't move from previous folder"),
+                if let Some(old_folder) = FolderCipher::find_by_folder_and_cipher(&old_folder, &self.uuid, conn).await {
+                    old_folder.delete(conn).await
+                } else {
+                    err!("Couldn't move from previous folder")
                 }
             }
 
@@ -584,9 +581,8 @@ impl Cipher {
         if let Some(ref org_uuid) = self.organization_uuid {
             if let Some(cipher_sync_data) = cipher_sync_data {
                 return cipher_sync_data.user_group_full_access_for_organizations.contains(org_uuid);
-            } else {
-                return Group::is_in_full_access_group(user_uuid, org_uuid, conn).await;
             }
+            return Group::is_in_full_access_group(user_uuid, org_uuid, conn).await;
         }
         false
     }
@@ -628,10 +624,10 @@ impl Cipher {
             rows
         } else {
             let user_permissions = self.get_user_collections_access_flags(user_uuid, conn).await;
-            if !user_permissions.is_empty() {
-                user_permissions
-            } else {
+            if user_permissions.is_empty() {
                 self.get_group_collections_access_flags(user_uuid, conn).await
+            } else {
+                user_permissions
             }
         };
 
@@ -657,7 +653,7 @@ impl Cipher {
         let mut read_only = true;
         let mut hide_passwords = true;
         let mut manage = false;
-        for (ro, hp, mn) in rows.iter() {
+        for (ro, hp, mn) in &rows {
             read_only &= ro;
             hide_passwords &= hp;
             manage |= mn;

@@ -9,6 +9,7 @@ mod web;
 use rocket::serde::json::Json;
 use serde_json::Value;
 
+use crate::CONFIG;
 pub use crate::api::{
     admin::catchers as admin_catchers,
     admin::routes as admin_routes,
@@ -33,10 +34,9 @@ pub use crate::api::{
     web::static_files,
 };
 use crate::db::{
-    models::{OrgPolicy, OrgPolicyType, User},
     DbConn,
+    models::{OrgPolicy, OrgPolicyType, User},
 };
-use crate::CONFIG;
 
 // Type aliases for API methods results
 pub type ApiResult<T> = Result<T, crate::error::Error>;
@@ -74,6 +74,7 @@ impl PasswordOrOtpData {
     }
 }
 
+#[expect(clippy::struct_excessive_bools, reason = "Bitwarden clients expect the data in this specific format")]
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MasterPasswordPolicy {

@@ -8,13 +8,13 @@ use super::{
     Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
 };
 use crate::{
+    CONFIG,
     api::EmptyResult,
     crypto,
-    db::{models::DeviceId, DbConn},
+    db::{DbConn, models::DeviceId},
     error::MapResult,
     sso::OIDCIdentifier,
     util::{format_date, get_uuid, retry},
-    CONFIG,
 };
 use macros::UuidFromParam;
 
@@ -137,8 +137,8 @@ impl User {
             _totp_secret: None,
             totp_recover: None,
 
-            equivalent_domains: "[]".to_string(),
-            excluded_globals: "[]".to_string(),
+            equivalent_domains: "[]".to_owned(),
+            excluded_globals: "[]".to_owned(),
 
             client_kdf_type: Self::CLIENT_KDF_TYPE_DEFAULT,
             client_kdf_iter: Self::CLIENT_KDF_ITER_DEFAULT,
@@ -158,7 +158,7 @@ impl User {
             password.as_bytes(),
             &self.salt,
             &self.password_hash,
-            self.password_iterations as u32,
+            self.password_iterations.cast_unsigned(),
         )
     }
 
@@ -193,7 +193,8 @@ impl User {
         allow_next_route: Option<Vec<String>>,
         conn: &DbConn,
     ) -> EmptyResult {
-        self.password_hash = crypto::hash_password(password.as_bytes(), &self.salt, self.password_iterations as u32);
+        self.password_hash =
+            crypto::hash_password(password.as_bytes(), &self.salt, self.password_iterations.cast_unsigned());
 
         if let Some(route) = allow_next_route {
             self.set_stamp_exception(route);
@@ -238,10 +239,10 @@ impl User {
 
     pub fn display_name(&self) -> &str {
         // default to email if name is empty
-        if !&self.name.is_empty() {
-            &self.name
-        } else {
+        if self.name.is_empty() {
             &self.email
+        } else {
+            &self.name
         }
     }
 }
@@ -345,7 +346,7 @@ impl User {
     }
 
     pub async fn update_uuid_revision(uuid: &UserId, conn: &DbConn) {
-        if let Err(e) = Self::_update_revision(uuid, &Utc::now().naive_utc(), conn).await {
+        if let Err(e) = Self::update_revision_impl(uuid, &Utc::now().naive_utc(), conn).await {
             warn!("Failed to update revision for {uuid}: {e:#?}");
         }
     }
@@ -366,10 +367,10 @@ impl User {
     pub async fn update_revision(&mut self, conn: &DbConn) -> EmptyResult {
         self.updated_at = Utc::now().naive_utc();
 
-        Self::_update_revision(&self.uuid, &self.updated_at, conn).await
+        Self::update_revision_impl(&self.uuid, &self.updated_at, conn).await
     }
 
-    async fn _update_revision(uuid: &UserId, date: &NaiveDateTime, conn: &DbConn) -> EmptyResult {
+    async fn update_revision_impl(uuid: &UserId, date: &NaiveDateTime, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
             retry(|| {
                 diesel::update(users::table.filter(users::uuid.eq(uuid)))
