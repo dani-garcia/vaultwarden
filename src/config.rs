@@ -520,6 +520,8 @@ make_config! {
         templates_folder:       String, false,  auto,   |c| format!("{}/templates", c.data_folder);
         /// Session JWT key
         rsa_key_filename:       String, false,  auto,   |c| format!("{}/rsa_key", c.data_folder);
+        /// RSA key passphrase |> Passphrase used to encrypt the private RSA key file on disk (leave empty for unencrypted)
+        rsa_key_passphrase:     String, false,  def,    String::new();
         /// Web vault folder
         web_vault_folder:       String, false,  def,    "web-vault/".to_string();
     },
@@ -957,6 +959,11 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
 
     if cfg.database_min_conns > cfg.database_max_conns {
         err!(format!("`DATABASE_MIN_CONNS` must be smaller than or equal to `DATABASE_MAX_CONNS`.",));
+    }
+
+    // 1024 = OpenSSL's PEM_BUFSIZE, the size of the buffer passed to the passphrase callback
+    if cfg.rsa_key_passphrase.as_bytes().len() > 1024 {
+        err!("`RSA_KEY_PASSPHRASE` must not exceed 1024 bytes");
     }
 
     if let Some(log_file) = &cfg.log_file {

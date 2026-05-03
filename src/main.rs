@@ -77,7 +77,7 @@ async fn main() -> Result<(), Error> {
 
     check_data_folder().await;
     auth::initialize_keys().await.unwrap_or_else(|e| {
-        error!("Error creating private key '{}'\n{e:?}\nExiting Vaultwarden!", CONFIG.private_rsa_key());
+        error!("Error creating or loading private key '{}'\n{e:?}\nExiting Vaultwarden!", CONFIG.private_rsa_key());
         exit(1);
     });
     check_web_vault();

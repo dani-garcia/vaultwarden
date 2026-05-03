@@ -69,14 +69,59 @@ pub async fn initialize_keys() -> Result<(), Error> {
         Err(e) => return Err(e.into()),
     };
 
-    let (priv_key, priv_key_buffer) = if let Some(priv_key_buffer) = priv_key_buffer {
-        (Rsa::private_key_from_pem(priv_key_buffer.to_vec().as_slice())?, priv_key_buffer.to_vec())
+    let passphrase = CONFIG.rsa_key_passphrase();
+
+    let (priv_key, priv_key_buffer) = if let Some(stored_buffer) = priv_key_buffer {
+        let mut passphrase_error: Option<Error> = None;
+        let mut key_is_unencrypted = true;
+
+        // The callback is only invoked if the key file is encrypted. For unencrypted keys it is never called.
+        let rsa = Rsa::private_key_from_pem_callback(stored_buffer.to_vec().as_slice(), |buf| {
+            key_is_unencrypted = false;
+            if passphrase.is_empty() {
+                // Only reached when key is encrypted. Return any error to abort the callback;
+                // the actual error message is stored in passphrase_error above.
+                passphrase_error = Some(Error::other(
+                    "Private RSA key is encrypted but RSA_KEY_PASSPHRASE is not configured",
+                ));
+                return Err(openssl::error::ErrorStack::get());
+            }
+            let bytes = passphrase.as_bytes();
+            buf[..bytes.len()].copy_from_slice(bytes);
+            Ok(bytes.len())
+        });
+
+        let rsa = match rsa {
+            Ok(r) => r,
+            Err(_) if passphrase_error.is_some() => return Err(passphrase_error.unwrap().into()),
+            Err(e) => return Err(e.into()),
+        };
+
+        if key_is_unencrypted && !passphrase.is_empty() {
+            warn!(
+                "RSA key passphrase is configured but the existing private key '{}' is not encrypted.",
+                CONFIG.private_rsa_key()
+            );
+        }
+
+        // EncodingKey requires an unencrypted PEM, so export the in-memory key regardless of how it was stored on disk.
+        let unencrypted_pem = rsa.private_key_to_pem()?;
+        (rsa, unencrypted_pem)
     } else {
         let rsa_key = Rsa::generate(2048)?;
-        let priv_key_buffer = rsa_key.private_key_to_pem()?;
-        operator.write(&rsa_key_filename, priv_key_buffer.clone()).await?;
+
+        // Store encrypted on disk if a passphrase is configured, otherwise store plaintext.
+        let stored_pem = if passphrase.is_empty() {
+            rsa_key.private_key_to_pem()?
+        } else {
+            use openssl::symm::Cipher;
+            rsa_key.private_key_to_pem_passphrase(Cipher::aes_256_cbc(), passphrase.as_bytes())?
+        };
+        operator.write(&rsa_key_filename, stored_pem).await?;
         info!("Private key '{}' created correctly", CONFIG.private_rsa_key());
-        (rsa_key, priv_key_buffer)
+
+        let unencrypted_pem = rsa_key.private_key_to_pem()?;
+        (rsa_key, unencrypted_pem)
     };
     let pub_key_buffer = priv_key.public_key_to_pem()?;
 
