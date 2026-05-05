@@ -9,20 +9,29 @@ fn main() {
     println!("cargo:rustc-cfg=mysql");
     #[cfg(feature = "postgresql")]
     println!("cargo:rustc-cfg=postgresql");
-    #[cfg(not(any(feature = "sqlite_system", feature = "mysql", feature = "postgresql")))]
+    #[cfg(feature = "dsql")]
+    println!("cargo:rustc-cfg=dsql");
+    #[cfg(not(any(feature = "sqlite_system", feature = "mysql", feature = "postgresql", feature = "dsql")))]
     compile_error!(
         "You need to enable one DB backend. To build with previous defaults do: cargo build --features sqlite"
     );
 
     #[cfg(feature = "s3")]
     println!("cargo:rustc-cfg=s3");
+    #[cfg(feature = "ses")]
+    println!("cargo:rustc-cfg=ses");
+    #[cfg(feature = "aws")]
+    println!("cargo:rustc-cfg=aws");
 
     // Use check-cfg to let cargo know which cfg's we define,
     // and avoid warnings when they are used in the code.
     println!("cargo::rustc-check-cfg=cfg(sqlite)");
     println!("cargo::rustc-check-cfg=cfg(mysql)");
     println!("cargo::rustc-check-cfg=cfg(postgresql)");
+    println!("cargo::rustc-check-cfg=cfg(dsql)");
     println!("cargo::rustc-check-cfg=cfg(s3)");
+    println!("cargo::rustc-check-cfg=cfg(ses)");
+    println!("cargo::rustc-check-cfg=cfg(aws)");
 
     // Rerun when these paths are changed.
     // Someone could have checked-out a tag or specific commit, but no other files changed.

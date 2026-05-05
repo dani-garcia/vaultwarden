@@ -48,6 +48,8 @@ use tokio::signal::unix::SignalKind;
 mod error;
 mod api;
 mod auth;
+#[cfg(any(dsql, s3, ses))]
+mod aws;
 mod config;
 mod crypto;
 #[macro_use]
@@ -57,6 +59,7 @@ mod mail;
 mod ratelimit;
 mod sso;
 mod sso_client;
+mod storage;
 mod util;
 
 use crate::api::core::two_factor::duo_oidc::purge_duo_contexts;

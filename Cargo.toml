@@ -39,7 +39,10 @@ vendored_openssl = ["openssl/vendored"]
 # Enable MiMalloc memory allocator to replace the default malloc
 # This can improve performance for Alpine builds
 enable_mimalloc = ["dep:mimalloc"]
-s3 = ["opendal/services-s3", "dep:aws-config", "dep:aws-credential-types", "dep:aws-smithy-runtime-api", "dep:anyhow", "dep:http", "dep:reqsign"]
+aws = ["dsql", "s3", "ses"]
+dsql = ["postgresql", "dep:aws-config", "dep:aws-sdk-dsql", "dep:aws-smithy-runtime-api"]
+ses = ["dep:aws-config", "dep:aws-sdk-sesv2", "dep:aws-smithy-runtime-api"]
+s3 = ["opendal/services-s3", "opendal/reqwest-rustls-tls", "dep:aws-config", "dep:aws-credential-types", "dep:aws-smithy-runtime-api", "dep:http", "dep:reqsign-aws-v4", "dep:reqsign-core"]
 
 # OIDC specific features
 oidc-accept-rfc3339-timestamps = ["openidconnect/accept-rfc3339-timestamps"]
@@ -196,15 +199,17 @@ rpassword = "7.5.1"
 grass_compiler = { version = "0.13.4", default-features = false }
 
 # File are accessed through Apache OpenDAL
-opendal = { version = "0.55.0", features = ["services-fs"], default-features = false }
+opendal = { version = "0.56.0", features = ["services-fs"], default-features = false }
 
 # For retrieving AWS credentials, including temporary SSO credentials
-anyhow = { version = "1.0.102", optional = true }
 aws-config = { version = "1.8.16", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
 aws-credential-types = { version = "1.2.14", optional = true }
+aws-sdk-dsql = { version = "1.55.0", features = ["behavior-version-latest", "rt-tokio"], default-features = false, optional = true }
+aws-sdk-sesv2 = { version = "1.118.0", features = ["behavior-version-latest", "rt-tokio"], default-features = false, optional = true }
 aws-smithy-runtime-api = { version = "1.12.0", optional = true }
 http = { version = "1.4.0", optional = true }
-reqsign = { version = "0.16.5", optional = true }
+reqsign-aws-v4 = { version = "3.0.0", optional = true }
+reqsign-core = { version = "3.0.0", optional = true }
 
 # Strip debuginfo from the release builds
 # The debug symbols are to provide better panic traces

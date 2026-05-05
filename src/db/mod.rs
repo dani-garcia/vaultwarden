@@ -1,3 +1,5 @@
+#[cfg(dsql)]
+mod dsql;
 mod query_logger;
 
 use std::{
@@ -68,6 +70,12 @@ impl DbConnManager {
 
     fn establish_connection(&self) -> Result<DbConnInner, diesel::r2d2::Error> {
         match DbConnType::from_url(&self.database_url) {
+            #[cfg(dsql)]
+            Ok(DbConnType::Dsql) => {
+                let db_url = dsql::psql_url(&self.database_url).map_err(diesel::r2d2::Error::ConnectionError)?;
+                let conn = diesel::pg::PgConnection::establish(&db_url)?;
+                Ok(DbConnInner::Postgresql(conn))
+            }
             #[cfg(mysql)]
             Ok(DbConnType::Mysql) => {
                 let conn = diesel::mysql::MysqlConnection::establish(&self.database_url)?;
@@ -110,8 +118,10 @@ impl diesel::r2d2::ManageConnection for DbConnManager {
     }
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum DbConnType {
+    #[cfg(dsql)]
+    Dsql,
     #[cfg(mysql)]
     Mysql,
     #[cfg(postgresql)]
@@ -195,6 +205,10 @@ impl DbPool {
         }
 
         match conn_type {
+            #[cfg(dsql)]
+            DbConnType::Dsql => {
+                dsql_migrations::run_migrations(&db_url)?;
+            }
             #[cfg(mysql)]
             DbConnType::Mysql => {
                 mysql_migrations::run_migrations(&db_url)?;
@@ -272,6 +286,14 @@ impl DbConnType {
             #[cfg(not(postgresql))]
             err!("`DATABASE_URL` is a PostgreSQL URL, but the 'postgresql' feature is not enabled")
 
+        // Amazon Aurora DSQL
+        } else if url.starts_with("dsql:") {
+            #[cfg(dsql)]
+            return Ok(DbConnType::Dsql);
+
+            #[cfg(not(dsql))]
+            err!("`DATABASE_URL` is a DSQL URL, but the 'dsql' feature is not enabled")
+
         //Sqlite
         } else {
             #[cfg(sqlite)]
@@ -293,6 +315,8 @@ impl DbConnType {
 
     pub fn default_init_stmts(&self) -> String {
         match self {
+            #[cfg(dsql)]
+            Self::Dsql => String::new(),
             #[cfg(mysql)]
             Self::Mysql => String::new(),
             #[cfg(postgresql)]
@@ -514,6 +538,22 @@ mod postgresql_migrations {
         let mut connection = diesel::pg::PgConnection::establish(db_url)?;
 
         connection.run_pending_migrations(MIGRATIONS).expect("Error running migrations");
+        Ok(())
+    }
+}
+
+#[cfg(dsql)]
+mod dsql_migrations {
+    use diesel::Connection;
+    use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
+
+    pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/dsql");
+
+    pub fn run_migrations(db_url: &str) -> Result<(), super::Error> {
+        let db_url = super::dsql::psql_url(db_url)?;
+        let mut connection = diesel::pg::PgConnection::establish(&db_url)?;
+
+        connection.run_pending_migrations(MIGRATIONS).expect("Error running DSQL migrations");
         Ok(())
     }
 }
