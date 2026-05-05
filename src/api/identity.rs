@@ -1222,7 +1222,8 @@ async fn _oidcsignin_redirect(
         (Some(expected), Some(actual)) if crypto::ct_eq(expected, actual) => {}
         _ => err!(format!("SSO session binding mismatch for {state}")),
     }
-    cookies.remove(Cookie::build(SSO_BINDING_COOKIE).path("/identity/connect/").build());
+    cookies
+        .remove(Cookie::build(SSO_BINDING_COOKIE).path(format!("{}/identity/connect/", CONFIG.domain_path())).build());
 
     sso_auth.code_response = Some(code_response);
     sso_auth.updated_at = Utc::now().naive_utc();
@@ -1294,7 +1295,7 @@ async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure,
 
     cookies.add(
         Cookie::build((SSO_BINDING_COOKIE, binding_token))
-            .path("/identity/connect/")
+            .path(format!("{}/identity/connect/", CONFIG.domain_path()))
             .max_age(time::Duration::seconds(sso::SSO_AUTH_EXPIRATION.num_seconds()))
             .same_site(SameSite::Lax) // Lax is needed because the IdP runs on a different FQDN
             .http_only(true)
