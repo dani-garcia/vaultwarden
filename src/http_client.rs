@@ -295,7 +295,7 @@ impl Resolve for CustomDnsResolver {
     }
 }
 
-#[cfg(any(s3, ses))]
+#[cfg(any(dsql, s3, ses))]
 pub(crate) mod aws {
     use aws_smithy_runtime_api::client::{
         http::{HttpClient, HttpConnector, HttpConnectorFuture, HttpConnectorSettings, SharedHttpConnector},
