@@ -15,17 +15,12 @@ use diesel::sql_types::Text;
 
 #[derive(AsExpression, Clone, Debug, Serialize, Deserialize, FromSqlRow)]
 #[diesel(sql_type = Text)]
-pub enum OIDCCodeWrapper {
-    Ok {
-        code: OIDCCode,
-    },
-    Error {
-        error: String,
-        error_description: Option<String>,
-    },
+pub struct OIDCCodeResponseError {
+    pub error: String,
+    pub error_description: Option<String>,
 }
 
-impl_FromToSqlText!(OIDCCodeWrapper);
+impl_FromToSqlText!(OIDCCodeResponseError);
 
 #[derive(AsExpression, Clone, Debug, Serialize, Deserialize, FromSqlRow)]
 #[diesel(sql_type = Text)]
@@ -50,7 +45,8 @@ pub struct SsoAuth {
     pub client_challenge: OIDCCodeChallenge,
     pub nonce: String,
     pub redirect_uri: String,
-    pub code_response: Option<OIDCCodeWrapper>,
+    pub code_response: Option<OIDCCode>,
+    pub code_response_error: Option<OIDCCodeResponseError>,
     pub auth_response: Option<OIDCAuthenticatedUser>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -76,6 +72,7 @@ impl SsoAuth {
             created_at: now,
             updated_at: now,
             code_response: None,
+            code_response_error: None,
             auth_response: None,
             binding_hash,
         }
@@ -112,6 +109,17 @@ impl SsoAuth {
         db_run! { conn: {
             sso_auth::table
                 .filter(sso_auth::state.eq(state))
+                .filter(sso_auth::created_at.ge(oldest))
+                .first::<Self>(conn)
+                .ok()
+        }}
+    }
+
+    pub async fn find_by_code(code: &OIDCCode, conn: &DbConn) -> Option<Self> {
+        let oldest = Utc::now().naive_utc() - *SSO_AUTH_EXPIRATION;
+        db_run! { conn: {
+            sso_auth::table
+                .filter(sso_auth::code_response.eq(code))
                 .filter(sso_auth::created_at.ge(oldest))
                 .first::<Self>(conn)
                 .ok()
