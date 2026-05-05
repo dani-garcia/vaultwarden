@@ -427,6 +427,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-dsql"
+version = "1.69.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71c7c3c6c04fe1cdb47056dc9a5f0c6c72fb01a1643d5f12ff7c16b3dbc3d09e"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-sigv4",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 0.2.12",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "aws-sdk-sesv2"
 version = "1.133.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5994,6 +6022,7 @@ dependencies = [
  "argon2",
  "aws-config",
  "aws-credential-types",
+ "aws-sdk-dsql",
  "aws-sdk-sesv2",
  "aws-smithy-runtime-api",
  "bigdecimal",
