@@ -1,0 +1,7 @@
+[build]
+features = ["aws"]
+release = true
+arm64 = true
+
+[build.compiler]
+type = "cargo"
