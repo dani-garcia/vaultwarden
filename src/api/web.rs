@@ -23,7 +23,15 @@ pub fn routes() -> Vec<Route> {
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
     let mut routes = routes![attachments, alive, alive_head, static_files];
     if CONFIG.web_vault_enabled() {
-        routes.append(&mut routes![web_index, web_index_direct, web_index_head, app_id, web_files, vaultwarden_css]);
+        routes.append(&mut routes![
+            web_index,
+            web_index_direct,
+            web_index_head,
+            app_id,
+            apple_app_site_association,
+            web_files,
+            vaultwarden_css
+        ]);
     }
 
     #[cfg(debug_assertions)]
@@ -154,6 +162,24 @@ fn app_id() -> Cached<(ContentType, Json<Value>)> {
                     "ios:bundle-id:com.8bit.bitwarden",
                     "android:apk-key-hash:dUGFzUzf3lmHSLBDBIv+WaFyZMI" ]
                 }]
+            })),
+        ),
+        true,
+    )
+}
+
+#[get("/.well-known/apple-app-site-association")]
+fn apple_app_site_association() -> Cached<(ContentType, Json<Value>)> {
+    Cached::long(
+        (
+            ContentType::JSON,
+            Json(json!({
+                "webcredentials": {
+                    "apps": [
+                        "LTZ2PFU5D6.com.8bit.bitwarden",
+                        "LTZ2PFU5D6.com.8bit.bitwarden.beta"
+                    ]
+                }
             })),
         ),
         true,
