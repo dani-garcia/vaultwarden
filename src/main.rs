@@ -48,6 +48,8 @@ use tokio::signal::unix::SignalKind;
 mod error;
 mod api;
 mod auth;
+#[cfg(any(s3, ses))]
+mod aws;
 mod config;
 mod crypto;
 #[macro_use]

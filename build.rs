@@ -16,6 +16,10 @@ fn main() {
 
     #[cfg(feature = "s3")]
     println!("cargo:rustc-cfg=s3");
+    #[cfg(feature = "ses")]
+    println!("cargo:rustc-cfg=ses");
+    #[cfg(feature = "aws")]
+    println!("cargo:rustc-cfg=aws");
 
     // Use check-cfg to let cargo know which cfg's we define,
     // and avoid warnings when they are used in the code.
@@ -23,6 +27,8 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(mysql)");
     println!("cargo::rustc-check-cfg=cfg(postgresql)");
     println!("cargo::rustc-check-cfg=cfg(s3)");
+    println!("cargo::rustc-check-cfg=cfg(ses)");
+    println!("cargo::rustc-check-cfg=cfg(aws)");
 
     // Rerun when these paths are changed.
     // Someone could have checked-out a tag or specific commit, but no other files changed.
