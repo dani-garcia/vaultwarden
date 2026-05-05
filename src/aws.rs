@@ -1,3 +1,6 @@
+#[cfg(dsql)]
+use std::io::Error;
+
 use aws_config::{AppName, BehaviorVersion};
 use tokio::sync::OnceCell;
 
@@ -23,4 +26,14 @@ pub(crate) async fn aws_sdk_config() -> &'static aws_config::SdkConfig {
                 .await
         })
         .await
+}
+
+#[cfg(dsql)]
+pub(crate) fn aws_sdk_config_blocking() -> std::io::Result<&'static aws_config::SdkConfig> {
+    std::thread::spawn(|| {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+        std::io::Result::Ok(rt.block_on(aws_sdk_config()))
+    })
+    .join()
+    .map_err(|e| Error::other(format!("Failed to load AWS SDK config: {e:?}")))?
 }
