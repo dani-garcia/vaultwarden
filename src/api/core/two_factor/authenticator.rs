@@ -1,6 +1,5 @@
 use data_encoding::BASE32;
-use rocket::Route;
-use rocket::serde::json::Json;
+use rocket::{Route, serde::json::Json};
 
 use crate::{
     api::{EmptyResult, JsonResult, PasswordOrOtpData, core::log_user_event, core::two_factor::generate_recover_code},

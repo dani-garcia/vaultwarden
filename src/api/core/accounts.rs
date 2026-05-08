@@ -1,7 +1,11 @@
 use std::collections::HashSet;
 
-use crate::db::DbPool;
 use chrono::Utc;
+use rocket::{
+    http::Status,
+    request::{FromRequest, Outcome, Request},
+    serde::json::Json,
+};
 use serde_json::Value;
 
 use crate::{
@@ -14,7 +18,7 @@ use crate::{
     auth::{ClientHeaders, Headers, decode_delete, decode_invite, decode_verify_email},
     crypto,
     db::{
-        DbConn,
+        DbConn, DbPool,
         models::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
             EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId,
@@ -25,13 +29,9 @@ use crate::{
     util::{NumberOrString, deser_opt_nonempty_str, format_date},
 };
 
-use super::ciphers::{CipherData, update_cipher_from_data};
-use super::sends::{SendData, update_send_from_data};
-
-use rocket::{
-    http::Status,
-    request::{FromRequest, Outcome, Request},
-    serde::json::Json,
+use super::{
+    ciphers::{CipherData, update_cipher_from_data},
+    sends::{SendData, update_send_from_data},
 };
 
 pub fn routes() -> Vec<rocket::Route> {
@@ -1282,8 +1282,6 @@ async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers
 }
 
 async fn update_api_key(data: Json<PasswordOrOtpData>, rotate: bool, headers: Headers, conn: DbConn) -> JsonResult {
-    use crate::util::format_date;
-
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 

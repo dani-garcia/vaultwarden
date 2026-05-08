@@ -33,6 +33,7 @@ use std::{
     path::Path,
     process::exit,
     str::FromStr,
+    sync::{Arc, atomic::Ordering},
     thread,
 };
 
@@ -43,6 +44,8 @@ use tokio::{
 
 #[cfg(unix)]
 use tokio::signal::unix::SignalKind;
+
+use rocket::data::{Limits, ToByteUnit};
 
 #[macro_use]
 mod error;
@@ -60,13 +63,11 @@ mod sso_client;
 mod storage;
 mod util;
 
-use crate::api::core::two_factor::duo_oidc::purge_duo_contexts;
-use crate::api::purge_auth_requests;
-use crate::api::{WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS};
+use crate::api::{
+    WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS, core::two_factor::duo_oidc::purge_duo_contexts, purge_auth_requests,
+};
 pub use config::{CONFIG, PathType};
 pub use error::{Error, MapResult};
-use rocket::data::{Limits, ToByteUnit};
-use std::sync::{Arc, atomic::Ordering};
 pub use util::is_running_in_container;
 
 #[rocket::main]

@@ -1,12 +1,12 @@
-use num_traits::FromPrimitive;
-use rocket::Route;
-use rocket::serde::json::Json;
-use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
-use crate::api::admin::FAKE_ADMIN_UUID;
+use num_traits::FromPrimitive;
+use rocket::{Route, serde::json::Json};
+use serde_json::Value;
+
 use crate::{
     CONFIG,
+    api::admin::FAKE_ADMIN_UUID,
     api::{
         EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},

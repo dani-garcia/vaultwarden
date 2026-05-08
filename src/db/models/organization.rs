@@ -1,23 +1,32 @@
-use chrono::{NaiveDateTime, Utc};
-use derive_more::{AsRef, Deref, Display, From};
-use diesel::prelude::*;
-use num_traits::FromPrimitive;
-use serde_json::Value;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
 };
 
-use super::{
-    CipherId, Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy,
-    OrgPolicyType, TwoFactor, User, UserId,
-};
-use crate::CONFIG;
-use crate::db::schema::{
-    ciphers, ciphers_collections, collections_groups, groups, groups_users, org_policies, organization_api_key,
-    organizations, users, users_collections, users_organizations,
+use chrono::{NaiveDateTime, Utc};
+use derive_more::{AsRef, Deref, Display, From};
+use diesel::prelude::*;
+use num_traits::FromPrimitive;
+use serde_json::Value;
+
+use crate::{
+    CONFIG,
+    api::EmptyResult,
+    db::{
+        DbConn,
+        schema::{
+            ciphers, ciphers_collections, collections_groups, groups, groups_users, org_policies, organization_api_key,
+            organizations, users, users_collections, users_organizations,
+        },
+    },
+    error::MapResult,
 };
 use macros::UuidFromParam;
+
+use super::{
+    Cipher, CipherId, Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy,
+    OrgPolicyType, TwoFactor, User, UserId,
+};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = organizations)]
@@ -325,11 +334,6 @@ impl OrganizationApiKey {
     }
 }
 
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
-
 /// Database methods
 impl Organization {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
@@ -373,8 +377,6 @@ impl Organization {
     }
 
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
-        use super::{Cipher, Collection};
-
         Cipher::delete_all_by_organization(&self.uuid, conn).await?;
         Collection::delete_all_by_organization(&self.uuid, conn).await?;
         Membership::delete_all_by_organization(&self.uuid, conn).await?;

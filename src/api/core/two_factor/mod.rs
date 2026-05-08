@@ -1,8 +1,7 @@
 use chrono::{TimeDelta, Utc};
 use data_encoding::BASE32;
 use num_traits::FromPrimitive;
-use rocket::Route;
-use rocket::serde::json::Json;
+use rocket::{Route, serde::json::Json};
 use serde::Deserialize;
 use serde_json::Value;
 

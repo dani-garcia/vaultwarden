@@ -1,7 +1,6 @@
 use chrono::Utc;
 use data_encoding::BASE64;
-use rocket::Route;
-use rocket::serde::json::Json;
+use rocket::{Route, serde::json::Json};
 
 use crate::{
     CONFIG,

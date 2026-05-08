@@ -1,22 +1,26 @@
-use crate::db::schema::{invitations, sso_users, twofactor_incomplete, users};
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
 use serde_json::Value;
 
-use super::{
-    Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
-};
 use crate::{
     CONFIG,
     api::EmptyResult,
     crypto,
-    db::{DbConn, models::DeviceId},
+    db::{
+        DbConn,
+        models::DeviceId,
+        schema::{invitations, sso_users, twofactor_incomplete, users},
+    },
     error::MapResult,
     sso::OIDCIdentifier,
     util::{format_date, get_uuid, retry},
 };
 use macros::UuidFromParam;
+
+use super::{
+    Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
+};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
 #[diesel(table_name = users)]

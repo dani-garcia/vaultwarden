@@ -1,11 +1,18 @@
 use chrono::{NaiveDateTime, TimeDelta, Utc};
-//use derive_more::{AsRef, Deref, Display, From};
+use diesel::prelude::*;
 use serde_json::Value;
 
+use crate::{
+    CONFIG,
+    api::EmptyResult,
+    db::{
+        DbConn,
+        schema::{event, users_organizations},
+    },
+    error::MapResult,
+};
+
 use super::{CipherId, CollectionId, GroupId, MembershipId, OrgPolicyId, OrganizationId, UserId};
-use crate::db::schema::{event, users_organizations};
-use crate::{CONFIG, api::EmptyResult, db::DbConn, error::MapResult};
-use diesel::prelude::*;
 
 // https://bitwarden.com/help/event-logs/
 

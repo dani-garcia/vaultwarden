@@ -1,4 +1,6 @@
 pub mod accounts;
+pub mod two_factor;
+
 mod ciphers;
 mod emergency_access;
 mod events;
@@ -6,14 +8,29 @@ mod folders;
 mod organizations;
 mod public;
 mod sends;
-pub mod two_factor;
 
 pub use accounts::purge_auth_requests;
 pub use ciphers::{CipherData, CipherSyncData, CipherSyncType, purge_trashed_ciphers};
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use events::{event_cleanup_job, log_event, log_user_event};
-use reqwest::Method;
 pub use sends::purge_sends;
+
+use reqwest::Method;
+use rocket::{Catcher, Route, serde::json::Json, serde::json::Value};
+
+use crate::{
+    CONFIG,
+    api::{EmptyResult, JsonResult, Notify, UpdateType},
+    auth::Headers,
+    db::{
+        DbConn,
+        models::{Membership, MembershipStatus, OrgPolicy, Organization, User},
+    },
+    error::Error,
+    http_client::make_http_request,
+    mail,
+    util::{FeatureFlagFilter, parse_experimental_client_feature_flags},
+};
 
 pub fn routes() -> Vec<Route> {
     let mut eq_domains_routes = routes![get_settings_domains, post_settings_domains, put_settings_domains];
@@ -43,25 +60,6 @@ pub fn events_routes() -> Vec<Route> {
 
     routes
 }
-
-//
-// Move this somewhere else
-//
-use rocket::{Catcher, Route, serde::json::Json, serde::json::Value};
-
-use crate::{
-    CONFIG,
-    api::{EmptyResult, JsonResult, Notify, UpdateType},
-    auth::Headers,
-    db::{
-        DbConn,
-        models::{Membership, MembershipStatus, OrgPolicy, Organization, User},
-    },
-    error::Error,
-    http_client::make_http_request,
-    mail,
-    util::{FeatureFlagFilter, parse_experimental_client_feature_flags},
-};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

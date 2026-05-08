@@ -1,14 +1,17 @@
 use derive_more::{AsRef, From};
+use diesel::prelude::*;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::CONFIG;
-use crate::api::EmptyResult;
-use crate::api::core::two_factor;
-use crate::db::DbConn;
-use crate::db::schema::{org_policies, users_organizations};
-use crate::error::MapResult;
-use diesel::prelude::*;
+use crate::{
+    CONFIG,
+    api::{EmptyResult, core::two_factor},
+    db::{
+        DbConn,
+        schema::{org_policies, users_organizations},
+    },
+    error::MapResult,
+};
 
 use super::{Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId, TwoFactor, UserId};
 

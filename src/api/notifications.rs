@@ -19,6 +19,11 @@ use crate::{
     },
 };
 
+use super::{
+    push::push_auth_request, push::push_auth_response, push_cipher_update, push_folder_update, push_logout,
+    push_send_update, push_user_update,
+};
+
 pub static WS_USERS: LazyLock<Arc<WebSocketUsers>> = LazyLock::new(|| {
     Arc::new(WebSocketUsers {
         map: Arc::new(dashmap::DashMap::new()),
@@ -30,11 +35,6 @@ pub static WS_ANONYMOUS_SUBSCRIPTIONS: LazyLock<Arc<AnonymousWebSocketSubscripti
         map: Arc::new(dashmap::DashMap::new()),
     })
 });
-
-use super::{
-    push::push_auth_request, push::push_auth_response, push_cipher_update, push_folder_update, push_logout,
-    push_send_update, push_user_update,
-};
 
 static NOTIFICATIONS_DISABLED: LazyLock<bool> = LazyLock::new(|| !CONFIG.enable_websocket() && !CONFIG.push_enabled());
 

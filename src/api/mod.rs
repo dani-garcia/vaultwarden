@@ -9,7 +9,6 @@ mod web;
 use rocket::serde::json::Json;
 use serde_json::Value;
 
-use crate::CONFIG;
 pub use crate::api::{
     admin::catchers as admin_catchers,
     admin::routes as admin_routes,
@@ -33,9 +32,12 @@ pub use crate::api::{
     web::routes as web_routes,
     web::static_files,
 };
-use crate::db::{
-    DbConn,
-    models::{OrgPolicy, OrgPolicyType, User},
+use crate::{
+    CONFIG,
+    db::{
+        DbConn,
+        models::{OrgPolicy, OrgPolicyType, User},
+    },
 };
 
 // Type aliases for API methods results

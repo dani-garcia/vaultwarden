@@ -1,5 +1,6 @@
-use diesel::connection::{Instrumentation, InstrumentationEvent};
 use std::{cell::RefCell, collections::HashMap, time::Instant};
+
+use diesel::connection::{Instrumentation, InstrumentationEvent};
 
 thread_local! {
     static QUERY_PERF_TRACKER: RefCell<HashMap<String, Instant>> = RefCell::new(HashMap::new());

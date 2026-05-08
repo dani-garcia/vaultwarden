@@ -10,13 +10,11 @@ use diesel::{
     connection::SimpleConnection,
     r2d2::{CustomizeConnection, Pool, PooledConnection},
 };
-
 use rocket::{
     Request,
     http::Status,
     request::{FromRequest, Outcome},
 };
-
 use tokio::{
     sync::{Mutex, OwnedSemaphorePermit, Semaphore},
     time::timeout,

@@ -1,11 +1,19 @@
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
+use diesel::prelude::*;
 use serde_json::Value;
 
-use super::{CipherId, User, UserId};
-use crate::db::schema::{folders, folders_ciphers};
-use diesel::prelude::*;
+use crate::{
+    api::EmptyResult,
+    db::{
+        DbConn,
+        schema::{folders, folders_ciphers},
+    },
+    error::MapResult,
+};
 use macros::UuidFromParam;
+
+use super::{CipherId, User, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = folders)]
@@ -61,11 +69,6 @@ impl FolderCipher {
         }
     }
 }
-
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
 
 /// Database methods
 impl Folder {

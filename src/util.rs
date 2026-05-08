@@ -1,19 +1,23 @@
 //
 // Web Headers and caching
 //
-use std::{collections::HashMap, io::Cursor, path::Path};
+use std::{collections::HashMap, env, fmt, io::Cursor, path::Path, str::FromStr};
 
+use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use num_traits::ToPrimitive;
+use tokio::{
+    runtime::Handle,
+    time::{Duration, sleep},
+};
+
+use serde::de::{self, DeserializeOwned, Deserializer, MapAccess, SeqAccess, Visitor};
+use serde_json::Value;
+
 use rocket::{
     Data, Orbit, Request, Response, Rocket,
     fairing::{Fairing, Info, Kind},
     http::{ContentType, Header, HeaderMap, Method, Status},
     response::{self, Responder},
-};
-
-use tokio::{
-    runtime::Handle,
-    time::{Duration, sleep},
 };
 
 use crate::{
@@ -356,9 +360,6 @@ pub fn get_uuid() -> String {
 //
 // String util methods
 //
-
-use std::str::FromStr;
-
 #[inline]
 pub fn upcase_first(s: &str) -> String {
     let mut c = s.chars();
@@ -392,9 +393,6 @@ where
 //
 // Env methods
 //
-
-use std::env;
-
 pub fn get_env_str_value(key: &str) -> Option<String> {
     let key_file = format!("{key}_FILE");
     let value_from_env = env::var(key);
@@ -432,8 +430,6 @@ pub fn get_env_bool(key: &str) -> Option<bool> {
 //
 // Date util methods
 //
-
-use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 
 /// Formats a UTC-offset `NaiveDateTime` in the format used by Bitwarden API
 /// responses with "date" fields (`CreationDate`, `RevisionDate`, etc.).
@@ -559,12 +555,6 @@ pub fn get_active_web_release() -> String {
 //
 // Deserialization methods
 //
-
-use std::fmt;
-
-use serde::de::{self, DeserializeOwned, Deserializer, MapAccess, SeqAccess, Visitor};
-use serde_json::Value;
-
 pub type JsonMap = serde_json::Map<String, Value>;
 
 #[derive(Serialize, Deserialize)]

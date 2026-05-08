@@ -1,12 +1,16 @@
-use super::UserId;
-use crate::api::core::two_factor::webauthn::WebauthnRegistration;
-use crate::db::schema::twofactor;
-use crate::{api::EmptyResult, db::DbConn, error::MapResult};
 use diesel::prelude::*;
 use serde_json::Value;
 use webauthn_rs::prelude::{Credential, ParsedAttestation};
 use webauthn_rs_core::proto::CredentialV3;
 use webauthn_rs_proto::{AttestationFormat, RegisteredExtensions};
+
+use crate::{
+    api::{EmptyResult, core::two_factor::webauthn::WebauthnRegistration},
+    db::{DbConn, schema::twofactor},
+    error::MapResult,
+};
+
+use super::UserId;
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = twofactor)]

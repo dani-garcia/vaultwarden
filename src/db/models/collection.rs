@@ -1,16 +1,25 @@
 use derive_more::{AsRef, Deref, Display, From};
+use diesel::prelude::*;
 use serde_json::Value;
+
+use crate::{
+    CONFIG,
+    api::EmptyResult,
+    db::{
+        DbConn,
+        schema::{
+            ciphers_collections, collections, collections_groups, groups, groups_users, users_collections,
+            users_organizations,
+        },
+    },
+    error::MapResult,
+};
+use macros::UuidFromParam;
 
 use super::{
     CipherId, CollectionGroup, GroupUser, Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId,
     User, UserId,
 };
-use crate::CONFIG;
-use crate::db::schema::{
-    ciphers_collections, collections, collections_groups, groups, groups_users, users_collections, users_organizations,
-};
-use diesel::prelude::*;
-use macros::UuidFromParam;
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = collections)]
@@ -146,11 +155,6 @@ impl Collection {
                         || GroupUser::has_access_to_collection_by_member(col_id, &member.uuid, conn).await)))
     }
 }
-
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
 
 /// Database methods
 impl Collection {

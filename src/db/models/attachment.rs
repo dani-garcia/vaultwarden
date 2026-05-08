@@ -1,13 +1,24 @@
+use std::time::Duration;
+
 use bigdecimal::{BigDecimal, ToPrimitive};
 use derive_more::{AsRef, Deref, Display};
 use diesel::prelude::*;
 use serde_json::Value;
-use std::time::Duration;
+
+use crate::{
+    CONFIG,
+    api::EmptyResult,
+    auth::{encode_jwt, generate_file_download_claims},
+    config::PathType,
+    db::{
+        DbConn,
+        schema::{attachments, ciphers},
+    },
+    error::MapResult,
+};
+use macros::IdFromParam;
 
 use super::{CipherId, OrganizationId, UserId};
-use crate::db::schema::{attachments, ciphers};
-use crate::{CONFIG, config::PathType};
-use macros::IdFromParam;
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = attachments)]
@@ -66,12 +77,6 @@ impl Attachment {
         }))
     }
 }
-
-use crate::auth::{encode_jwt, generate_file_download_claims};
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
 
 /// Database methods
 impl Attachment {

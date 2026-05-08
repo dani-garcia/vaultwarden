@@ -1,12 +1,16 @@
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
+use diesel::prelude::*;
 use serde_json::Value;
 
-use super::{User, UserId};
-use crate::db::schema::emergency_access;
-use crate::{api::EmptyResult, db::DbConn, error::MapResult};
-use diesel::prelude::*;
+use crate::{
+    api::EmptyResult,
+    db::{DbConn, schema::emergency_access},
+    error::MapResult,
+};
 use macros::UuidFromParam;
+
+use super::{User, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = emergency_access)]

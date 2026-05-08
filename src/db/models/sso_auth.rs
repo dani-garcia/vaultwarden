@@ -1,17 +1,20 @@
-use chrono::{NaiveDateTime, Utc};
 use std::time::Duration;
 
-use crate::api::EmptyResult;
-use crate::db::schema::sso_auth;
-use crate::db::{DbConn, DbPool};
-use crate::error::MapResult;
-use crate::sso::{OIDCCode, OIDCCodeChallenge, OIDCIdentifier, OIDCState, SSO_AUTH_EXPIRATION};
+use chrono::{NaiveDateTime, Utc};
+use diesel::{
+    deserialize::FromSql,
+    expression::AsExpression,
+    prelude::*,
+    serialize::{Output, ToSql},
+    sql_types::Text,
+};
 
-use diesel::deserialize::FromSql;
-use diesel::expression::AsExpression;
-use diesel::prelude::*;
-use diesel::serialize::{Output, ToSql};
-use diesel::sql_types::Text;
+use crate::{
+    api::EmptyResult,
+    db::{DbConn, DbPool, schema::sso_auth},
+    error::MapResult,
+    sso::{OIDCCode, OIDCCodeChallenge, OIDCIdentifier, OIDCState, SSO_AUTH_EXPIRATION},
+};
 
 #[derive(AsExpression, Clone, Debug, Serialize, Deserialize, FromSqlRow)]
 #[diesel(sql_type = Text)]

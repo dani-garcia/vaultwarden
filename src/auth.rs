@@ -8,16 +8,24 @@ use chrono::{DateTime, TimeDelta, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, errors::ErrorKind};
 use num_traits::FromPrimitive;
 use openssl::rsa::Rsa;
-use serde::de::DeserializeOwned;
-use serde::ser::Serialize;
+use serde::{de::DeserializeOwned, ser::Serialize};
+
+use rocket::{
+    outcome::try_outcome,
+    request::{FromRequest, Outcome, Request},
+};
 
 use crate::{
     CONFIG,
     api::ApiResult,
     config::PathType,
-    db::models::{
-        AttachmentId, CipherId, CollectionId, DeviceId, DeviceType, EmergencyAccessId, MembershipId, OrgApiKeyId,
-        OrganizationId, SendFileId, SendId, UserId,
+    db::{
+        DbConn,
+        models::{
+            AttachmentId, CipherId, Collection, CollectionId, Device, DeviceId, DeviceType, EmergencyAccessId,
+            Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, OrganizationId, SendFileId,
+            SendId, User, UserId, UserStampException,
+        },
     },
     error::Error,
     sso,
@@ -53,12 +61,12 @@ static PRIVATE_RSA_KEY: OnceLock<EncodingKey> = OnceLock::new();
 static PUBLIC_RSA_KEY: OnceLock<DecodingKey> = OnceLock::new();
 
 pub async fn initialize_keys() -> Result<(), Error> {
-    use std::io::Error;
+    use std::io::Error as IoError;
 
     let rsa_key_filename = crate::storage::file_name(&CONFIG.private_rsa_key())
-        .ok_or_else(|| Error::other("Private RSA key path missing filename"))?;
+        .ok_or_else(|| IoError::other("Private RSA key path missing filename"))?;
 
-    let operator = CONFIG.opendal_operator_for_path_type(&PathType::RsaKey).map_err(Error::other)?;
+    let operator = CONFIG.opendal_operator_for_path_type(&PathType::RsaKey).map_err(IoError::other)?;
 
     let priv_key_buffer = match operator.read(&rsa_key_filename).await {
         Ok(buffer) => Some(buffer),
@@ -524,16 +532,6 @@ pub fn generate_send_claims(send_id: &SendId, file_id: &SendFileId) -> BasicJwtC
 //
 // Bearer token authentication
 //
-use rocket::{
-    outcome::try_outcome,
-    request::{FromRequest, Outcome, Request},
-};
-
-use crate::db::{
-    DbConn,
-    models::{Collection, Device, Membership, MembershipStatus, MembershipType, User, UserStampException},
-};
-
 pub struct Host {
     pub host: String,
 }

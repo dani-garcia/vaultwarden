@@ -1,17 +1,19 @@
 use chrono::{NaiveDateTime, Utc};
-
 use data_encoding::BASE64URL;
 use derive_more::{Display, From};
+use diesel::prelude::*;
 use serde_json::Value;
 
-use super::{AuthRequest, UserId};
-use crate::db::schema::devices;
 use crate::{
+    api::EmptyResult,
     crypto,
+    db::{DbConn, schema::devices},
+    error::MapResult,
     util::{format_date, get_uuid},
 };
-use diesel::prelude::*;
 use macros::{IdFromParam, UuidFromParam};
+
+use super::{AuthRequest, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = devices)]
@@ -135,10 +137,6 @@ impl DeviceWithAuthRequest {
         }
     }
 }
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
 
 /// Database methods
 impl Device {

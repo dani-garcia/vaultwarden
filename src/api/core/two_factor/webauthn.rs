@@ -1,3 +1,19 @@
+use std::{str::FromStr, sync::LazyLock, time::Duration};
+
+use rocket::{Route, serde::json::Json};
+use serde_json::Value;
+use url::Url;
+use uuid::Uuid;
+use webauthn_rs::{
+    Webauthn, WebauthnBuilder,
+    prelude::{Base64UrlSafeData, Credential, Passkey, PasskeyAuthentication, PasskeyRegistration},
+};
+use webauthn_rs_proto::{
+    AuthenticationExtensionsClientOutputs, AuthenticatorAssertionResponseRaw, AuthenticatorAttestationResponseRaw,
+    PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs,
+    RequestAuthenticationExtensions, UserVerificationPolicy,
+};
+
 use crate::{
     CONFIG,
     api::{
@@ -12,21 +28,6 @@ use crate::{
     },
     error::Error,
     util::NumberOrString,
-};
-use rocket::Route;
-use rocket::serde::json::Json;
-use serde_json::Value;
-use std::str::FromStr;
-use std::sync::LazyLock;
-use std::time::Duration;
-use url::Url;
-use uuid::Uuid;
-use webauthn_rs::prelude::{Base64UrlSafeData, Credential, Passkey, PasskeyAuthentication, PasskeyRegistration};
-use webauthn_rs::{Webauthn, WebauthnBuilder};
-use webauthn_rs_proto::{
-    AuthenticationExtensionsClientOutputs, AuthenticatorAssertionResponseRaw, AuthenticatorAttestationResponseRaw,
-    PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs,
-    RequestAuthenticationExtensions, UserVerificationPolicy,
 };
 
 static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {

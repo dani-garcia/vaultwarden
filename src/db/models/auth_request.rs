@@ -1,11 +1,18 @@
-use super::{DeviceId, OrganizationId, UserId};
-use crate::db::schema::auth_requests;
-use crate::{crypto::ct_eq, util::format_date};
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
-use macros::UuidFromParam;
 use serde_json::Value;
+
+use crate::{
+    api::EmptyResult,
+    crypto::ct_eq,
+    db::{DbConn, schema::auth_requests},
+    error::MapResult,
+    util::format_date,
+};
+use macros::UuidFromParam;
+
+use super::{DeviceId, OrganizationId, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Deserialize, Serialize)]
 #[diesel(table_name = auth_requests)]
@@ -73,11 +80,6 @@ impl AuthRequest {
         })
     }
 }
-
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
 
 impl AuthRequest {
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {

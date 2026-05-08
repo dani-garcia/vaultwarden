@@ -13,7 +13,10 @@ use crate::{
     CONFIG,
     api::{ApiResult, EmptyResult, core::now},
     auth::decode_file_download,
-    db::models::{AttachmentId, CipherId},
+    db::{
+        DbConn,
+        models::{AttachmentId, CipherId},
+    },
     error::Error,
     util::Cached,
 };
@@ -178,7 +181,6 @@ async fn attachments(cipher_id: CipherId, file_id: AttachmentId, token: String) 
 }
 
 // We use DbConn here to let the alive healthcheck also verify the database connection.
-use crate::db::DbConn;
 #[get("/alive")]
 fn alive(_conn: DbConn) -> Json<String> {
     now()

@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
 use data_encoding::HEXLOWER;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use reqwest::{StatusCode, header};
 use ring::digest::{Digest, SHA512_256, digest};
 use serde::Serialize;
-use std::collections::HashMap;
+use url::Url;
 
 use crate::{
     CONFIG,
@@ -17,7 +19,6 @@ use crate::{
     error::Error,
     http_client::make_http_request,
 };
-use url::Url;
 
 // The location on this service that Duo should redirect users to. For us, this is a bridge
 // built in to the Bitwarden clients.

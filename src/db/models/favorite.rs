@@ -1,6 +1,12 @@
-use super::{CipherId, User, UserId};
-use crate::db::schema::favorites;
 use diesel::prelude::*;
+
+use crate::{
+    api::EmptyResult,
+    db::{DbConn, schema::favorites},
+    error::MapResult,
+};
+
+use super::{CipherId, User, UserId};
 
 #[derive(Identifiable, Queryable, Insertable)]
 #[diesel(table_name = favorites)]
@@ -9,11 +15,6 @@ pub struct Favorite {
     pub user_uuid: UserId,
     pub cipher_uuid: CipherId,
 }
-
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
 
 impl Favorite {
     // Returns whether the specified cipher is a favorite of the specified user.

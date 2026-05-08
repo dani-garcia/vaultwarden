@@ -1,8 +1,11 @@
 use chrono::Utc;
-
-use crate::db::schema::twofactor_duo_ctx;
-use crate::{api::EmptyResult, db::DbConn, error::MapResult};
 use diesel::prelude::*;
+
+use crate::{
+    api::EmptyResult,
+    db::{DbConn, schema::twofactor_duo_ctx},
+    error::MapResult,
+};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = twofactor_duo_ctx)]

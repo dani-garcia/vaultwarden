@@ -1,7 +1,6 @@
-use chrono::NaiveDateTime;
-use percent_encoding::{NON_ALPHANUMERIC, percent_encode};
 use std::{env::consts::EXE_SUFFIX, str::FromStr};
 
+use chrono::NaiveDateTime;
 use lettre::{
     Address, AsyncSendmailTransport, AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
     message::{Attachment, Body, Mailbox, Message, MultiPart, SinglePart},
@@ -9,6 +8,7 @@ use lettre::{
     transport::smtp::client::{Tls, TlsParameters},
     transport::smtp::extension::ClientId,
 };
+use percent_encoding::{NON_ALPHANUMERIC, percent_encode};
 
 use crate::{
     CONFIG,
@@ -19,6 +19,7 @@ use crate::{
     },
     db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId},
     error::Error,
+    util::upcase_first,
 };
 
 fn sendmail_transport() -> AsyncSendmailTransport<Tokio1Executor> {
@@ -505,8 +506,6 @@ pub async fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult
 }
 
 pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, device: &Device) -> EmptyResult {
-    use crate::util::upcase_first;
-
     let fmt = "%A, %B %_d, %Y at %r %Z";
     let (subject, body_html, body_text) = get_text(
         "email/new_device_logged_in",
@@ -530,8 +529,6 @@ pub async fn send_incomplete_2fa_login(
     device_name: &str,
     device_type: &str,
 ) -> EmptyResult {
-    use crate::util::upcase_first;
-
     let fmt = "%A, %B %_d, %Y at %r %Z";
     let (subject, body_html, body_text) = get_text(
         "email/incomplete_2fa_login",

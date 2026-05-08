@@ -1,22 +1,32 @@
-use crate::CONFIG;
-use crate::db::schema::{
-    ciphers, ciphers_collections, collections, collections_groups, folders, folders_ciphers, groups, groups_users,
-    users_collections, users_organizations,
-};
-use crate::util::LowerCase;
+use std::borrow::Cow;
+
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
 use serde_json::Value;
 
+use crate::{
+    CONFIG,
+    api::{
+        EmptyResult,
+        core::{CipherData, CipherSyncData, CipherSyncType},
+    },
+    db::{
+        DbConn,
+        schema::{
+            ciphers, ciphers_collections, collections, collections_groups, folders, folders_ciphers, groups,
+            groups_users, users_collections, users_organizations,
+        },
+    },
+    error::MapResult,
+    util::LowerCase,
+};
+use macros::UuidFromParam;
+
 use super::{
     Archive, Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership,
     MembershipStatus, MembershipType, OrganizationId, User, UserId,
 };
-use crate::api::core::{CipherData, CipherSyncData, CipherSyncType};
-use macros::UuidFromParam;
-
-use std::borrow::Cow;
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = ciphers)]
@@ -129,11 +139,6 @@ impl Cipher {
         Ok(())
     }
 }
-
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
 
 /// Database methods
 impl Cipher {

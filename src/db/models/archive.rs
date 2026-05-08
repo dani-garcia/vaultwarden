@@ -1,11 +1,13 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
+use crate::{
+    api::EmptyResult,
+    db::{DbConn, schema::archives},
+    error::MapResult,
+};
+
 use super::{CipherId, User, UserId};
-use crate::api::EmptyResult;
-use crate::db::DbConn;
-use crate::db::schema::archives;
-use crate::error::MapResult;
 
 #[derive(Identifiable, Queryable, Insertable)]
 #[diesel(table_name = archives)]

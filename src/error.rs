@@ -1,10 +1,11 @@
 //
 // Error generator macro
 //
+use std::error::Error as StdError;
+
 use crate::db::models::EventType;
 use crate::http_client::CustomHttpClientError;
 use serde::ser::{Serialize, SerializeStruct, Serializer};
-use std::error::Error as StdError;
 
 macro_rules! make_error {
     ( $( $name:ident ( $ty:ty ): $src_fn:expr, $usr_msg_fun:expr ),+ $(,)? ) => {
@@ -300,9 +301,11 @@ fn compact_api_error(_: &impl std::any::Any, msg: &str) -> String {
 //
 use std::io::Cursor;
 
-use rocket::http::{ContentType, Status};
-use rocket::request::Request;
-use rocket::response::{self, Responder, Response};
+use rocket::{
+    http::{ContentType, Status},
+    request::Request,
+    response::{self, Responder, Response},
+};
 
 impl Responder<'_, 'static> for Error {
     fn respond_to(self, _: &Request<'_>) -> response::Result<'static> {

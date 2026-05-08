@@ -1,6 +1,6 @@
 use chrono::{NaiveDateTime, Utc};
+use diesel::prelude::*;
 
-use crate::db::schema::twofactor_incomplete;
 use crate::{
     CONFIG,
     api::EmptyResult,
@@ -8,10 +8,10 @@ use crate::{
     db::{
         DbConn,
         models::{DeviceId, UserId},
+        schema::twofactor_incomplete,
     },
     error::MapResult,
 };
-use diesel::prelude::*;
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = twofactor_incomplete)]

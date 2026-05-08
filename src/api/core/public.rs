@@ -1,11 +1,11 @@
+use std::collections::HashSet;
+
 use chrono::Utc;
 use rocket::{
     Request, Route,
     request::{FromRequest, Outcome},
     serde::json::Json,
 };
-
-use std::collections::HashSet;
 
 use crate::{
     CONFIG,

@@ -1,13 +1,19 @@
-use super::{CollectionId, Membership, MembershipId, OrganizationId, User, UserId};
-use crate::api::EmptyResult;
-use crate::db::DbConn;
-use crate::db::schema::{collections, collections_groups, groups, groups_users, users_organizations};
-use crate::error::MapResult;
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
-use macros::UuidFromParam;
 use serde_json::Value;
+
+use crate::{
+    api::EmptyResult,
+    db::{
+        DbConn,
+        schema::{collections, collections_groups, groups, groups_users, users_organizations},
+    },
+    error::MapResult,
+};
+use macros::UuidFromParam;
+
+use super::{CollectionId, Membership, MembershipId, OrganizationId, User, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = groups)]
