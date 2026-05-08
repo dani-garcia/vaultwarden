@@ -1037,9 +1037,8 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                      Supported flags: {:?}\n", invalid_flags, SUPPORTED_FEATURE_FLAGS);
         if on_update {
             err!(feature_flags_error);
-        } else {
-            println!("[WARNING] {feature_flags_error}");
         }
+        println!("[WARNING] {feature_flags_error}");
     }
 
     const MAX_FILESIZE_KB: i64 = i64::MAX >> 10;

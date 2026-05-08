@@ -124,9 +124,8 @@ impl Cipher {
                 "object": "error"
             });
             err_json!(err_json, "Import validation errors")
-        } else {
-            Ok(())
         }
+        Ok(())
     }
 }
 
@@ -584,9 +583,8 @@ impl Cipher {
         if let Some(ref org_uuid) = self.organization_uuid {
             if let Some(cipher_sync_data) = cipher_sync_data {
                 return cipher_sync_data.user_group_full_access_for_organizations.contains(org_uuid);
-            } else {
-                return Group::is_in_full_access_group(user_uuid, org_uuid, conn).await;
             }
+            return Group::is_in_full_access_group(user_uuid, org_uuid, conn).await;
         }
         false
     }

@@ -271,15 +271,14 @@ impl DbConnType {
 
             #[cfg(not(postgresql))]
             err!("`DATABASE_URL` is a PostgreSQL URL, but the 'postgresql' feature is not enabled")
-
-        //Sqlite
-        } else {
-            #[cfg(sqlite)]
-            return Ok(DbConnType::Sqlite);
-
-            #[cfg(not(sqlite))]
-            err!("`DATABASE_URL` looks like a SQLite URL, but 'sqlite' feature is not enabled")
         }
+
+        // Sqlite
+        #[cfg(sqlite)]
+        return Ok(DbConnType::Sqlite);
+
+        #[cfg(not(sqlite))]
+        err!("`DATABASE_URL` looks like a SQLite URL, but 'sqlite' feature is not enabled")
     }
 
     pub fn get_init_stmts(&self) -> String {

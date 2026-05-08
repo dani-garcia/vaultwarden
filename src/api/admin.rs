@@ -851,9 +851,8 @@ impl<'r> FromRequest<'r> for AdminToken {
                     // Else, return a 401 failure, which will be caught
                     if requested_page.is_empty() {
                         return Outcome::Forward(Status::Unauthorized);
-                    } else {
-                        return Outcome::Error((Status::Unauthorized, "Unauthorized"));
                     }
+                    return Outcome::Error((Status::Unauthorized, "Unauthorized"));
                 }
             };
 

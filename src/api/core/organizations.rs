@@ -1085,13 +1085,12 @@ async fn send_invite(
             Some(user) => {
                 if Membership::find_by_user_and_org(&user.uuid, &org_id, &conn).await.is_some() {
                     err!(format!("User already in organization: {email}"))
-                } else {
-                    // automatically accept existing users if mail is disabled
-                    if !CONFIG.mail_enabled() && !user.password_hash.is_empty() {
-                        member_status = MembershipStatus::Accepted as i32;
-                    }
-                    user
                 }
+                // automatically accept existing users if mail is disabled
+                if !CONFIG.mail_enabled() && !user.password_hash.is_empty() {
+                    member_status = MembershipStatus::Accepted as i32;
+                }
+                user
             }
         };
 

@@ -664,10 +664,9 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
                 } else if e.is_response() {
                     debug!("Sendmail response error: {e:?}");
                     err!(format!("Sendmail response error: {e}"));
-                } else {
-                    debug!("Sendmail error: {e:?}");
-                    err!(format!("Sendmail error: {e}"));
                 }
+                debug!("Sendmail error: {e:?}");
+                err!(format!("Sendmail error: {e}"));
             }
         }
     } else {
@@ -695,10 +694,9 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
                 } else if e.is_tls() {
                     debug!("SMTP encryption error: {e:#?}");
                     err!(format!("SMTP encryption error: {e}"));
-                } else {
-                    debug!("SMTP error: {e:#?}");
-                    err!(format!("SMTP error: {e}"));
                 }
+                debug!("SMTP error: {e:#?}");
+                err!(format!("SMTP error: {e}"));
             }
         }
     }
