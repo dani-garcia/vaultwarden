@@ -19,16 +19,15 @@ pub struct Favorite {
 impl Favorite {
     // Returns whether the specified cipher is a favorite of the specified user.
     pub async fn is_favorite(cipher_uuid: &CipherId, user_uuid: &UserId, conn: &DbConn) -> bool {
-        db_run! { conn: {
+        conn.run(move |conn| {
             let query = favorites::table
                 .filter(favorites::cipher_uuid.eq(cipher_uuid))
                 .filter(favorites::user_uuid.eq(user_uuid))
                 .count();
 
-            query.first::<i64>(conn)
-                .ok()
-                .unwrap_or(0) != 0
-        }}
+            query.first::<i64>(conn).ok().unwrap_or(0) != 0
+        })
+        .await
     }
 
     // Sets whether the specified cipher is a favorite of the specified user.
@@ -42,27 +41,26 @@ impl Favorite {
         match (old, new) {
             (false, true) => {
                 User::update_uuid_revision(user_uuid, conn).await;
-                db_run! { conn: {
-                diesel::insert_into(favorites::table)
-                    .values((
-                        favorites::user_uuid.eq(user_uuid),
-                        favorites::cipher_uuid.eq(cipher_uuid),
-                    ))
-                    .execute(conn)
-                    .map_res("Error adding favorite")
-                }}
+                conn.run(move |conn| {
+                    diesel::insert_into(favorites::table)
+                        .values((favorites::user_uuid.eq(user_uuid), favorites::cipher_uuid.eq(cipher_uuid)))
+                        .execute(conn)
+                        .map_res("Error adding favorite")
+                })
+                .await
             }
             (true, false) => {
                 User::update_uuid_revision(user_uuid, conn).await;
-                db_run! { conn: {
+                conn.run(move |conn| {
                     diesel::delete(
                         favorites::table
                             .filter(favorites::user_uuid.eq(user_uuid))
-                            .filter(favorites::cipher_uuid.eq(cipher_uuid))
+                            .filter(favorites::cipher_uuid.eq(cipher_uuid)),
                     )
                     .execute(conn)
                     .map_res("Error removing favorite")
-                }}
+                })
+                .await
             }
             // Otherwise, the favorite status is already what it should be.
             _ => Ok(()),
@@ -71,31 +69,34 @@ impl Favorite {
 
     // Delete all favorite entries associated with the specified cipher.
     pub async fn delete_all_by_cipher(cipher_uuid: &CipherId, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::delete(favorites::table.filter(favorites::cipher_uuid.eq(cipher_uuid)))
                 .execute(conn)
                 .map_res("Error removing favorites by cipher")
-        }}
+        })
+        .await
     }
 
     // Delete all favorite entries associated with the specified user.
     pub async fn delete_all_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::delete(favorites::table.filter(favorites::user_uuid.eq(user_uuid)))
                 .execute(conn)
                 .map_res("Error removing favorites by user")
-        }}
+        })
+        .await
     }
 
     /// Return a vec with (cipher_uuid) this will only contain favorite flagged ciphers
     /// This is used during a full sync so we only need one query for all favorite cipher matches.
     pub async fn get_all_cipher_uuid_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<CipherId> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             favorites::table
                 .filter(favorites::user_uuid.eq(user_uuid))
                 .select(favorites::cipher_uuid)
                 .load::<CipherId>(conn)
                 .unwrap_or_default()
-        }}
+        })
+        .await
     }
 }

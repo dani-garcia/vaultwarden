@@ -236,11 +236,10 @@ impl Send {
             operator.delete_with(&self.uuid).recursive(true).await.ok();
         }
 
-        db_run! { conn: {
-            diesel::delete(sends::table.filter(sends::uuid.eq(&self.uuid)))
-                .execute(conn)
-                .map_res("Error deleting send")
-        }}
+        conn.run(move |conn| {
+            diesel::delete(sends::table.filter(sends::uuid.eq(&self.uuid))).execute(conn).map_res("Error deleting send")
+        })
+        .await
     }
 
     /// Purge all sends that are past their deletion date.
@@ -282,31 +281,21 @@ impl Send {
     }
 
     pub async fn find_by_uuid(uuid: &SendId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
-            sends::table
-                .filter(sends::uuid.eq(uuid))
-                .first::<Self>(conn)
-                .ok()
-        }}
+        conn.run(move |conn| sends::table.filter(sends::uuid.eq(uuid)).first::<Self>(conn).ok()).await
     }
 
     pub async fn find_by_uuid_and_user(uuid: &SendId, user_uuid: &UserId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
-            sends::table
-                .filter(sends::uuid.eq(uuid))
-                .filter(sends::user_uuid.eq(user_uuid))
-                .first::<Self>(conn)
-                .ok()
-        }}
+        conn.run(move |conn| {
+            sends::table.filter(sends::uuid.eq(uuid)).filter(sends::user_uuid.eq(user_uuid)).first::<Self>(conn).ok()
+        })
+        .await
     }
 
     pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            sends::table
-                .filter(sends::user_uuid.eq(user_uuid))
-                .load::<Self>(conn)
-                .expect("Error loading sends")
-        }}
+        conn.run(move |conn| {
+            sends::table.filter(sends::user_uuid.eq(user_uuid)).load::<Self>(conn).expect("Error loading sends")
+        })
+        .await
     }
 
     pub async fn size_by_user(user_uuid: &UserId, conn: &DbConn) -> Option<i64> {
@@ -331,22 +320,18 @@ impl Send {
     }
 
     pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            sends::table
-                .filter(sends::organization_uuid.eq(org_uuid))
-                .load::<Self>(conn)
-                .expect("Error loading sends")
-        }}
+        conn.run(move |conn| {
+            sends::table.filter(sends::organization_uuid.eq(org_uuid)).load::<Self>(conn).expect("Error loading sends")
+        })
+        .await
     }
 
     pub async fn find_by_past_deletion_date(conn: &DbConn) -> Vec<Self> {
         let now = Utc::now().naive_utc();
-        db_run! { conn: {
-            sends::table
-                .filter(sends::deletion_date.lt(now))
-                .load::<Self>(conn)
-                .expect("Error loading sends")
-        }}
+        conn.run(move |conn| {
+            sends::table.filter(sends::deletion_date.lt(now)).load::<Self>(conn).expect("Error loading sends")
+        })
+        .await
     }
 }
 

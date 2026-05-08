@@ -112,15 +112,15 @@ impl Attachment {
     }
 
     pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
-            crate::util::retry(||
-                diesel::delete(attachments::table.filter(attachments::id.eq(&self.id)))
-                .execute(conn),
+        conn.run(move |conn| {
+            crate::util::retry(
+                || diesel::delete(attachments::table.filter(attachments::id.eq(&self.id))).execute(conn),
                 10,
             )
             .map(|_| ())
             .map_res("Error deleting attachment")
-        }}?;
+        })
+        .await?;
 
         let operator = CONFIG.opendal_operator_for_path_type(&PathType::Attachments)?;
         let file_path = self.get_file_path();
@@ -144,25 +144,22 @@ impl Attachment {
     }
 
     pub async fn find_by_id(id: &AttachmentId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
-            attachments::table
-                .filter(attachments::id.eq(id.to_lowercase()))
-                .first::<Self>(conn)
-                .ok()
-        }}
+        conn.run(move |conn| attachments::table.filter(attachments::id.eq(id.to_lowercase())).first::<Self>(conn).ok())
+            .await
     }
 
     pub async fn find_by_cipher(cipher_uuid: &CipherId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             attachments::table
                 .filter(attachments::cipher_uuid.eq(cipher_uuid))
                 .load::<Self>(conn)
                 .expect("Error loading attachments")
-        }}
+        })
+        .await
     }
 
     pub async fn size_by_user(user_uuid: &UserId, conn: &DbConn) -> i64 {
-        db_run! { conn: {
+        conn.run(move |conn| {
             let result: Option<BigDecimal> = attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
                 .filter(ciphers::user_uuid.eq(user_uuid))
@@ -173,24 +170,26 @@ impl Attachment {
             match result.map(|r| r.to_i64()) {
                 Some(Some(r)) => r,
                 Some(None) => i64::MAX,
-                None => 0
+                None => 0,
             }
-        }}
+        })
+        .await
     }
 
     pub async fn count_by_user(user_uuid: &UserId, conn: &DbConn) -> i64 {
-        db_run! { conn: {
+        conn.run(move |conn| {
             attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
                 .filter(ciphers::user_uuid.eq(user_uuid))
                 .count()
                 .first(conn)
                 .unwrap_or(0)
-        }}
+        })
+        .await
     }
 
     pub async fn size_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> i64 {
-        db_run! { conn: {
+        conn.run(move |conn| {
             let result: Option<BigDecimal> = attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
                 .filter(ciphers::organization_uuid.eq(org_uuid))
@@ -201,20 +200,22 @@ impl Attachment {
             match result.map(|r| r.to_i64()) {
                 Some(Some(r)) => r,
                 Some(None) => i64::MAX,
-                None => 0
+                None => 0,
             }
-        }}
+        })
+        .await
     }
 
     pub async fn count_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> i64 {
-        db_run! { conn: {
+        conn.run(move |conn| {
             attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
                 .filter(ciphers::organization_uuid.eq(org_uuid))
                 .count()
                 .first(conn)
                 .unwrap_or(0)
-        }}
+        })
+        .await
     }
 
     // This will return all attachments linked to the user or org
@@ -225,7 +226,7 @@ impl Attachment {
         org_uuids: &Vec<OrganizationId>,
         conn: &DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             attachments::table
                 .left_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
                 .filter(ciphers::user_uuid.eq(user_uuid))
@@ -233,7 +234,8 @@ impl Attachment {
                 .select(attachments::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading attachments")
-        }}
+        })
+        .await
     }
 }
 

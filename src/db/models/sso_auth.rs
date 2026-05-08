@@ -109,13 +109,14 @@ impl SsoAuth {
 
     pub async fn find(state: &OIDCState, conn: &DbConn) -> Option<Self> {
         let oldest = Utc::now().naive_utc() - *SSO_AUTH_EXPIRATION;
-        db_run! { conn: {
+        conn.run(move |conn| {
             sso_auth::table
                 .filter(sso_auth::state.eq(state))
                 .filter(sso_auth::created_at.ge(oldest))
                 .first::<Self>(conn)
                 .ok()
-        }}
+        })
+        .await
     }
 
     pub async fn find_by_code(code: &OIDCCode, conn: &DbConn) -> Option<Self> {
@@ -130,22 +131,24 @@ impl SsoAuth {
     }
 
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
-        db_run! {conn: {
+        conn.run(move |conn| {
             diesel::delete(sso_auth::table.filter(sso_auth::state.eq(self.state)))
                 .execute(conn)
                 .map_res("Error deleting sso_auth")
-        }}
+        })
+        .await
     }
 
     pub async fn delete_expired(pool: DbPool) -> EmptyResult {
         debug!("Purging expired sso_auth");
         if let Ok(conn) = pool.get().await {
             let oldest = Utc::now().naive_utc() - *SSO_AUTH_EXPIRATION;
-            db_run! { conn: {
+            conn.run(move |conn| {
                 diesel::delete(sso_auth::table.filter(sso_auth::created_at.lt(oldest)))
                     .execute(conn)
                     .map_res("Error deleting expired SSO nonce")
-            }}
+            })
+            .await
         } else {
             err!("Failed to get DB connection while purging expired sso_auth")
         }

@@ -151,37 +151,38 @@ impl OrgPolicy {
     }
 
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::delete(org_policies::table.filter(org_policies::uuid.eq(self.uuid)))
                 .execute(conn)
                 .map_res("Error deleting org_policy")
-        }}
+        })
+        .await
     }
 
     pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             org_policies::table
                 .filter(org_policies::org_uuid.eq(org_uuid))
                 .load::<Self>(conn)
                 .expect("Error loading org_policy")
-        }}
+        })
+        .await
     }
 
     pub async fn find_confirmed_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             org_policies::table
                 .inner_join(
-                    users_organizations::table.on(
-                        users_organizations::org_uuid.eq(org_policies::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid)))
+                    users_organizations::table.on(users_organizations::org_uuid
+                        .eq(org_policies::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid))),
                 )
-                .filter(
-                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
-                )
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .select(org_policies::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading org_policy")
-        }}
+        })
+        .await
     }
 
     pub async fn find_by_org_and_type(
@@ -189,21 +190,23 @@ impl OrgPolicy {
         policy_type: OrgPolicyType,
         conn: &DbConn,
     ) -> Option<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             org_policies::table
                 .filter(org_policies::org_uuid.eq(org_uuid))
                 .filter(org_policies::atype.eq(policy_type as i32))
                 .first::<Self>(conn)
                 .ok()
-        }}
+        })
+        .await
     }
 
     pub async fn delete_all_by_organization(org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::delete(org_policies::table.filter(org_policies::org_uuid.eq(org_uuid)))
                 .execute(conn)
                 .map_res("Error deleting org_policy")
-        }}
+        })
+        .await
     }
 
     pub async fn find_accepted_and_confirmed_by_user_and_active_policy(
@@ -211,25 +214,22 @@ impl OrgPolicy {
         policy_type: OrgPolicyType,
         conn: &DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             org_policies::table
                 .inner_join(
-                    users_organizations::table.on(
-                        users_organizations::org_uuid.eq(org_policies::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid)))
+                    users_organizations::table.on(users_organizations::org_uuid
+                        .eq(org_policies::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid))),
                 )
-                .filter(
-                    users_organizations::status.eq(MembershipStatus::Accepted as i32)
-                )
-                .or_filter(
-                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
-                )
+                .filter(users_organizations::status.eq(MembershipStatus::Accepted as i32))
+                .or_filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(org_policies::atype.eq(policy_type as i32))
                 .filter(org_policies::enabled.eq(true))
                 .select(org_policies::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading org_policy")
-        }}
+        })
+        .await
     }
 
     pub async fn find_confirmed_by_user_and_active_policy(
@@ -237,22 +237,21 @@ impl OrgPolicy {
         policy_type: OrgPolicyType,
         conn: &DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             org_policies::table
                 .inner_join(
-                    users_organizations::table.on(
-                        users_organizations::org_uuid.eq(org_policies::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid)))
+                    users_organizations::table.on(users_organizations::org_uuid
+                        .eq(org_policies::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid))),
                 )
-                .filter(
-                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
-                )
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(org_policies::atype.eq(policy_type as i32))
                 .filter(org_policies::enabled.eq(true))
                 .select(org_policies::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading org_policy")
-        }}
+        })
+        .await
     }
 
     /// Returns true if the user belongs to an org that has enabled the specified policy type,

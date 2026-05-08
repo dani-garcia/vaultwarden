@@ -169,21 +169,23 @@ impl Device {
     }
 
     pub async fn delete_all_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::delete(devices::table.filter(devices::user_uuid.eq(user_uuid)))
                 .execute(conn)
                 .map_res("Error removing devices for user")
-        }}
+        })
+        .await
     }
 
     pub async fn find_by_uuid_and_user(uuid: &DeviceId, user_uuid: &UserId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             devices::table
                 .filter(devices::uuid.eq(uuid))
                 .filter(devices::user_uuid.eq(user_uuid))
                 .first::<Self>(conn)
                 .ok()
-        }}
+        })
+        .await
     }
 
     pub async fn find_with_auth_request_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<DeviceWithAuthRequest> {
@@ -197,71 +199,65 @@ impl Device {
     }
 
     pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::user_uuid.eq(user_uuid))
-                .load::<Self>(conn)
-                .expect("Error loading devices")
-        }}
+        conn.run(move |conn| {
+            devices::table.filter(devices::user_uuid.eq(user_uuid)).load::<Self>(conn).expect("Error loading devices")
+        })
+        .await
     }
 
     pub async fn find_by_uuid(uuid: &DeviceId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::uuid.eq(uuid))
-                .first::<Self>(conn)
-                .ok()
-        }}
+        conn.run(move |conn| devices::table.filter(devices::uuid.eq(uuid)).first::<Self>(conn).ok()).await
     }
 
     pub async fn clear_push_token_by_uuid(uuid: &DeviceId, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::update(devices::table)
                 .filter(devices::uuid.eq(uuid))
                 .set(devices::push_token.eq::<Option<String>>(None))
                 .execute(conn)
                 .map_res("Error removing push token")
-        }}
+        })
+        .await
     }
     pub async fn find_by_refresh_token(refresh_token: &str, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::refresh_token.eq(refresh_token))
-                .first::<Self>(conn)
-                .ok()
-        }}
+        conn.run(move |conn| devices::table.filter(devices::refresh_token.eq(refresh_token)).first::<Self>(conn).ok())
+            .await
     }
 
     pub async fn find_latest_active_by_user(user_uuid: &UserId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
                 .order(devices::updated_at.desc())
                 .first::<Self>(conn)
                 .ok()
-        }}
+        })
+        .await
     }
 
     pub async fn find_push_devices_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
                 .filter(devices::push_token.is_not_null())
                 .load::<Self>(conn)
                 .expect("Error loading push devices")
-        }}
+        })
+        .await
     }
 
     pub async fn check_user_has_push_device(user_uuid: &UserId, conn: &DbConn) -> bool {
-        db_run! { conn: {
+        conn.run(move |conn| {
             devices::table
-            .filter(devices::user_uuid.eq(user_uuid))
-            .filter(devices::push_token.is_not_null())
-            .count()
-            .first::<i64>(conn)
-            .ok()
-            .unwrap_or(0) != 0
-        }}
+                .filter(devices::user_uuid.eq(user_uuid))
+                .filter(devices::push_token.is_not_null())
+                .count()
+                .first::<i64>(conn)
+                .ok()
+                .unwrap_or(0)
+                != 0
+        })
+        .await
     }
 
     pub async fn rotate_refresh_tokens_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
