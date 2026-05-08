@@ -602,7 +602,7 @@ async fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<H
         org["collection_count"] = json!(Collection::count_by_org(&o.uuid, &conn).await);
         org["group_count"] = json!(Group::count_by_org(&o.uuid, &conn).await);
         org["event_count"] = json!(Event::count_by_org(&o.uuid, &conn).await);
-        org["attachmentCount"] = json!(Attachment::count_by_org(&o.uuid, &conn).await);
+        org["attachment_count"] = json!(Attachment::count_by_org(&o.uuid, &conn).await);
         org["attachment_size"] = json!(get_display_size(Attachment::size_by_org(&o.uuid, &conn).await));
         organizations_json.push(org);
     }
