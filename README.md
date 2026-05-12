@@ -84,7 +84,7 @@ You can replace `docker` with `podman` if you prefer to use podman.
 docker pull vaultwarden/server:latest
 docker run --detach --name vaultwarden \
   --env DOMAIN="https://vw.domain.tld" \
-  --volume /vw-data/:/data/ \
+  --volume ./vw-data/:/data/ \
   --restart unless-stopped \
   --publish 127.0.0.1:8000:80 \
   vaultwarden/server:latest
