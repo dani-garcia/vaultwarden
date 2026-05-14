@@ -147,7 +147,7 @@ handlebars = { version = "6.4.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
 reqwest = { version = "0.12.28", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
-hickory-resolver = "0.26.0"
+hickory-resolver = "0.26.1"
 
 # Favicon extraction libraries
 html5gum = "0.8.3"
