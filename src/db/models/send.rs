@@ -237,7 +237,7 @@ impl Send {
 
         if self.atype == SendType::File as i32 {
             let operator = CONFIG.opendal_operator_for_path_type(&PathType::Sends)?;
-            operator.remove_all(&self.uuid).await.ok();
+            operator.delete_with(&self.uuid).recursive(true).await.ok();
         }
 
         db_run! { conn: {

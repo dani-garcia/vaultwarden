@@ -70,6 +70,7 @@ pub use util::is_running_in_container;
 
 #[rocket::main]
 async fn main() -> Result<(), Error> {
+    install_rustls_crypto_provider();
     parse_args();
     launch_info();
 
@@ -199,6 +200,14 @@ fn parse_args() {
             }
         }
         exit(0);
+    }
+}
+
+fn install_rustls_crypto_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("failed to install rustls ring crypto provider");
     }
 }
 

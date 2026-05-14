@@ -1395,17 +1395,22 @@ fn opendal_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
 fn opendal_s3_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
     use crate::http_client::aws::AwsReqwestConnector;
     use aws_config::{default_provider::credentials::DefaultCredentialsChain, provider_config::ProviderConfig};
+    use reqsign_aws_v4::Credential;
+    use reqsign_core::{Context, ProvideCredential, ProvideCredentialChain};
 
     // This is a custom AWS credential loader that uses the official AWS Rust
     // SDK config crate to load credentials. This ensures maximum compatibility
     // with AWS credential configurations. For example, OpenDAL doesn't support
     // AWS SSO temporary credentials yet.
-    struct OpenDALS3CredentialLoader {}
+    #[derive(Debug)]
+    struct OpenDALS3CredentialProvider;
 
-    #[async_trait]
-    impl reqsign::AwsCredentialLoad for OpenDALS3CredentialLoader {
-        async fn load_credential(&self, _client: reqwest::Client) -> anyhow::Result<Option<reqsign::AwsCredential>> {
+    impl ProvideCredential for OpenDALS3CredentialProvider {
+        type Credential = Credential;
+
+        async fn provide_credential(&self, _ctx: &Context) -> reqsign_core::Result<Option<Self::Credential>> {
             use aws_credential_types::provider::ProvideCredentials as _;
+            use reqsign_core::time::Timestamp;
             use tokio::sync::OnceCell;
 
             static DEFAULT_CREDENTIAL_CHAIN: OnceCell<DefaultCredentialsChain> = OnceCell::const_new();
@@ -1423,25 +1428,37 @@ fn opendal_s3_operator_for_path(path: &str) -> Result<opendal::Operator, Error> 
                 })
                 .await;
 
-            let creds = chain.provide_credentials().await?;
+            let creds = chain.provide_credentials().await.map_err(|e| {
+                reqsign_core::Error::unexpected("failed to load AWS credentials via AWS SDK").with_source(e)
+            })?;
 
-            Ok(Some(reqsign::AwsCredential {
+            let expires_in = if let Some(expiration) = creds.expiry() {
+                let duration = expiration.duration_since(std::time::UNIX_EPOCH).map_err(|e| {
+                    reqsign_core::Error::unexpected("AWS credential expiration is before the Unix epoch").with_source(e)
+                })?;
+                let seconds = i64::try_from(duration.as_secs()).map_err(|e| {
+                    reqsign_core::Error::unexpected("AWS credential expiration is too large").with_source(e)
+                })?;
+                Some(Timestamp::from_second(seconds)?)
+            } else {
+                None
+            };
+
+            Ok(Some(Credential {
                 access_key_id: creds.access_key_id().to_string(),
                 secret_access_key: creds.secret_access_key().to_string(),
                 session_token: creds.session_token().map(|s| s.to_string()),
-                expires_in: creds.expiry().map(|expiration| expiration.into()),
+                expires_in,
             }))
         }
     }
-
-    const OPEN_DAL_S3_CREDENTIAL_LOADER: OpenDALS3CredentialLoader = OpenDALS3CredentialLoader {};
 
     let url = Url::parse(path).map_err(|e| format!("Invalid path S3 URL path {path:?}: {e}"))?;
 
     let bucket = url.host_str().ok_or_else(|| format!("Missing Bucket name in data folder S3 URL {path:?}"))?;
 
     let builder = opendal::services::S3::default()
-        .customized_credential_load(Box::new(OPEN_DAL_S3_CREDENTIAL_LOADER))
+        .credential_provider_chain(ProvideCredentialChain::new().push(OpenDALS3CredentialProvider))
         .enable_virtual_host_style()
         .bucket(bucket)
         .root(url.path())
