@@ -1,12 +1,13 @@
-use std::{borrow::Cow, sync::LazyLock, time::Duration};
+use std::{borrow::Cow, future::Future, pin::Pin, sync::LazyLock, time::Duration};
 
-use openidconnect::{core::*, reqwest, *};
+use openidconnect::{core::*, *};
 use regex::Regex;
 use url::Url;
 
 use crate::{
     api::{ApiResult, EmptyResult},
     db::models::SsoAuth,
+    http_client::get_reqwest_client_builder,
     sso::{OIDCCode, OIDCCodeChallenge, OIDCCodeVerifier, OIDCState},
     CONFIG,
 };
@@ -46,8 +47,40 @@ pub type RefreshTokenResponse = (Option<String>, String, Option<Duration>);
 
 #[derive(Clone)]
 pub struct Client {
-    pub http_client: reqwest::Client,
+    pub http_client: OidcHttpClient,
     pub core_client: CustomClient,
+}
+
+#[derive(Clone)]
+pub struct OidcHttpClient {
+    client: reqwest::Client,
+}
+
+impl OidcHttpClient {
+    fn new() -> Result<Self, reqwest::Error> {
+        get_reqwest_client_builder().redirect(reqwest::redirect::Policy::none()).build().map(|client| Self {
+            client,
+        })
+    }
+}
+
+impl<'c> AsyncHttpClient<'c> for OidcHttpClient {
+    type Error = HttpClientError<reqwest::Error>;
+    type Future = Pin<Box<dyn Future<Output = Result<HttpResponse, Self::Error>> + Send + Sync + 'c>>;
+
+    fn call(&'c self, request: HttpRequest) -> Self::Future {
+        Box::pin(async move {
+            let response = self.client.execute(request.try_into().map_err(Box::new)?).await.map_err(Box::new)?;
+
+            let mut builder = http::Response::builder().status(response.status()).version(response.version());
+
+            for (name, value) in response.headers() {
+                builder = builder.header(name, value);
+            }
+
+            builder.body(response.bytes().await.map_err(Box::new)?.to_vec()).map_err(HttpClientError::Http)
+        })
+    }
 }
 
 impl Client {
@@ -58,7 +91,7 @@ impl Client {
 
         let issuer_url = CONFIG.sso_issuer_url()?;
 
-        let http_client = match reqwest::ClientBuilder::new().redirect(reqwest::redirect::Policy::none()).build() {
+        let http_client = match OidcHttpClient::new() {
             Err(err) => err!(format!("Failed to build http client: {err}")),
             Ok(client) => client,
         };

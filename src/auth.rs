@@ -54,12 +54,8 @@ static PUBLIC_RSA_KEY: OnceLock<DecodingKey> = OnceLock::new();
 pub async fn initialize_keys() -> Result<(), Error> {
     use std::io::Error;
 
-    let rsa_key_filename = std::path::PathBuf::from(CONFIG.private_rsa_key())
-        .file_name()
-        .ok_or_else(|| Error::other("Private RSA key path missing filename"))?
-        .to_str()
-        .ok_or_else(|| Error::other("Private RSA key path filename is not valid UTF-8"))?
-        .to_string();
+    let rsa_key_filename = crate::storage::file_name(&CONFIG.private_rsa_key())
+        .ok_or_else(|| Error::other("Private RSA key path missing filename"))?;
 
     let operator = CONFIG.opendal_operator_for_path_type(&PathType::RsaKey).map_err(Error::other)?;
 

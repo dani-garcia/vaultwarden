@@ -39,7 +39,7 @@ vendored_openssl = ["openssl/vendored"]
 # Enable MiMalloc memory allocator to replace the default malloc
 # This can improve performance for Alpine builds
 enable_mimalloc = ["dep:mimalloc"]
-s3 = ["opendal/services-s3", "dep:aws-config", "dep:aws-credential-types", "dep:aws-smithy-runtime-api", "dep:anyhow", "dep:http", "dep:reqsign"]
+s3 = ["opendal/services-s3", "dep:aws-config", "dep:aws-credential-types", "dep:aws-smithy-runtime-api", "dep:http", "dep:reqsign-aws-v4", "dep:reqsign-core"]
 
 # OIDC specific features
 oidc-accept-rfc3339-timestamps = ["openidconnect/accept-rfc3339-timestamps"]
@@ -102,6 +102,7 @@ libsqlite3-sys = { version = "0.37.0", optional = true }
 # Crypto-related libraries
 rand = "0.10.1"
 ring = "0.17.14"
+rustls = { version = "0.23.40", features = ["ring", "std"], default-features = false }
 subtle = "2.6.1"
 
 # UUID generation
@@ -125,7 +126,7 @@ jsonwebtoken = { version = "10.3.0", features = ["use_pem", "rust_crypto"], defa
 totp-lite = "2.0.1"
 
 # Yubico Library
-yubico = { package = "yubico_ng", version = "0.14.1", features = ["online-tokio"], default-features = false }
+yubico = { package = "yubico_ng", version = "0.15.0", features = ["online-tokio"], default-features = false }
 
 # WebAuthn libraries
 # danger-allow-state-serialisation is needed to save the state in the db
@@ -146,7 +147,7 @@ email_address = "0.2.9"
 handlebars = { version = "6.4.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.12.28", features = ["rustls-tls", "rustls-tls-native-roots", "stream", "json", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
+reqwest = { version = "0.13.3", features = ["rustls-no-provider", "stream", "json", "form", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
 hickory-resolver = "0.26.1"
 
 # Favicon extraction libraries
@@ -174,7 +175,7 @@ pastey = "0.2.2"
 governor = "0.10.4"
 
 # OIDC for SSO
-openidconnect = { version = "4.0.1", features = ["reqwest", "rustls-tls"] }
+openidconnect = { version = "4.0.1", default-features = false }
 moka = { version = "0.12.15", features = ["future"] }
 
 # Check client versions for specific features.
@@ -196,15 +197,15 @@ rpassword = "7.5.1"
 grass_compiler = { version = "0.13.4", default-features = false }
 
 # File are accessed through Apache OpenDAL
-opendal = { version = "0.55.0", features = ["services-fs"], default-features = false }
+opendal = { version = "0.56.0", features = ["services-fs"], default-features = false }
 
 # For retrieving AWS credentials, including temporary SSO credentials
-anyhow = { version = "1.0.102", optional = true }
 aws-config = { version = "1.8.16", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
 aws-credential-types = { version = "1.2.14", optional = true }
 aws-smithy-runtime-api = { version = "1.12.0", optional = true }
 http = { version = "1.4.0", optional = true }
-reqsign = { version = "0.16.5", optional = true }
+reqsign-aws-v4 = { version = "3.0.0", optional = true }
+reqsign-core = { version = "3.0.0", optional = true }
 
 # Strip debuginfo from the release builds
 # The debug symbols are to provide better panic traces
