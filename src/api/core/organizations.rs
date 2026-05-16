@@ -78,6 +78,7 @@ pub fn routes() -> Vec<Route> {
         revoke_member,
         bulk_revoke_members,
         restore_member,
+        restore_member_vnext,
         bulk_restore_members,
         get_groups,
         get_groups_details,
@@ -2313,6 +2314,18 @@ async fn _revoke_member(
         None => err!("User not found in organization"),
     }
     Ok(())
+}
+
+#[put("/organizations/<org_id>/users/<member_id>/restore/vnext")]
+async fn restore_member_vnext(
+    org_id: OrganizationId,
+    member_id: MembershipId,
+    headers: AdminHeaders,
+    conn: DbConn,
+) -> EmptyResult {
+    // Vaultwarden does not (yet) support the per User Collection linked to the `Enforce organization data ownership` policy.
+    // Therefor we ignore the `defaultUserCollectionName` data sent and just call restore_member
+    _restore_member(&org_id, &member_id, &headers, &conn).await
 }
 
 #[put("/organizations/<org_id>/users/<member_id>/restore")]
