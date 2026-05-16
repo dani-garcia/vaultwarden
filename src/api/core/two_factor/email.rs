@@ -25,7 +25,7 @@ pub fn routes() -> Vec<Route> {
 #[serde(rename_all = "camelCase")]
 struct SendEmailLoginData {
     #[serde(alias = "DeviceIdentifier")]
-    device_identifier: DeviceId,
+    device_identifier: Option<DeviceId>,
     #[serde(alias = "Email")]
     email: Option<String>,
     #[serde(alias = "MasterPasswordHash")]
@@ -91,8 +91,11 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
 
         user
     } else {
+        let Some(device_identifier) = &data.device_identifier else {
+            err!("No device identifier has been submitted.")
+        };
         // SSO login only sends device id, so we get the user by the most recently used device
-        let Some(user) = User::find_by_device_for_email2fa(&data.device_identifier, &conn).await else {
+        let Some(user) = User::find_by_device_for_email2fa(device_identifier, &conn).await else {
             err!("Username or password is incorrect. Try again.")
         };
 
