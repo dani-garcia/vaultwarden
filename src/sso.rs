@@ -10,7 +10,7 @@ use crate::{
     auth,
     auth::{AuthMethod, AuthTokens, TokenWrapper, BW_EXPIRATION, DEFAULT_REFRESH_VALIDITY},
     db::{
-        models::{Device, OIDCAuthenticatedUser, OIDCCodeWrapper, SsoAuth, SsoUser, User},
+        models::{Device, OIDCAuthenticatedUser, SsoAuth, SsoUser, User},
         DbConn,
     },
     sso_client::Client,
@@ -240,14 +240,14 @@ impl OIDCIdentifier {
 //  - second time we will rely on `SsoAuth.auth_response` since the `code` has already been exchanged.
 // The `SsoAuth` will ensure that the user is authorized only once.
 pub async fn exchange_code(
-    state: &OIDCState,
+    code: &OIDCCode,
     client_verifier: OIDCCodeVerifier,
     conn: &DbConn,
 ) -> ApiResult<(SsoAuth, OIDCAuthenticatedUser)> {
     use openidconnect::OAuth2TokenResponse;
 
-    let mut sso_auth = match SsoAuth::find(state, conn).await {
-        None => err!(format!("Invalid state cannot retrieve sso auth")),
+    let mut sso_auth = match SsoAuth::find_by_code(code, conn).await {
+        None => err!(format!("Invalid code cannot retrieve sso auth")),
         Some(sso_auth) => sso_auth,
     };
 
@@ -255,18 +255,18 @@ pub async fn exchange_code(
         return Ok((sso_auth, authenticated_user));
     }
 
-    let code = match sso_auth.code_response.clone() {
-        Some(OIDCCodeWrapper::Ok {
-            code,
-        }) => code.clone(),
-        Some(OIDCCodeWrapper::Error {
-            error,
-            error_description,
-        }) => {
+    let code = match (sso_auth.code_response.clone(), sso_auth.code_response_error.as_ref()) {
+        (Some(code), None) => code,
+        (_, Some(re)) => {
+            let error_msg = format!(
+                "SSO authorization failed: {}, {}",
+                re.error,
+                re.error_description.as_ref().unwrap_or(&String::new())
+            );
             sso_auth.delete(conn).await?;
-            err!(format!("SSO authorization failed: {error}, {}", error_description.as_ref().unwrap_or(&String::new())))
+            err!(error_msg);
         }
-        None => {
+        (None, _) => {
             sso_auth.delete(conn).await?;
             err!("Missing authorization provider return");
         }

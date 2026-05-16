@@ -262,6 +262,7 @@ table! {
         nonce -> Text,
         redirect_uri -> Text,
         code_response -> Nullable<Text>,
+        code_response_error -> Nullable<Text>,
         auth_response -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,

@@ -28,8 +28,9 @@ use crate::{
     crypto,
     db::{
         models::{
-            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeWrapper, OrganizationApiKey,
-            OrganizationId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
+            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeResponseError,
+            OrganizationApiKey, OrganizationId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete, TwoFactorType, User,
+            UserId,
         },
         DbConn,
     },
@@ -186,7 +187,7 @@ async fn _sso_login(
     // Ratelimit the login
     crate::ratelimit::check_limit_login(&ip.ip)?;
 
-    let (state, code_verifier) = match (data.code.as_ref(), data.code_verifier.as_ref()) {
+    let (code, code_verifier) = match (data.code.as_ref(), data.code_verifier.as_ref()) {
         (None, _) => err!(
             "Got no code in OIDC data",
             ErrorEvent {
@@ -202,7 +203,7 @@ async fn _sso_login(
         (Some(code), Some(code_verifier)) => (code, code_verifier.clone()),
     };
 
-    let (sso_auth, user_infos) = sso::exchange_code(state, code_verifier, conn).await?;
+    let (sso_auth, user_infos) = sso::exchange_code(code, code_verifier, conn).await?;
     let user_with_sso = match SsoUser::find_by_identifier(&user_infos.identifier, conn).await {
         None => match SsoUser::find_by_mail(&user_infos.email, conn).await {
             None => None,
@@ -1138,7 +1139,7 @@ struct ConnectData {
 
     // Needed for authorization code
     #[field(name = uncased("code"))]
-    code: Option<OIDCState>,
+    code: Option<OIDCCode>,
     #[field(name = uncased("code_verifier"))]
     code_verifier: Option<OIDCCodeVerifier>,
 }
@@ -1165,19 +1166,12 @@ const SSO_BINDING_COOKIE: &str = "VW_SSO_BINDING";
 
 #[get("/connect/oidc-signin?<code>&<state>", rank = 1)]
 async fn oidcsignin(code: OIDCCode, state: String, cookies: &CookieJar<'_>, mut conn: DbConn) -> ApiResult<Redirect> {
-    _oidcsignin_redirect(
-        state,
-        OIDCCodeWrapper::Ok {
-            code,
-        },
-        cookies,
-        &mut conn,
-    )
-    .await
+    _oidcsignin_redirect(state, code, None, cookies, &mut conn).await
 }
 
-// Bitwarden client appear to only care for code and state so we pipe it through
-// cf: https://github.com/bitwarden/clients/blob/80b74b3300e15b4ae414dc06044cc9b02b6c10a6/libs/auth/src/angular/sso/sso.component.ts#L141
+// Bitwarden client appear to only care for code and state
+// We save the error in the database and set the encoded state as the code to be able to retrieve them later on
+// cf: https://github.com/bitwarden/clients/blob/afd36d290ce18fb0048e0575e7d5a8f78b5dbffc/libs/auth/src/angular/sso/sso.component.ts#L156
 #[get("/connect/oidc-signin?<state>&<error>&<error_description>", rank = 2)]
 async fn oidcsignin_error(
     state: String,
@@ -1187,11 +1181,12 @@ async fn oidcsignin_error(
     mut conn: DbConn,
 ) -> ApiResult<Redirect> {
     _oidcsignin_redirect(
-        state,
-        OIDCCodeWrapper::Error {
+        state.clone(),
+        state.into(),
+        Some(OIDCCodeResponseError {
             error,
             error_description,
-        },
+        }),
         cookies,
         &mut conn,
     )
@@ -1200,10 +1195,10 @@ async fn oidcsignin_error(
 
 // The state was encoded using Base64 to ensure no issue with providers.
 // iss and scope parameters are needed for redirection to work on IOS.
-// We pass the state as the code to get it back later on.
 async fn _oidcsignin_redirect(
     base64_state: String,
-    code_response: OIDCCodeWrapper,
+    code: OIDCCode,
+    error: Option<OIDCCodeResponseError>,
     cookies: &CookieJar<'_>,
     conn: &mut DbConn,
 ) -> ApiResult<Redirect> {
@@ -1225,7 +1220,8 @@ async fn _oidcsignin_redirect(
     cookies
         .remove(Cookie::build(SSO_BINDING_COOKIE).path(format!("{}/identity/connect/", CONFIG.domain_path())).build());
 
-    sso_auth.code_response = Some(code_response);
+    sso_auth.code_response = Some(code.clone());
+    sso_auth.code_response_error = error;
     sso_auth.updated_at = Utc::now().naive_utc();
     sso_auth.save(conn).await?;
 
@@ -1235,7 +1231,7 @@ async fn _oidcsignin_redirect(
     };
 
     url.query_pairs_mut()
-        .append_pair("code", &state)
+        .append_pair("code", &code)
         .append_pair("state", &state)
         .append_pair("scope", &AuthMethod::Sso.scope())
         .append_pair("iss", &CONFIG.domain());
