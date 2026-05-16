@@ -81,7 +81,7 @@ dashmap = "6.1.0"
 
 # Async futures
 futures = "0.3.32"
-tokio = { version = "1.52.1", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
 tokio-util = { version = "0.7.18", features = ["compat"]}
 
 # A generic serialization/deserialization framework
@@ -120,7 +120,7 @@ job_scheduler_ng = "2.4.0"
 data-encoding = "2.11.0"
 
 # JWT library
-jsonwebtoken = { version = "10.3.0", features = ["use_pem", "rust_crypto"], default-features = false }
+jsonwebtoken = { version = "10.4.0", features = ["use_pem", "rust_crypto"], default-features = false }
 
 # TOTP library
 totp-lite = "2.0.1"
@@ -139,7 +139,7 @@ webauthn-rs-core = "0.5.5"
 url = "2.5.8"
 
 # Email libraries
-lettre = { version = "0.11.21", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "hostname", "tracing", "tokio1-rustls", "ring", "rustls-native-certs"], default-features = false }
+lettre = { version = "0.11.22", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "hostname", "tracing", "tokio1-rustls", "ring", "rustls-native-certs"], default-features = false }
 percent-encoding = "2.3.2" # URL encoding library used for URL's in the emails
 email_address = "0.2.9"
 
@@ -165,7 +165,7 @@ cookie = "0.18.1"
 cookie_store = "0.22.1"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.78"
+openssl = "0.10.79"
 
 # CLI argument parsing
 pico-args = "0.5.0"
@@ -191,7 +191,7 @@ which = "8.0.2"
 argon2 = "0.5.3"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
-rpassword = "7.5.1"
+rpassword = "7.5.2"
 
 # Loading a dynamic CSS Stylesheet
 grass_compiler = { version = "0.13.4", default-features = false }
