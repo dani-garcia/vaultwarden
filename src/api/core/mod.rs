@@ -6,6 +6,7 @@ mod folders;
 mod organizations;
 mod public;
 mod sends;
+mod sso_cookie_vendor;
 pub mod two_factor;
 
 pub use accounts::purge_auth_requests;
@@ -33,6 +34,10 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut eq_domains_routes);
     routes.append(&mut hibp_routes);
     routes.append(&mut meta_routes);
+
+    if CONFIG.sso_cookie_vendor_enabled() {
+        routes.append(&mut sso_cookie_vendor::routes());
+    }
 
     routes
 }
@@ -210,6 +215,19 @@ fn config() -> Json<Value> {
     );
     feature_states.insert("pm-19148-innovation-archive".to_string(), true);
 
+    let communication = if CONFIG.sso_cookie_vendor_enabled() {
+        json!({
+            "bootstrap": {
+                "type": "ssoCookieVendor",
+                "idpLoginUrl": CONFIG.sso_cookie_vendor_idp_login_url(),
+                "cookieName": CONFIG.sso_cookie_vendor_cookie_name(),
+                "cookieDomain": CONFIG.sso_cookie_vendor_cookie_domain(),
+            }
+        })
+    } else {
+        json!(null)
+    };
+
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
         // This means they expect a version that closely matches the Bitwarden server version
@@ -234,6 +252,7 @@ fn config() -> Json<Value> {
           "sso": "",
           "cloudRegion": null,
         },
+        "communication": communication,
         // Bitwarden uses this for the self-hosted servers to indicate the default push technology
         "push": {
           "pushTechnology": 0,
