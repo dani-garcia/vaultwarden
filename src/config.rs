@@ -642,6 +642,18 @@ make_config! {
         /// Password iterations |> Number of server-side passwords hashing iterations for the password hash.
         /// The default for new users. If changed, it will be updated during login for existing users.
         password_iterations:    i32,    true,   def,    600_000;
+        /// Client KDF type |> The default KDF type for new user registrations. 0 = PBKDF2, 1 = Argon2id.
+        /// Argon2id is recommended as it is memory-hard and resistant to GPU-based attacks.
+        client_kdf_type:        i32,    true,   def,    0;
+        /// Client KDF iterations |> The default KDF iterations for new user registrations.
+        /// For PBKDF2: default 600000. For Argon2id: default 3.
+        client_kdf_iterations:  i32,    true,   def,    600_000;
+        /// Client KDF memory (MB) |> The default Argon2id memory parameter (in MB) for new user registrations.
+        /// Only used when client_kdf_type = 1 (Argon2id). Default: 64.
+        client_kdf_memory:      i32,    true,   def,    64;
+        /// Client KDF parallelism |> The default Argon2id parallelism parameter for new user registrations.
+        /// Only used when client_kdf_type = 1 (Argon2id). Default: 4.
+        client_kdf_parallelism: i32,    true,   def,    4;
         /// Allow password hints |> Controls whether users can set or show password hints. This setting applies globally to all users.
         password_hints_allowed: bool,   true,   def,    true;
         /// Show password hint (Know the risks!) |> Controls whether a password hint should be shown directly in the web page
@@ -944,6 +956,26 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
 
     if cfg.password_iterations < 100_000 {
         err!("PASSWORD_ITERATIONS should be at least 100000 or higher. The default is 600000!");
+    }
+
+    if cfg.client_kdf_type < 0 || cfg.client_kdf_type > 1 {
+        err!("CLIENT_KDF_TYPE must be 0 (PBKDF2) or 1 (Argon2id).");
+    }
+
+    if cfg.client_kdf_type == 0 && cfg.client_kdf_iterations < 100_000 {
+        err!("CLIENT_KDF_ITERATIONS must be at least 100000 for PBKDF2.");
+    }
+
+    if cfg.client_kdf_type == 1 {
+        if cfg.client_kdf_iterations < 1 {
+            err!("CLIENT_KDF_ITERATIONS must be at least 1 for Argon2id.");
+        }
+        if cfg.client_kdf_memory < 15 || cfg.client_kdf_memory > 1024 {
+            err!("CLIENT_KDF_MEMORY must be between 15 and 1024 (MB) for Argon2id.");
+        }
+        if cfg.client_kdf_parallelism < 1 || cfg.client_kdf_parallelism > 16 {
+            err!("CLIENT_KDF_PARALLELISM must be between 1 and 16 for Argon2id.");
+        }
     }
 
     let limit = 256;
