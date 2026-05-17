@@ -1,5 +1,6 @@
-use diesel::connection::{Instrumentation, InstrumentationEvent};
 use std::{cell::RefCell, collections::HashMap, time::Instant};
+
+use diesel::connection::{Instrumentation, InstrumentationEvent};
 
 thread_local! {
     static QUERY_PERF_TRACKER: RefCell<HashMap<String, Instant>> = RefCell::new(HashMap::new());
@@ -11,7 +12,7 @@ pub fn simple_logger() -> Option<Box<dyn Instrumentation>> {
             url,
             ..
         } => {
-            debug!("Establishing connection: {url}")
+            debug!("Establishing connection: {url}");
         }
         InstrumentationEvent::FinishEstablishConnection {
             url,
@@ -19,9 +20,9 @@ pub fn simple_logger() -> Option<Box<dyn Instrumentation>> {
             ..
         } => {
             if let Some(e) = error {
-                error!("Error during establishing a connection with {url}: {e:?}")
+                error!("Error during establishing a connection with {url}: {e:?}");
             } else {
-                debug!("Connection established: {url}")
+                debug!("Connection established: {url}");
             }
         }
         InstrumentationEvent::StartQuery {
@@ -47,7 +48,7 @@ pub fn simple_logger() -> Option<Box<dyn Instrumentation>> {
                     } else if duration.as_secs() >= 1 {
                         info!("SLOW QUERY [{:.2}s]: {}", duration.as_secs_f32(), query_string);
                     } else {
-                        debug!("QUERY [{:?}]: {}", duration, query_string);
+                        debug!("QUERY [{duration:?}]: {query_string}");
                     }
                 }
             });

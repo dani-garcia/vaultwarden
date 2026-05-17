@@ -1,18 +1,31 @@
 use std::{borrow::Cow, future::Future, pin::Pin, sync::LazyLock, time::Duration};
 
-use openidconnect::{core::*, *};
+use openidconnect::{
+    AccessToken, AsyncHttpClient, AuthDisplay, AuthPrompt, AuthenticationFlow, AuthorizationCode, AuthorizationRequest,
+    ClientId, ClientSecret, CsrfToken, EmptyAdditionalClaims, EmptyExtraTokenFields, EndpointNotSet, EndpointSet,
+    HttpClientError, HttpRequest, HttpResponse, IdTokenClaims, IdTokenFields, Nonce, OAuth2TokenResponse,
+    PkceCodeChallenge, PkceCodeVerifier, RefreshToken, ResponseType, Scope, StandardErrorResponse,
+    StandardTokenResponse,
+    core::{
+        CoreAuthDisplay, CoreAuthPrompt, CoreClient, CoreErrorResponseType, CoreGenderClaim, CoreIdTokenVerifier,
+        CoreJsonWebKey, CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm, CoreProviderMetadata,
+        CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse, CoreTokenIntrospectionResponse,
+        CoreTokenResponse, CoreTokenType, CoreUserInfoClaims,
+    },
+    http, url,
+};
 use regex::Regex;
 use url::Url;
 
 use crate::{
+    CONFIG,
     api::{ApiResult, EmptyResult},
     db::models::SsoAuth,
     http_client::get_reqwest_client_builder,
     sso::{OIDCCode, OIDCCodeChallenge, OIDCCodeVerifier, OIDCState},
-    CONFIG,
 };
 
-static CLIENT_CACHE_KEY: LazyLock<String> = LazyLock::new(|| "sso-client".to_string());
+static CLIENT_CACHE_KEY: LazyLock<String> = LazyLock::new(|| "sso-client".to_owned());
 static CLIENT_CACHE: LazyLock<moka::sync::Cache<String, Client>> = LazyLock::new(|| {
     moka::sync::Cache::builder()
         .max_capacity(1)
@@ -85,7 +98,7 @@ impl<'c> AsyncHttpClient<'c> for OidcHttpClient {
 
 impl Client {
     // Call the OpenId discovery endpoint to retrieve configuration
-    async fn _get_client() -> ApiResult<Self> {
+    async fn get_client() -> ApiResult<Self> {
         let client_id = ClientId::new(CONFIG.sso_client_id());
         let client_secret = ClientSecret::new(CONFIG.sso_client_secret());
 
@@ -103,14 +116,16 @@ impl Client {
 
         let base_client = CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret));
 
-        let token_uri = match base_client.token_uri() {
-            Some(uri) => uri.clone(),
-            None => err!("Failed to discover token_url, cannot proceed"),
+        let token_uri = if let Some(uri) = base_client.token_uri() {
+            uri.clone()
+        } else {
+            err!("Failed to discover token_url, cannot proceed")
         };
 
-        let user_info_url = match base_client.user_info_url() {
-            Some(url) => url.clone(),
-            None => err!("Failed to discover user_info url, cannot proceed"),
+        let user_info_url = if let Some(url) = base_client.user_info_url() {
+            url.clone()
+        } else {
+            err!("Failed to discover user_info url, cannot proceed")
         };
 
         let core_client = base_client
@@ -129,13 +144,13 @@ impl Client {
         if CONFIG.sso_client_cache_expiration() > 0 {
             match CLIENT_CACHE.get(&*CLIENT_CACHE_KEY) {
                 Some(client) => Ok(client),
-                None => Self::_get_client().await.inspect(|client| {
+                None => Self::get_client().await.inspect(|client| {
                     debug!("Inserting new client in cache");
                     CLIENT_CACHE.insert(CLIENT_CACHE_KEY.clone(), client.clone());
                 }),
             }
         } else {
-            Self::_get_client().await
+            Self::get_client().await
         }
     }
 
@@ -214,15 +229,14 @@ impl Client {
             Ok(token_response) => {
                 let oidc_nonce = Nonce::new(sso_auth.nonce.clone());
 
-                let id_token = match token_response.extra_fields().id_token() {
-                    None => err!("Token response did not contain an id_token"),
-                    Some(token) => token,
+                let Some(id_token) = token_response.extra_fields().id_token() else {
+                    err!("Token response did not contain an id_token")
                 };
 
                 if CONFIG.sso_debug_tokens() {
                     debug!("Id token: {}", id_token.to_string());
                     debug!("Access token: {}", token_response.access_token().secret());
-                    debug!("Refresh token: {:?}", token_response.refresh_token().map(|t| t.secret()));
+                    debug!("Refresh token: {:?}", token_response.refresh_token().map(RefreshToken::secret));
                     debug!("Expiration time: {:?}", token_response.expires_in());
                 }
 
@@ -275,12 +289,12 @@ impl Client {
         let client = Client::cached().await?;
 
         REFRESH_CACHE
-            .get_with(refresh_token.clone(), async move { client._exchange_refresh_token(refresh_token).await })
+            .get_with(refresh_token.clone(), async move { client.exchange_refresh_token_impl(refresh_token).await })
             .await
             .map_err(Into::into)
     }
 
-    async fn _exchange_refresh_token(&self, refresh_token: String) -> Result<RefreshTokenResponse, String> {
+    async fn exchange_refresh_token_impl(&self, refresh_token: String) -> Result<RefreshTokenResponse, String> {
         let rt = RefreshToken::new(refresh_token);
 
         match self.core_client.exchange_refresh_token(&rt).request_async(&self.http_client).await {

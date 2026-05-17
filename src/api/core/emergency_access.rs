@@ -1,23 +1,23 @@
 use chrono::{TimeDelta, Utc};
-use rocket::{serde::json::Json, Route};
+use rocket::{Route, serde::json::Json};
 use serde_json::Value;
 
 use crate::{
+    CONFIG,
     api::{
-        core::{CipherSyncData, CipherSyncType},
         EmptyResult, JsonResult,
+        core::{CipherSyncData, CipherSyncType},
     },
-    auth::{decode_emergency_access_invite, Headers},
+    auth::{Headers, decode_emergency_access_invite},
     db::{
+        DbConn, DbPool,
         models::{
             Cipher, EmergencyAccess, EmergencyAccessId, EmergencyAccessStatus, EmergencyAccessType, Invitation,
             Membership, MembershipType, OrgPolicy, TwoFactor, User, UserId,
         },
-        DbConn, DbPool,
     },
     mail,
     util::NumberOrString,
-    CONFIG,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -55,7 +55,7 @@ async fn get_contacts(headers: Headers, conn: DbConn) -> Json<Value> {
     let mut emergency_access_list_json = Vec::with_capacity(emergency_access_list.len());
     for ea in emergency_access_list {
         if let Some(grantee) = ea.to_json_grantee_details(&conn).await {
-            emergency_access_list_json.push(grantee)
+            emergency_access_list_json.push(grantee);
         }
     }
 
@@ -89,11 +89,14 @@ async fn get_grantees(headers: Headers, conn: DbConn) -> Json<Value> {
 async fn get_emergency_access(emer_id: EmergencyAccessId, headers: Headers, conn: DbConn) -> JsonResult {
     check_emergency_access_enabled()?;
 
-    match EmergencyAccess::find_by_uuid_and_grantor_uuid(&emer_id, &headers.user.uuid, &conn).await {
-        Some(emergency_access) => Ok(Json(
+    if let Some(emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantor_uuid(&emer_id, &headers.user.uuid, &conn).await
+    {
+        Ok(Json(
             emergency_access.to_json_grantee_details(&conn).await.expect("Grantee user should exist but does not!"),
-        )),
-        None => err!("Emergency access not valid."),
+        ))
+    } else {
+        err!("Emergency access not valid.")
     }
 }
 
@@ -136,9 +139,10 @@ async fn post_emergency_access(
         err!("Emergency access not valid.")
     };
 
-    let new_type = match EmergencyAccessType::from_str(&data.r#type.into_string()) {
-        Some(new_type) => new_type as i32,
-        None => err!("Invalid emergency access type."),
+    let new_type = if let Some(new_type) = EmergencyAccessType::from_str(&data.r#type.into_string()) {
+        new_type as i32
+    } else {
+        err!("Invalid emergency access type.")
     };
 
     emergency_access.atype = new_type;
@@ -205,9 +209,10 @@ async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, co
 
     let emergency_access_status = EmergencyAccessStatus::Invited as i32;
 
-    let new_type = match EmergencyAccessType::from_str(&data.r#type.into_string()) {
-        Some(new_type) => new_type as i32,
-        None => err!("Invalid emergency access type."),
+    let new_type = if let Some(new_type) = EmergencyAccessType::from_str(&data.r#type.into_string()) {
+        new_type as i32
+    } else {
+        err!("Invalid emergency access type.")
     };
 
     let grantor_user = headers.user;
@@ -342,12 +347,11 @@ async fn accept_invite(
         err!("Claim email does not match current users email")
     }
 
-    let grantee_user = match User::find_by_mail(&claims.email, &conn).await {
-        Some(user) => {
-            Invitation::take(&claims.email, &conn).await;
-            user
-        }
-        None => err!("Invited user not found"),
+    let grantee_user = if let Some(user) = User::find_by_mail(&claims.email, &conn).await {
+        Invitation::take(&claims.email, &conn).await;
+        user
+    } else {
+        err!("Invited user not found")
     };
 
     // We need to search for the uuid in combination with the email, since we do not yet store the uuid of the grantee in the database.
@@ -766,7 +770,7 @@ pub async fn emergency_request_timeout_job(pool: DbPool) {
             }
         }
     } else {
-        error!("Failed to get DB connection while searching emergency request timed out")
+        error!("Failed to get DB connection while searching emergency request timed out");
     }
 }
 
@@ -825,6 +829,6 @@ pub async fn emergency_notification_reminder_job(pool: DbPool) {
             }
         }
     } else {
-        error!("Failed to get DB connection while searching emergency notification reminder")
+        error!("Failed to get DB connection while searching emergency notification reminder");
     }
 }

@@ -10,15 +10,15 @@ use rocket::{
 use serde_json::Value;
 
 use crate::{
+    CONFIG,
     api::{ApiResult, EmptyResult, JsonResult, Notify, UpdateType},
     auth::{ClientIp, Headers, Host},
     config::PathType,
     db::{
-        models::{Device, OrgPolicy, OrgPolicyType, Send, SendFileId, SendId, SendType, UserId},
         DbConn, DbPool,
+        models::{Device, OrgPolicy, OrgPolicyType, Send, SendFileId, SendId, SendType, UserId},
     },
-    util::{save_temp_file, NumberOrString},
-    CONFIG,
+    util::{NumberOrString, save_temp_file},
 };
 
 const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer available";
@@ -63,7 +63,7 @@ pub async fn purge_sends(pool: DbPool) {
     if let Ok(conn) = pool.get().await {
         Send::purge(&conn).await;
     } else {
-        error!("Failed to get DB connection while purging sends")
+        error!("Failed to get DB connection while purging sends");
     }
 }
 
@@ -168,7 +168,7 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
 #[get("/sends")]
 async fn get_sends(headers: Headers, conn: DbConn) -> Json<Value> {
     let sends = Send::find_by_user(&headers.user.uuid, &conn);
-    let sends_json: Vec<Value> = sends.await.iter().map(|s| s.to_json()).collect();
+    let sends_json: Vec<Value> = sends.await.iter().map(Send::to_json).collect();
 
     Json(json!({
       "data": sends_json,
@@ -179,9 +179,10 @@ async fn get_sends(headers: Headers, conn: DbConn) -> Json<Value> {
 
 #[get("/sends/<send_id>")]
 async fn get_send(send_id: SendId, headers: Headers, conn: DbConn) -> JsonResult {
-    match Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await {
-        Some(send) => Ok(Json(send.to_json())),
-        None => err!("Send not found", "Invalid send uuid or does not belong to user"),
+    if let Some(send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await {
+        Ok(Json(send.to_json()))
+    } else {
+        err!("Send not found", "Invalid send uuid or does not belong to user")
     }
 }
 
@@ -310,9 +311,10 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn)
 
     enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
-    let file_length = match &data.file_length {
-        Some(m) => m.into_i64()?,
-        _ => err!("Invalid send length"),
+    let file_length = if let Some(m) = &data.file_length {
+        m.into_i64()?
+    } else {
+        err!("Invalid send length")
     };
     if file_length < 0 {
         err!("Send size can't be negative")
@@ -457,16 +459,16 @@ async fn post_access(
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     };
 
-    if let Some(max_access_count) = send.max_access_count {
-        if send.access_count >= max_access_count {
-            err_code!(SEND_INACCESSIBLE_MSG, 404);
-        }
+    if let Some(max_access_count) = send.max_access_count
+        && send.access_count >= max_access_count
+    {
+        err_code!(SEND_INACCESSIBLE_MSG, 404);
     }
 
-    if let Some(expiration) = send.expiration_date {
-        if Utc::now().naive_utc() >= expiration {
-            err_code!(SEND_INACCESSIBLE_MSG, 404)
-        }
+    if let Some(expiration) = send.expiration_date
+        && Utc::now().naive_utc() >= expiration
+    {
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
     if Utc::now().naive_utc() >= send.deletion_date {
@@ -517,16 +519,16 @@ async fn post_access_file(
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     };
 
-    if let Some(max_access_count) = send.max_access_count {
-        if send.access_count >= max_access_count {
-            err_code!(SEND_INACCESSIBLE_MSG, 404)
-        }
+    if let Some(max_access_count) = send.max_access_count
+        && send.access_count >= max_access_count
+    {
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
-    if let Some(expiration) = send.expiration_date {
-        if Utc::now().naive_utc() >= expiration {
-            err_code!(SEND_INACCESSIBLE_MSG, 404)
-        }
+    if let Some(expiration) = send.expiration_date
+        && Utc::now().naive_utc() >= expiration
+    {
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
     if Utc::now().naive_utc() >= send.deletion_date {
@@ -572,7 +574,7 @@ async fn download_url(host: &Host, send_id: &SendId, file_id: &SendFileId) -> Re
         let token_claims = crate::auth::generate_send_claims(send_id, file_id);
         let token = crate::auth::encode_jwt(&token_claims);
 
-        Ok(format!("{}/api/sends/{send_id}/{file_id}?t={token}", &host.host))
+        Ok(format!("{}/api/sends/{send_id}/{file_id}?t={token}", host.host))
     } else {
         Ok(operator.presign_read(&format!("{send_id}/{file_id}"), Duration::from_mins(5)).await?.uri().to_string())
     }
@@ -580,10 +582,10 @@ async fn download_url(host: &Host, send_id: &SendId, file_id: &SendFileId) -> Re
 
 #[get("/sends/<send_id>/<file_id>?<t>")]
 async fn download_send(send_id: SendId, file_id: SendFileId, t: &str) -> Option<NamedFile> {
-    if let Ok(claims) = crate::auth::decode_send(t) {
-        if claims.sub == format!("{send_id}/{file_id}") {
-            return NamedFile::open(Path::new(&CONFIG.sends_folder()).join(send_id).join(file_id)).await.ok();
-        }
+    if let Ok(claims) = crate::auth::decode_send(t)
+        && claims.sub == format!("{send_id}/{file_id}")
+    {
+        return NamedFile::open(Path::new(&CONFIG.sends_folder()).join(send_id).join(file_id)).await.ok();
     }
     None
 }

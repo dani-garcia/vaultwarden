@@ -1,11 +1,18 @@
-use super::{DeviceId, OrganizationId, UserId};
-use crate::db::schema::auth_requests;
-use crate::{crypto::ct_eq, util::format_date};
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
-use macros::UuidFromParam;
 use serde_json::Value;
+
+use crate::{
+    api::EmptyResult,
+    crypto::ct_eq,
+    db::{DbConn, schema::auth_requests},
+    error::MapResult,
+    util::format_date,
+};
+use macros::UuidFromParam;
+
+use super::{DeviceId, OrganizationId, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Deserialize, Serialize)]
 #[diesel(table_name = auth_requests)]
@@ -74,11 +81,6 @@ impl AuthRequest {
     }
 }
 
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
-
 impl AuthRequest {
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
@@ -112,31 +114,28 @@ impl AuthRequest {
     }
 
     pub async fn find_by_uuid(uuid: &AuthRequestId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
-            auth_requests::table
-                .filter(auth_requests::uuid.eq(uuid))
-                .first::<Self>(conn)
-                .ok()
-        }}
+        conn.run(move |conn| auth_requests::table.filter(auth_requests::uuid.eq(uuid)).first::<Self>(conn).ok()).await
     }
 
     pub async fn find_by_uuid_and_user(uuid: &AuthRequestId, user_uuid: &UserId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             auth_requests::table
                 .filter(auth_requests::uuid.eq(uuid))
                 .filter(auth_requests::user_uuid.eq(user_uuid))
                 .first::<Self>(conn)
                 .ok()
-        }}
+        })
+        .await
     }
 
     pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             auth_requests::table
                 .filter(auth_requests::user_uuid.eq(user_uuid))
                 .load::<Self>(conn)
                 .expect("Error loading auth_requests")
-        }}
+        })
+        .await
     }
 
     pub async fn find_by_user_and_requested_device(
@@ -144,7 +143,7 @@ impl AuthRequest {
         device_uuid: &DeviceId,
         conn: &DbConn,
     ) -> Option<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             auth_requests::table
                 .filter(auth_requests::user_uuid.eq(user_uuid))
                 .filter(auth_requests::request_device_identifier.eq(device_uuid))
@@ -152,24 +151,27 @@ impl AuthRequest {
                 .order_by(auth_requests::creation_date.desc())
                 .first::<Self>(conn)
                 .ok()
-        }}
+        })
+        .await
     }
 
     pub async fn find_created_before(dt: &NaiveDateTime, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             auth_requests::table
                 .filter(auth_requests::creation_date.lt(dt))
                 .load::<Self>(conn)
                 .expect("Error loading auth_requests")
-        }}
+        })
+        .await
     }
 
     pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::delete(auth_requests::table.filter(auth_requests::uuid.eq(&self.uuid)))
                 .execute(conn)
                 .map_res("Error deleting auth request")
-        }}
+        })
+        .await
     }
 
     pub fn check_access_code(&self, access_code: &str) -> bool {

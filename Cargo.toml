@@ -1,5 +1,5 @@
 [workspace.package]
-edition = "2021"
+edition = "2024"
 rust-version = "1.93.0"
 license = "AGPL-3.0-only"
 repository = "https://github.com/dani-garcia/vaultwarden"
@@ -23,7 +23,8 @@ publish.workspace = true
 
 [features]
 default = [
-    # "sqlite" or "sqlite_system",
+    # "sqlite",
+    # "sqlite_system",
     # "mysql",
     # "postgresql",
 ]
@@ -32,14 +33,22 @@ enable_syslog = []
 # Please enable at least one of these DB backends.
 mysql = ["diesel/mysql", "diesel_migrations/mysql"]
 postgresql = ["diesel/postgres", "diesel_migrations/postgres"]
-sqlite_system = ["diesel/sqlite", "diesel_migrations/sqlite"]
-sqlite = ["sqlite_system", "libsqlite3-sys/bundled"] # Alternative to the above, statically linked SQLite into the binary instead of dynamically.
+sqlite_system = ["diesel/sqlite", "diesel_migrations/sqlite"] # Dynamically link SQLite
+sqlite = ["sqlite_system", "libsqlite3-sys/bundled"] # Statically link SQLite into the binary instead of dynamically.
 # Enable to use a vendored and statically linked openssl
 vendored_openssl = ["openssl/vendored"]
 # Enable MiMalloc memory allocator to replace the default malloc
 # This can improve performance for Alpine builds
 enable_mimalloc = ["dep:mimalloc"]
-s3 = ["opendal/services-s3", "dep:aws-config", "dep:aws-credential-types", "dep:aws-smithy-runtime-api", "dep:http", "dep:reqsign-aws-v4", "dep:reqsign-core"]
+s3 = [
+    "opendal/services-s3",
+    "dep:aws-config",
+    "dep:aws-credential-types",
+    "dep:aws-smithy-runtime-api",
+    "dep:http",
+    "dep:reqsign-aws-v4",
+    "dep:reqsign-core",
+]
 
 # OIDC specific features
 oidc-accept-rfc3339-timestamps = ["openidconnect/accept-rfc3339-timestamps"]
@@ -59,7 +68,8 @@ macros = { path = "./macros" }
 # Logging
 log = "0.4.29"
 fern = { version = "0.7.1", features = ["syslog-7", "reopen-1"] }
-tracing = { version = "0.1.44", features = ["log"] } # Needed to have lettre and webauthn-rs trace logging to work
+# We need the `log` feature for `tracing` to enable logging for several crates to work, like lettre or webauthn-rs
+tracing = { version = "0.1.44", features = ["log"] }
 
 # A `dotenv` implementation for Rust
 dotenvy = { version = "0.15.7", default-features = false }
@@ -70,8 +80,8 @@ num-derive = "0.4.2"
 bigdecimal = "0.4.10"
 
 # Web framework
-rocket = { version = "0.5.1", features = ["tls", "json"], default-features = false }
-rocket_ws = { version ="0.1.1" }
+rocket = { version = "0.5.1", default-features = false, features = ["json", "tls"] }
+rocket_ws = { version = "0.1.1" }
 
 # WebSockets libraries
 rmpv = "1.3.1" # MessagePack library
@@ -81,19 +91,32 @@ dashmap = "6.1.0"
 
 # Async futures
 futures = "0.3.32"
-tokio = { version = "1.52.3", features = ["rt-multi-thread", "fs", "io-util", "parking_lot", "time", "signal", "net"] }
-tokio-util = { version = "0.7.18", features = ["compat"]}
+tokio = { version = "1.52.3", features = [
+    "fs",
+    "io-util",
+    "net",
+    "parking_lot",
+    "rt-multi-thread",
+    "signal",
+    "time",
+] }
+tokio-util = { version = "0.7.18", features = ["compat"] }
 
 # A generic serialization/deserialization framework
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 
 # A safe, extensible ORM and Query builder
-# Currently pinned diesel to v2.3.3 as newer version break MySQL/MariaDB compatibility
 diesel = { version = "2.3.9", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.3.2"
 
-derive_more = { version = "2.1.1", features = ["from", "into", "as_ref", "deref", "display"] }
+derive_more = { version = "2.1.1", features = [
+    "as_ref",
+    "deref",
+    "display",
+    "from",
+    "into",
+] }
 diesel-derive-newtype = "2.1.2"
 
 # SQLite, statically bundled unless the `sqlite_system` feature is enabled
@@ -109,7 +132,7 @@ subtle = "2.6.1"
 uuid = { version = "1.23.1", features = ["v4"] }
 
 # Date and time libraries
-chrono = { version = "0.4.44", features = ["clock", "serde"], default-features = false }
+chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
 chrono-tz = "0.10.4"
 time = "0.3.47"
 
@@ -120,13 +143,13 @@ job_scheduler_ng = "2.4.0"
 data-encoding = "2.11.0"
 
 # JWT library
-jsonwebtoken = { version = "10.4.0", features = ["use_pem", "rust_crypto"], default-features = false }
+jsonwebtoken = { version = "10.4.0", default-features = false, features = ["rust_crypto", "use_pem"] }
 
 # TOTP library
 totp-lite = "2.0.1"
 
 # Yubico Library
-yubico = { package = "yubico_ng", version = "0.15.0", features = ["online-tokio"], default-features = false }
+yubico = { package = "yubico_ng", version = "0.15.0", default-features = false, features = ["online-tokio"] }
 
 # WebAuthn libraries
 # danger-allow-state-serialisation is needed to save the state in the db
@@ -139,7 +162,20 @@ webauthn-rs-core = "0.5.5"
 url = "2.5.8"
 
 # Email libraries
-lettre = { version = "0.11.22", features = ["smtp-transport", "sendmail-transport", "builder", "serde", "hostname", "tracing", "tokio1-rustls", "ring", "rustls-native-certs"], default-features = false }
+lettre = { version = "0.11.22", default-features = false, features = [
+    # Misc
+    "tracing",
+    "serde",
+    "builder",
+    "hostname",
+    # TLS/Security
+    "ring",
+    "rustls-native-certs",
+    "tokio1-rustls",
+    # Transport
+    "smtp-transport",
+    "sendmail-transport",
+] }
 percent-encoding = "2.3.2" # URL encoding library used for URL's in the emails
 email_address = "0.2.9"
 
@@ -147,12 +183,33 @@ email_address = "0.2.9"
 handlebars = { version = "6.4.0", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.13.3", features = ["rustls-no-provider", "stream", "json", "form", "deflate", "gzip", "brotli", "zstd", "socks", "cookies", "charset", "http2", "system-proxy"], default-features = false}
+reqwest = { version = "0.13.3", default-features = false, features = [
+    # Misc
+    "charset",
+    "cookies",
+    "http2",
+    "json",
+    "form",
+    "rustls-no-provider",
+    "stream",
+    # Compression
+    "brotli",
+    "deflate",
+    "gzip",
+    "zstd",
+    # Proxy
+    "socks",
+    "system-proxy",
+] }
 hickory-resolver = "0.26.1"
 
 # Favicon extraction libraries
 html5gum = "0.8.3"
-regex = { version = "1.12.3", features = ["std", "perf", "unicode-perl"], default-features = false }
+regex = { version = "1.12.3", default-features = false, features = [
+    "perf",
+    "std",
+    "unicode-perl",
+] }
 data-url = "0.3.2"
 bytes = "1.11.1"
 svg-hush = "0.9.6"
@@ -183,7 +240,7 @@ semver = "1.0.28"
 
 # Allow overriding the default memory allocator
 # Mainly used for the musl builds, since the default musl malloc is very slow
-mimalloc = { version = "0.1.50", features = ["secure"], default-features = false, optional = true }
+mimalloc = { version = "0.1.50", optional = true, default-features = false, features = ["secure"] }
 
 which = "8.0.2"
 
@@ -197,10 +254,15 @@ rpassword = "7.5.2"
 grass_compiler = { version = "0.13.4", default-features = false }
 
 # File are accessed through Apache OpenDAL
-opendal = { version = "0.56.0", features = ["services-fs"], default-features = false }
+opendal = { version = "0.56.0", default-features = false, features = ["services-fs"] }
 
 # For retrieving AWS credentials, including temporary SSO credentials
-aws-config = { version = "1.8.16", features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso"], default-features = false, optional = true }
+aws-config = { version = "1.8.16", optional = true, default-features = false, features = [
+    "behavior-version-latest",
+    "credentials-process",
+    "rt-tokio",
+    "sso",
+] }
 aws-credential-types = { version = "1.2.14", optional = true }
 aws-smithy-runtime-api = { version = "1.12.0", optional = true }
 http = { version = "1.4.0", optional = true }
@@ -265,77 +327,74 @@ unsafe_code = "forbid"
 non_ascii_idents = "forbid"
 
 # Deny
-deprecated_in_future = "deny"
+warnings = "deny" # Explicitly deny all warnings since we deny all warnings in the end
+
+# Deny lint groups
 deprecated_safe = { level = "deny", priority = -1 }
 future_incompatible = { level = "deny", priority = -1 }
 keyword_idents = { level = "deny", priority = -1 }
 let_underscore = { level = "deny", priority = -1 }
 nonstandard_style = { level = "deny", priority = -1 }
-noop_method_call = "deny"
 refining_impl_trait = { level = "deny", priority = -1 }
 rust_2018_idioms = { level = "deny", priority = -1 }
 rust_2021_compatibility = { level = "deny", priority = -1 }
 rust_2024_compatibility = { level = "deny", priority = -1 }
+unused = { level = "deny", priority = -1 }
+
+# Deny individual lints
+closure_returning_async_block = "deny"
+deprecated_in_future = "deny"
 single_use_lifetimes = "deny"
 trivial_casts = "deny"
 trivial_numeric_casts = "deny"
-unused = { level = "deny", priority = -1 }
 unused_import_braces = "deny"
 unused_lifetimes = "deny"
 unused_qualifications = "deny"
 variant_size_differences = "deny"
-# Allow the following lints since these cause issues with Rust v1.84.0 or newer
-# Building Vaultwarden with Rust v1.85.0 with edition 2024 also works without issues
-edition_2024_expr_fragment_specifier = "allow" # Once changed to Rust 2024 this should be removed and macro's should be validated again
-if_let_rescope = "allow"
-tail_expr_drop_order = "allow"
 
 # https://rust-lang.github.io/rust-clippy/stable/index.html
 [workspace.lints.clippy]
-# Warn
+# Warn only so you can still use these during development, but not in the final code
 dbg_macro = "warn"
 todo = "warn"
 
 # Ignore/Allow
 result_large_err = "allow"
 
-# Deny
+# Warn on these lint group (Some might be warn by default already though)
+# Will be denied during CI!
+complexity = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+
+# Deny individual lints
 branches_sharing_code = "deny"
-case_sensitive_file_extension_comparisons = "deny"
-cast_lossless = "deny"
 clone_on_ref_ptr = "deny"
-duration_suboptimal_units = "deny"
 equatable_if_let = "deny"
-excessive_precision = "deny"
-filter_map_next = "deny"
 float_cmp_const = "deny"
-implicit_clone = "deny"
-inefficient_to_string = "deny"
 iter_on_empty_collections = "deny"
 iter_on_single_items = "deny"
-linkedlist = "deny"
-macro_use_imports = "deny"
-manual_assert = "deny"
-manual_instant_elapsed = "deny"
-manual_string_new = "deny"
-match_wildcard_for_single_variants = "deny"
 mem_forget = "deny"
-needless_borrow = "deny"
 needless_collect = "deny"
-needless_continue = "deny"
-needless_lifetimes = "deny"
-option_option = "deny"
 redundant_clone = "deny"
-ref_option = "deny"
-string_add_assign = "deny"
-unnecessary_join = "deny"
 unnecessary_self_imports = "deny"
-unnested_or_patterns = "deny"
-unused_async = "deny"
-unused_self = "deny"
 useless_let_if_seq = "deny"
 verbose_file_reads = "deny"
-zero_sized_map_values = "deny"
+str_to_string = "deny"
+
+# Pedantic Opt-Outs
+inline_always = "allow" # We use this sparsely
+struct_field_names = "allow" # Noisy and some items are Bitwarden controlled
+large_futures = "allow" # Causes a fail in some Rocket macro's, since we experience no issues, allow it
+too_many_lines = "allow" # For now, allow this, good to enable in the future and see if we can refactor
+unnecessary_wraps = "allow" # Too much false positives because of Rocket integrations
+# We do not use these doc items
+doc_link_with_quotes = "allow"
+doc_markdown = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
 
 [lints]
 workspace = true

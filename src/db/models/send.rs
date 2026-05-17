@@ -1,11 +1,19 @@
 use chrono::{NaiveDateTime, Utc};
+use data_encoding::BASE64URL_NOPAD;
+use diesel::prelude::*;
 use serde_json::Value;
+use uuid::Uuid;
 
-use crate::{config::PathType, util::LowerCase, CONFIG};
+use crate::{
+    CONFIG,
+    api::EmptyResult,
+    config::PathType,
+    db::{DbConn, schema::sends},
+    error::MapResult,
+    util::{LowerCase, NumberOrString, format_date},
+};
 
 use super::{OrganizationId, User, UserId};
-use crate::db::schema::sends;
-use diesel::prelude::*;
 use id::SendId;
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -107,37 +115,33 @@ impl Send {
     pub fn check_password(&self, password: &str) -> bool {
         match (&self.password_hash, &self.password_salt, self.password_iter) {
             (Some(hash), Some(salt), Some(iter)) => {
-                crate::crypto::verify_password_hash(password.as_bytes(), salt, hash, iter as u32)
+                crate::crypto::verify_password_hash(password.as_bytes(), salt, hash, iter.cast_unsigned())
             }
             _ => false,
         }
     }
 
     pub async fn creator_identifier(&self, conn: &DbConn) -> Option<String> {
-        if let Some(hide_email) = self.hide_email {
-            if hide_email {
-                return None;
-            }
+        if let Some(hide_email) = self.hide_email
+            && hide_email
+        {
+            return None;
         }
 
-        if let Some(user_uuid) = &self.user_uuid {
-            if let Some(user) = User::find_by_uuid(user_uuid, conn).await {
-                return Some(user.email);
-            }
+        if let Some(user_uuid) = &self.user_uuid
+            && let Some(user) = User::find_by_uuid(user_uuid, conn).await
+        {
+            return Some(user.email);
         }
 
         None
     }
 
     pub fn to_json(&self) -> Value {
-        use crate::util::format_date;
-        use data_encoding::BASE64URL_NOPAD;
-        use uuid::Uuid;
-
         let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
 
         // Mobile clients expect size to be a string instead of a number
-        if let Some(size) = data.get("size").and_then(|v| v.as_i64()) {
+        if let Some(size) = data.get("size").and_then(Value::as_i64) {
             data["size"] = Value::String(size.to_string());
         }
 
@@ -167,12 +171,10 @@ impl Send {
     }
 
     pub async fn to_json_access(&self, conn: &DbConn) -> Value {
-        use crate::util::format_date;
-
         let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
 
         // Mobile clients expect size to be a string instead of a number
-        if let Some(size) = data.get("size").and_then(|v| v.as_i64()) {
+        if let Some(size) = data.get("size").and_then(Value::as_i64) {
             data["size"] = Value::String(size.to_string());
         }
 
@@ -190,12 +192,6 @@ impl Send {
         })
     }
 }
-
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
-use crate::util::NumberOrString;
 
 impl Send {
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
@@ -240,11 +236,10 @@ impl Send {
             operator.delete_with(&self.uuid).recursive(true).await.ok();
         }
 
-        db_run! { conn: {
-            diesel::delete(sends::table.filter(sends::uuid.eq(&self.uuid)))
-                .execute(conn)
-                .map_res("Error deleting send")
-        }}
+        conn.run(move |conn| {
+            diesel::delete(sends::table.filter(sends::uuid.eq(&self.uuid))).execute(conn).map_res("Error deleting send")
+        })
+        .await
     }
 
     /// Purge all sends that are past their deletion date.
@@ -256,15 +251,12 @@ impl Send {
 
     pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<UserId> {
         let mut user_uuids = Vec::new();
-        match &self.user_uuid {
-            Some(user_uuid) => {
-                User::update_uuid_revision(user_uuid, conn).await;
-                user_uuids.push(user_uuid.clone())
-            }
-            None => {
-                // Belongs to Organization, not implemented
-            }
-        };
+        if let Some(user_uuid) = &self.user_uuid {
+            User::update_uuid_revision(user_uuid, conn).await;
+            user_uuids.push(user_uuid.clone());
+        } else {
+            // Belongs to Organization, not implemented
+        }
         user_uuids
     }
 
@@ -276,9 +268,6 @@ impl Send {
     }
 
     pub async fn find_by_access_id(access_id: &str, conn: &DbConn) -> Option<Self> {
-        use data_encoding::BASE64URL_NOPAD;
-        use uuid::Uuid;
-
         let Ok(uuid_vec) = BASE64URL_NOPAD.decode(access_id.as_bytes()) else {
             return None;
         };
@@ -292,50 +281,38 @@ impl Send {
     }
 
     pub async fn find_by_uuid(uuid: &SendId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
-            sends::table
-                .filter(sends::uuid.eq(uuid))
-                .first::<Self>(conn)
-                .ok()
-        }}
+        conn.run(move |conn| sends::table.filter(sends::uuid.eq(uuid)).first::<Self>(conn).ok()).await
     }
 
     pub async fn find_by_uuid_and_user(uuid: &SendId, user_uuid: &UserId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
-            sends::table
-                .filter(sends::uuid.eq(uuid))
-                .filter(sends::user_uuid.eq(user_uuid))
-                .first::<Self>(conn)
-                .ok()
-        }}
+        conn.run(move |conn| {
+            sends::table.filter(sends::uuid.eq(uuid)).filter(sends::user_uuid.eq(user_uuid)).first::<Self>(conn).ok()
+        })
+        .await
     }
 
     pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            sends::table
-                .filter(sends::user_uuid.eq(user_uuid))
-                .load::<Self>(conn)
-                .expect("Error loading sends")
-        }}
+        conn.run(move |conn| {
+            sends::table.filter(sends::user_uuid.eq(user_uuid)).load::<Self>(conn).expect("Error loading sends")
+        })
+        .await
     }
 
     pub async fn size_by_user(user_uuid: &UserId, conn: &DbConn) -> Option<i64> {
-        let sends = Self::find_by_user(user_uuid, conn).await;
-
         #[derive(serde::Deserialize)]
         struct FileData {
             #[serde(rename = "size", alias = "Size")]
             size: NumberOrString,
         }
 
+        let sends = Self::find_by_user(user_uuid, conn).await;
         let mut total: i64 = 0;
         for send in sends {
-            if send.atype == SendType::File as i32 {
-                if let Ok(size) =
+            if send.atype == SendType::File as i32
+                && let Ok(size) =
                     serde_json::from_str::<FileData>(&send.data).map_err(Into::into).and_then(|d| d.size.into_i64())
-                {
-                    total = total.checked_add(size)?;
-                };
+            {
+                total = total.checked_add(size)?;
             }
         }
 
@@ -343,22 +320,18 @@ impl Send {
     }
 
     pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            sends::table
-                .filter(sends::organization_uuid.eq(org_uuid))
-                .load::<Self>(conn)
-                .expect("Error loading sends")
-        }}
+        conn.run(move |conn| {
+            sends::table.filter(sends::organization_uuid.eq(org_uuid)).load::<Self>(conn).expect("Error loading sends")
+        })
+        .await
     }
 
     pub async fn find_by_past_deletion_date(conn: &DbConn) -> Vec<Self> {
         let now = Utc::now().naive_utc();
-        db_run! { conn: {
-            sends::table
-                .filter(sends::deletion_date.lt(now))
-                .load::<Self>(conn)
-                .expect("Error loading sends")
-        }}
+        conn.run(move |conn| {
+            sends::table.filter(sends::deletion_date.lt(now)).load::<Self>(conn).expect("Error loading sends")
+        })
+        .await
     }
 }
 

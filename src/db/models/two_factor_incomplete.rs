@@ -1,17 +1,17 @@
 use chrono::{NaiveDateTime, Utc};
+use diesel::prelude::*;
 
-use crate::db::schema::twofactor_incomplete;
 use crate::{
+    CONFIG,
     api::EmptyResult,
     auth::ClientIp,
     db::{
-        models::{DeviceId, UserId},
         DbConn,
+        models::{DeviceId, UserId},
+        schema::twofactor_incomplete,
     },
     error::MapResult,
-    CONFIG,
 };
-use diesel::prelude::*;
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = twofactor_incomplete)]
@@ -49,7 +49,7 @@ impl TwoFactorIncomplete {
             return Ok(());
         }
 
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::insert_into(twofactor_incomplete::table)
                 .values((
                     twofactor_incomplete::user_uuid.eq(user_uuid),
@@ -61,7 +61,8 @@ impl TwoFactorIncomplete {
                 ))
                 .execute(conn)
                 .map_res("Error adding twofactor_incomplete record")
-        }}
+        })
+        .await
     }
 
     pub async fn mark_complete(user_uuid: &UserId, device_uuid: &DeviceId, conn: &DbConn) -> EmptyResult {
@@ -73,22 +74,24 @@ impl TwoFactorIncomplete {
     }
 
     pub async fn find_by_user_and_device(user_uuid: &UserId, device_uuid: &DeviceId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             twofactor_incomplete::table
                 .filter(twofactor_incomplete::user_uuid.eq(user_uuid))
                 .filter(twofactor_incomplete::device_uuid.eq(device_uuid))
                 .first::<Self>(conn)
                 .ok()
-        }}
+        })
+        .await
     }
 
     pub async fn find_logins_before(dt: &NaiveDateTime, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             twofactor_incomplete::table
                 .filter(twofactor_incomplete::login_time.lt(dt))
                 .load::<Self>(conn)
                 .expect("Error loading twofactor_incomplete")
-        }}
+        })
+        .await
     }
 
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
@@ -96,20 +99,24 @@ impl TwoFactorIncomplete {
     }
 
     pub async fn delete_by_user_and_device(user_uuid: &UserId, device_uuid: &DeviceId, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(twofactor_incomplete::table
-                           .filter(twofactor_incomplete::user_uuid.eq(user_uuid))
-                           .filter(twofactor_incomplete::device_uuid.eq(device_uuid)))
-                .execute(conn)
-                .map_res("Error in twofactor_incomplete::delete_by_user_and_device()")
-        }}
+        conn.run(move |conn| {
+            diesel::delete(
+                twofactor_incomplete::table
+                    .filter(twofactor_incomplete::user_uuid.eq(user_uuid))
+                    .filter(twofactor_incomplete::device_uuid.eq(device_uuid)),
+            )
+            .execute(conn)
+            .map_res("Error in twofactor_incomplete::delete_by_user_and_device()")
+        })
+        .await
     }
 
     pub async fn delete_all_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::delete(twofactor_incomplete::table.filter(twofactor_incomplete::user_uuid.eq(user_uuid)))
                 .execute(conn)
                 .map_res("Error in twofactor_incomplete::delete_all_by_user()")
-        }}
+        })
+        .await
     }
 }

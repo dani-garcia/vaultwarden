@@ -9,9 +9,9 @@ pub(crate) fn join_path(base: &str, child: &str) -> String {
     let base = base.trim_end_matches('/');
     let child = child.trim_start_matches('/');
     if base.is_empty() {
-        child.to_string()
+        child.to_owned()
     } else if child.is_empty() {
-        base.to_string()
+        base.to_owned()
     } else {
         format!("{base}/{child}")
     }
@@ -34,7 +34,7 @@ pub(crate) fn parent(path: &str) -> Option<String> {
         return s3::parent(path);
     }
 
-    std::path::Path::new(path).parent()?.to_str().map(ToString::to_string)
+    std::path::Path::new(path).parent()?.to_str().map(str::to_owned)
 }
 
 pub(crate) fn file_name(path: &str) -> Option<String> {
@@ -43,7 +43,7 @@ pub(crate) fn file_name(path: &str) -> Option<String> {
         return s3::file_name(path);
     }
 
-    std::path::Path::new(path).file_name()?.to_str().map(ToString::to_string)
+    std::path::Path::new(path).file_name()?.to_str().map(str::to_owned)
 }
 
 pub(crate) fn is_fs_operator(operator: &opendal::Operator) -> bool {
@@ -70,7 +70,7 @@ pub(crate) fn operator_for_path(path: &str) -> Result<opendal::Operator, crate::
         opendal::Operator::new(builder)?.finish()
     };
 
-    OPERATORS_BY_PATH.insert(path.to_string(), operator.clone());
+    OPERATORS_BY_PATH.insert(path.to_owned(), operator.clone());
 
     Ok(operator)
 }
@@ -88,7 +88,7 @@ mod s3 {
     pub(super) fn join_path(base: &str, child: &str) -> String {
         if let Ok(mut url) = Url::parse(base) {
             let mut segments = path_segments(&url);
-            segments.extend(child.split('/').filter(|segment| !segment.is_empty()).map(ToString::to_string));
+            segments.extend(child.split('/').filter(|segment| !segment.is_empty()).map(str::to_owned));
             set_path_segments(&mut url, &segments);
             return url.to_string();
         }
@@ -96,9 +96,9 @@ mod s3 {
         let base = base.trim_end_matches('/');
         let child = child.trim_start_matches('/');
         if base.is_empty() {
-            child.to_string()
+            child.to_owned()
         } else if child.is_empty() {
-            base.to_string()
+            base.to_owned()
         } else {
             format!("{base}/{child}")
         }
@@ -126,7 +126,7 @@ mod s3 {
             return Some(url.to_string());
         }
 
-        std::path::Path::new(path).parent()?.to_str().map(ToString::to_string)
+        std::path::Path::new(path).parent()?.to_str().map(str::to_owned)
     }
 
     pub(super) fn file_name(path: &str) -> Option<String> {
@@ -134,12 +134,12 @@ mod s3 {
             return path_segments(&url).pop();
         }
 
-        std::path::Path::new(path).file_name()?.to_str().map(ToString::to_string)
+        std::path::Path::new(path).file_name()?.to_str().map(str::to_owned)
     }
 
     fn path_segments(url: &Url) -> Vec<String> {
         url.path_segments()
-            .map(|segments| segments.filter(|segment| !segment.is_empty()).map(ToString::to_string).collect())
+            .map(|segments| segments.filter(|segment| !segment.is_empty()).map(str::to_owned).collect())
             .unwrap_or_default()
     }
 
@@ -206,9 +206,9 @@ mod s3 {
                 };
 
                 Ok(Some(Credential {
-                    access_key_id: creds.access_key_id().to_string(),
-                    secret_access_key: creds.secret_access_key().to_string(),
-                    session_token: creds.session_token().map(|s| s.to_string()),
+                    access_key_id: creds.access_key_id().to_owned(),
+                    secret_access_key: creds.secret_access_key().to_owned(),
+                    session_token: creds.session_token().map(ToOwned::to_owned),
                     expires_in,
                 }))
             }
@@ -218,7 +218,7 @@ mod s3 {
         let mut config = opendal::services::S3Config::from_uri(&uri)?;
 
         if !uri_has_option(&uri, &["default_storage_class"]) {
-            config.default_storage_class = Some("INTELLIGENT_TIERING".to_string());
+            config.default_storage_class = Some("INTELLIGENT_TIERING".to_owned());
         }
 
         if !uri_has_option(

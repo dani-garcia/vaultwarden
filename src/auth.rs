@@ -5,21 +5,30 @@ use std::{
 };
 
 use chrono::{DateTime, TimeDelta, Utc};
-use jsonwebtoken::{errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, errors::ErrorKind};
 use num_traits::FromPrimitive;
 use openssl::rsa::Rsa;
-use serde::de::DeserializeOwned;
-use serde::ser::Serialize;
+use serde::{de::DeserializeOwned, ser::Serialize};
+
+use rocket::{
+    outcome::try_outcome,
+    request::{FromRequest, Outcome, Request},
+};
 
 use crate::{
+    CONFIG,
     api::ApiResult,
     config::PathType,
-    db::models::{
-        AttachmentId, CipherId, CollectionId, DeviceId, DeviceType, EmergencyAccessId, MembershipId, OrgApiKeyId,
-        OrganizationId, SendFileId, SendId, UserId,
+    db::{
+        DbConn,
+        models::{
+            AttachmentId, CipherId, Collection, CollectionId, Device, DeviceId, DeviceType, EmergencyAccessId,
+            Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, OrganizationId, SendFileId,
+            SendId, User, UserId, UserStampException,
+        },
     },
     error::Error,
-    sso, CONFIG,
+    sso,
 };
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
@@ -52,12 +61,12 @@ static PRIVATE_RSA_KEY: OnceLock<EncodingKey> = OnceLock::new();
 static PUBLIC_RSA_KEY: OnceLock<DecodingKey> = OnceLock::new();
 
 pub async fn initialize_keys() -> Result<(), Error> {
-    use std::io::Error;
+    use std::io::Error as IoError;
 
     let rsa_key_filename = crate::storage::file_name(&CONFIG.private_rsa_key())
-        .ok_or_else(|| Error::other("Private RSA key path missing filename"))?;
+        .ok_or_else(|| IoError::other("Private RSA key path missing filename"))?;
 
-    let operator = CONFIG.opendal_operator_for_path_type(&PathType::RsaKey).map_err(Error::other)?;
+    let operator = CONFIG.opendal_operator_for_path_type(&PathType::RsaKey).map_err(IoError::other)?;
 
     let priv_key_buffer = match operator.read(&rsa_key_filename).await {
         Ok(buffer) => Some(buffer),
@@ -226,7 +235,7 @@ impl LoginJwtClaims {
         // let orgmanager: Vec<_> = orgs.iter().filter(|o| o.atype == 3).map(|o| o.org_uuid.clone()).collect();
 
         if exp <= (now + *BW_EXPIRATION).timestamp() {
-            warn!("Raise access_token lifetime to more than 5min.")
+            warn!("Raise access_token lifetime to more than 5min.");
         }
 
         // Create the JWT claims struct, to send to the client
@@ -253,7 +262,7 @@ impl LoginJwtClaims {
             sstamp: user.security_stamp.clone(),
             device: device.uuid.clone(),
             devicetype: DeviceType::from_i32(device.atype).to_string(),
-            client_id: client_id.unwrap_or("undefined".to_string()),
+            client_id: client_id.unwrap_or("undefined".to_owned()),
             scope,
             amr: vec!["Application".into()],
         }
@@ -506,7 +515,7 @@ pub fn generate_admin_claims() -> BasicJwtClaims {
         nbf: time_now.timestamp(),
         exp: (time_now + TimeDelta::try_minutes(CONFIG.admin_session_lifetime()).unwrap()).timestamp(),
         iss: JWT_ADMIN_ISSUER.to_string(),
-        sub: "admin_panel".to_string(),
+        sub: "admin_panel".to_owned(),
     }
 }
 
@@ -523,16 +532,6 @@ pub fn generate_send_claims(send_id: &SendId, file_id: &SendFileId) -> BasicJwtC
 //
 // Bearer token authentication
 //
-use rocket::{
-    outcome::try_outcome,
-    request::{FromRequest, Outcome, Request},
-};
-
-use crate::db::{
-    models::{Collection, Device, Membership, MembershipStatus, MembershipType, User, UserStampException},
-    DbConn,
-};
-
 pub struct Host {
     pub host: String,
 }
@@ -548,7 +547,7 @@ impl<'r> FromRequest<'r> for Host {
         let host = if CONFIG.domain_set() {
             CONFIG.domain()
         } else if let Some(referer) = headers.get_one("Referer") {
-            referer.to_string()
+            referer.to_owned()
         } else {
             // Try to guess from the headers
             let protocol = if let Some(proto) = headers.get_one("X-Forwarded-Proto") {
@@ -584,13 +583,15 @@ impl<'r> FromRequest<'r> for ClientHeaders {
     type Error = &'static str;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let ip = match ClientIp::from_request(request).await {
-            Outcome::Success(ip) => ip,
-            _ => err_handler!("Error getting Client IP"),
+        let Outcome::Success(ip) = ClientIp::from_request(request).await else {
+            err_handler!("Error getting Client IP")
         };
-        // When unknown or unable to parse, return 14, which is 'Unknown Browser'
-        let device_type: i32 =
-            request.headers().get_one("device-type").map(|d| d.parse().unwrap_or(14)).unwrap_or_else(|| 14);
+        // When unknown or unable to parse, return 'UnknownBrowser'
+        let device_type: i32 = request
+            .headers()
+            .get_one("device-type")
+            .and_then(|d| d.parse().ok())
+            .unwrap_or(DeviceType::UnknownBrowser as i32);
 
         Outcome::Success(ClientHeaders {
             device_type,
@@ -614,18 +615,19 @@ impl<'r> FromRequest<'r> for Headers {
         let headers = request.headers();
 
         let host = try_outcome!(Host::from_request(request).await).host;
-        let ip = match ClientIp::from_request(request).await {
-            Outcome::Success(ip) => ip,
-            _ => err_handler!("Error getting Client IP"),
+        let Outcome::Success(ip) = ClientIp::from_request(request).await else {
+            err_handler!("Error getting Client IP")
         };
 
         // Get access_token
-        let access_token: &str = match headers.get_one("Authorization") {
-            Some(a) => match a.rsplit("Bearer ").next() {
-                Some(split) => split,
-                None => err_handler!("No access token provided"),
-            },
-            None => err_handler!("No access token provided"),
+        let access_token: &str = if let Some(a) = headers.get_one("Authorization") {
+            if let Some(split) = a.rsplit("Bearer ").next() {
+                split
+            } else {
+                err_handler!("No access token provided")
+            }
+        } else {
+            err_handler!("No access token provided")
         };
 
         // Check JWT token is valid and get device and user from it
@@ -636,9 +638,8 @@ impl<'r> FromRequest<'r> for Headers {
         let device_id = claims.device;
         let user_id = claims.sub;
 
-        let conn = match DbConn::from_request(request).await {
-            Outcome::Success(conn) => conn,
-            _ => err_handler!("Error getting DB"),
+        let Outcome::Success(conn) = DbConn::from_request(request).await else {
+            err_handler!("Error getting DB")
         };
 
         let Some(device) = Device::find_by_uuid_and_user(&device_id, &user_id, &conn).await else {
@@ -669,7 +670,7 @@ impl<'r> FromRequest<'r> for Headers {
                         error!("Error updating user: {e:#?}");
                     }
                     err_handler!("Stamp exception is expired")
-                } else if !stamp_exception.routes.contains(&current_route.to_string()) {
+                } else if !stamp_exception.routes.contains(&current_route.to_owned()) {
                     err_handler!("Invalid security stamp: Current route and exception route do not match")
                 } else if stamp_exception.security_stamp != claims.sstamp {
                     err_handler!("Invalid security stamp for matched stamp exception")
@@ -757,9 +758,8 @@ impl<'r> FromRequest<'r> for OrgHeaders {
 
         match url_org_id {
             Some(org_id) if uuid::Uuid::parse_str(&org_id).is_ok() => {
-                let conn = match DbConn::from_request(request).await {
-                    Outcome::Success(conn) => conn,
-                    _ => err_handler!("Error getting DB"),
+                let Outcome::Success(conn) = DbConn::from_request(request).await else {
+                    err_handler!("Error getting DB")
                 };
 
                 let user = headers.user;
@@ -831,16 +831,16 @@ impl<'r> FromRequest<'r> for AdminHeaders {
 // but there could be cases where it is a query value.
 // First check the path, if this is not a valid uuid, try the query values.
 fn get_col_id(request: &Request<'_>) -> Option<CollectionId> {
-    if let Some(Ok(col_id)) = request.param::<String>(3) {
-        if uuid::Uuid::parse_str(&col_id).is_ok() {
-            return Some(col_id.into());
-        }
+    if let Some(Ok(col_id)) = request.param::<String>(3)
+        && uuid::Uuid::parse_str(&col_id).is_ok()
+    {
+        return Some(col_id.into());
     }
 
-    if let Some(Ok(col_id)) = request.query_value::<String>("collectionId") {
-        if uuid::Uuid::parse_str(&col_id).is_ok() {
-            return Some(col_id.into());
-        }
+    if let Some(Ok(col_id)) = request.query_value::<String>("collectionId")
+        && uuid::Uuid::parse_str(&col_id).is_ok()
+    {
+        return Some(col_id.into());
     }
 
     None
@@ -864,18 +864,16 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
         if headers.is_confirmed_and_manager() {
-            match get_col_id(request) {
-                Some(col_id) => {
-                    let conn = match DbConn::from_request(request).await {
-                        Outcome::Success(conn) => conn,
-                        _ => err_handler!("Error getting DB"),
-                    };
+            if let Some(col_id) = get_col_id(request) {
+                let Outcome::Success(conn) = DbConn::from_request(request).await else {
+                    err_handler!("Error getting DB")
+                };
 
-                    if !Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await {
-                        err_handler!("The current user isn't a manager for this collection")
-                    }
+                if !Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await {
+                    err_handler!("The current user isn't a manager for this collection")
                 }
-                _ => err_handler!("Error getting the collection id"),
+            } else {
+                err_handler!("Error getting the collection id")
             }
 
             Outcome::Success(Self {
@@ -1036,7 +1034,7 @@ impl From<OrgMemberHeaders> for Headers {
 //
 // Client IP address detection
 //
-
+#[derive(Copy, Clone)]
 pub struct ClientIp {
     pub ip: IpAddr,
 }
@@ -1068,6 +1066,7 @@ impl<'r> FromRequest<'r> for ClientIp {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct Secure {
     pub https: bool,
 }
@@ -1153,15 +1152,14 @@ pub enum AuthMethod {
 impl AuthMethod {
     pub fn scope(&self) -> String {
         match self {
-            AuthMethod::OrgApiKey => "api.organization".to_string(),
-            AuthMethod::Password => "api offline_access".to_string(),
-            AuthMethod::Sso => "api offline_access".to_string(),
-            AuthMethod::UserApiKey => "api".to_string(),
+            AuthMethod::OrgApiKey => "api.organization".to_owned(),
+            AuthMethod::UserApiKey => "api".to_owned(),
+            AuthMethod::Password | AuthMethod::Sso => "api offline_access".to_owned(),
         }
     }
 
     pub fn scope_vec(&self) -> Vec<String> {
-        self.scope().split_whitespace().map(str::to_string).collect()
+        self.scope().split_whitespace().map(str::to_owned).collect()
     }
 
     pub fn check_scope(&self, scope: Option<&String>) -> ApiResult<String> {
@@ -1274,17 +1272,15 @@ pub async fn refresh_tokens(
     };
 
     // Get device by refresh token
-    let mut device = match Device::find_by_refresh_token(&refresh_claims.device_token, conn).await {
-        None => err!("Invalid refresh token"),
-        Some(device) => device,
+    let Some(mut device) = Device::find_by_refresh_token(&refresh_claims.device_token, conn).await else {
+        err!("Invalid refresh token")
     };
 
     // Save to update `updated_at`.
     device.save(true, conn).await?;
 
-    let user = match User::find_by_uuid(&device.user_uuid, conn).await {
-        None => err!("Impossible to find user"),
-        Some(user) => user,
+    let Some(user) = User::find_by_uuid(&device.user_uuid, conn).await else {
+        err!("Impossible to find user")
     };
 
     let auth_tokens = match refresh_claims.sub {

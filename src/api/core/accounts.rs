@@ -1,34 +1,37 @@
 use std::collections::HashSet;
 
-use crate::db::DbPool;
 use chrono::Utc;
-use rocket::serde::json::Json;
-use serde_json::Value;
-
-use crate::{
-    api::{
-        core::{accept_org_invite, log_user_event, two_factor::email},
-        master_password_policy, register_push_device, unregister_push_device, AnonymousNotify, ApiResult, EmptyResult,
-        JsonResult, Notify, PasswordOrOtpData, UpdateType,
-    },
-    auth::{decode_delete, decode_invite, decode_verify_email, ClientHeaders, Headers},
-    crypto,
-    db::{
-        models::{
-            AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, EmergencyAccess,
-            EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId, OrgPolicy,
-            OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
-        },
-        DbConn,
-    },
-    mail,
-    util::{deser_opt_nonempty_str, format_date, NumberOrString},
-    CONFIG,
-};
-
 use rocket::{
     http::Status,
     request::{FromRequest, Outcome, Request},
+    serde::json::Json,
+};
+use serde_json::Value;
+
+use crate::{
+    CONFIG,
+    api::{
+        AnonymousNotify, ApiResult, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
+        core::{accept_org_invite, log_user_event, two_factor::email},
+        master_password_policy, register_push_device, unregister_push_device,
+    },
+    auth::{ClientHeaders, Headers, decode_delete, decode_invite, decode_verify_email},
+    crypto,
+    db::{
+        DbConn, DbPool,
+        models::{
+            AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
+            EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId,
+            OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
+        },
+    },
+    mail,
+    util::{NumberOrString, deser_opt_nonempty_str, format_date},
+};
+
+use super::{
+    ciphers::{CipherData, update_cipher_from_data},
+    sends::{SendData, update_send_from_data},
 };
 
 pub fn routes() -> Vec<rocket::Route> {
@@ -54,9 +57,9 @@ pub fn routes() -> Vec<rocket::Route> {
         delete_account,
         revision_date,
         password_hint,
-        prelogin,
+        post_prelogin,
         verify_password,
-        api_key,
+        post_api_key,
         rotate_api_key,
         get_known_device,
         get_all_devices,
@@ -142,7 +145,7 @@ fn clean_password_hint(password_hint: Option<&String>) -> Option<String> {
         None => None,
         Some(h) => match h.trim() {
             "" => None,
-            ht => Some(ht.to_string()),
+            ht => Some(ht.to_owned()),
         },
     }
 }
@@ -166,7 +169,7 @@ async fn is_email_2fa_required(member_id: Option<MembershipId>, conn: &DbConn) -
     false
 }
 
-pub async fn _register(data: Json<RegisterData>, email_verification: bool, conn: DbConn) -> JsonResult {
+pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: DbConn) -> JsonResult {
     let mut data: RegisterData = data.into_inner();
     let email = data.email.to_lowercase();
 
@@ -237,10 +240,10 @@ pub async fn _register(data: Json<RegisterData>, email_verification: bool, conn:
 
     // Check if the length of the username exceeds 50 characters (Same is Upstream Bitwarden)
     // This also prevents issues with very long usernames causing to large JWT's. See #2419
-    if let Some(ref name) = data.name {
-        if name.len() > 50 {
-            err!("The field Name must be a string with a maximum length of 50.");
-        }
+    if let Some(ref name) = data.name
+        && name.len() > 50
+    {
+        err!("The field Name must be a string with a maximum length of 50.");
     }
 
     // Check against the password hint setting here so if it fails, the user
@@ -373,18 +376,19 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
         user.public_key = Some(keys.public_key);
     }
 
-    if let Some(identifier) = data.org_identifier {
-        if identifier != crate::sso::FAKE_SSO_IDENTIFIER && identifier != crate::api::admin::FAKE_ADMIN_UUID {
-            let Some(org) = Organization::find_by_uuid(&identifier.into(), &conn).await else {
-                err!("Failed to retrieve the associated organization")
-            };
+    if let Some(identifier) = data.org_identifier
+        && identifier != crate::sso::FAKE_SSO_IDENTIFIER
+        && identifier != crate::api::admin::FAKE_ADMIN_UUID
+    {
+        let Some(org) = Organization::find_by_uuid(&identifier.into(), &conn).await else {
+            err!("Failed to retrieve the associated organization")
+        };
 
-            let Some(membership) = Membership::find_by_user_and_org(&user.uuid, &org.uuid, &conn).await else {
-                err!("Failed to retrieve the invitation")
-            };
+        let Some(membership) = Membership::find_by_user_and_org(&user.uuid, &org.uuid, &conn).await else {
+            err!("Failed to retrieve the invitation")
+        };
 
-            accept_org_invite(&user, membership, None, &conn).await?;
-        }
+        accept_org_invite(&user, membership, None, &conn).await?;
     }
 
     if CONFIG.mail_enabled() {
@@ -451,10 +455,10 @@ async fn put_avatar(data: Json<AvatarData>, headers: Headers, conn: DbConn) -> J
     // It looks like it only supports the 6 hex color format.
     // If you try to add the short value it will not show that color.
     // Check and force 7 chars, including the #.
-    if let Some(color) = &data.avatar_color {
-        if color.len() != 7 {
-            err!("The field AvatarColor must be a HTML/Hex color code with a length of 7 characters")
-        }
+    if let Some(color) = &data.avatar_color
+        && color.len() != 7
+    {
+        err!("The field AvatarColor must be a HTML/Hex color code with a length of 7 characters")
     }
 
     let mut user = headers.user;
@@ -668,9 +672,6 @@ struct UpdateResetPasswordData {
     reset_password_key: String,
 }
 
-use super::ciphers::CipherData;
-use super::sends::{update_send_from_data, SendData};
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KeyData {
@@ -840,7 +841,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
             };
 
             saved_folder.name = folder_data.name;
-            saved_folder.save(&conn).await?
+            saved_folder.save(&conn).await?;
         }
     }
 
@@ -853,7 +854,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         };
 
         saved_emergency_access.key_encrypted = Some(emergency_access_data.key_encrypted);
-        saved_emergency_access.save(&conn).await?
+        saved_emergency_access.save(&conn).await?;
     }
 
     // Update reset password data
@@ -865,7 +866,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         };
 
         membership.reset_password_key = Some(reset_password_data.reset_password_key);
-        membership.save(&conn).await?
+        membership.save(&conn).await?;
     }
 
     // Update send data
@@ -878,8 +879,6 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     }
 
     // Update cipher data
-    use super::ciphers::update_cipher_from_data;
-
     for cipher_data in data.account_data.ciphers {
         if cipher_data.organization_id.is_none() {
             let Some(saved_cipher) = existing_ciphers.iter_mut().find(|c| &c.uuid == cipher_data.id.as_ref().unwrap())
@@ -890,7 +889,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
             // Prevent triggering cipher updates via WebSockets by settings UpdateType::None
             // The user sessions are invalidated because all the ciphers were re-encrypted and thus triggering an update could cause issues.
             // We force the users to logout after the user has been saved to try and prevent these issues.
-            update_cipher_from_data(saved_cipher, cipher_data, &headers, None, &conn, &nt, UpdateType::None).await?
+            update_cipher_from_data(saved_cipher, cipher_data, &headers, None, &conn, &nt, UpdateType::None).await?;
         }
     }
 
@@ -1020,24 +1019,22 @@ async fn post_email(data: Json<ChangeEmailData>, headers: Headers, conn: DbConn,
         err!("Email already in use");
     }
 
-    match user.email_new {
-        Some(ref val) => {
-            if val != &data.new_email {
-                err!("Email change mismatch");
-            }
+    if let Some(ref val) = user.email_new {
+        if val != &data.new_email {
+            err!("Email change mismatch");
         }
-        None => err!("No email change pending"),
+    } else {
+        err!("No email change pending")
     }
 
     if CONFIG.mail_enabled() {
         // Only check the token if we sent out an email...
-        match user.email_new_token {
-            Some(ref val) => {
-                if *val != data.token.into_string() {
-                    err!("Token mismatch");
-                }
+        if let Some(ref val) = user.email_new_token {
+            if *val != data.token.into_string() {
+                err!("Token mismatch");
             }
-            None => err!("No email change pending"),
+        } else {
+            err!("No email change pending")
         }
         user.verified_at = Some(Utc::now().naive_utc());
     } else {
@@ -1114,10 +1111,10 @@ async fn post_delete_recover(data: Json<DeleteRecoverData>, conn: DbConn) -> Emp
     let data: DeleteRecoverData = data.into_inner();
 
     if CONFIG.mail_enabled() {
-        if let Some(user) = User::find_by_mail(&data.email, &conn).await {
-            if let Err(e) = mail::send_delete_account(&user.email, &user.uuid).await {
-                error!("Error sending delete account email: {e:#?}");
-            }
+        if let Some(user) = User::find_by_mail(&data.email, &conn).await
+            && let Err(e) = mail::send_delete_account(&user.email, &user.uuid).await
+        {
+            error!("Error sending delete account email: {e:#?}");
         }
         Ok(())
     } else {
@@ -1169,6 +1166,7 @@ async fn delete_account(data: Json<PasswordOrOtpData>, headers: Headers, conn: D
     user.delete(&conn).await
 }
 
+#[expect(clippy::needless_pass_by_value, reason = "Not beneficial for Headers")]
 #[get("/accounts/revision-date")]
 fn revision_date(headers: Headers) -> JsonResult {
     let revision_date = headers.user.updated_at.and_utc().timestamp_millis();
@@ -1183,11 +1181,11 @@ struct PasswordHintData {
 
 #[post("/accounts/password-hint", data = "<data>")]
 async fn password_hint(data: Json<PasswordHintData>, conn: DbConn) -> EmptyResult {
+    const NO_HINT: &str = "Sorry, you have no password hint...";
+
     if !CONFIG.password_hints_allowed() || (!CONFIG.mail_enabled() && !CONFIG.show_password_hint()) {
         err!("This server is not configured to provide password hints.");
     }
-
-    const NO_HINT: &str = "Sorry, you have no password hint...";
 
     let data: PasswordHintData = data.into_inner();
     let email = &data.email;
@@ -1199,9 +1197,9 @@ async fn password_hint(data: Json<PasswordHintData>, conn: DbConn) -> EmptyResul
                 // There is still a timing side channel here in that the code
                 // paths that send mail take noticeably longer than ones that
                 // don't. Add a randomized sleep to mitigate this somewhat.
-                use rand::{rngs::SmallRng, RngExt};
+                use rand::{RngExt, rngs::SmallRng};
                 let mut rng: SmallRng = rand::make_rng();
-                let sleep_ms = rng.random_range(900..=1100) as u64;
+                let sleep_ms: u64 = rng.random_range(900..=1100);
                 tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
                 Ok(())
             } else {
@@ -1229,11 +1227,11 @@ pub struct PreloginData {
 }
 
 #[post("/accounts/prelogin", data = "<data>")]
-async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
-    _prelogin(data, conn).await
+async fn post_prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
+    prelogin(data, conn).await
 }
 
-pub async fn _prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
+pub async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
     let data: PreloginData = data.into_inner();
 
     let (kdf_type, kdf_iter, kdf_mem, kdf_para) = match User::find_by_mail(&data.email, &conn).await {
@@ -1283,9 +1281,7 @@ async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers
     Ok(Json(master_password_policy(&user, &conn).await))
 }
 
-async fn _api_key(data: Json<PasswordOrOtpData>, rotate: bool, headers: Headers, conn: DbConn) -> JsonResult {
-    use crate::util::format_date;
-
+async fn update_api_key(data: Json<PasswordOrOtpData>, rotate: bool, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 
@@ -1304,13 +1300,13 @@ async fn _api_key(data: Json<PasswordOrOtpData>, rotate: bool, headers: Headers,
 }
 
 #[post("/accounts/api-key", data = "<data>")]
-async fn api_key(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
-    _api_key(data, false, headers, conn).await
+async fn post_api_key(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
+    update_api_key(data, false, headers, conn).await
 }
 
 #[post("/accounts/rotate-api-key", data = "<data>")]
 async fn rotate_api_key(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
-    _api_key(data, true, headers, conn).await
+    update_api_key(data, true, headers, conn).await
 }
 
 #[get("/devices/knowndevice")]
@@ -1353,7 +1349,7 @@ impl<'r> FromRequest<'r> for KnownDevice {
         };
 
         let uuid = if let Some(uuid) = req.headers().get_one("X-Device-Identifier") {
-            uuid.to_string().into()
+            uuid.to_owned().into()
         } else {
             return Outcome::Error((Status::BadRequest, "X-Device-Identifier value is required"));
         };
@@ -1368,7 +1364,7 @@ impl<'r> FromRequest<'r> for KnownDevice {
 #[get("/devices")]
 async fn get_all_devices(headers: Headers, conn: DbConn) -> JsonResult {
     let devices = Device::find_with_auth_request_by_user(&headers.user.uuid, &conn).await;
-    let devices = devices.iter().map(|device| device.to_json()).collect::<Vec<Value>>();
+    let devices = devices.iter().map(DeviceWithAuthRequest::to_json).collect::<Vec<Value>>();
 
     Ok(Json(json!({
         "data": devices,
@@ -1708,6 +1704,6 @@ pub async fn purge_auth_requests(pool: DbPool) {
     if let Ok(conn) = pool.get().await {
         AuthRequest::purge_expired_auth_requests(&conn).await;
     } else {
-        error!("Failed to get DB connection while purging auth requests")
+        error!("Failed to get DB connection while purging auth requests");
     }
 }
