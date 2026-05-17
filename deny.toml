@@ -1,0 +1,63 @@
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check the full feature set used by CI so all optional dependencies are included.
+features = ["sqlite", "mysql", "postgresql", "enable_mimalloc", "s3"]
+
+# =============================================================================
+# Advisories — RustSec vulnerability and unmaintained crate database
+# =============================================================================
+[advisories]
+ignore = [
+    # Marvin Attack: timing side-channel in the `rsa` crate (no fix available).
+    # Used only for JWT RS256 signing, not for network-facing RSA decryption,
+    # which limits exposure. Track: https://rustsec.org/advisories/RUSTSEC-2023-0071
+    { id = "RUSTSEC-2023-0071", reason = "No upstream fix available; exposure is limited to JWT signing, not network-facing decryption." },
+
+    # `rustls-pemfile` v1.x is unmaintained (archived Aug 2025). It is a thin
+    # wrapper around rustls-pki-types and pulled in transitively via rustls 0.21.x.
+    # Removing it requires upstream crates to drop their rustls 0.21 dependency.
+    { id = "RUSTSEC-2025-0134", reason = "Transitive via rustls 0.21.x compat chain; blocked on upstream upgrade." },
+]
+
+# =============================================================================
+# Licenses
+# =============================================================================
+[licenses]
+# OSI-approved permissive licenses and weak copyleft licenses compatible with
+# distributing vaultwarden (AGPL-3.0-only) as a Docker image.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+[licenses.private]
+# Skip license checks for unpublished workspace crates (vaultwarden, macros).
+ignore = true
+
+# =============================================================================
+# Bans — duplicate versions and disallowed crates
+# =============================================================================
+[bans]
+# Warn on duplicate versions; many arise from transitive deps and require
+# upstream changes to resolve. Promote to "deny" once the dep tree stabilises.
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+
+# =============================================================================
+# Sources — only crates.io is an allowed registry
+# =============================================================================
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
