@@ -11,6 +11,7 @@ use rocket::{
 use serde_json::Value;
 
 use crate::auth::ClientVersion;
+use crate::error::MapResult;
 use crate::util::{deser_opt_nonempty_str, save_temp_file, NumberOrString};
 use crate::{
     api::{self, core::log_event, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType},
@@ -1152,7 +1153,7 @@ async fn post_attachment_v2(
     let attachment_id = crypto::generate_attachment_id();
     let attachment =
         Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.file_name, file_size, Some(data.key));
-    attachment.save(&conn).await.expect("Error saving attachment");
+    attachment.save(&conn).await.map_res("Error saving attachment")?;
 
     let url = format!("/ciphers/{}/attachment/{attachment_id}", cipher.uuid);
     let response_key = match data.admin_request {
@@ -1292,7 +1293,7 @@ async fn save_attachment(
             if size != attachment.file_size {
                 // Update the attachment with the actual file size.
                 attachment.file_size = size;
-                attachment.save(&conn).await.expect("Error updating attachment");
+                attachment.save(&conn).await.map_res("Error updating attachment")?;
             }
         } else {
             attachment.delete(&conn).await.ok();
@@ -1305,17 +1306,14 @@ async fn save_attachment(
         // SAFETY: This value is only stored in the database and is not used to access the file system.
         // As a result, the conditions specified by Rocket [0] are met and this is safe to use.
         // [0]: https://docs.rs/rocket/latest/rocket/fs/struct.FileName.html#-danger-
-        let encrypted_filename = data.data.raw_name().map(|s| s.dangerous_unsafe_unsanitized_raw().to_string());
-
-        if encrypted_filename.is_none() {
+        let Some(filename) = data.data.raw_name().map(|s| s.dangerous_unsafe_unsanitized_raw().to_string()) else {
             err!("No filename provided")
-        }
+        };
         if data.key.is_none() {
             err!("No attachment key provided")
         }
-        let attachment =
-            Attachment::new(file_id.clone(), cipher_id.clone(), encrypted_filename.unwrap(), size, data.key);
-        attachment.save(&conn).await.expect("Error saving attachment");
+        let attachment = Attachment::new(file_id.clone(), cipher_id.clone(), filename, size, data.key);
+        attachment.save(&conn).await.map_res("Error saving attachment")?;
     }
 
     save_temp_file(&PathType::Attachments, &format!("{cipher_id}/{file_id}"), data.data, true).await?;
