@@ -653,7 +653,7 @@ async fn password_emergency_access(
     };
 
     // change grantor_user password
-    grantor_user.set_password(new_master_password_hash, Some(data.key), true, None);
+    grantor_user.set_password(new_master_password_hash, Some(data.key), true, None, &conn).await?;
     grantor_user.save(&conn).await?;
 
     // Disable TwoFactor providers since they will otherwise block logins

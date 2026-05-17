@@ -8,6 +8,7 @@ use crate::{
         models::{Folder, FolderId},
         DbConn,
     },
+    util::deser_opt_nonempty_str,
 };
 
 pub fn routes() -> Vec<rocket::Route> {
@@ -38,6 +39,7 @@ async fn get_folder(folder_id: FolderId, headers: Headers, conn: DbConn) -> Json
 #[serde(rename_all = "camelCase")]
 pub struct FolderData {
     pub name: String,
+    #[serde(default, deserialize_with = "deser_opt_nonempty_str")]
     pub id: Option<FolderId>,
 }
 

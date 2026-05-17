@@ -1,21 +1,26 @@
-use std::{borrow::Cow, sync::LazyLock, time::Duration};
+use std::{borrow::Cow, future::Future, pin::Pin, sync::LazyLock, time::Duration};
 
-use mini_moka::sync::Cache;
-use openidconnect::{core::*, reqwest, *};
+use openidconnect::{core::*, *};
 use regex::Regex;
 use url::Url;
 
 use crate::{
     api::{ApiResult, EmptyResult},
     db::models::SsoAuth,
+    http_client::get_reqwest_client_builder,
     sso::{OIDCCode, OIDCCodeChallenge, OIDCCodeVerifier, OIDCState},
     CONFIG,
 };
 
 static CLIENT_CACHE_KEY: LazyLock<String> = LazyLock::new(|| "sso-client".to_string());
-static CLIENT_CACHE: LazyLock<Cache<String, Client>> = LazyLock::new(|| {
-    Cache::builder().max_capacity(1).time_to_live(Duration::from_secs(CONFIG.sso_client_cache_expiration())).build()
+static CLIENT_CACHE: LazyLock<moka::sync::Cache<String, Client>> = LazyLock::new(|| {
+    moka::sync::Cache::builder()
+        .max_capacity(1)
+        .time_to_live(Duration::from_secs(CONFIG.sso_client_cache_expiration()))
+        .build()
 });
+static REFRESH_CACHE: LazyLock<moka::future::Cache<String, Result<RefreshTokenResponse, String>>> =
+    LazyLock::new(|| moka::future::Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(30)).build());
 
 /// OpenID Connect Core client.
 pub type CustomClient = openidconnect::Client<
@@ -38,10 +43,44 @@ pub type CustomClient = openidconnect::Client<
     EndpointSet,
 >;
 
+pub type RefreshTokenResponse = (Option<String>, String, Option<Duration>);
+
 #[derive(Clone)]
 pub struct Client {
-    pub http_client: reqwest::Client,
+    pub http_client: OidcHttpClient,
     pub core_client: CustomClient,
+}
+
+#[derive(Clone)]
+pub struct OidcHttpClient {
+    client: reqwest::Client,
+}
+
+impl OidcHttpClient {
+    fn new() -> Result<Self, reqwest::Error> {
+        get_reqwest_client_builder().redirect(reqwest::redirect::Policy::none()).build().map(|client| Self {
+            client,
+        })
+    }
+}
+
+impl<'c> AsyncHttpClient<'c> for OidcHttpClient {
+    type Error = HttpClientError<reqwest::Error>;
+    type Future = Pin<Box<dyn Future<Output = Result<HttpResponse, Self::Error>> + Send + Sync + 'c>>;
+
+    fn call(&'c self, request: HttpRequest) -> Self::Future {
+        Box::pin(async move {
+            let response = self.client.execute(request.try_into().map_err(Box::new)?).await.map_err(Box::new)?;
+
+            let mut builder = http::Response::builder().status(response.status()).version(response.version());
+
+            for (name, value) in response.headers() {
+                builder = builder.header(name, value);
+            }
+
+            builder.body(response.bytes().await.map_err(Box::new)?.to_vec()).map_err(HttpClientError::Http)
+        })
+    }
 }
 
 impl Client {
@@ -52,7 +91,7 @@ impl Client {
 
         let issuer_url = CONFIG.sso_issuer_url()?;
 
-        let http_client = match reqwest::ClientBuilder::new().redirect(reqwest::redirect::Policy::none()).build() {
+        let http_client = match OidcHttpClient::new() {
             Err(err) => err!(format!("Failed to build http client: {err}")),
             Ok(client) => client,
         };
@@ -111,6 +150,7 @@ impl Client {
         state: OIDCState,
         client_challenge: OIDCCodeChallenge,
         redirect_uri: String,
+        binding_hash: Option<String>,
     ) -> ApiResult<(Url, SsoAuth)> {
         let scopes = CONFIG.sso_scopes_vec().into_iter().map(Scope::new);
         let base64_state = data_encoding::BASE64.encode(state.to_string().as_bytes());
@@ -133,7 +173,7 @@ impl Client {
         }
 
         let (auth_url, _, nonce) = auth_req.url();
-        Ok((auth_url, SsoAuth::new(state, client_challenge, nonce.secret().clone(), redirect_uri)))
+        Ok((auth_url, SsoAuth::new(state, client_challenge, nonce.secret().clone(), redirect_uri, binding_hash)))
     }
 
     pub async fn exchange_code(
@@ -231,23 +271,29 @@ impl Client {
         verifier
     }
 
-    pub async fn exchange_refresh_token(
-        refresh_token: String,
-    ) -> ApiResult<(Option<String>, String, Option<Duration>)> {
+    pub async fn exchange_refresh_token(refresh_token: String) -> ApiResult<RefreshTokenResponse> {
+        let client = Client::cached().await?;
+
+        REFRESH_CACHE
+            .get_with(refresh_token.clone(), async move { client._exchange_refresh_token(refresh_token).await })
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn _exchange_refresh_token(&self, refresh_token: String) -> Result<RefreshTokenResponse, String> {
         let rt = RefreshToken::new(refresh_token);
 
-        let client = Client::cached().await?;
-        let token_response =
-            match client.core_client.exchange_refresh_token(&rt).request_async(&client.http_client).await {
-                Err(err) => err!(format!("Request to exchange_refresh_token endpoint failed: {:?}", err)),
-                Ok(token_response) => token_response,
-            };
-
-        Ok((
-            token_response.refresh_token().map(|token| token.secret().clone()),
-            token_response.access_token().secret().clone(),
-            token_response.expires_in(),
-        ))
+        match self.core_client.exchange_refresh_token(&rt).request_async(&self.http_client).await {
+            Err(err) => {
+                error!("Request to exchange_refresh_token endpoint failed: {err}");
+                Err(format!("Request to exchange_refresh_token endpoint failed: {err}"))
+            }
+            Ok(token_response) => Ok((
+                token_response.refresh_token().map(|token| token.secret().clone()),
+                token_response.access_token().secret().clone(),
+                token_response.expires_in(),
+            )),
+        }
     }
 }
 

@@ -57,6 +57,7 @@ mod mail;
 mod ratelimit;
 mod sso;
 mod sso_client;
+mod storage;
 mod util;
 
 use crate::api::core::two_factor::duo_oidc::purge_duo_contexts;
@@ -70,6 +71,7 @@ pub use util::is_running_in_container;
 
 #[rocket::main]
 async fn main() -> Result<(), Error> {
+    install_rustls_crypto_provider();
     parse_args();
     launch_info();
 
@@ -199,6 +201,14 @@ fn parse_args() {
             }
         }
         exit(0);
+    }
+}
+
+fn install_rustls_crypto_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("failed to install rustls ring crypto provider");
     }
 }
 
@@ -558,6 +568,12 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
     let basepath = &CONFIG.domain_path();
 
     let mut config = rocket::Config::from(rocket::Config::figment());
+
+    // We install our own signal handlers below; disable Rocket's built-in handlers
+    config.shutdown.ctrlc = false;
+    #[cfg(unix)]
+    config.shutdown.signals.clear();
+
     config.temp_dir = canonicalize(CONFIG.tmp_folder()).unwrap().into();
     config.cli_colors = false; // Make sure Rocket does not color any values for logging.
     config.limits = Limits::new()
@@ -589,11 +605,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
 
     CONFIG.set_rocket_shutdown_handle(instance.shutdown());
 
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.expect("Error setting Ctrl-C handler");
-        info!("Exiting Vaultwarden!");
-        CONFIG.shutdown();
-    });
+    spawn_shutdown_signal_handler();
 
     #[cfg(all(unix, sqlite))]
     {
@@ -619,6 +631,35 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
 
     info!("Vaultwarden process exited!");
     Ok(())
+}
+
+#[cfg(unix)]
+fn spawn_shutdown_signal_handler() {
+    tokio::spawn(async move {
+        use tokio::signal::unix::signal;
+
+        let mut sigint = signal(SignalKind::interrupt()).expect("Error setting SIGINT handler");
+        let mut sigterm = signal(SignalKind::terminate()).expect("Error setting SIGTERM handler");
+        let mut sigquit = signal(SignalKind::quit()).expect("Error setting SIGQUIT handler");
+
+        let signal_name = tokio::select! {
+            _ = sigint.recv() => "SIGINT",
+            _ = sigterm.recv() => "SIGTERM",
+            _ = sigquit.recv() => "SIGQUIT",
+        };
+
+        info!("Received {signal_name}, initiating graceful shutdown");
+        CONFIG.shutdown();
+    });
+}
+
+#[cfg(not(unix))]
+fn spawn_shutdown_signal_handler() {
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.expect("Error setting Ctrl-C handler");
+        info!("Received Ctrl-C, initiating graceful shutdown");
+        CONFIG.shutdown();
+    });
 }
 
 fn schedule_jobs(pool: db::DbPool) {

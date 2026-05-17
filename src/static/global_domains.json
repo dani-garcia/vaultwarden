@@ -111,7 +111,8 @@
       "microsoftstore.com",
       "xbox.com",
       "azure.com",
-      "windowsazure.com"
+      "windowsazure.com",
+      "cloud.microsoft"
     ],
     "excluded": false
   },
@@ -969,6 +970,14 @@
       "pinterest.nz",
       "pinterest.pt",
       "pinterest.se"
+    ],
+    "excluded": false
+  },
+  {
+    "type": 91,
+    "domains": [
+      "twitter.com",
+      "x.com"
     ],
     "excluded": false
   }

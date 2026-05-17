@@ -14,23 +14,23 @@ use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 
 use crate::{
     error::Error,
-    util::{get_active_web_release, get_env, get_env_bool, is_valid_email, parse_experimental_client_feature_flags},
+    storage,
+    util::{
+        get_active_web_release, get_env, get_env_bool, is_valid_email, parse_experimental_client_feature_flags,
+        FeatureFlagFilter,
+    },
 };
 
 static CONFIG_FILE: LazyLock<String> = LazyLock::new(|| {
     let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));
-    get_env("CONFIG_FILE").unwrap_or_else(|| format!("{data_folder}/config.json"))
+    get_env("CONFIG_FILE").unwrap_or_else(|| storage::join_path(&data_folder, "config.json"))
 });
 
-static CONFIG_FILE_PARENT_DIR: LazyLock<String> = LazyLock::new(|| {
-    let path = std::path::PathBuf::from(&*CONFIG_FILE);
-    path.parent().unwrap_or(std::path::Path::new("data")).to_str().unwrap_or("data").to_string()
-});
+static CONFIG_FILE_PARENT_DIR: LazyLock<String> =
+    LazyLock::new(|| storage::parent(&CONFIG_FILE).unwrap_or_else(|| "data".to_string()));
 
-static CONFIG_FILENAME: LazyLock<String> = LazyLock::new(|| {
-    let path = std::path::PathBuf::from(&*CONFIG_FILE);
-    path.file_name().unwrap_or(std::ffi::OsStr::new("config.json")).to_str().unwrap_or("config.json").to_string()
-});
+static CONFIG_FILENAME: LazyLock<String> =
+    LazyLock::new(|| storage::file_name(&CONFIG_FILE).unwrap_or_else(|| "config.json".to_string()));
 
 pub static SKIP_CONFIG_VALIDATION: AtomicBool = AtomicBool::new(false);
 
@@ -260,7 +260,7 @@ macro_rules! make_config {
             }
 
             async fn from_file() -> Result<Self, Error> {
-                let operator = opendal_operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
+                let operator = storage::operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
                 let config_bytes = operator.read(&CONFIG_FILENAME).await?;
                 println!("[INFO] Using saved config from `{}` for configuration.\n", *CONFIG_FILE);
                 serde_json::from_slice(&config_bytes.to_vec()).map_err(Into::into)
@@ -504,19 +504,19 @@ make_config! {
         ///  Data folder |> Main data folder
         data_folder:            String, false,  def,    "data".to_string();
         /// Database URL
-        database_url:           String, false,  auto,   |c| format!("{}/db.sqlite3", c.data_folder);
+        database_url:           String, false,  auto,   |c| format!("sqlite://{}", storage::join_path(&c.data_folder, "db.sqlite3"));
         /// Icon cache folder
-        icon_cache_folder:      String, false,  auto,   |c| format!("{}/icon_cache", c.data_folder);
+        icon_cache_folder:      String, false,  auto,   |c| storage::join_path(&c.data_folder, "icon_cache");
         /// Attachments folder
-        attachments_folder:     String, false,  auto,   |c| format!("{}/attachments", c.data_folder);
+        attachments_folder:     String, false,  auto,   |c| storage::join_path(&c.data_folder, "attachments");
         /// Sends folder
-        sends_folder:           String, false,  auto,   |c| format!("{}/sends", c.data_folder);
+        sends_folder:           String, false,  auto,   |c| storage::join_path(&c.data_folder, "sends");
         /// Temp folder |> Used for storing temporary file uploads
-        tmp_folder:             String, false,  auto,   |c| format!("{}/tmp", c.data_folder);
+        tmp_folder:             String, false,  auto,   |c| storage::join_path(&c.data_folder, "tmp");
         /// Templates folder
-        templates_folder:       String, false,  auto,   |c| format!("{}/templates", c.data_folder);
+        templates_folder:       String, false,  auto,   |c| storage::join_path(&c.data_folder, "templates");
         /// Session JWT key
-        rsa_key_filename:       String, false,  auto,   |c| format!("{}/rsa_key", c.data_folder);
+        rsa_key_filename:       String, false,  auto,   |c| storage::join_path(&c.data_folder, "rsa_key");
         /// Web vault folder
         web_vault_folder:       String, false,  def,    "web-vault/".to_string();
     },
@@ -920,20 +920,23 @@ make_config! {
     },
 }
 
-fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
+fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     // Validate connection URL is valid and DB feature is enabled
     #[cfg(sqlite)]
     {
         use crate::db::DbConnType;
         let url = &cfg.database_url;
-        if DbConnType::from_url(url)? == DbConnType::Sqlite && url.contains('/') {
-            let path = std::path::Path::new(&url);
-            if let Some(parent) = path.parent() {
-                if !parent.is_dir() {
-                    err!(format!(
-                        "SQLite database directory `{}` does not exist or is not a directory",
-                        parent.display()
-                    ));
+        if DbConnType::from_url(url)? == DbConnType::Sqlite {
+            let file_path = url.strip_prefix("sqlite://").unwrap_or(url);
+            if file_path.contains('/') {
+                let path = std::path::Path::new(file_path);
+                if let Some(parent) = path.parent() {
+                    if !parent.is_dir() {
+                        err!(format!(
+                            "SQLite database directory `{}` does not exist or is not a directory",
+                            parent.display()
+                        ));
+                    }
                 }
             }
         }
@@ -1026,33 +1029,17 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
         }
     }
 
-    // Server (v2025.6.2): https://github.com/bitwarden/server/blob/d094be3267f2030bd0dc62106bc6871cf82682f5/src/Core/Constants.cs#L103
-    // Client (web-v2025.6.1): https://github.com/bitwarden/clients/blob/747c2fd6a1c348a57a76e4a7de8128466ffd3c01/libs/common/src/enums/feature-flag.enum.ts#L12
-    // Android (v2025.6.0): https://github.com/bitwarden/android/blob/b5b022caaad33390c31b3021b2c1205925b0e1a2/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/manager/model/FlagKey.kt#L22
-    // iOS (v2025.6.0): https://github.com/bitwarden/ios/blob/ff06d9c6cc8da89f78f37f376495800201d7261a/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
-    //
-    // NOTE: Move deprecated flags to the utils::parse_experimental_client_feature_flags() DEPRECATED_FLAGS const!
-    const KNOWN_FLAGS: &[&str] = &[
-        // Autofill Team
-        "inline-menu-positioning-improvements",
-        "inline-menu-totp",
-        "ssh-agent",
-        // Key Management Team
-        "ssh-key-vault-item",
-        "pm-25373-windows-biometrics-v2",
-        // Tools
-        "export-attachments",
-        // Mobile Team
-        "anon-addy-self-host-alias",
-        "simple-login-self-host-alias",
-        "mutual-tls",
-    ];
-    let configured_flags = parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags);
-    let invalid_flags: Vec<_> = configured_flags.keys().filter(|flag| !KNOWN_FLAGS.contains(&flag.as_str())).collect();
+    let invalid_flags =
+        parse_experimental_client_feature_flags(&cfg.experimental_client_feature_flags, FeatureFlagFilter::InvalidOnly);
     if !invalid_flags.is_empty() {
-        err!(format!("Unrecognized experimental client feature flags: {invalid_flags:?}.\n\n\
+        let feature_flags_error = format!("Unrecognized experimental client feature flags: {:?}.\n\
                      Please ensure all feature flags are spelled correctly and that they are supported in this version.\n\
-                     Supported flags: {KNOWN_FLAGS:?}"));
+                     Supported flags: {:?}\n", invalid_flags, SUPPORTED_FEATURE_FLAGS);
+        if on_update {
+            err!(feature_flags_error);
+        } else {
+            println!("[WARNING] {feature_flags_error}");
+        }
     }
 
     const MAX_FILESIZE_KB: i64 = i64::MAX >> 10;
@@ -1089,7 +1076,7 @@ fn validate_config(cfg: &ConfigItems) -> Result<(), Error> {
 
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
-        validate_sso_master_password_policy(&cfg.sso_master_password_policy)?;
+        validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
     }
 
     if cfg._enable_yubico {
@@ -1284,7 +1271,7 @@ fn validate_internal_sso_redirect_url(sso_callback_path: &String) -> Result<open
 }
 
 fn validate_sso_master_password_policy(
-    sso_master_password_policy: &Option<String>,
+    sso_master_password_policy: Option<&String>,
 ) -> Result<Option<serde_json::Value>, Error> {
     let policy = sso_master_password_policy.as_ref().map(|mpp| serde_json::from_str::<serde_json::Value>(mpp));
 
@@ -1379,90 +1366,6 @@ fn smtp_convert_deprecated_ssl_options(smtp_ssl: Option<bool>, smtp_explicit_tls
     "starttls".to_string()
 }
 
-fn opendal_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
-    // Cache of previously built operators by path
-    static OPERATORS_BY_PATH: LazyLock<dashmap::DashMap<String, opendal::Operator>> =
-        LazyLock::new(dashmap::DashMap::new);
-
-    if let Some(operator) = OPERATORS_BY_PATH.get(path) {
-        return Ok(operator.clone());
-    }
-
-    let operator = if path.starts_with("s3://") {
-        #[cfg(not(s3))]
-        return Err(opendal::Error::new(opendal::ErrorKind::ConfigInvalid, "S3 support is not enabled").into());
-
-        #[cfg(s3)]
-        opendal_s3_operator_for_path(path)?
-    } else {
-        let builder = opendal::services::Fs::default().root(path);
-        opendal::Operator::new(builder)?.finish()
-    };
-
-    OPERATORS_BY_PATH.insert(path.to_string(), operator.clone());
-
-    Ok(operator)
-}
-
-#[cfg(s3)]
-fn opendal_s3_operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
-    use crate::http_client::aws::AwsReqwestConnector;
-    use aws_config::{default_provider::credentials::DefaultCredentialsChain, provider_config::ProviderConfig};
-
-    // This is a custom AWS credential loader that uses the official AWS Rust
-    // SDK config crate to load credentials. This ensures maximum compatibility
-    // with AWS credential configurations. For example, OpenDAL doesn't support
-    // AWS SSO temporary credentials yet.
-    struct OpenDALS3CredentialLoader {}
-
-    #[async_trait]
-    impl reqsign::AwsCredentialLoad for OpenDALS3CredentialLoader {
-        async fn load_credential(&self, _client: reqwest::Client) -> anyhow::Result<Option<reqsign::AwsCredential>> {
-            use aws_credential_types::provider::ProvideCredentials as _;
-            use tokio::sync::OnceCell;
-
-            static DEFAULT_CREDENTIAL_CHAIN: OnceCell<DefaultCredentialsChain> = OnceCell::const_new();
-
-            let chain = DEFAULT_CREDENTIAL_CHAIN
-                .get_or_init(|| {
-                    let reqwest_client = reqwest::Client::builder().build().unwrap();
-                    let connector = AwsReqwestConnector {
-                        client: reqwest_client,
-                    };
-
-                    let conf = ProviderConfig::default().with_http_client(connector);
-
-                    DefaultCredentialsChain::builder().configure(conf).build()
-                })
-                .await;
-
-            let creds = chain.provide_credentials().await?;
-
-            Ok(Some(reqsign::AwsCredential {
-                access_key_id: creds.access_key_id().to_string(),
-                secret_access_key: creds.secret_access_key().to_string(),
-                session_token: creds.session_token().map(|s| s.to_string()),
-                expires_in: creds.expiry().map(|expiration| expiration.into()),
-            }))
-        }
-    }
-
-    const OPEN_DAL_S3_CREDENTIAL_LOADER: OpenDALS3CredentialLoader = OpenDALS3CredentialLoader {};
-
-    let url = Url::parse(path).map_err(|e| format!("Invalid path S3 URL path {path:?}: {e}"))?;
-
-    let bucket = url.host_str().ok_or_else(|| format!("Missing Bucket name in data folder S3 URL {path:?}"))?;
-
-    let builder = opendal::services::S3::default()
-        .customized_credential_load(Box::new(OPEN_DAL_S3_CREDENTIAL_LOADER))
-        .enable_virtual_host_style()
-        .bucket(bucket)
-        .root(url.path())
-        .default_storage_class("INTELLIGENT_TIERING");
-
-    Ok(opendal::Operator::new(builder)?.finish())
-}
-
 pub enum PathType {
     Data,
     IconCache,
@@ -1470,6 +1373,35 @@ pub enum PathType {
     Sends,
     RsaKey,
 }
+
+// Official available feature flags can be found here:
+// Server (v2026.2.1): https://github.com/bitwarden/server/blob/0e42725d0837bd1c0dabd864ff621a579959744b/src/Core/Constants.cs#L135
+// Client (v2026.2.1): https://github.com/bitwarden/clients/blob/f96380c3138291a028bdd2c7a5fee540d5c98ba5/libs/common/src/enums/feature-flag.enum.ts#L12
+// Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
+// iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
+pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
+    // Architecture
+    "desktop-ui-migration-milestone-1",
+    "desktop-ui-migration-milestone-2",
+    "desktop-ui-migration-milestone-3",
+    "desktop-ui-migration-milestone-4",
+    // Auth Team
+    "pm-5594-safari-account-switching",
+    // Autofill Team
+    "ssh-agent",
+    "ssh-agent-v2",
+    // Key Management Team
+    "ssh-key-vault-item",
+    "pm-25373-windows-biometrics-v2",
+    // Mobile Team
+    "anon-addy-self-host-alias",
+    "simple-login-self-host-alias",
+    "mutual-tls",
+    "cxp-import-mobile",
+    "cxp-export-mobile",
+    // Platform Team
+    "pm-30529-webauthn-related-origins",
+];
 
 impl Config {
     pub async fn load() -> Result<Self, Error> {
@@ -1484,7 +1416,7 @@ impl Config {
         // Fill any missing with defaults
         let config = builder.build();
         if !SKIP_CONFIG_VALIDATION.load(Ordering::Relaxed) {
-            validate_config(&config)?;
+            validate_config(&config, false)?;
         }
 
         Ok(Config {
@@ -1520,7 +1452,7 @@ impl Config {
             let env = &self.inner.read().unwrap()._env;
             env.merge(&builder, false, &mut overrides).build()
         };
-        validate_config(&config)?;
+        validate_config(&config, true)?;
 
         // Save both the user and the combined config
         {
@@ -1531,7 +1463,7 @@ impl Config {
         }
 
         //Save to file
-        let operator = opendal_operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
+        let operator = storage::operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
         operator.write(&CONFIG_FILENAME, config_str).await?;
 
         Ok(())
@@ -1596,7 +1528,7 @@ impl Config {
     }
 
     pub async fn delete_user_config(&self) -> Result<(), Error> {
-        let operator = opendal_operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
+        let operator = storage::operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
         operator.delete(&CONFIG_FILENAME).await?;
 
         // Empty user config
@@ -1620,7 +1552,7 @@ impl Config {
     }
 
     pub fn private_rsa_key(&self) -> String {
-        format!("{}.pem", self.rsa_key_filename())
+        storage::with_extension(&self.rsa_key_filename(), "pem")
     }
     pub fn mail_enabled(&self) -> bool {
         let inner = &self.inner.read().unwrap().config;
@@ -1661,15 +1593,11 @@ impl Config {
             PathType::IconCache => self.icon_cache_folder(),
             PathType::Attachments => self.attachments_folder(),
             PathType::Sends => self.sends_folder(),
-            PathType::RsaKey => std::path::Path::new(&self.rsa_key_filename())
-                .parent()
-                .ok_or_else(|| std::io::Error::other("Failed to get directory of RSA key file"))?
-                .to_str()
-                .ok_or_else(|| std::io::Error::other("Failed to convert RSA key file directory to UTF-8 string"))?
-                .to_string(),
+            PathType::RsaKey => storage::parent(&self.private_rsa_key())
+                .ok_or_else(|| std::io::Error::other("Failed to get directory of RSA key file"))?,
         };
 
-        opendal_operator_for_path(&path)
+        storage::operator_for_path(&path)
     }
 
     pub fn render_template<T: serde::ser::Serialize>(&self, name: &str, data: &T) -> Result<String, Error> {
@@ -1709,7 +1637,7 @@ impl Config {
     }
 
     pub fn sso_master_password_policy_value(&self) -> Option<serde_json::Value> {
-        validate_sso_master_password_policy(&self.sso_master_password_policy()).ok().flatten()
+        validate_sso_master_password_policy(self.sso_master_password_policy().as_ref()).ok().flatten()
     }
 
     pub fn sso_scopes_vec(&self) -> Vec<String> {

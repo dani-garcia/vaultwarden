@@ -59,7 +59,8 @@ use crate::{
     error::Error,
     http_client::make_http_request,
     mail,
-    util::parse_experimental_client_feature_flags,
+    util::{parse_experimental_client_feature_flags, FeatureFlagFilter},
+    CONFIG,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -123,7 +124,7 @@ async fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: Db
 
     user.save(&conn).await?;
 
-    nt.send_user_update(UpdateType::SyncSettings, &user, &headers.device.push_uuid, &conn).await;
+    nt.send_user_update(UpdateType::SyncSettings, &user, headers.device.push_uuid.as_ref(), &conn).await;
 
     Ok(Json(json!({})))
 }
@@ -136,7 +137,7 @@ async fn put_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbC
 #[get("/hibp/breach?<username>")]
 async fn hibp_breach(username: &str, _headers: Headers) -> JsonResult {
     let username: String = url::form_urlencoded::byte_serialize(username.as_bytes()).collect();
-    if let Some(api_key) = crate::CONFIG.hibp_api_key() {
+    if let Some(api_key) = CONFIG.hibp_api_key() {
         let url = format!(
             "https://haveibeenpwned.com/api/v3/breachedaccount/{username}?truncateResponse=false&includeUnverified=false"
         );
@@ -197,19 +198,17 @@ fn get_api_webauthn(_headers: Headers) -> Json<Value> {
 
 #[get("/config")]
 fn config() -> Json<Value> {
-    let domain = crate::CONFIG.domain();
+    let domain = CONFIG.domain();
     // Official available feature flags can be found here:
-    // Server (v2025.6.2): https://github.com/bitwarden/server/blob/d094be3267f2030bd0dc62106bc6871cf82682f5/src/Core/Constants.cs#L103
-    // Client (web-v2025.6.1): https://github.com/bitwarden/clients/blob/747c2fd6a1c348a57a76e4a7de8128466ffd3c01/libs/common/src/enums/feature-flag.enum.ts#L12
-    // Android (v2025.6.0): https://github.com/bitwarden/android/blob/b5b022caaad33390c31b3021b2c1205925b0e1a2/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/manager/model/FlagKey.kt#L22
-    // iOS (v2025.6.0): https://github.com/bitwarden/ios/blob/ff06d9c6cc8da89f78f37f376495800201d7261a/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
-    let mut feature_states =
-        parse_experimental_client_feature_flags(&crate::CONFIG.experimental_client_feature_flags());
-    feature_states.insert("duo-redirect".to_string(), true);
-    feature_states.insert("email-verification".to_string(), true);
-    feature_states.insert("unauth-ui-refresh".to_string(), true);
-    feature_states.insert("enable-pm-flight-recorder".to_string(), true);
-    feature_states.insert("mobile-error-reporting".to_string(), true);
+    // Server (v2026.2.1): https://github.com/bitwarden/server/blob/0e42725d0837bd1c0dabd864ff621a579959744b/src/Core/Constants.cs#L135
+    // Client (v2026.2.1): https://github.com/bitwarden/clients/blob/f96380c3138291a028bdd2c7a5fee540d5c98ba5/libs/common/src/enums/feature-flag.enum.ts#L12
+    // Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
+    // iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
+    let mut feature_states = parse_experimental_client_feature_flags(
+        &CONFIG.experimental_client_feature_flags(),
+        FeatureFlagFilter::ValidOnly,
+    );
+    feature_states.insert("pm-19148-innovation-archive".to_string(), true);
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
@@ -225,7 +224,7 @@ fn config() -> Json<Value> {
           "url": "https://github.com/dani-garcia/vaultwarden"
         },
         "settings": {
-            "disableUserRegistration": crate::CONFIG.is_signup_disabled()
+            "disableUserRegistration": CONFIG.is_signup_disabled()
         },
         "environment": {
           "vault": domain,
@@ -278,7 +277,7 @@ async fn accept_org_invite(
 
     member.save(conn).await?;
 
-    if crate::CONFIG.mail_enabled() {
+    if CONFIG.mail_enabled() {
         let org = match Organization::find_by_uuid(&member.org_uuid, conn).await {
             Some(org) => org,
             None => err!("Organization not found."),

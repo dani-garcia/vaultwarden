@@ -2,20 +2,20 @@ use std::env;
 use std::process::Command;
 
 fn main() {
-    // This allow using #[cfg(sqlite)] instead of #[cfg(feature = "sqlite")], which helps when trying to add them through macros
-    #[cfg(feature = "sqlite")]
+    // These allow using e.g. #[cfg(mysql)] instead of #[cfg(feature = "mysql")], which helps when trying to add them through macros
+    #[cfg(feature = "sqlite_system")] // The `sqlite` feature implies this one.
     println!("cargo:rustc-cfg=sqlite");
     #[cfg(feature = "mysql")]
     println!("cargo:rustc-cfg=mysql");
     #[cfg(feature = "postgresql")]
     println!("cargo:rustc-cfg=postgresql");
-    #[cfg(feature = "s3")]
-    println!("cargo:rustc-cfg=s3");
-
-    #[cfg(not(any(feature = "sqlite", feature = "mysql", feature = "postgresql")))]
+    #[cfg(not(any(feature = "sqlite_system", feature = "mysql", feature = "postgresql")))]
     compile_error!(
         "You need to enable one DB backend. To build with previous defaults do: cargo build --features sqlite"
     );
+
+    #[cfg(feature = "s3")]
+    println!("cargo:rustc-cfg=s3");
 
     // Use check-cfg to let cargo know which cfg's we define,
     // and avoid warnings when they are used in the code.

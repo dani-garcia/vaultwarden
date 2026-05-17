@@ -1,4 +1,4 @@
-<main class="container-xl">
+<main class="container-xxl">
     <div id="diagnostics-block" class="my-3 p-3 rounded shadow">
         <h6 class="border-bottom pb-2 mb-2">Diagnostics</h6>
 
@@ -194,6 +194,14 @@
                     <dd class="col-sm-7">
                         <span id="http-response-errors" class="d-block"></span>
                     </dd>
+                    {{#if page_data.invalid_feature_flags}}
+                    <dt class="col-sm-5">Invalid Feature Flags
+                        <span class="badge bg-warning text-dark abbr-badge" id="feature-flag-warning" title="Some feature flags are invalid or outdated!">Warning</span>
+                    </dt>
+                    <dd class="col-sm-7">
+                        <span id="feature-flags" class="d-block"><b>Flags:</b> <span id="feature-flags-string">{{page_data.invalid_feature_flags}}</span></span>
+                    </dd>
+                    {{/if}}
                 </dl>
             </div>
         </div>

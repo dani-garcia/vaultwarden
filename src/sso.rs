@@ -10,14 +10,14 @@ use crate::{
     auth,
     auth::{AuthMethod, AuthTokens, TokenWrapper, BW_EXPIRATION, DEFAULT_REFRESH_VALIDITY},
     db::{
-        models::{Device, OIDCAuthenticatedUser, OIDCCodeWrapper, SsoAuth, SsoUser, User},
+        models::{Device, OIDCAuthenticatedUser, SsoAuth, SsoUser, User},
         DbConn,
     },
     sso_client::Client,
     CONFIG,
 };
 
-pub static FAKE_IDENTIFIER: &str = "VW_DUMMY_IDENTIFIER_FOR_OIDC";
+pub static FAKE_SSO_IDENTIFIER: &str = "00000000-01DC-01DC-01DC-000000000000";
 
 static SSO_JWT_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|sso", CONFIG.domain_origin()));
 
@@ -188,6 +188,7 @@ pub async fn authorize_url(
     client_challenge: OIDCCodeChallenge,
     client_id: &str,
     raw_redirect_uri: &str,
+    binding_hash: Option<String>,
     conn: DbConn,
 ) -> ApiResult<Url> {
     let redirect_uri = match client_id {
@@ -203,7 +204,7 @@ pub async fn authorize_url(
         _ => err!(format!("Unsupported client {client_id}")),
     };
 
-    let (auth_url, sso_auth) = Client::authorize_url(state, client_challenge, redirect_uri).await?;
+    let (auth_url, sso_auth) = Client::authorize_url(state, client_challenge, redirect_uri, binding_hash).await?;
     sso_auth.save(&conn).await?;
     Ok(auth_url)
 }
@@ -239,14 +240,14 @@ impl OIDCIdentifier {
 //  - second time we will rely on `SsoAuth.auth_response` since the `code` has already been exchanged.
 // The `SsoAuth` will ensure that the user is authorized only once.
 pub async fn exchange_code(
-    state: &OIDCState,
+    code: &OIDCCode,
     client_verifier: OIDCCodeVerifier,
     conn: &DbConn,
 ) -> ApiResult<(SsoAuth, OIDCAuthenticatedUser)> {
     use openidconnect::OAuth2TokenResponse;
 
-    let mut sso_auth = match SsoAuth::find(state, conn).await {
-        None => err!(format!("Invalid state cannot retrieve sso auth")),
+    let mut sso_auth = match SsoAuth::find_by_code(code, conn).await {
+        None => err!(format!("Invalid code cannot retrieve sso auth")),
         Some(sso_auth) => sso_auth,
     };
 
@@ -254,18 +255,18 @@ pub async fn exchange_code(
         return Ok((sso_auth, authenticated_user));
     }
 
-    let code = match sso_auth.code_response.clone() {
-        Some(OIDCCodeWrapper::Ok {
-            code,
-        }) => code.clone(),
-        Some(OIDCCodeWrapper::Error {
-            error,
-            error_description,
-        }) => {
+    let code = match (sso_auth.code_response.clone(), sso_auth.code_response_error.as_ref()) {
+        (Some(code), None) => code,
+        (_, Some(re)) => {
+            let error_msg = format!(
+                "SSO authorization failed: {}, {}",
+                re.error,
+                re.error_description.as_ref().unwrap_or(&String::new())
+            );
             sso_auth.delete(conn).await?;
-            err!(format!("SSO authorization failed: {error}, {}", error_description.as_ref().unwrap_or(&String::new())))
+            err!(error_msg);
         }
-        None => {
+        (None, _) => {
             sso_auth.delete(conn).await?;
             err!("Missing authorization provider return");
         }
@@ -283,7 +284,7 @@ pub async fn exchange_code(
 
     let email_verified = id_claims.email_verified().or(user_info.email_verified());
 
-    let user_name = id_claims.preferred_username().map(|un| un.to_string());
+    let user_name = id_claims.preferred_username().or(user_info.preferred_username()).map(|un| un.to_string());
 
     let refresh_token = token_response.refresh_token().map(|t| t.secret());
     if refresh_token.is_none() && CONFIG.sso_scopes_vec().contains(&"offline_access".to_string()) {
