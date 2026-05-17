@@ -6,7 +6,7 @@ vault_image_digest: "sha256:062fcf0d5dc37247dae61b0ee1ba5d20f9296e290d7ad1f6114e
 # https://github.com/tonistiigi/xx | https://hub.docker.com/r/tonistiigi/xx/tags
 xx_image_digest: "sha256:c64defb9ed5a91eacb37f96ccc3d4cd72521c4bd18d5442905b95e2226b0e707"
 rust_version: 1.93.1 # Rust version to be used
-debian_version: trixie # Debian release name to be used
+debian_version: bookworm # Debian release name to be used
 alpine_version: "3.23" # Alpine version to be used
 # For which platforms/architectures will we try to build images
 platforms: ["linux/amd64", "linux/arm64", "linux/arm/v7", "linux/arm/v6"]

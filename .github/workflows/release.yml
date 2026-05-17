@@ -102,8 +102,10 @@ jobs:
                   # 如果有旧 Tag，生成 "Tag-CommitHash" 格式
                   echo "SOURCE_VERSION=${GIT_LAST_TAG}-${SOURCE_COMMIT:0:8}" | tee -a "${GITHUB_ENV}"
               else
-              echo "SOURCE_VERSION=${SOURCE_COMMIT:0:8}" | tee -a "${GITHUB_ENV}"
-              echo "⚠️ No tags found in repository. Using version: dev-${SOURCE_COMMIT:0:8}"
+                  # echo "SOURCE_VERSION=${SOURCE_COMMIT:0:8}" | tee -a "${GITHUB_ENV}"
+                  # echo "⚠️ No tags found in repository. Using version: dev-${SOURCE_COMMIT:0:8}"
+                  echo "SOURCE_VERSION=1.35.4-${SOURCE_COMMIT:0:8}" | tee -a "${GITHUB_ENV}"
+              fi
           fi
 
       # Login to Docker Hub
@@ -161,13 +163,13 @@ jobs:
         run: |
           #
           # Check if there is a GitHub Container Registry Login and use it for caching
-          if [[ -n "${HAVE_GHCR_LOGIN}" ]]; then
-            echo "BAKE_CACHE_FROM=type=registry,ref=${GHCR_REPO}-buildcache:${BASE_IMAGE}-${NORMALIZED_ARCH}" | tee -a "${GITHUB_ENV}"
-            echo "BAKE_CACHE_TO=type=registry,ref=${GHCR_REPO}-buildcache:${BASE_IMAGE}-${NORMALIZED_ARCH},compression=zstd,mode=max" | tee -a "${GITHUB_ENV}"
-          else
-            echo "BAKE_CACHE_FROM="
-            echo "BAKE_CACHE_TO="
-          fi
+          #if [[ -n "${HAVE_GHCR_LOGIN}" ]]; then
+          #  echo "BAKE_CACHE_FROM=type=registry,ref=${GHCR_REPO}-buildcache:${BASE_IMAGE}-${NORMALIZED_ARCH}" | tee -a "${GITHUB_ENV}"
+          #  echo "BAKE_CACHE_TO=type=registry,ref=${GHCR_REPO}-buildcache:${BASE_IMAGE}-${NORMALIZED_ARCH},compression=zstd,mode=max" | tee -a "${GITHUB_ENV}"
+          #else
+          echo "BAKE_CACHE_FROM="
+          echo "BAKE_CACHE_TO="
+          #fi
           #
 
       - name: Generate tags
@@ -198,13 +200,11 @@ jobs:
           source: .
           files: docker/docker-bake.hcl
           targets: "${{ matrix.base_image }}-multi"
+          no-cache: true
           set: |
-            *.cache-from=${{ env.BAKE_CACHE_FROM }}
-            *.cache-to=${{ env.BAKE_CACHE_TO }}
             *.platform=linux/${{ matrix.arch }}
             ${{ env.TAGS }}
             *.output=type=local,dest=./output
-            *.output=type=image,push-by-digest=true,name-canonical=true,push=true
 
       - name: Extract digest SHA
         env:
@@ -238,16 +238,52 @@ jobs:
           mv ./output/vaultwarden vaultwarden-"${NORMALIZED_ARCH}"
 
       # Upload artifacts to Github Actions and Attest the binaries
-      - name: Attest binaries
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
-        with:
-          subject-path: vaultwarden-${{ env.NORMALIZED_ARCH }}
+      #- name: Attest binaries
+      #  uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+      #  with:
+      #    subject-path: vaultwarden-${{ env.NORMALIZED_ARCH }}
 
-      - name: Upload binaries as artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      #- name: Upload binaries as artifacts
+      #  uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      #  with:
+      #    name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-${{ env.NORMALIZED_ARCH }}-${{ matrix.base_image }}
+      #    path: vaultwarden-${{ env.NORMALIZED_ARCH }}
+
+            # --- 修改开始：整理文件并打包成 TAR ---
+      - name: Prepare and Tar Minimal Files
+        env:
+          NORMALIZED_ARCH: ${{ env.NORMALIZED_ARCH }}
+          BASE_IMAGE: ${{ matrix.base_image }}
+          SOURCE_VERSION: ${{ env.SOURCE_VERSION }}
+        run: |
+          # 定义临时文件夹名称
+          TEMP_DIR="vaultwarden-${SOURCE_VERSION}-linux-${NORMALIZED_ARCH}-${BASE_IMAGE}"
+          mkdir -p "${TEMP_DIR}"
+          du -ah
+          echo "Copying essential files to ${TEMP_DIR}..."
+          
+          # 4. 打包成 .tar.gz
+          TARBALL_NAME="${TEMP_DIR}.tar.gz"
+          echo "Creating tarball: ${TARBALL_NAME}"
+          tar -czvf "${TARBALL_NAME}" vaultwarden-${{ env.NORMALIZED_ARCH }} ./output/web-vault/ ./output/healthcheck.sh ./output/start.sh
+
+          # 显示包大小
+          ls -lh "${TARBALL_NAME}"
+          du -sh "${TEMP_DIR}"
+
+          # 导出变量供上传步骤使用
+          echo "TARBALL_NAME=${TARBALL_NAME}" >> "${GITHUB_ENV}"
+          echo "ARTIFACT_NAME=${TEMP_DIR}-tar" >> "${GITHUB_ENV}"
+
+      # --- 修改结束：上传 TAR 包 ---
+      - name: Upload Vaultwarden Tarball
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: vaultwarden-${{ env.SOURCE_VERSION }}-linux-${{ env.NORMALIZED_ARCH }}-${{ matrix.base_image }}
-          path: vaultwarden-${{ env.NORMALIZED_ARCH }}
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.TARBALL_NAME }}
+          retention-days: 5
+          # 如果包很大，可以开启分片压缩 (可选)
+          # compression-level: 6 
 
   merge-manifests:
     name: Merge manifests
