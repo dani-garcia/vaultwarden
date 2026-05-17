@@ -552,6 +552,16 @@ fn check_web_vault() {
         error!("You can also set the environment variable 'WEB_VAULT_ENABLED=false' to disable it");
         exit(1);
     }
+
+    if CONFIG.sso_enabled() {
+        let sso_connector = Path::new(&CONFIG.web_vault_folder()).join("sso-connector.html");
+        if !sso_connector.is_file() {
+            warn!(
+                "Web vault is missing 'sso-connector.html' at '{}'. Browser OIDC SSO redirects to this file; install a current web vault or disable SSO.",
+                sso_connector.display()
+            );
+        }
+    }
 }
 
 async fn create_db_pool() -> db::DbPool {

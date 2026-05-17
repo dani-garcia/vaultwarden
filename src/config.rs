@@ -829,6 +829,8 @@ make_config! {
         sso_client_cache_expiration:    u64,    true,   def,    0;
         /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
         sso_debug_tokens:               bool,   true,   def,    false;
+        /// Trusted Device Encryption (TDE) for SSO |> When enabled, SSO token responses include `TrustedDeviceOption` per Bitwarden Identity (`UserDecryptionOptions`). Requires clients that support TDE. See: https://bitwarden.com/help/sso-decryption-options/
+        sso_trusted_device_encryption:  bool,   true,   def,    false;
     },
 
     /// Yubikey settings
