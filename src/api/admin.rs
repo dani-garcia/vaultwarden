@@ -352,56 +352,52 @@ fn logout(cookies: &CookieJar<'_>) -> Redirect {
     Redirect::to(admin_path())
 }
 
-#[get("/users")]
-async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
-    let users = User::get_all(&conn).await;
+async fn enrich_users_json(users: Vec<(User, Option<SsoUser>)>, conn: &DbConn) -> Vec<Value> {
     let mut users_json = Vec::with_capacity(users.len());
-    for (u, _) in users {
-        let mut usr = u.to_json(&conn).await;
+    for (u, sso_u) in users {
+        let mut usr = u.to_json(conn).await;
+        usr["cipherCount"] = json!(Cipher::count_owned_by_user(&u.uuid, conn).await);
+        usr["attachmentCount"] = json!(Attachment::count_by_user(&u.uuid, conn).await);
+        usr["attachmentSize"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, conn).await));
         usr["userEnabled"] = json!(u.enabled);
         usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
-        usr["lastActive"] = match u.last_active(&conn).await {
+        usr["lastActive"] = match u.last_active(conn).await {
             Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
             None => json!(None::<String>),
         };
+
+        usr["ssoIdentifier"] = json!(sso_u.map(|u| u.identifier.to_string()).unwrap_or(String::new()));
+
         users_json.push(usr);
     }
+    users_json
+}
 
+#[get("/users")]
+async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
+    let users = User::get_all(&conn).await;
+    let users_json = enrich_users_json(users, &conn).await;
     Json(Value::Array(users_json))
 }
 
 #[get("/users/overview")]
 async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
     let users = User::get_all(&conn).await;
-    let mut users_json = Vec::with_capacity(users.len());
-    for (u, sso_u) in users {
-        let mut usr = u.to_json(&conn).await;
-        usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, &conn).await);
-        usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &conn).await);
-        usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, &conn).await));
-        usr["user_enabled"] = json!(u.enabled);
-        usr["created_at"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
-        usr["last_active"] = match u.last_active(&conn).await {
-            Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
-            None => json!("Never"),
-        };
-
-        usr["sso_identifier"] = json!(sso_u.map(|u| u.identifier.to_string()).unwrap_or(String::new()));
-
-        users_json.push(usr);
-    }
-
+    let users_json = enrich_users_json(users, &conn).await;
     let text = AdminTemplateData::new("admin/users", json!(users_json)).render()?;
     Ok(Html(text))
 }
 
 #[get("/users/by-mail/<mail>")]
 async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> JsonResult {
-    if let Some(u) = User::find_by_mail(mail, &conn).await {
-        let mut usr = u.to_json(&conn).await;
-        usr["userEnabled"] = json!(u.enabled);
-        usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
-        Ok(Json(usr))
+    if let Some((user, sso_user)) = SsoUser::find_by_mail(mail, &conn).await {
+        let user_json = enrich_users_json(vec![(user, sso_user)], &conn)
+            .await
+            .into_iter()
+            .next()
+            .clone()
+            .ok_or(Error::new("Could not build user JSON", "").with_code(Status::InternalServerError.code))?;
+        Ok(Json(user_json))
     } else {
         err_code!("User doesn't exist", Status::NotFound.code);
     }
@@ -409,11 +405,16 @@ async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> 
 
 #[get("/users/<user_id>")]
 async fn get_user_json(user_id: UserId, _token: AdminToken, conn: DbConn) -> JsonResult {
-    let u = get_user_or_404(&user_id, &conn).await?;
-    let mut usr = u.to_json(&conn).await;
-    usr["userEnabled"] = json!(u.enabled);
-    usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
-    Ok(Json(usr))
+    let user = get_user_or_404(&user_id, &conn).await?;
+    let sso_user = SsoUser::find_by_uuid(&user_id, &conn).await;
+    let user_json = enrich_users_json(vec![(user, sso_user)], &conn)
+        .await
+        .into_iter()
+        .next()
+        .clone()
+        .ok_or(Error::new("Could not build user JSON", "").with_code(Status::InternalServerError.code))?;
+
+    Ok(Json(user_json))
 }
 
 #[post("/users/<user_id>/delete", format = "application/json")]
@@ -485,6 +486,7 @@ async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Noti
 #[post("/users/<user_id>/disable", format = "application/json")]
 async fn disable_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &conn).await?;
+    Device::delete_all_by_user(&user.uuid, &conn).await?;
     user.reset_security_stamp(&conn).await?;
     user.enabled = false;
 
