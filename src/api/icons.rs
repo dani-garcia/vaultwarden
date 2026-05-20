@@ -65,7 +65,7 @@ static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     let icon_download_timeout = Duration::from_secs(CONFIG.icon_download_timeout());
     let pool_idle_timeout = Duration::from_secs(10);
     // Reuse the client between requests
-    get_reqwest_client_builder()
+    get_reqwest_client_builder(true)
         .cookie_provider(Arc::clone(&cookie_store))
         .timeout(icon_download_timeout)
         .pool_max_idle_per_host(5) // Configure the Hyper Pool to only have max 5 idle connections
