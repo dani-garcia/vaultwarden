@@ -1,7 +1,7 @@
 use std::{
     fmt,
     net::{IpAddr, SocketAddr},
-    sync::{Arc, LazyLock, Mutex},
+    sync::{Arc, LazyLock, RwLock},
     time::Duration,
 };
 
@@ -68,25 +68,33 @@ fn should_block_ip(ip: IpAddr) -> bool {
 }
 
 fn should_block_address_regex(domain_or_ip: &str) -> bool {
-    static COMPILED_REGEX: Mutex<Option<(String, Regex)>> = Mutex::new(None);
+    static COMPILED_REGEX: RwLock<Option<(String, Regex)>> = RwLock::new(None);
 
     let Some(block_regex) = CONFIG.http_request_block_regex() else {
         return false;
     };
 
-    let mut guard = COMPILED_REGEX.lock().unwrap();
-
-    // If the stored regex is up to date, use it
-    if let Some((value, regex)) = &*guard
-        && value == &block_regex
+    // Fast path: cached regex matches the configured one
     {
-        return regex.is_match(domain_or_ip);
+        let guard = COMPILED_REGEX.read().unwrap();
+        if let Some((value, regex)) = &*guard
+            && value == &block_regex
+        {
+            return regex.is_match(domain_or_ip);
+        }
     }
 
-    // If we don't have a regex stored, or it's not up to date, recreate it
-    let regex = Regex::new(&block_regex).unwrap();
+    // Slow path: (re)compile and store. Validation at config load should reject
+    // invalid patterns, but log and skip blocking rather than panic if it slips through.
+    let regex = match Regex::new(&block_regex) {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("`HTTP_REQUEST_BLOCK_REGEX` is invalid and will be ignored: {e}");
+            return false;
+        }
+    };
     let is_match = regex.is_match(domain_or_ip);
-    *guard = Some((block_regex, regex));
+    *COMPILED_REGEX.write().unwrap() = Some((block_regex, regex));
 
     is_match
 }
