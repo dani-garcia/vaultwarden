@@ -1,20 +1,20 @@
 use std::{borrow::Cow, future::Future, pin::Pin, sync::LazyLock, time::Duration};
 
 use openidconnect::{
-    AccessToken, AsyncHttpClient, AuthDisplay, AuthPrompt, AuthenticationFlow, AuthorizationCode, AuthorizationRequest,
-    ClientId, ClientSecret, CsrfToken, EmptyAdditionalClaims, EmptyExtraTokenFields, EndpointNotSet, EndpointSet,
-    HttpClientError, HttpRequest, HttpResponse, IdTokenClaims, IdTokenFields, Nonce, OAuth2TokenResponse,
+    AccessToken, AdditionalClaims, AsyncHttpClient, AuthDisplay, AuthPrompt, AuthenticationFlow, AuthorizationCode,
+    AuthorizationRequest, ClientId, ClientSecret, CsrfToken, EmptyExtraTokenFields, EndpointMaybeSet, EndpointNotSet,
+    EndpointSet, HttpClientError, HttpRequest, HttpResponse, IdTokenClaims, IdTokenFields, Nonce, OAuth2TokenResponse,
     PkceCodeChallenge, PkceCodeVerifier, RefreshToken, ResponseType, Scope, StandardErrorResponse,
-    StandardTokenResponse,
+    StandardTokenResponse, UserInfoClaims,
     core::{
-        CoreAuthDisplay, CoreAuthPrompt, CoreClient, CoreErrorResponseType, CoreGenderClaim, CoreIdTokenVerifier,
-        CoreJsonWebKey, CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm, CoreProviderMetadata,
-        CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse, CoreTokenIntrospectionResponse,
-        CoreTokenResponse, CoreTokenType, CoreUserInfoClaims,
+        CoreAuthDisplay, CoreAuthPrompt, CoreErrorResponseType, CoreGenderClaim, CoreIdTokenVerifier, CoreJsonWebKey,
+        CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm, CoreProviderMetadata, CoreResponseType,
+        CoreRevocableToken, CoreRevocationErrorResponse, CoreTokenIntrospectionResponse, CoreTokenType,
     },
     http, url,
 };
 use regex::Regex;
+use serde_json::Value;
 use url::Url;
 
 use crate::{
@@ -35,16 +35,61 @@ static CLIENT_CACHE: LazyLock<moka::sync::Cache<String, Client>> = LazyLock::new
 static REFRESH_CACHE: LazyLock<moka::future::Cache<String, Result<RefreshTokenResponse, String>>> =
     LazyLock::new(|| moka::future::Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(30)).build());
 
-/// OpenID Connect Core client.
-pub type CustomClient = openidconnect::Client<
-    EmptyAdditionalClaims,
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct AllAdditionalClaims {
+    #[serde(flatten)]
+    pub claims: Value,
+}
+
+impl AdditionalClaims for AllAdditionalClaims {}
+
+pub type MetadataClient = openidconnect::Client<
+    AllAdditionalClaims,
     CoreAuthDisplay,
     CoreGenderClaim,
     CoreJweContentEncryptionAlgorithm,
     CoreJsonWebKey,
     CoreAuthPrompt,
     StandardErrorResponse<CoreErrorResponseType>,
-    CoreTokenResponse,
+    StandardTokenResponse<
+        IdTokenFields<
+            AllAdditionalClaims,
+            EmptyExtraTokenFields,
+            CoreGenderClaim,
+            CoreJweContentEncryptionAlgorithm,
+            CoreJwsSigningAlgorithm,
+        >,
+        CoreTokenType,
+    >,
+    CoreTokenIntrospectionResponse,
+    CoreRevocableToken,
+    CoreRevocationErrorResponse,
+    EndpointSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointMaybeSet,
+    EndpointMaybeSet,
+>;
+
+pub type CustomClient = openidconnect::Client<
+    AllAdditionalClaims,
+    CoreAuthDisplay,
+    CoreGenderClaim,
+    CoreJweContentEncryptionAlgorithm,
+    CoreJsonWebKey,
+    CoreAuthPrompt,
+    StandardErrorResponse<CoreErrorResponseType>,
+    StandardTokenResponse<
+        IdTokenFields<
+            AllAdditionalClaims,
+            EmptyExtraTokenFields,
+            CoreGenderClaim,
+            CoreJweContentEncryptionAlgorithm,
+            CoreJwsSigningAlgorithm,
+        >,
+        CoreTokenType,
+    >,
     CoreTokenIntrospectionResponse,
     CoreRevocableToken,
     CoreRevocationErrorResponse,
@@ -56,7 +101,7 @@ pub type CustomClient = openidconnect::Client<
     EndpointSet,
 >;
 
-pub type RefreshTokenResponse = (Option<String>, String, Option<Duration>);
+pub type RefreshTokenResponse = (Option<String>, AccessToken, Option<Duration>);
 
 #[derive(Clone)]
 pub struct Client {
@@ -114,7 +159,7 @@ impl Client {
             Ok(metadata) => metadata,
         };
 
-        let base_client = CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret));
+        let base_client = MetadataClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret));
 
         let token_uri = if let Some(uri) = base_client.token_uri() {
             uri.clone()
@@ -199,7 +244,7 @@ impl Client {
     ) -> ApiResult<(
         StandardTokenResponse<
             IdTokenFields<
-                EmptyAdditionalClaims,
+                AllAdditionalClaims,
                 EmptyExtraTokenFields,
                 CoreGenderClaim,
                 CoreJweContentEncryptionAlgorithm,
@@ -207,7 +252,7 @@ impl Client {
             >,
             CoreTokenType,
         >,
-        IdTokenClaims<EmptyAdditionalClaims, CoreGenderClaim>,
+        IdTokenClaims<AllAdditionalClaims, CoreGenderClaim>,
     )> {
         let oidc_code = AuthorizationCode::new(code.to_string());
 
@@ -253,7 +298,10 @@ impl Client {
         }
     }
 
-    pub async fn user_info(&self, access_token: AccessToken) -> ApiResult<CoreUserInfoClaims> {
+    pub async fn user_info(
+        &self,
+        access_token: AccessToken,
+    ) -> ApiResult<UserInfoClaims<AllAdditionalClaims, CoreGenderClaim>> {
         match self.core_client.user_info(access_token, None).request_async(&self.http_client).await {
             Err(err) => err!(format!("Request to user_info endpoint failed: {err}")),
             Ok(user_info) => Ok(user_info),
@@ -285,11 +333,9 @@ impl Client {
         verifier
     }
 
-    pub async fn exchange_refresh_token(refresh_token: String) -> ApiResult<RefreshTokenResponse> {
-        let client = Client::cached().await?;
-
+    pub async fn exchange_refresh_token(&self, refresh_token: String) -> ApiResult<RefreshTokenResponse> {
         REFRESH_CACHE
-            .get_with(refresh_token.clone(), async move { client.exchange_refresh_token_impl(refresh_token).await })
+            .get_with(refresh_token.clone(), async move { self.exchange_refresh_token_impl(refresh_token).await })
             .await
             .map_err(Into::into)
     }
@@ -304,7 +350,7 @@ impl Client {
             }
             Ok(token_response) => Ok((
                 token_response.refresh_token().map(|token| token.secret().clone()),
-                token_response.access_token().secret().clone(),
+                token_response.access_token().clone(),
                 token_response.expires_in(),
             )),
         }

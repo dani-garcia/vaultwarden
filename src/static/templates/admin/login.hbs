@@ -8,17 +8,23 @@
     {{/if}}
 
     <div class="align-items-center p-3 mb-3 text-opacity-75 text-light bg-danger rounded shadow">
-        <div>
-            <h6 class="mb-0 text-light">Authentication key needed to continue</h6>
-            <small>Please provide it below:</small>
+        {{#if sso_only}}
+            <div>
+                <h6 class="mb-0 text-light">You do not have access to the admin panel (or the admin session expired and you need to log again)</h6>
+            </div>
+        {{else}}
+            <div>
+                <h6 class="mb-0 text-light">Authentication key needed to continue</h6>
+                <small>Please provide it below:</small>
 
-            <form class="form-inline" method="post" action="{{urlpath}}/admin">
-                <input type="password" autocomplete="password" class="form-control w-50 mr-2" name="token" placeholder="Enter admin token" autofocus="autofocus">
-                {{#if redirect}}
-                <input type="hidden" id="redirect" name="redirect" value="/{{redirect}}">
-                {{/if}}
-                <button type="submit" class="btn btn-primary mt-2">Enter</button>
-            </form>
-        </div>
+                <form class="form-inline" method="post" action="{{urlpath}}/admin">
+                    <input type="password" autocomplete="password" class="form-control w-50 mr-2" name="token" placeholder="Enter admin token" autofocus="autofocus">
+                    {{#if redirect}}
+                    <input type="hidden" id="redirect" name="redirect" value="/{{redirect}}">
+                    {{/if}}
+                    <button type="submit" class="btn btn-primary mt-2">Enter</button>
+                </form>
+            </div>
+        {{/if}}
     </div>
 </main>

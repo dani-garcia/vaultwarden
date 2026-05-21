@@ -829,6 +829,12 @@ make_config! {
         sso_client_cache_expiration:    u64,    true,   def,    0;
         /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
         sso_debug_tokens:               bool,   true,   def,    false;
+        /// Roles mapping |> Enable the mapping of roles (user/admin) from the access_token
+        sso_roles_enabled:              bool,   true,   def,    false;
+        /// Missing roles default to user |> If `false` user with no role won't be able to log
+        sso_roles_default_to_user:      bool,   true,   def,    true;
+        /// Path to read roles in IDToken or User Info
+        sso_roles_token_path:           String, true,  auto,   |c| format!("/resource_access/{}/roles", c.sso_client_id);
     },
 
     /// Yubikey settings

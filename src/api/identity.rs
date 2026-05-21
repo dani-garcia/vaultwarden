@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::{
-        ApiResult, EmptyResult, JsonResult,
+        ApiResult, EmptyResult, JsonResult, admin,
         core::{
             accounts::{PreloginData, RegisterData, kdf_upgrade, prelogin, register},
             log_user_event,
@@ -61,6 +61,8 @@ async fn login(
     data: Form<ConnectData>,
     client_header: ClientHeaders,
     client_version: Option<ClientVersion>,
+    cookies: &CookieJar<'_>,
+    secure: Secure,
     conn: DbConn,
 ) -> JsonResult {
     let data: ConnectData = data.into_inner();
@@ -70,7 +72,7 @@ async fn login(
     let login_result = match data.grant_type.as_ref() {
         "refresh_token" => {
             check_is_some(data.refresh_token.as_ref(), "refresh_token cannot be blank")?;
-            refresh_login(data, &conn, &client_header.ip).await
+            refresh_login(data, &conn, cookies, &client_header.ip, secure).await
         }
         "password" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
         "password" => {
@@ -105,7 +107,7 @@ async fn login(
             check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
             check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
-            sso_login(data, &mut user_id, &conn, &client_header.ip, client_version.as_ref()).await
+            sso_login(data, &mut user_id, &conn, cookies, &client_header.ip, secure, client_version.as_ref()).await
         }
         "authorization_code" => err!("SSO sign-in is not available"),
         t => err!("Invalid type", t),
@@ -135,7 +137,14 @@ async fn login(
     login_result
 }
 
-async fn refresh_login(data: ConnectData, conn: &DbConn, ip: &ClientIp) -> JsonResult {
+// Return Status::Unauthorized to trigger logout
+async fn refresh_login(
+    data: ConnectData,
+    conn: &DbConn,
+    cookies: &CookieJar<'_>,
+    ip: &ClientIp,
+    secure: Secure,
+) -> JsonResult {
     // When a refresh token is invalid or missing we need to respond with an HTTP BadRequest (400)
     // It also needs to return a json which holds at least a key `error` with the value `invalid_grant`
     // See the link below for details
@@ -158,9 +167,16 @@ async fn refresh_login(data: ConnectData, conn: &DbConn, ip: &ClientIp) -> JsonR
                 format!("Unable to refresh login credentials: {}", err.message())
             )
         }
-        Ok((mut device, auth_tokens)) => {
+        Ok((user, mut device, auth_tokens)) => {
             // Save to update `device.updated_at` to track usage and toggle new status
             device.save(true, conn).await?;
+
+            if auth_tokens.is_admin {
+                debug!("Refreshed {} admin cookie", user.email);
+                admin::add_admin_cookie(cookies, secure.https);
+            } else {
+                admin::remove_admin_cookie(cookies);
+            }
 
             let result = json!({
                 "refresh_token": auth_tokens.refresh_token(),
@@ -176,11 +192,14 @@ async fn refresh_login(data: ConnectData, conn: &DbConn, ip: &ClientIp) -> JsonR
 }
 
 // After exchanging the code we need to check first if 2FA is needed before continuing
+#[allow(clippy::too_many_arguments)]
 async fn sso_login(
     data: ConnectData,
     user_id: &mut Option<UserId>,
     conn: &DbConn,
+    cookies: &CookieJar<'_>,
     ip: &ClientIp,
+    secure: Secure,
     client_version: Option<&ClientVersion>,
 ) -> JsonResult {
     AuthMethod::Sso.check_scope(data.scope.as_ref())?;
@@ -341,6 +360,11 @@ async fn sso_login(
 
     // We passed 2FA get auth tokens
     let auth_tokens = sso::redeem(&device, &user, data.client_id, sso_user, sso_auth, user_infos, conn).await?;
+
+    if auth_tokens.is_admin {
+        info!("User {} logged with admin cookie", user.email);
+        admin::add_admin_cookie(cookies, secure.https);
+    }
 
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
 }

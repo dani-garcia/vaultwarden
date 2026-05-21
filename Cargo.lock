@@ -5820,6 +5820,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "serde_with",
  "subtle",
  "svg-hush",
  "syslog",
