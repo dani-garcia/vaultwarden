@@ -1805,6 +1805,7 @@ mod tests {
             UserId::from(String::from("user")),
             String::from("passkey"),
             String::from("{}"),
+            format!("{id}-credential-id-hash"),
             supports_prf,
             key.clone(),
             key.clone(),

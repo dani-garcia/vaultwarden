@@ -357,6 +357,7 @@ table! {
         user_uuid -> Text,
         name -> Text,
         credential -> Text,
+        credential_id_hash -> Text,
         supports_prf -> Bool,
         encrypted_user_key -> Nullable<Text>,
         encrypted_public_key -> Nullable<Text>,
@@ -374,7 +375,6 @@ table! {
 
 joinable!(archives -> users (user_uuid));
 joinable!(archives -> ciphers (cipher_uuid));
-
 joinable!(attachments -> ciphers (cipher_uuid));
 joinable!(ciphers -> organizations (organization_uuid));
 joinable!(ciphers -> users (user_uuid));

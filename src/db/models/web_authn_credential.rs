@@ -22,6 +22,7 @@ pub struct WebAuthnCredential {
     pub user_uuid: UserId,
     pub name: String,
     pub credential: String,
+    pub credential_id_hash: String,
     pub supports_prf: bool,
     pub encrypted_user_key: Option<String>,
     pub encrypted_public_key: Option<String>,
@@ -29,10 +30,15 @@ pub struct WebAuthnCredential {
 }
 
 impl WebAuthnCredential {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Matches positional-arg constructor pattern used by all other model `new` functions"
+    )]
     pub fn new(
         user_uuid: UserId,
         name: String,
         credential: String,
+        credential_id_hash: String,
         supports_prf: bool,
         encrypted_user_key: Option<String>,
         encrypted_public_key: Option<String>,
@@ -43,6 +49,7 @@ impl WebAuthnCredential {
             user_uuid,
             name,
             credential,
+            credential_id_hash,
             supports_prf,
             encrypted_user_key,
             encrypted_public_key,
@@ -71,10 +78,30 @@ impl WebAuthnCredential {
 
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
-            diesel::insert_into(web_authn_credentials::table)
+            let result = diesel::insert_into(web_authn_credentials::table)
                 .values(self)
-                .execute(conn)
-                .map_res("Error saving web_authn_credential")
+                .execute(conn);
+
+            match result {
+                Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::UniqueViolation, _)) => {
+                    Err(crate::error::Error::new(
+                        "Passkey is already registered",
+                        "Duplicate WebAuthn credential ID",
+                    ))
+                }
+                result => result.map_res("Error saving web_authn_credential"),
+            }
+        }}
+    }
+
+    pub async fn credential_id_hash_exists(credential_id_hash: &str, conn: &DbConn) -> bool {
+        db_run! { conn: {
+            web_authn_credentials::table
+                .filter(web_authn_credentials::credential_id_hash.eq(credential_id_hash))
+                .select(web_authn_credentials::credential_id_hash)
+                .first::<String>(conn)
+                .optional()
+                .is_ok_and(|credential| credential.is_some())
         }}
     }
 
@@ -293,6 +320,7 @@ mod tests {
             UserId::from(String::from("00000000-0000-0000-0000-000000000000")),
             String::from("test"),
             String::from("{}"),
+            String::from("credential-id-hash"),
             supports_prf,
             user_key.map(String::from),
             pub_key.map(String::from),
@@ -319,5 +347,69 @@ mod tests {
         let c = cred(true, Some("u"), Some("p"), Some("k"));
         assert!(c.has_prf_keyset());
         assert_eq!(c.prf_status(), 0);
+    }
+
+    /// Each `WebAuthnCredential::new` argument must land in the field that
+    /// shares its name. Without this, two adjacent `Option<String>` args
+    /// could be swapped at a call site without the compiler noticing.
+    #[test]
+    fn new_assigns_each_argument_to_its_named_field() {
+        let cred = WebAuthnCredential::new(
+            UserId::from(String::from("user-uuid")),
+            String::from("display-name"),
+            String::from("credential-json"),
+            String::from("hash-value"),
+            true,
+            Some(String::from("user-key")),
+            Some(String::from("public-key")),
+            Some(String::from("private-key")),
+        );
+        assert_eq!(cred.user_uuid.as_ref(), "user-uuid");
+        assert_eq!(cred.name, "display-name");
+        assert_eq!(cred.credential, "credential-json");
+        assert_eq!(cred.credential_id_hash, "hash-value");
+        assert!(cred.supports_prf);
+        assert_eq!(cred.encrypted_user_key.as_deref(), Some("user-key"));
+        assert_eq!(cred.encrypted_public_key.as_deref(), Some("public-key"));
+        assert_eq!(cred.encrypted_private_key.as_deref(), Some("private-key"));
+    }
+
+    /// Exhaust the 2^4 truth table for `has_prf_keyset` and `prf_status`:
+    /// only `(supports_prf=true, all three blobs Some)` reports
+    /// `has_prf_keyset() == true` / `prf_status() == 0` (Enabled). Any
+    /// `supports_prf=false` row is Unsupported (2). Any `supports_prf=true`
+    /// row with at least one blob missing is Supported (1). The login
+    /// response's `WebAuthnPrfOption` gating depends on this enum, so the
+    /// full matrix is enforced to prevent a refactor accidentally
+    /// advertising PRF capability on a credential with an incomplete
+    /// keyset (which would leak partial state to the client).
+    #[test]
+    fn prf_status_full_truth_table() {
+        for supports_prf in [false, true] {
+            for user in [None, Some("u")] {
+                for pub_ in [None, Some("p")] {
+                    for priv_ in [None, Some("k")] {
+                        let c = cred(supports_prf, user, pub_, priv_);
+                        let all_keys_present = user.is_some() && pub_.is_some() && priv_.is_some();
+                        let expected_has_keyset = supports_prf && all_keys_present;
+                        let expected_status = match (supports_prf, expected_has_keyset) {
+                            (false, _) => 2,    // Unsupported
+                            (true, false) => 1, // Supported (capable but incomplete)
+                            (true, true) => 0,  // Enabled
+                        };
+                        assert_eq!(
+                            c.has_prf_keyset(),
+                            expected_has_keyset,
+                            "has_prf_keyset(supports_prf={supports_prf}, user={user:?}, pub={pub_:?}, priv={priv_:?})",
+                        );
+                        assert_eq!(
+                            c.prf_status(),
+                            expected_status,
+                            "prf_status(supports_prf={supports_prf}, user={user:?}, pub={pub_:?}, priv={priv_:?})",
+                        );
+                    }
+                }
+            }
+        }
     }
 }

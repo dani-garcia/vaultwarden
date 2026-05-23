@@ -518,3 +518,45 @@ fn check_and_update_backup_eligible(
     }
     Ok(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn register_public_key_credential_copy_preserves_transports() {
+        let transports = vec![AuthenticatorTransport::Internal, AuthenticatorTransport::Hybrid];
+        let copy = RegisterPublicKeyCredentialCopy {
+            id: String::from("credential"),
+            raw_id: Base64UrlSafeData::from([1, 2, 3]),
+            response: AuthenticatorAttestationResponseRawCopy {
+                attestation_object: Base64UrlSafeData::from([4, 5, 6]),
+                client_data_json: Base64UrlSafeData::from([7, 8, 9]),
+                transports: Some(transports.clone()),
+            },
+            r#type: String::from("public-key"),
+        };
+
+        let converted: RegisterPublicKeyCredential = copy.into();
+
+        assert_eq!(converted.response.transports, Some(transports));
+    }
+
+    #[test]
+    fn register_public_key_credential_copy_keeps_absent_transports_absent() {
+        let copy = RegisterPublicKeyCredentialCopy {
+            id: String::from("credential"),
+            raw_id: Base64UrlSafeData::from([1, 2, 3]),
+            response: AuthenticatorAttestationResponseRawCopy {
+                attestation_object: Base64UrlSafeData::from([4, 5, 6]),
+                client_data_json: Base64UrlSafeData::from([7, 8, 9]),
+                transports: None,
+            },
+            r#type: String::from("public-key"),
+        };
+
+        let converted: RegisterPublicKeyCredential = copy.into();
+
+        assert_eq!(converted.response.transports, None);
+    }
+}

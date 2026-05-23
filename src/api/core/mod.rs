@@ -278,6 +278,10 @@ fn passkey_assertion_challenge_state(data: &str, token: &str) -> ApiResult<Passk
     Ok(saved.state)
 }
 
+fn passkey_credential_id_hash(passkey: &Passkey) -> String {
+    crypto::sha256_hex(passkey.cred_id().as_slice())
+}
+
 #[post("/webauthn/attestation-options", data = "<data>")]
 async fn post_api_webauthn_attestation_options(
     data: Json<PasswordOrOtpData>,
@@ -461,11 +465,17 @@ async fn post_api_webauthn(
     };
     let state = passkey_registration_challenge_state(&tf.data, data.token.as_deref())?;
     let credential = WEBAUTHN.finish_passkey_registration(&data.device_response.into(), &state)?;
+    let credential_id_hash = passkey_credential_id_hash(&credential);
+
+    if WebAuthnCredential::credential_id_hash_exists(&credential_id_hash, &conn).await {
+        err!("Passkey is already registered")
+    }
 
     WebAuthnCredential::new(
         user.uuid,
         data.name,
         serde_json::to_string(&credential)?,
+        credential_id_hash,
         data.supports_prf,
         data.encrypted_user_key,
         data.encrypted_public_key,
@@ -579,6 +589,159 @@ async fn post_api_webauthn_delete(
     WebAuthnCredential::delete_by_uuid_and_user(&uuid, &user.uuid, &conn).await?;
 
     Ok(Status::Ok)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use webauthn_rs::prelude::{
+        AttestationFormat, COSEAlgorithm, COSEEC2Key, COSEKey, COSEKeyType, Credential, ECDSACurve, ParsedAttestation,
+        Url, Webauthn, WebauthnBuilder,
+    };
+    use webauthn_rs_proto::{AuthenticatorTransport, RegisteredExtensions};
+
+    fn webauthn() -> Webauthn {
+        let origin = Url::parse("http://localhost").unwrap();
+        WebauthnBuilder::new("localhost", &origin).unwrap().rp_name("localhost").build().unwrap()
+    }
+
+    fn passkey() -> Passkey {
+        Credential {
+            cred_id: [1, 2, 3, 4].into(),
+            cred: COSEKey {
+                type_: COSEAlgorithm::ES256,
+                key: COSEKeyType::EC_EC2(COSEEC2Key {
+                    curve: ECDSACurve::SECP256R1,
+                    x: [1; 32].into(),
+                    y: [2; 32].into(),
+                }),
+            },
+            counter: 0,
+            transports: Some(vec![AuthenticatorTransport::Internal, AuthenticatorTransport::Hybrid]),
+            user_verified: true,
+            backup_eligible: false,
+            backup_state: false,
+            registration_policy: UserVerificationPolicy::Required,
+            extensions: RegisteredExtensions::none(),
+            attestation: ParsedAttestation::default(),
+            attestation_format: AttestationFormat::None,
+        }
+        .into()
+    }
+
+    fn registration_state() -> PasskeyRegistration {
+        let user_uuid = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap();
+        let (_challenge, state) =
+            webauthn().start_passkey_registration(user_uuid, "user@example.com", "user", None).unwrap();
+        state
+    }
+
+    #[test]
+    fn registration_challenge_accepts_wrapped_state_with_matching_token() {
+        let saved = WebAuthnPasskeyRegistrationChallenge {
+            token: String::from("token"),
+            state: registration_state(),
+        };
+        let data = serde_json::to_string(&saved).unwrap();
+
+        assert!(passkey_registration_challenge_state(&data, Some("token")).is_ok());
+    }
+
+    #[test]
+    fn registration_challenge_rejects_wrapped_state_without_matching_token() {
+        let saved = WebAuthnPasskeyRegistrationChallenge {
+            token: String::from("token"),
+            state: registration_state(),
+        };
+        let data = serde_json::to_string(&saved).unwrap();
+
+        assert!(passkey_registration_challenge_state(&data, Some("wrong")).is_err());
+        assert!(passkey_registration_challenge_state(&data, None).is_err());
+    }
+
+    #[test]
+    fn legacy_registration_challenge_rejects_finish_token() {
+        let data = serde_json::to_string(&registration_state()).unwrap();
+
+        assert!(passkey_registration_challenge_state(&data, None).is_ok());
+        assert!(passkey_registration_challenge_state(&data, Some("token")).is_err());
+    }
+
+    #[test]
+    fn assertion_challenge_rejects_mismatched_token() {
+        let (_response, state) = webauthn().start_passkey_authentication(&[passkey()]).unwrap();
+        let saved = WebAuthnPasskeyAssertionChallenge {
+            token: String::from("token"),
+            state,
+        };
+        let data = serde_json::to_string(&saved).unwrap();
+
+        assert!(passkey_assertion_challenge_state(&data, "token").is_ok());
+        assert!(passkey_assertion_challenge_state(&data, "wrong").is_err());
+    }
+
+    #[test]
+    fn passkey_credential_id_hash_uses_raw_credential_id_bytes() {
+        assert_eq!(
+            passkey_credential_id_hash(&passkey()),
+            "9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a"
+        );
+    }
+
+    fn passkey_with_cred_id(cred_id: &[u8]) -> Passkey {
+        Credential {
+            cred_id: cred_id.to_vec().into(),
+            cred: COSEKey {
+                type_: COSEAlgorithm::ES256,
+                key: COSEKeyType::EC_EC2(COSEEC2Key {
+                    curve: ECDSACurve::SECP256R1,
+                    x: [1; 32].into(),
+                    y: [2; 32].into(),
+                }),
+            },
+            counter: 0,
+            transports: None,
+            user_verified: true,
+            backup_eligible: false,
+            backup_state: false,
+            registration_policy: UserVerificationPolicy::Required,
+            extensions: RegisteredExtensions::none(),
+            attestation: ParsedAttestation::default(),
+            attestation_format: AttestationFormat::None,
+        }
+        .into()
+    }
+
+    #[test]
+    fn passkey_credential_id_hash_is_deterministic() {
+        let cred_id: &[u8] = &[10, 20, 30, 40, 50];
+        assert_eq!(
+            passkey_credential_id_hash(&passkey_with_cred_id(cred_id)),
+            passkey_credential_id_hash(&passkey_with_cred_id(cred_id)),
+        );
+    }
+
+    #[test]
+    fn passkey_credential_id_hash_distinguishes_different_credentials() {
+        let a = passkey_credential_id_hash(&passkey_with_cred_id(&[1, 2, 3, 4]));
+        let b = passkey_credential_id_hash(&passkey_with_cred_id(&[4, 3, 2, 1]));
+        let c = passkey_credential_id_hash(&passkey_with_cred_id(&[1, 2, 3]));
+        assert_ne!(a, b, "different bytes must produce different hashes");
+        assert_ne!(a, c, "different lengths must produce different hashes");
+        assert_ne!(b, c);
+    }
+
+    /// `passkey_assertion_challenge_state` has no legacy unwrapped fallback —
+    /// the assertion-options endpoint was introduced together with the
+    /// wrapping struct, so any persisted state must carry the binding token.
+    #[test]
+    fn assertion_challenge_rejects_unwrapped_legacy_state() {
+        let (_response, state) = webauthn().start_passkey_authentication(&[passkey()]).unwrap();
+        let bare = serde_json::to_string(&state).unwrap();
+
+        assert!(passkey_assertion_challenge_state(&bare, "any-token").is_err());
+        assert!(passkey_assertion_challenge_state(&bare, "").is_err());
+    }
 }
 
 #[get("/config")]

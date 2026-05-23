@@ -1644,3 +1644,53 @@ async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure,
 
     Ok(Redirect::temporary(String::from(auth_url)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use webauthn_rs::prelude::{
+        AttestationFormat, COSEAlgorithm, COSEEC2Key, COSEKey, COSEKeyType, Credential, ECDSACurve, ParsedAttestation,
+    };
+    use webauthn_rs_proto::{AuthenticatorTransport, RegisteredExtensions, UserVerificationPolicy};
+
+    fn passkey(transports: Option<Vec<AuthenticatorTransport>>) -> Passkey {
+        Credential {
+            cred_id: [1, 2, 3, 4].into(),
+            cred: COSEKey {
+                type_: COSEAlgorithm::ES256,
+                key: COSEKeyType::EC_EC2(COSEEC2Key {
+                    curve: ECDSACurve::SECP256R1,
+                    x: [1; 32].into(),
+                    y: [2; 32].into(),
+                }),
+            },
+            counter: 0,
+            transports,
+            user_verified: true,
+            backup_eligible: false,
+            backup_state: false,
+            registration_policy: UserVerificationPolicy::Required,
+            extensions: RegisteredExtensions::none(),
+            attestation: ParsedAttestation::default(),
+            attestation_format: AttestationFormat::None,
+        }
+        .into()
+    }
+
+    #[test]
+    fn passkey_credential_id_returns_browser_credential_id() {
+        assert_eq!(passkey_credential_id(&passkey(None)).unwrap(), "AQIDBA");
+    }
+
+    #[test]
+    fn passkey_transports_returns_saved_transport_hints() {
+        let passkey = passkey(Some(vec![AuthenticatorTransport::Internal, AuthenticatorTransport::Hybrid]));
+
+        assert_eq!(passkey_transports(&passkey), vec![String::from("internal"), String::from("hybrid")]);
+    }
+
+    #[test]
+    fn passkey_transports_defaults_to_empty_when_absent() {
+        assert!(passkey_transports(&passkey(None)).is_empty());
+    }
+}
