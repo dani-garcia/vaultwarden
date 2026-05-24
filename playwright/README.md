@@ -33,6 +33,13 @@ To force a rebuild of the Playwright image:
 DOCKER_BUILDKIT=1 docker compose --env-file test.env build Playwright
 ```
 
+The `Playwright` image bakes the `tests/` directory in at build time
+(`COPY tests ./tests` in [compose/playwright/Dockerfile](compose/playwright/Dockerfile)),
+so local edits to `*.spec.ts` are **not** picked up by `docker compose run`
+until the image is rebuilt. Run the `build` command above after every
+spec change, or use the host-side workflow below (`npx playwright test ...`)
+which reads specs from disk on every run.
+
 To access the UI to easily run test individually and debug if needed (this will not work in docker):
 
 ```bash
