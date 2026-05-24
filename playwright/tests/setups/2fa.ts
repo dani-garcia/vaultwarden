@@ -11,16 +11,27 @@ export async function activateTOTP(test: Test, page: Page, user: { name: string,
         await page.getByRole('link', { name: 'Security' }).click();
         await page.getByRole('link', { name: 'Two-step login' }).click();
         await page.locator('bit-item').filter({ hasText: /Authenticator app/ }).getByRole('button').click();
-        await page.getByLabel('Master password').fill(user.password);
-        await page.getByRole('button', { name: 'Continue' }).click();
+        const mpInput = page.getByLabel('Master password');
+        await mpInput.fill(user.password);
+        // Submit via Enter — Angular form validation can race a click on
+        // the Continue button immediately after fill on the current
+        // bundled web vault.
+        await mpInput.press('Enter');
 
-        const secret = await page.getByLabel('Key').innerText();
+        // `getByLabel('Key')` alone is ambiguous: the providers list also
+        // has a Yubico SVG with aria-label "Yubico OTP security key" that
+        // matches "Key" via substring. Anchor with exact match.
+        const secret = (await page.getByLabel('Key', { exact: true }).innerText()).replace(/\s+/g, '');
         let totp = new OTPAuth.TOTP({ secret, period: 30 });
 
         await page.getByLabel(/Verification code/).fill(totp.generate());
         await page.getByRole('button', { name: 'Turn on' }).click();
-        await page.getByRole('heading', { name: 'Turned on', exact: true });
-        await page.getByLabel('Close').click();
+        // Wait for the activation request to complete. The current
+        // bundled web vault uses an asynchronous Turn-on flow; we don't
+        // try to assert the exact success-heading text (it varies across
+        // vault versions) — instead we wait for network to settle, then
+        // the dialog closes itself.
+        await page.waitForLoadState('networkidle');
 
         return totp;
     })
@@ -33,9 +44,9 @@ export async function disableTOTP(test: Test, page: Page, user: { password: stri
         await page.getByRole('link', { name: 'Security' }).click();
         await page.getByRole('link', { name: 'Two-step login' }).click();
         await page.locator('bit-item').filter({ hasText: /Authenticator app/ }).getByRole('button').click();
-        await page.getByLabel('Master password').click();
-        await page.getByLabel('Master password').fill(user.password);
-        await page.getByRole('button', { name: 'Continue' }).click();
+        const mpInput = page.getByLabel('Master password');
+        await mpInput.fill(user.password);
+        await mpInput.press('Enter');
         await page.getByRole('button', { name: 'Turn off' }).click();
         await page.getByRole('button', { name: 'Yes' }).click();
         await utils.checkNotification(page, 'Two-step login provider turned off');
