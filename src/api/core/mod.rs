@@ -284,6 +284,15 @@ async fn post_api_webauthn_attestation_options(
     headers: Headers,
     conn: DbConn,
 ) -> JsonResult {
+    // Same gate the 2FA WebAuthn entry point uses; cleanly rejects requests
+    // when DOMAIN is incompatible with WebAuthn rather than panicking inside
+    // the `WEBAUTHN` `LazyLock` initializer.
+    if !CONFIG.is_webauthn_2fa_supported() {
+        err!("Configured `DOMAIN` is not compatible with Webauthn")
+    }
+
+    crate::ratelimit::check_limit_login(&headers.ip.ip)?;
+
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
@@ -433,6 +442,8 @@ async fn post_api_webauthn(
     headers: Headers,
     conn: DbConn,
 ) -> ApiResult<Status> {
+    crate::ratelimit::check_limit_login(&headers.ip.ip)?;
+
     let data: WebAuthnLoginCredentialCreateRequest = data.into_inner();
     let user = headers.user;
 
@@ -554,17 +565,18 @@ async fn put_api_webauthn(
 #[post("/webauthn/<uuid>/delete", data = "<data>")]
 async fn post_api_webauthn_delete(
     data: Json<PasswordOrOtpData>,
-    uuid: &str,
+    uuid: WebAuthnCredentialId,
     headers: Headers,
     conn: DbConn,
 ) -> ApiResult<Status> {
+    crate::ratelimit::check_limit_login(&headers.ip.ip)?;
+
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
     data.validate(&user, true, &conn).await?;
 
-    WebAuthnCredential::delete_by_uuid_and_user(&WebAuthnCredentialId::from(uuid.to_owned()), &user.uuid, &conn)
-        .await?;
+    WebAuthnCredential::delete_by_uuid_and_user(&uuid, &user.uuid, &conn).await?;
 
     Ok(Status::Ok)
 }

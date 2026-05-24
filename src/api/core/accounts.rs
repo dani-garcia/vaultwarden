@@ -808,6 +808,15 @@ fn validate_keydata(
         err!("All existing sends must be included in the rotation")
     }
 
+    validate_passkey_rotation_data(&data.account_unlock_data.passkey_unlock_data, existing_webauthn_credentials)?;
+
+    Ok(())
+}
+
+fn validate_passkey_rotation_data(
+    passkey_unlock_data: &[UpdateWebAuthnLoginData],
+    existing_webauthn_credentials: &[WebAuthnCredential],
+) -> EmptyResult {
     // Check that all passkeys with PRF encryption enabled are included, so their
     // encrypted user key is not left stale after the account key is rotated.
     let existing_prf_credential_ids = existing_webauthn_credentials
@@ -815,10 +824,18 @@ fn validate_keydata(
         .filter(|c| c.has_prf_keyset())
         .map(|c| &c.uuid)
         .collect::<HashSet<&WebAuthnCredentialId>>();
-    let provided_passkey_ids =
-        data.account_unlock_data.passkey_unlock_data.iter().map(|p| &p.id).collect::<HashSet<&WebAuthnCredentialId>>();
+    let provided_passkey_ids = passkey_unlock_data.iter().map(|p| &p.id).collect::<HashSet<&WebAuthnCredentialId>>();
     if !provided_passkey_ids.is_superset(&existing_prf_credential_ids) {
         err!("All passkeys with encryption enabled must be included in the rotation")
+    }
+
+    for passkey_data in passkey_unlock_data {
+        let Some(credential) = existing_webauthn_credentials.iter().find(|c| c.uuid == passkey_data.id) else {
+            err!("Passkey doesn't exist")
+        };
+        if !credential.has_prf_keyset() {
+            err!("Passkey is not in a PRF-enabled state")
+        }
     }
 
     Ok(())
@@ -863,6 +880,21 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         &headers.user,
     )?;
 
+    let snapshot_prf_ids = existing_webauthn_credentials
+        .iter()
+        .filter(|c| c.has_prf_keyset())
+        .map(|c| c.uuid.clone())
+        .collect::<HashSet<WebAuthnCredentialId>>();
+    let current_prf_ids = WebAuthnCredential::find_by_user(user_id, &conn)
+        .await
+        .into_iter()
+        .filter(WebAuthnCredential::has_prf_keyset)
+        .map(|c| c.uuid)
+        .collect::<HashSet<WebAuthnCredentialId>>();
+    if current_prf_ids != snapshot_prf_ids {
+        err!("Passkey credentials changed during key rotation; please retry")
+    }
+
     // Update folder data
     for folder_data in data.account_data.folders {
         // Skip `null` folder id entries.
@@ -904,11 +936,21 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // Update passkey-login credential keys (the PRF "rotateable key set") so that
     // passwordless decryption keeps working after the account key is rotated.
     // The client only sends credentials whose PRF keyset is fully enabled.
+    //
     for passkey_data in data.account_unlock_data.passkey_unlock_data {
         let Some(mut credential) = WebAuthnCredential::find_by_uuid_and_user(&passkey_data.id, user_id, &conn).await
         else {
             err!("Passkey doesn't exist")
         };
+        // Refuse to write rotation data to a credential that isn't in the
+        // "Enabled" PRF state. Otherwise a credential with only the two
+        // rotated columns set (and `encrypted_private_key` still NULL) would
+        // be left as a partial keyset that `prf_status` reports as Supported.
+        if !credential.has_prf_keyset() {
+            err!("Passkey is not in a PRF-enabled state")
+        }
+        // Mutate only the two columns `update_keys` persists; other fields on
+        // the loaded credential are not written back.
         credential.encrypted_public_key = Some(passkey_data.encrypted_public_key);
         credential.encrypted_user_key = Some(passkey_data.encrypted_user_key);
         credential.update_keys(&conn).await?;
@@ -1750,5 +1792,64 @@ pub async fn purge_auth_requests(pool: DbPool) {
         AuthRequest::purge_expired_auth_requests(&conn).await;
     } else {
         error!("Failed to get DB connection while purging auth requests");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn webauthn_credential(id: &str, supports_prf: bool, has_keyset: bool) -> WebAuthnCredential {
+        let key = has_keyset.then_some(String::from("key"));
+        let mut credential = WebAuthnCredential::new(
+            UserId::from(String::from("user")),
+            String::from("passkey"),
+            String::from("{}"),
+            supports_prf,
+            key.clone(),
+            key.clone(),
+            key,
+        );
+        credential.uuid = WebAuthnCredentialId::from(id.to_owned());
+        credential
+    }
+
+    fn passkey_unlock_data(id: &str) -> UpdateWebAuthnLoginData {
+        UpdateWebAuthnLoginData {
+            id: WebAuthnCredentialId::from(id.to_owned()),
+            encrypted_public_key: String::from("public"),
+            encrypted_user_key: String::from("user"),
+        }
+    }
+
+    #[test]
+    fn passkey_rotation_accepts_exact_prf_set() {
+        let credentials = vec![webauthn_credential("prf", true, true)];
+        let data = vec![passkey_unlock_data("prf")];
+
+        assert!(validate_passkey_rotation_data(&data, &credentials).is_ok());
+    }
+
+    #[test]
+    fn passkey_rotation_rejects_missing_prf_credential() {
+        let credentials = vec![webauthn_credential("prf", true, true)];
+
+        assert!(validate_passkey_rotation_data(&[], &credentials).is_err());
+    }
+
+    #[test]
+    fn passkey_rotation_rejects_unknown_credential() {
+        let credentials = vec![webauthn_credential("prf", true, true)];
+        let data = vec![passkey_unlock_data("prf"), passkey_unlock_data("missing")];
+
+        assert!(validate_passkey_rotation_data(&data, &credentials).is_err());
+    }
+
+    #[test]
+    fn passkey_rotation_rejects_non_prf_credential() {
+        let credentials = vec![webauthn_credential("prf", true, true), webauthn_credential("non-prf", false, false)];
+        let data = vec![passkey_unlock_data("prf"), passkey_unlock_data("non-prf")];
+
+        assert!(validate_passkey_rotation_data(&data, &credentials).is_err());
     }
 }

@@ -1158,8 +1158,35 @@ impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
     }
 }
 
+fn passkey_credential_id(passkey: &Passkey) -> ApiResult<String> {
+    serde_json::to_value(passkey.cred_id())?
+        .as_str()
+        .map(str::to_owned)
+        .ok_or_else(|| crate::error::Error::new("Invalid passkey credential", "Could not serialize credential id"))
+}
+
+fn passkey_transports(passkey: &Passkey) -> Vec<String> {
+    serde_json::to_value(passkey)
+        .ok()
+        .and_then(|value| {
+            value
+                .pointer("/cred/transports")
+                .and_then(Value::as_array)
+                .map(|transports| transports.iter().filter_map(Value::as_str).map(str::to_owned).collect::<Vec<_>>())
+        })
+        .unwrap_or_default()
+}
+
 #[get("/accounts/webauthn/assertion-options")]
 async fn get_web_authn_assertion_options(ip: ClientIp, conn: DbConn) -> JsonResult {
+    // Same gate the 2FA WebAuthn entry point uses, applied here so a
+    // misconfigured DOMAIN (e.g., IP literal that has no parseable host)
+    // returns a clean error instead of panicking inside the `WEBAUTHN`
+    // `LazyLock` initializer.
+    if !CONFIG.is_webauthn_2fa_supported() {
+        err!("Configured `DOMAIN` is not compatible with Webauthn")
+    }
+
     if CONFIG.sso_enabled() && CONFIG.sso_only() {
         err!("SSO sign-in is required")
     }
@@ -1199,6 +1226,30 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
     AuthMethod::WebAuthn.check_scope(data.scope.as_ref())?;
     crate::ratelimit::check_limit_login(&ip.ip)?;
 
+    // Recover and consume (single-use) the saved challenge state. Every
+    // submission carrying a valid token is spent, regardless of body content
+    // or which user the assertion later claims — a caller with a valid token
+    // cannot repeatedly replay it with malformed bodies.
+    let token = WebAuthnLoginChallengeId::from(data.token.as_ref().unwrap().clone());
+    let Some(saved_challenge) = WebAuthnLoginChallenge::take(&token, conn).await else {
+        err!(
+            AUTH_FAILED,
+            format!("IP: {}. Missing or expired passkey login challenge.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    };
+    let Ok(state) = serde_json::from_str::<DiscoverableAuthentication>(&saved_challenge.challenge) else {
+        err!(
+            AUTH_FAILED,
+            format!("IP: {}. Corrupt passkey login challenge state.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    };
+
     // Parse the authenticator assertion. A malformed body must yield the same
     // generic error as any other failure, not a raw deserialization error.
     let Ok(device_response) = serde_json::from_str::<PublicKeyCredentialCopy>(data.device_response.as_ref().unwrap())
@@ -1213,20 +1264,9 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
     };
     let credential: PublicKeyCredential = device_response.into();
 
-    // Recover and consume (single-use) the saved challenge state.
-    let token = WebAuthnLoginChallengeId::from(data.token.as_ref().unwrap().clone());
-    let Some(saved_challenge) = WebAuthnLoginChallenge::take(&token, conn).await else {
-        err!(
-            AUTH_FAILED,
-            format!("IP: {}. Missing or expired passkey login challenge.", ip.ip),
-            ErrorEvent {
-                event: EventType::UserFailedLogIn
-            }
-        )
-    };
-    let state: DiscoverableAuthentication = serde_json::from_str(&saved_challenge.challenge)?;
-
-    // Determine which user the discoverable credential belongs to from its user handle.
+    // Identify which user the discoverable credential claims to belong to from
+    // its user handle. This only parses client-supplied data; user-scoped event
+    // logging is delayed until the assertion is cryptographically verified.
     let user_uuid = match WEBAUTHN.identify_discoverable_authentication(&credential) {
         Ok((user_uuid, _)) => UserId::from(user_uuid.to_string()),
         Err(e) => err!(
@@ -1248,19 +1288,7 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
         )
     };
 
-    // Record the user for event logging.
-    *user_id = Some(user.uuid.clone());
     let username = user.email.clone();
-
-    if !user.enabled {
-        err!(
-            AUTH_FAILED,
-            format!("IP: {}. Username: {username}. Account is disabled.", ip.ip),
-            ErrorEvent {
-                event: EventType::UserFailedLogIn
-            }
-        )
-    }
 
     // Load this user's passkey-login credentials.
     let parsed_credentials: Vec<(WebAuthnCredential, Passkey)> = WebAuthnCredential::find_by_user(&user.uuid, conn)
@@ -1299,6 +1327,37 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
             ),
         };
 
+    // The assertion is now bound to a registered credential for this user. From
+    // this point on, failed account-state checks can be attributed to the user
+    // without allowing arbitrary user-handle event log pollution.
+    *user_id = Some(user.uuid.clone());
+
+    if !user.enabled {
+        err!(
+            AUTH_FAILED,
+            format!("IP: {}. Username: {username}. Account is disabled.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    }
+
+    // Reject an unverified account before doing any server-side persistence.
+    // Mirrors the password-login email-verify gate but elides the verification
+    // reminder email and the distinguishable error message. Returning the same
+    // `AUTH_FAILED` as every other branch prevents using passkey login as an
+    // oracle for verification state. The descriptive hint still reaches
+    // legitimate users via password login.
+    if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
+        err!(
+            AUTH_FAILED,
+            format!("IP: {}. Username: {username}. Account is not email-verified.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    }
+
     // Locate the credential that was actually used and persist any counter update.
     let Some((mut matched_wac, mut passkey)) = parsed_credentials
         .into_iter()
@@ -1312,38 +1371,6 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
             }
         )
     };
-
-    // Reject an unverified account before persisting anything for this login.
-    let now = Utc::now().naive_utc();
-    if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
-        if user.last_verifying_at.is_none()
-            || now.signed_duration_since(user.last_verifying_at.unwrap()).num_seconds()
-                > CONFIG.signups_verify_resend_time().cast_signed()
-        {
-            let resend_limit = CONFIG.signups_verify_resend_limit().cast_signed();
-            if resend_limit == 0 || user.login_verify_count < resend_limit {
-                let mut user = user;
-                user.last_verifying_at = Some(now);
-                user.login_verify_count += 1;
-
-                if let Err(e) = user.save(conn).await {
-                    error!("Error updating user: {e:#?}");
-                }
-
-                if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
-                    error!("Error auto-sending email verification email: {e:#?}");
-                }
-            }
-        }
-
-        err!(
-            "Please verify your email before trying again.",
-            format!("IP: {}. Username: {username}.", ip.ip),
-            ErrorEvent {
-                event: EventType::UserFailedLogIn
-            }
-        )
-    }
 
     // Persist any signature-counter advance from this assertion.
     if passkey.update_credential(&authentication_result) == Some(true) {
@@ -1374,12 +1401,18 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
     // Build response using the common authenticated_response helper
     let mut result = authenticated_response(&user, &mut device, auth_tokens, None, conn, ip).await?;
 
-    // Add WebAuthnPrfOption if the credential has encrypted keys (PRF-based decryption)
-    if matched_wac.encrypted_private_key.is_some() && matched_wac.encrypted_user_key.is_some() {
+    // Add WebAuthnPrfOption only when the credential is in the PRF "Enabled"
+    // state (supports_prf + all three encrypted blobs present), matching
+    // Bitwarden's `GetPrfStatus() == Enabled` gate.
+    if matched_wac.has_prf_keyset() {
+        let credential_id = passkey_credential_id(&passkey)?;
+        let transports = passkey_transports(&passkey);
         let Json(ref mut val) = result;
         val["UserDecryptionOptions"]["WebAuthnPrfOption"] = json!({
             "EncryptedPrivateKey": matched_wac.encrypted_private_key,
             "EncryptedUserKey": matched_wac.encrypted_user_key,
+            "CredentialId": credential_id,
+            "Transports": transports,
         });
     }
 

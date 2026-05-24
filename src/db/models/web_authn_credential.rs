@@ -200,12 +200,14 @@ impl WebAuthnLoginChallenge {
     /// token is unknown, has already been consumed, or the challenge has expired.
     pub async fn take(id: &WebAuthnLoginChallengeId, conn: &DbConn) -> Option<Self> {
         db_run! { conn: {
-            // Single-use: the SELECT and DELETE run in one transaction so the row
-            // is read and removed atomically. Only the request whose DELETE
-            // removes the row (deleted == 1) may use the challenge; a concurrent
-            // request deletes 0 rows and gets `None`. A DB error aborts the
-            // transaction, leaving the challenge intact rather than silently
-            // treating it as consumed.
+            // Single-use is enforced by the `deleted == 1` row-count guard, not
+            // by isolation: concurrent callers may all see the row in the
+            // SELECT, but only the one whose DELETE removes it (returns 1) is
+            // allowed to use the challenge. The remaining callers see
+            // `deleted == 0` and get `None`. The surrounding transaction
+            // ensures the SELECT+DELETE pair rolls back atomically on a DB
+            // error, leaving the challenge intact rather than silently
+            // consuming it.
             let taken = conn
                 .transaction::<Option<WebAuthnLoginChallenge>, diesel::result::Error, _>(|conn| {
                     let challenge = web_authn_login_challenges::table

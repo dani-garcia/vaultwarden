@@ -1,6 +1,6 @@
 CREATE TABLE web_authn_credentials (
     uuid              TEXT    NOT NULL PRIMARY KEY,
-    user_uuid         TEXT    NOT NULL REFERENCES users(uuid),
+    user_uuid         TEXT    NOT NULL REFERENCES users(uuid) ON DELETE CASCADE,
     name              TEXT    NOT NULL,
     credential        TEXT    NOT NULL,
     supports_prf      BOOLEAN NOT NULL DEFAULT 0,

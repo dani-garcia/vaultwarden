@@ -7,7 +7,7 @@ CREATE TABLE web_authn_credentials (
     encrypted_user_key    TEXT,
     encrypted_public_key  TEXT,
     encrypted_private_key TEXT,
-    FOREIGN KEY (user_uuid) REFERENCES users (uuid)
+    FOREIGN KEY (user_uuid) REFERENCES users (uuid) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_web_authn_credentials_user_uuid ON web_authn_credentials (user_uuid);
