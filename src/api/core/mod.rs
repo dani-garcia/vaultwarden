@@ -17,16 +17,17 @@ pub use sends::purge_sends;
 
 use reqwest::Method;
 use rocket::{Catcher, Route, http::Status, serde::json::Json, serde::json::Value};
-use webauthn_rs::prelude::{Passkey, PasskeyRegistration};
+use webauthn_rs::prelude::{Passkey, PasskeyAuthentication, PasskeyRegistration};
 use webauthn_rs_proto::UserVerificationPolicy;
 
 use crate::{
     CONFIG,
     api::{
         ApiResult, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
-        core::two_factor::webauthn::{RegisterPublicKeyCredentialCopy, WEBAUTHN},
+        core::two_factor::webauthn::{PublicKeyCredentialCopy, RegisterPublicKeyCredentialCopy, WEBAUTHN},
     },
     auth::Headers,
+    crypto,
     db::{
         DbConn,
         models::{
@@ -37,7 +38,7 @@ use crate::{
     error::Error,
     http_client::make_http_request,
     mail,
-    util::{FeatureFlagFilter, parse_experimental_client_feature_flags},
+    util::{FeatureFlagFilter, get_uuid, parse_experimental_client_feature_flags},
 };
 
 pub fn routes() -> Vec<Route> {
@@ -50,6 +51,8 @@ pub fn routes() -> Vec<Route> {
         config,
         get_api_webauthn,
         post_api_webauthn,
+        put_api_webauthn,
+        post_api_webauthn_assertion_options,
         post_api_webauthn_attestation_options,
         post_api_webauthn_delete
     ];
@@ -239,6 +242,42 @@ async fn get_api_webauthn(headers: Headers, conn: DbConn) -> Json<Value> {
     }))
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WebAuthnPasskeyRegistrationChallenge {
+    token: String,
+    state: PasskeyRegistration,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WebAuthnPasskeyAssertionChallenge {
+    token: String,
+    state: PasskeyAuthentication,
+}
+
+fn passkey_registration_challenge_state(data: &str, token: Option<&str>) -> ApiResult<PasskeyRegistration> {
+    if let Ok(saved) = serde_json::from_str::<WebAuthnPasskeyRegistrationChallenge>(data) {
+        if token != Some(saved.token.as_str()) {
+            err!("Invalid registration challenge. Please try again.")
+        }
+        Ok(saved.state)
+    } else {
+        if token.is_some() {
+            err!("Invalid registration challenge. Please try again.")
+        }
+        Ok(serde_json::from_str::<PasskeyRegistration>(data)?)
+    }
+}
+
+fn passkey_assertion_challenge_state(data: &str, token: &str) -> ApiResult<PasskeyAuthentication> {
+    let saved: WebAuthnPasskeyAssertionChallenge = serde_json::from_str(data)?;
+    if token != saved.token.as_str() {
+        err!("Invalid assertion challenge. Please try again.")
+    }
+    Ok(saved.state)
+}
+
 #[post("/webauthn/attestation-options", data = "<data>")]
 async fn post_api_webauthn_attestation_options(
     data: Json<PasswordOrOtpData>,
@@ -252,7 +291,7 @@ async fn post_api_webauthn_attestation_options(
         err!("Passkeys cannot be created when SSO sign-in is required")
     }
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&user, true, &conn).await?;
 
     let all_creds = WebAuthnCredential::find_by_user(&user.uuid, &conn).await;
     let existing_cred_ids: Vec<_> = all_creds
@@ -289,10 +328,20 @@ async fn post_api_webauthn_attestation_options(
         tf.delete(&conn).await?;
     }
 
+    let token = get_uuid();
+    let saved_challenge = WebAuthnPasskeyRegistrationChallenge {
+        token: token.clone(),
+        state,
+    };
+
     // Persist the registration state in the database (same pattern as 2FA webauthn)
-    TwoFactor::new(user.uuid, TwoFactorType::WebauthnPasskeyRegisterChallenge, serde_json::to_string(&state)?)
-        .save(&conn)
-        .await?;
+    TwoFactor::new(
+        user.uuid,
+        TwoFactorType::WebauthnPasskeyRegisterChallenge,
+        serde_json::to_string(&saved_challenge)?,
+    )
+    .save(&conn)
+    .await?;
 
     let mut options = serde_json::to_value(challenge.public_key)?;
     options["status"] = "ok".into();
@@ -300,7 +349,69 @@ async fn post_api_webauthn_attestation_options(
 
     Ok(Json(json!({
         "options": options,
+        "token": token,
         "object": "webauthnCredentialCreateOptions"
+    })))
+}
+
+#[post("/webauthn/assertion-options", data = "<data>")]
+async fn post_api_webauthn_assertion_options(
+    data: Json<PasswordOrOtpData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    if !CONFIG.is_webauthn_2fa_supported() {
+        err!("Configured `DOMAIN` is not compatible with Webauthn")
+    }
+
+    crate::ratelimit::check_limit_login(&headers.ip.ip)?;
+
+    let data: PasswordOrOtpData = data.into_inner();
+    let user = headers.user;
+
+    if CONFIG.sso_enabled() && CONFIG.sso_only() {
+        err!("Passkeys cannot be updated when SSO sign-in is required")
+    }
+
+    data.validate(&user, true, &conn).await?;
+
+    let credentials: Vec<Passkey> = WebAuthnCredential::find_by_user(&user.uuid, &conn)
+        .await
+        .into_iter()
+        .filter(|wac| wac.supports_prf)
+        .filter_map(|wac| serde_json::from_str(&wac.credential).ok())
+        .collect();
+
+    if credentials.is_empty() {
+        err!("No PRF-capable passkeys registered")
+    }
+
+    let (response, state) = WEBAUTHN.start_passkey_authentication(&credentials)?;
+
+    if let Some(tf) =
+        TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::WebauthnPasskeyAssertionChallenge as i32, &conn)
+            .await
+    {
+        tf.delete(&conn).await?;
+    }
+
+    let token = get_uuid();
+    let saved_challenge = WebAuthnPasskeyAssertionChallenge {
+        token: token.clone(),
+        state,
+    };
+    TwoFactor::new(
+        user.uuid,
+        TwoFactorType::WebauthnPasskeyAssertionChallenge,
+        serde_json::to_string(&saved_challenge)?,
+    )
+    .save(&conn)
+    .await?;
+
+    Ok(Json(json!({
+        "options": response.public_key,
+        "token": token,
+        "object": "webauthnCredentialAssertionOptions"
     })))
 }
 
@@ -309,6 +420,7 @@ async fn post_api_webauthn_attestation_options(
 struct WebAuthnLoginCredentialCreateRequest {
     device_response: RegisterPublicKeyCredentialCopy,
     name: String,
+    token: Option<String>,
     supports_prf: bool,
     encrypted_user_key: Option<String>,
     encrypted_public_key: Option<String>,
@@ -328,13 +440,15 @@ async fn post_api_webauthn(
         err!("Passkeys cannot be created when SSO sign-in is required")
     }
 
-    // Retrieve and delete the saved challenge state from the database
+    // Atomically take the saved challenge state (single-use): concurrent
+    // finishes for the same registration row cannot both succeed and create
+    // duplicate `web_authn_credentials` entries — only the caller whose DELETE
+    // removes the row proceeds.
     let type_ = TwoFactorType::WebauthnPasskeyRegisterChallenge as i32;
-    let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await else {
+    let Some(tf) = TwoFactor::take_by_user_and_type(&user.uuid, type_, &conn).await else {
         err!("No registration challenge found. Please try again.")
     };
-    let state: PasskeyRegistration = serde_json::from_str(&tf.data)?;
-    tf.delete(&conn).await?;
+    let state = passkey_registration_challenge_state(&tf.data, data.token.as_deref())?;
     let credential = WEBAUTHN.finish_passkey_registration(&data.device_response.into(), &state)?;
 
     WebAuthnCredential::new(
@@ -352,6 +466,91 @@ async fn post_api_webauthn(
     Ok(Status::Ok)
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WebAuthnLoginCredentialUpdateRequest {
+    device_response: PublicKeyCredentialCopy,
+    token: String,
+    encrypted_user_key: Option<String>,
+    encrypted_public_key: Option<String>,
+    encrypted_private_key: Option<String>,
+}
+
+#[put("/webauthn", data = "<data>")]
+async fn put_api_webauthn(
+    data: Json<WebAuthnLoginCredentialUpdateRequest>,
+    headers: Headers,
+    conn: DbConn,
+) -> ApiResult<Status> {
+    crate::ratelimit::check_limit_login(&headers.ip.ip)?;
+
+    let data: WebAuthnLoginCredentialUpdateRequest = data.into_inner();
+    let user = headers.user;
+
+    if CONFIG.sso_enabled() && CONFIG.sso_only() {
+        err!("Passkeys cannot be updated when SSO sign-in is required")
+    }
+
+    let Some(encrypted_user_key) = data.encrypted_user_key else {
+        err!("Encrypted user key is required")
+    };
+    let Some(encrypted_public_key) = data.encrypted_public_key else {
+        err!("Encrypted public key is required")
+    };
+    let Some(encrypted_private_key) = data.encrypted_private_key else {
+        err!("Encrypted private key is required")
+    };
+
+    // Atomically take the saved challenge state (single-use): concurrent
+    // updates for the same assertion row cannot both succeed and apply
+    // different blob payloads — only the caller whose DELETE removes the row
+    // proceeds.
+    let type_ = TwoFactorType::WebauthnPasskeyAssertionChallenge as i32;
+    let Some(tf) = TwoFactor::take_by_user_and_type(&user.uuid, type_, &conn).await else {
+        err!("No assertion challenge found. Please try again.")
+    };
+    let state = passkey_assertion_challenge_state(&tf.data, &data.token)?;
+
+    let credential_response = data.device_response.into();
+    let mut parsed_credentials: Vec<(WebAuthnCredential, Passkey)> =
+        WebAuthnCredential::find_by_user(&user.uuid, &conn)
+            .await
+            .into_iter()
+            .filter_map(|wac| {
+                let passkey: Passkey = serde_json::from_str(&wac.credential).ok()?;
+                Some((wac, passkey))
+            })
+            .collect();
+
+    if parsed_credentials.is_empty() {
+        err!("No passkeys registered")
+    }
+
+    let authentication_result = WEBAUTHN.finish_passkey_authentication(&credential_response, &state)?;
+    let Some((matched_wac, passkey)) = parsed_credentials
+        .iter_mut()
+        .find(|(_, passkey)| crypto::ct_eq(passkey.cred_id().as_slice(), authentication_result.cred_id().as_slice()))
+    else {
+        err!("Verified credential is not registered")
+    };
+
+    if !matched_wac.supports_prf {
+        err!("Passkey does not support PRF")
+    }
+
+    if passkey.update_credential(&authentication_result) == Some(true) {
+        matched_wac.credential = serde_json::to_string(passkey)?;
+        matched_wac.update_credential(&conn).await?;
+    }
+
+    matched_wac.encrypted_user_key = Some(encrypted_user_key);
+    matched_wac.encrypted_public_key = Some(encrypted_public_key);
+    matched_wac.encrypted_private_key = Some(encrypted_private_key);
+    matched_wac.update_prf_keyset(&conn).await?;
+
+    Ok(Status::Ok)
+}
+
 #[post("/webauthn/<uuid>/delete", data = "<data>")]
 async fn post_api_webauthn_delete(
     data: Json<PasswordOrOtpData>,
@@ -362,7 +561,7 @@ async fn post_api_webauthn_delete(
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&user, true, &conn).await?;
 
     WebAuthnCredential::delete_by_uuid_and_user(&WebAuthnCredentialId::from(uuid.to_owned()), &user.uuid, &conn)
         .await?;

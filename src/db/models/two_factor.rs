@@ -43,6 +43,7 @@ pub enum TwoFactorType {
     WebauthnRegisterChallenge = 1003,
     WebauthnLoginChallenge = 1004,
     WebauthnPasskeyRegisterChallenge = 1005,
+    WebauthnPasskeyAssertionChallenge = 1006,
 
     // Special type for Protected Actions verification via email
     ProtectedActions = 2000,
@@ -145,6 +146,33 @@ impl TwoFactor {
                 .filter(twofactor::atype.eq(atype))
                 .first::<Self>(conn)
                 .ok()
+        })
+        .await
+    }
+
+    /// Atomically fetch and delete the row for this user+type. Returns Some
+    /// only when the caller's DELETE actually removed a row, so two concurrent
+    /// callers (e.g. a double-clicked enrollment finish) cannot both proceed
+    /// with the same single-use challenge state — the loser sees None. The
+    /// surrounding transaction rolls back the SELECT+DELETE pair atomically
+    /// on a DB error, leaving the row intact rather than silently consuming it.
+    pub async fn take_by_user_and_type(user_uuid: &UserId, atype: i32, conn: &DbConn) -> Option<Self> {
+        let user_uuid = user_uuid.clone();
+        conn.run(move |conn| {
+            conn.transaction::<Option<Self>, diesel::result::Error, _>(|conn| {
+                let tf = twofactor::table
+                    .filter(twofactor::user_uuid.eq(&user_uuid))
+                    .filter(twofactor::atype.eq(atype))
+                    .first::<Self>(conn)
+                    .optional()?;
+                let Some(existing) = &tf else {
+                    return Ok(None);
+                };
+                let deleted =
+                    diesel::delete(twofactor::table.filter(twofactor::uuid.eq(&existing.uuid))).execute(conn)?;
+                Ok(tf.filter(|_| deleted == 1))
+            })
+            .unwrap_or(None)
         })
         .await
     }

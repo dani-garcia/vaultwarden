@@ -106,6 +106,21 @@ impl WebAuthnCredential {
         }}
     }
 
+    /// Persist a complete PRF unlock keyset after a user enables vault
+    /// encryption for an existing passkey-login credential.
+    pub async fn update_prf_keyset(&self, conn: &DbConn) -> EmptyResult {
+        db_run! { conn: {
+            diesel::update(web_authn_credentials::table.filter(web_authn_credentials::uuid.eq(&self.uuid)))
+                .set((
+                    web_authn_credentials::encrypted_user_key.eq(&self.encrypted_user_key),
+                    web_authn_credentials::encrypted_public_key.eq(&self.encrypted_public_key),
+                    web_authn_credentials::encrypted_private_key.eq(&self.encrypted_private_key),
+                ))
+                .execute(conn)
+                .map_res("Error updating web_authn_credential PRF keyset")
+        }}
+    }
+
     pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
         db_run! { conn: {
             web_authn_credentials::table

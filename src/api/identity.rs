@@ -1033,6 +1033,7 @@ async fn json_err_twofactor(
                 | TwoFactorType::U2fRegisterChallenge
                 | TwoFactorType::Webauthn
                 | TwoFactorType::WebauthnLoginChallenge
+                | TwoFactorType::WebauthnPasskeyAssertionChallenge
                 | TwoFactorType::WebauthnPasskeyRegisterChallenge
                 | TwoFactorType::WebauthnRegisterChallenge,
             ) => { /* Nothing special to do for these providers */ }
@@ -1351,6 +1352,22 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
     }
 
     let mut device = get_device(&data, conn, &user).await?;
+
+    // Mirror the 2FA-state gate that password login applies (twofactor_auth):
+    // - no providers at all → enforce_2fa_policy (revoke from RequireTwoFactor
+    //   orgs the user no longer satisfies) and let the passkey login proceed.
+    // - rows exist but every provider is disabled or unusable → reject, same
+    //   message the password path returns. The passkey is the auth, so we
+    //   don't ask for a 2FA token when usable providers exist.
+    let twofactors = TwoFactor::find_by_user(&user.uuid, conn).await;
+    if twofactors.is_empty() {
+        enforce_2fa_policy(&user, &user.uuid, device.atype, &ip.ip, conn).await?;
+    } else if !twofactors.iter().any(|tf| {
+        TwoFactorType::from_i32(tf.atype)
+            .is_some_and(|t| tf.enabled && is_twofactor_provider_usable(&t, Some(&tf.data)))
+    }) {
+        err!("No enabled and usable two factor providers are available for this account")
+    }
 
     let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::WebAuthn, data.client_id);
 
