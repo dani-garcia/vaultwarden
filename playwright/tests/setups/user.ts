@@ -16,9 +16,13 @@ export async function createAccount(test, page: Page, user: { email: string, nam
         await page.getByLabel('Name').fill(user.name);
         await page.getByRole('button', { name: 'Continue' }).click();
 
-        // Vault finish Creation
-        await page.getByLabel('Master password (required)', { exact: true }).fill(user.password);
-        await page.getByLabel('Confirm master password (').fill(user.password);
+        // Vault finish Creation. The current bundled web-vault renders the
+        // required field's label as "Master password\n(required)", so a bare
+        // substring match for "Master password" is ambiguous with the
+        // "Master password hint" label on the same page. Anchor to the
+        // password input by its formcontrolname instead.
+        await page.locator('input[formcontrolname="newPassword"]').fill(user.password);
+        await page.locator('input[formcontrolname="newPasswordConfirm"]').fill(user.password);
         await page.getByRole('button', { name: 'Create account' }).click();
 
         await utils.checkNotification(page, 'Your new account has been created')

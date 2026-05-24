@@ -57,8 +57,13 @@ test('invited with new account', async ({ page }) => {
         await expect(page).toHaveTitle(/Create account | Vaultwarden Web/);
 
         //await page.getByLabel('Name').fill(users.user2.name);
-        await page.getByLabel('Master password (required)', { exact: true }).fill(users.user2.password);
-        await page.getByLabel('Confirm master password (').fill(users.user2.password);
+        // Three labels match "Master password" via Playwright's case-insensitive
+        // substring matching ("Master password (required)", "Confirm master
+        // password (required)", "Master password hint"), so anchor by
+        // formcontrolname — same pattern as setups/user.ts:createAccount and
+        // setups/sso.ts:logNewUser.
+        await page.locator('input[formcontrolname="newPassword"]').fill(users.user2.password);
+        await page.locator('input[formcontrolname="newPasswordConfirm"]').fill(users.user2.password);
         await page.getByRole('button', { name: 'Create account' }).click();
         await utils.checkNotification(page, 'Your new account has been created');
 

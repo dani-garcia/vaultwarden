@@ -33,8 +33,13 @@ export async function logNewUser(
 
         await test.step('Create Vault account', async () => {
             await expect(page.getByRole('heading', { name: 'Join organisation' })).toBeVisible();
-            await page.getByLabel('Master password (required)', { exact: true }).fill(user.password);
-            await page.getByLabel('Confirm master password (').fill(user.password);
+            // Three labels on this form match "Master password" via Playwright's
+            // case-insensitive substring matching ("Master password (required)",
+            // "Confirm master password (required)", "Master password hint"), so
+            // anchor by formcontrolname (the pattern setups/user.ts:createAccount
+            // also uses for the same reason).
+            await page.locator('input[formcontrolname="newPassword"]').fill(user.password);
+            await page.locator('input[formcontrolname="newPasswordConfirm"]').fill(user.password);
             await page.getByRole('button', { name: 'Create account' }).click();
         });
 

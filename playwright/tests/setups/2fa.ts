@@ -11,7 +11,7 @@ export async function activateTOTP(test: Test, page: Page, user: { name: string,
         await page.getByRole('link', { name: 'Security' }).click();
         await page.getByRole('link', { name: 'Two-step login' }).click();
         await page.locator('bit-item').filter({ hasText: /Authenticator app/ }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').fill(user.password);
+        await page.getByLabel('Master password').fill(user.password);
         await page.getByRole('button', { name: 'Continue' }).click();
 
         const secret = await page.getByLabel('Key').innerText();
@@ -33,8 +33,8 @@ export async function disableTOTP(test: Test, page: Page, user: { password: stri
         await page.getByRole('link', { name: 'Security' }).click();
         await page.getByRole('link', { name: 'Two-step login' }).click();
         await page.locator('bit-item').filter({ hasText: /Authenticator app/ }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').click();
-        await page.getByLabel('Master password (required)').fill(user.password);
+        await page.getByLabel('Master password').click();
+        await page.getByLabel('Master password').fill(user.password);
         await page.getByRole('button', { name: 'Continue' }).click();
         await page.getByRole('button', { name: 'Turn off' }).click();
         await page.getByRole('button', { name: 'Yes' }).click();
@@ -49,7 +49,7 @@ export async function activateEmail(test: Test, page: Page, user: { name: string
         await page.getByRole('link', { name: 'Security' }).click();
         await page.getByRole('link', { name: 'Two-step login' }).click();
         await page.locator('bit-item').filter({ hasText: 'Enter a code sent to your email' }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').fill(user.password);
+        await page.getByLabel('Master password').fill(user.password);
         await page.getByRole('button', { name: 'Continue' }).click();
         await page.getByRole('button', { name: 'Send email' }).click();
     });
@@ -81,8 +81,8 @@ export async function disableEmail(test: Test, page: Page, user: { password: str
         await page.getByRole('link', { name: 'Security' }).click();
         await page.getByRole('link', { name: 'Two-step login' }).click();
         await page.locator('bit-item').filter({ hasText: 'Email' }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').click();
-        await page.getByLabel('Master password (required)').fill(user.password);
+        await page.getByLabel('Master password').click();
+        await page.getByLabel('Master password').fill(user.password);
         await page.getByRole('button', { name: 'Continue' }).click();
         await page.getByRole('button', { name: 'Turn off' }).click();
         await page.getByRole('button', { name: 'Yes' }).click();
