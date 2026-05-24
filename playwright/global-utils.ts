@@ -38,7 +38,7 @@ export async function waitFor(url: String, browser: Browser) {
 
     do {
         try {
-            context = await browser.newContext();
+            context = await browser.newContext({ ignoreHTTPSErrors: true });
             const page = await context.newPage();
             await page.waitForTimeout(500);
             const result = await page.goto(url);
