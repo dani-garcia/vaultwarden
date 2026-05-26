@@ -167,7 +167,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         api::core::get_eq_domains(&headers, true).into_inner()
     };
 
-    // This is very similar to the the userDecryptionOptions sent in connect/token,
+    // This is very similar to the userDecryptionOptions sent in connect/token,
     // but as of 2025-12-19 they're both using different casing conventions.
     let has_master_password = !headers.user.password_hash.is_empty();
     let master_password_unlock = if has_master_password {
