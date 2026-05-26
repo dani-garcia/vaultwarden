@@ -98,6 +98,9 @@ test('invited with existing account', async ({ page }) => {
 
     await test.step('Redirect to Keycloak', async () => {
         await page.goto(link);
+        // Existing accounts land on the email-prefilled login form rather
+        // than auto-redirecting; click through to Keycloak explicitly.
+        await page.getByRole('button', { name: 'Use single sign-on' }).click();
     });
 
     await test.step('Keycloak login', async () => {
@@ -112,7 +115,7 @@ test('invited with existing account', async ({ page }) => {
         await page.getByLabel('Master password').fill(users.user3.password);
         await page.getByRole('button', { name: 'Unlock' }).click();
 
-        await utils.checkNotification(page, 'Invitation accepted');
+        await utils.checkNotification(page, 'Successfully accepted your invitation');
         await utils.ignoreExtension(page);
     });
 

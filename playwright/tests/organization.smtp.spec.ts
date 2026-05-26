@@ -67,7 +67,7 @@ test('invited with new account', async ({ page }) => {
         await page.getByRole('button', { name: 'Create account' }).click();
         await utils.checkNotification(page, 'Your new account has been created');
 
-        await utils.checkNotification(page, 'Invitation accepted');
+        await utils.checkNotification(page, 'Successfully accepted your invitation');
         await utils.ignoreExtension(page);
 
         // Redirected to the vault
@@ -98,7 +98,7 @@ test('invited with existing account', async ({ page }) => {
     await page.getByLabel('Master password').fill(users.user3.password);
     await page.getByRole('button', { name: 'Log in with master password' }).click();
 
-    await utils.checkNotification(page, 'Invitation accepted');
+    await utils.checkNotification(page, 'Successfully accepted your invitation');
     await utils.ignoreExtension(page);
 
     // We are now in the default vault page
