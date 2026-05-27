@@ -28,7 +28,7 @@ RUN mkdir /playwright
 WORKDIR /playwright
 
 COPY package.json package-lock.json .
-RUN npm ci --ignore-scripts && npx playwright install-deps && npx playwright install firefox
+RUN npm ci --ignore-scripts && npx playwright install-deps && npx playwright install firefox chromium
 
 COPY docker-compose.yml test.env ./
 COPY compose ./compose

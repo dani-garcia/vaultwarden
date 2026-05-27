@@ -77,25 +77,39 @@ export default defineConfig({
         {
             name: 'mariadb',
             testMatch: 'tests/*.spec.ts',
-            testIgnore: 'tests/sso_*.spec.ts',
+            testIgnore: ['tests/sso_*.spec.ts', 'tests/account_lifecycle.spec.ts'],
             dependencies: ['mariadb-setup'],
         },
         {
             name: 'mysql',
             testMatch: 'tests/*.spec.ts',
-            testIgnore: 'tests/sso_*.spec.ts',
+            testIgnore: ['tests/sso_*.spec.ts', 'tests/account_lifecycle.spec.ts'],
             dependencies: ['mysql-setup'],
         },
         {
             name: 'postgres',
             testMatch: 'tests/*.spec.ts',
-            testIgnore: 'tests/sso_*.spec.ts',
+            testIgnore: ['tests/sso_*.spec.ts', 'tests/account_lifecycle.spec.ts'],
             dependencies: ['postgres-setup'],
         },
         {
             name: 'sqlite',
             testMatch: 'tests/*.spec.ts',
-            testIgnore: 'tests/sso_*.spec.ts',
+            testIgnore: ['tests/sso_*.spec.ts', 'tests/account_lifecycle.spec.ts'],
+        },
+
+        {
+            // Chromium-only project for the WebAuthn account-lifecycle spec — the rest
+            // of the suite runs Firefox, but the spec uses CDP's virtual
+            // authenticator (Chromium-only) and the `hmac-secret` PRF extension.
+            // SQLite-backed, en locale (the bundled web vault renders different
+            // labels for the WebAuthn provider row under `en_GB`).
+            name: 'account-lifecycle',
+            testMatch: 'tests/account_lifecycle.spec.ts',
+            use: {
+                browserName: 'chromium',
+                locale: 'en',
+            },
         },
 
         {

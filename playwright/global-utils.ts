@@ -165,6 +165,7 @@ function dbConfig(testInfo: TestInfo){
             return { DATABASE_URL: `mysql://${process.env.MYSQL_USER}:${process.env.MYSQL_PASSWORD}@127.0.0.1:${process.env.MYSQL_PORT}/${process.env.MYSQL_DATABASE}`};
         case "sqlite":
         case "sso-sqlite":
+        case "account-lifecycle":
             return { I_REALLY_WANT_VOLATILE_STORAGE: true };
         default:
             throw new Error(`Unknow database name: ${testInfo.project.name}`);
@@ -191,6 +192,7 @@ export async function startVault(browser: Browser, testInfo: TestInfo, env = {},
                 break;
             case "sqlite":
             case "sso-sqlite":
+            case "account-lifecycle":
                 wipeSqlite();
                 break;
             default:
