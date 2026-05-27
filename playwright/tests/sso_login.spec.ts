@@ -45,7 +45,7 @@ test('SSO login with TOTP 2fa', async ({ page }) => {
 
     let totp = await activateTOTP(test, page, users.user1);
 
-    await logUser(test, page, users.user1, { totp });
+    await logUser(test, page, users.user1, { twoFactor: { kind: 'totp', totp } });
 
     await disableTOTP(test, page, users.user1);
 });

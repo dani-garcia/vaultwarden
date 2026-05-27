@@ -103,7 +103,7 @@ test('invited with existing account', async ({ page }) => {
 });
 
 test('Confirm invited user', async ({ page }) => {
-    await logUser(test, page, users.user1, mail1Buffer);
+    await logUser(test, page, users.user1, { mailBuffer: mail1Buffer });
 
     await orgs.members(test, page, 'Test');
     await orgs.confirm(test, page, 'Test', users.user2.email);
@@ -112,7 +112,7 @@ test('Confirm invited user', async ({ page }) => {
 });
 
 test('Organization is visible', async ({ page }) => {
-    await logUser(test, page, users.user2, mail2Buffer);
+    await logUser(test, page, users.user2, { mailBuffer: mail2Buffer });
     await page.getByRole('button', { name: 'vault: Test', exact: true }).click();
     await expect(page.getByLabel('Filter: Default collection')).toBeVisible();
 });

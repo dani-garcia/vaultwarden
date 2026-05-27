@@ -6,6 +6,53 @@ import * as utils from '../../global-utils';
 import { openAvatarMenu, submitMasterPasswordVerification } from './user';
 
 /**
+ * A 2FA challenge factor used by the login helpers. Discriminated by `kind`
+ * so each variant carries only the state it needs:
+ *   - `totp`     — TOTP code generator (authenticator app)
+ *   - `mail2fa`  — email OTP; the helper retrieves the code from `mailBuffer`
+ *   - `fido2`    — WebAuthn-as-2FA (the bundled web vault labels this
+ *                  provider "FIDO2 WebAuthn" in en_GB / "Passkey" in en).
+ *                  Currently unimplemented; `submitTwoFactor` throws.
+ */
+export type TwoFactor =
+    | { kind: 'totp', totp: OTPAuth.TOTP }
+    | { kind: 'mail2fa', mailBuffer: MailBuffer }
+    | { kind: 'fido2' };
+
+/**
+ * Satisfy the /#/2fa challenge for the given `TwoFactor`. Asserts the
+ * "Verify your Identity" heading is shown, then dispatches per `kind`:
+ *  - `totp` / `mail2fa`: fill the verification code, click Continue.
+ *  - `fido2`: throws Not Implemented.
+ *
+ * For TOTP, the code is generated for the *next* period boundary to avoid
+ * server-side expiry races when the test submits near a 30-second tick.
+ */
+export async function submitTwoFactor(test: Test, page: Page, twoFactor: TwoFactor): Promise<void> {
+    await test.step(`Submit 2FA (${twoFactor.kind})`, async () => {
+        await expect(page.getByRole('heading', { name: 'Verify your Identity' })).toBeVisible();
+        switch (twoFactor.kind) {
+            case 'totp': {
+                const { totp } = twoFactor;
+                const nowSec = Math.floor(Date.now() / 1000);
+                const timestamp = (nowSec + totp.period - (nowSec % totp.period) + 1) * 1000;
+                await page.getByLabel(/Verification code/).fill(totp.generate({ timestamp }));
+                await page.getByRole('button', { name: 'Continue' }).click();
+                break;
+            }
+            case 'mail2fa': {
+                const code = await retrieveEmailCode(test, page, twoFactor.mailBuffer);
+                await page.getByLabel(/Verification code/).fill(code);
+                await page.getByRole('button', { name: 'Continue' }).click();
+                break;
+            }
+            case 'fido2':
+                throw new Error('Not Implemented');
+        }
+    });
+}
+
+/**
  * Navigate to the two-step-login provider list under Settings → Security.
  * Centralised here so a future web-vault nav restructure only touches one
  * call chain.

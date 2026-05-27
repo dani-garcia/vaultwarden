@@ -3,6 +3,7 @@ import { expect, type Browser, Page } from '@playwright/test';
 import { type MailBuffer } from 'maildev';
 
 import * as utils from '../../global-utils';
+import { submitTwoFactor, type TwoFactor } from './2fa';
 
 /**
  * Open the account/avatar menu in the web vault header. The button's
@@ -82,7 +83,29 @@ export async function createAccount(test, page: Page, user: { email: string, nam
     });
 }
 
-export async function logUser(test, page: Page, user: { email: string, password: string }, mailBuffer?: MailBuffer) {
+/**
+ * Master-password login.
+ *
+ * When the account has 2FA enabled, pass `options.twoFactor` — a
+ * `TwoFactor` discriminated union carrying the factor's own state (TOTP
+ * generator, mail buffer, …). The helper then drives the /#/2fa challenge
+ * inline and lands the user in `/vault`. Mirrors `setups/sso.ts:logUser`.
+ *
+ * `options.mailBuffer` (independent of `twoFactor`) consumes the expected
+ * "New Device Logged In" mail at the end of the flow, when the test wants
+ * to assert that login emails went out.
+ */
+export async function logUser(
+    test,
+    page: Page,
+    user: { email: string, password: string },
+    options: {
+        mailBuffer?: MailBuffer,
+        twoFactor?: TwoFactor,
+    } = {},
+) {
+    let mailBuffer = options.mailBuffer;
+
     await test.step(`Log user ${user.email}`, async () => {
         await utils.cleanLanding(page);
 
@@ -92,6 +115,10 @@ export async function logUser(test, page: Page, user: { email: string, password:
         // Unlock page
         await page.getByLabel('Master password').fill(user.password);
         await page.getByRole('button', { name: 'Log in with master password' }).click();
+
+        if( options.twoFactor ){
+            await submitTwoFactor(test, page, options.twoFactor);
+        }
 
         await utils.ignoreExtension(page);
 

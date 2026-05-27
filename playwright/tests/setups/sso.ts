@@ -1,9 +1,8 @@
 import { expect, type Page, Test } from '@playwright/test';
 import { type MailBuffer, MailServer } from 'maildev';
-import * as OTPAuth from "otpauth";
 
 import * as utils from '../../global-utils';
-import { retrieveEmailCode } from './2fa';
+import { submitTwoFactor, type TwoFactor } from './2fa';
 import { fillNewMasterPassword } from './user';
 
 /**
@@ -66,9 +65,8 @@ export async function logUser(
     page: Page,
     user: { email: string, password: string },
     options: {
-        mailBuffer ?: MailBuffer,
-        totp?: OTPAuth.TOTP,
-        mail2fa?: boolean,
+        mailBuffer?: MailBuffer,
+        twoFactor?: TwoFactor,
     } = {}
 ) {
     let mailBuffer = options.mailBuffer;
@@ -90,24 +88,8 @@ export async function logUser(
             await page.getByRole('button', { name: 'Sign In' }).click();
         });
 
-        if( options.totp || options.mail2fa ){
-            let code;
-
-            await test.step('2FA check', async () => {
-                await expect(page.getByRole('heading', { name: 'Verify your Identity' })).toBeVisible();
-
-                if( options.totp ) {
-                    const totp = options.totp;
-                    let timestamp = Date.now(); // Needed to use the next token
-                    timestamp = timestamp + (totp.period - (Math.floor(timestamp / 1000) % totp.period) + 1) * 1000;
-                    code = totp.generate({timestamp});
-                } else if( options.mail2fa ){
-                    code = await retrieveEmailCode(test, page, mailBuffer);
-                }
-
-                await page.getByLabel(/Verification code/).fill(code);
-                await page.getByRole('button', { name: 'Continue' }).click();
-            });
+        if( options.twoFactor ){
+            await submitTwoFactor(test, page, options.twoFactor);
         }
 
         await test.step('Unlock vault', async () => {
