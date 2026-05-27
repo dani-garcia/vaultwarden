@@ -130,6 +130,10 @@ async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbC
 
 #[post("/two-factor/get-webauthn-challenge", data = "<data>")]
 async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
+    if !CONFIG.is_webauthn_2fa_supported() {
+        err!("Configured `DOMAIN` is not compatible with Webauthn")
+    }
+
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
@@ -256,6 +260,10 @@ impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
 
 #[post("/two-factor/webauthn", data = "<data>")]
 async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, conn: DbConn) -> JsonResult {
+    if !CONFIG.is_webauthn_2fa_supported() {
+        err!("Configured `DOMAIN` is not compatible with Webauthn")
+    }
+
     let data: EnableWebauthnData = data.into_inner();
     let mut user = headers.user;
 
