@@ -4,6 +4,55 @@ import { type MailBuffer } from 'maildev';
 
 import * as utils from '../../global-utils';
 
+/**
+ * Open the account/avatar menu in the web vault header. The button's
+ * accessible name is the user's display name; centralising the locator here
+ * insulates callers from web-vault changes to that element's structure.
+ *
+ * Note: cipher rows also expose `aria-haspopup="menu"` ellipsis buttons, so
+ * naïve `aria-haspopup` selectors mis-target on the vault page. Anchor on the
+ * accessible-name (`{ exact: true }` to avoid substring matches against any
+ * cipher whose name happens to start with the user's display name).
+ */
+export async function openAvatarMenu(page: Page, userName: string) {
+    await page.getByRole('button', { name: userName, exact: true }).click();
+}
+
+/**
+ * Fill the registration / change-master-password form's "new" + "confirm new"
+ * master-password fields. Anchored by `formcontrolname` rather than label —
+ * the current bundled web-vault renders three labels matching "Master
+ * password" via Playwright's case-insensitive substring matching ("Master
+ * password (required)", "Confirm master password (required)", and "Master
+ * password hint"), so a label-based locator is ambiguous.
+ */
+export async function fillNewMasterPassword(page: Page, password: string) {
+    await page.locator('input[formcontrolname="newPassword"]').fill(password);
+    await page.locator('input[formcontrolname="newPasswordConfirm"]').fill(password);
+}
+
+/**
+ * Submit the in-dialog user-verification (`app-user-verification`) master-
+ * password gate that the bundled web vault renders before any sensitive
+ * operation (2FA enrol/disable, passkey enrol/remove, key rotation, KDF
+ * change).
+ *
+ * Pressing Enter inside the password input submits the form unambiguously —
+ * the surrounding page often has multiple `Continue` buttons (dialog action,
+ * stale settings header), so a button-text click is brittle.
+ *
+ * Note: the user-verification component falls back to email-OTP verification
+ * when the master password isn't "fresh" in the current session (e.g. after a
+ * passkey login). Callers reaching this helper from a post-passkey-login
+ * state must arrange a recent MP entry first.
+ */
+export async function submitMasterPasswordVerification(page: Page, masterPassword: string) {
+    const mpInput = page.locator('input#masterPassword');
+    await mpInput.waitFor({ state: 'visible' });
+    await mpInput.fill(masterPassword);
+    await mpInput.press('Enter');
+}
+
 export async function createAccount(test, page: Page, user: { email: string, name: string, password: string }, mailBuffer?: MailBuffer) {
     await test.step(`Create user ${user.name}`, async () => {
         await utils.cleanLanding(page);
@@ -16,13 +65,7 @@ export async function createAccount(test, page: Page, user: { email: string, nam
         await page.getByLabel('Name').fill(user.name);
         await page.getByRole('button', { name: 'Continue' }).click();
 
-        // Vault finish Creation. The current bundled web-vault renders the
-        // required field's label as "Master password\n(required)", so a bare
-        // substring match for "Master password" is ambiguous with the
-        // "Master password hint" label on the same page. Anchor to the
-        // password input by its formcontrolname instead.
-        await page.locator('input[formcontrolname="newPassword"]').fill(user.password);
-        await page.locator('input[formcontrolname="newPasswordConfirm"]').fill(user.password);
+        await fillNewMasterPassword(page, user.password);
         await page.getByRole('button', { name: 'Create account' }).click();
 
         await utils.checkNotification(page, 'Your new account has been created')

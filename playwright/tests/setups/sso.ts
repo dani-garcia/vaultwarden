@@ -4,6 +4,7 @@ import * as OTPAuth from "otpauth";
 
 import * as utils from '../../global-utils';
 import { retrieveEmailCode } from './2fa';
+import { fillNewMasterPassword } from './user';
 
 /**
  * If a MailBuffer is passed it will be used and consume the expected emails
@@ -33,13 +34,7 @@ export async function logNewUser(
 
         await test.step('Create Vault account', async () => {
             await expect(page.getByRole('heading', { name: 'Join organisation' })).toBeVisible();
-            // Three labels on this form match "Master password" via Playwright's
-            // case-insensitive substring matching ("Master password (required)",
-            // "Confirm master password (required)", "Master password hint"), so
-            // anchor by formcontrolname (the pattern setups/user.ts:createAccount
-            // also uses for the same reason).
-            await page.locator('input[formcontrolname="newPassword"]').fill(user.password);
-            await page.locator('input[formcontrolname="newPasswordConfirm"]').fill(user.password);
+            await fillNewMasterPassword(page, user.password);
             await page.getByRole('button', { name: 'Create account' }).click();
         });
 

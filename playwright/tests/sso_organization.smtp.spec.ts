@@ -4,6 +4,7 @@ import { MailDev } from 'maildev';
 import * as utils from "../global-utils";
 import * as orgs from './setups/orgs';
 import { logNewUser, logUser } from './setups/sso';
+import { fillNewMasterPassword } from './setups/user';
 
 let users = utils.loadEnv();
 
@@ -67,11 +68,7 @@ test('invited with new account', async ({ page }) => {
 
     await test.step('Create Vault account', async () => {
         await expect(page.getByRole('heading', { name: 'Join organisation' })).toBeVisible();
-        // Three labels match "Master password" via Playwright's case-insensitive
-        // substring matching, so anchor by formcontrolname — same pattern as
-        // setups/sso.ts:logNewUser.
-        await page.locator('input[formcontrolname="newPassword"]').fill(users.user2.password);
-        await page.locator('input[formcontrolname="newPasswordConfirm"]').fill(users.user2.password);
+        await fillNewMasterPassword(page, users.user2.password);
         await page.getByRole('button', { name: 'Create account' }).click();
 
         await utils.checkNotification(page, 'Account successfully created!');
