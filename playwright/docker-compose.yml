@@ -58,7 +58,7 @@ services:
   Mariadb:
     profiles: ["playwright"]
     container_name: playwright_mariadb
-    image: mariadb:11.2.4
+    image: mariadb:12.2.2
     env_file: test.env
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
