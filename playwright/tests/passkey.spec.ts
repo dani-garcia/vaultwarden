@@ -533,4 +533,23 @@ test.describe('UserDecryption response shapes match upstream Bitwarden', () => {
         expect(Array.isArray(sync.userDecryption.webAuthnPrfOptions)).toBe(true);
         expect(sync.userDecryption.webAuthnPrfOptions).toEqual([]);
     });
+
+    test('/api/config advertises the pm-2035-passkey-unlock feature flag', async ({ request }) => {
+        // The lock-screen "Unlock with passkey" option is gated on the
+        // `pm-2035-passkey-unlock` feature flag in /api/config featureStates.
+        // The Bitwarden web vault's `WebAuthnPrfUnlockService.isPrfUnlockAvailable`
+        // short-circuits to `false` when the flag is missing or unset, hiding
+        // the button even when the user has a PRF-enabled passkey registered.
+        // Vaultwarden supports PRF passkey unlock end-to-end (the /sync
+        // `userDecryption.webAuthnPrfOptions` blob feeds the unwrap), so the
+        // flag must be advertised as enabled.
+        //
+        // Reference: `pm-2035-passkey-unlock` in
+        // https://github.com/bitwarden/clients/blob/main/libs/common/src/enums/feature-flag.enum.ts
+        const res = await request.get('/api/config');
+        expect(res.status()).toBe(200);
+        const config: any = await res.json();
+        expect(config.featureStates, 'featureStates must be an object').toBeTruthy();
+        expect(config.featureStates['pm-2035-passkey-unlock']).toBe(true);
+    });
 });

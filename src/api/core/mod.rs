@@ -742,21 +742,70 @@ mod tests {
         assert!(passkey_assertion_challenge_state(&bare, "any-token").is_err());
         assert!(passkey_assertion_challenge_state(&bare, "").is_err());
     }
+
+    /// `build_feature_states` must emit `pm-2035-passkey-unlock = true`
+    /// unconditionally — without it, the web vault's
+    /// `WebAuthnPrfUnlockService.isPrfUnlockAvailable` short-circuits to false
+    /// and the lock-screen "Unlock with passkey" option never renders even for
+    /// a user with a PRF-enabled passkey enrolled.
+    #[test]
+    fn feature_states_emits_passkey_unlock_flag_unconditionally() {
+        assert_eq!(build_feature_states("").get("pm-2035-passkey-unlock"), Some(&true));
+        assert_eq!(build_feature_states("some-unrelated-flag").get("pm-2035-passkey-unlock"), Some(&true));
+    }
+
+    /// `build_feature_states` must also emit `pm-19148-innovation-archive`
+    /// unconditionally — the existing companion flag the web vault expects
+    /// alongside the passkey-unlock entry.
+    #[test]
+    fn feature_states_emits_innovation_archive_flag_unconditionally() {
+        assert_eq!(build_feature_states("").get("pm-19148-innovation-archive"), Some(&true));
+    }
+
+    /// Valid experimental flags from the SUPPORTED list pass through; invalid
+    /// names are dropped (the `ValidOnly` filter). This pins the contract that
+    /// admin-configured `EXPERIMENTAL_CLIENT_FEATURE_FLAGS` reaches the wire.
+    #[test]
+    fn feature_states_passes_through_valid_experimental_flag() {
+        let probe = crate::config::SUPPORTED_FEATURE_FLAGS.iter().next().expect("at least one supported flag");
+        let states = build_feature_states(probe);
+        assert_eq!(states.get(*probe), Some(&true));
+    }
+
+    #[test]
+    fn feature_states_drops_unknown_experimental_flag() {
+        let states = build_feature_states("definitely-not-a-real-bitwarden-flag");
+        assert!(!states.contains_key("definitely-not-a-real-bitwarden-flag"));
+    }
+}
+
+/// Build the `featureStates` map returned by `/api/config`. Pure function
+/// over the experimental-flags string so it can be exercised by unit tests
+/// without `CONFIG` initialisation.
+///
+/// Official available feature flags can be found here:
+/// Server (v2026.2.1): https://github.com/bitwarden/server/blob/0e42725d0837bd1c0dabd864ff621a579959744b/src/Core/Constants.cs#L135
+/// Client (v2026.2.1): https://github.com/bitwarden/clients/blob/f96380c3138291a028bdd2c7a5fee540d5c98ba5/libs/common/src/enums/feature-flag.enum.ts#L12
+/// Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
+/// iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
+fn build_feature_states(experimental_client_feature_flags: &str) -> std::collections::HashMap<String, bool> {
+    let mut feature_states =
+        parse_experimental_client_feature_flags(experimental_client_feature_flags, &FeatureFlagFilter::ValidOnly);
+    feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
+    // Gates the web-vault's `Unlock with passkey` lock-screen option (and the
+    // matching desktop/mobile UI). `WebAuthnPrfUnlockService.isPrfUnlockAvailable`
+    // short-circuits to `false` when this flag is absent or unset, hiding the
+    // option even for users with a PRF-enabled passkey enrolled. Vaultwarden
+    // supports PRF-passkey unlock end-to-end via `userDecryption.webAuthnPrfOptions`
+    // on /sync, so the flag is advertised unconditionally.
+    feature_states.insert("pm-2035-passkey-unlock".to_owned(), true);
+    feature_states
 }
 
 #[get("/config")]
 fn config() -> Json<Value> {
     let domain = CONFIG.domain();
-    // Official available feature flags can be found here:
-    // Server (v2026.2.1): https://github.com/bitwarden/server/blob/0e42725d0837bd1c0dabd864ff621a579959744b/src/Core/Constants.cs#L135
-    // Client (v2026.2.1): https://github.com/bitwarden/clients/blob/f96380c3138291a028bdd2c7a5fee540d5c98ba5/libs/common/src/enums/feature-flag.enum.ts#L12
-    // Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
-    // iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
-    let mut feature_states = parse_experimental_client_feature_flags(
-        &CONFIG.experimental_client_feature_flags(),
-        &FeatureFlagFilter::ValidOnly,
-    );
-    feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
+    let feature_states = build_feature_states(&CONFIG.experimental_client_feature_flags());
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
