@@ -102,6 +102,10 @@ export async function logUser(
     options: {
         mailBuffer?: MailBuffer,
         twoFactor?: TwoFactor,
+        // Accepted for option-shape parity with `./sso.ts#logUser`, which
+        // uses it to support cases where the SSO-provider credential and
+        // the vault MP have diverged. Ignored in the MP-only flow.
+        kcPassword?: string,
     } = {},
 ) {
     let mailBuffer = options.mailBuffer;

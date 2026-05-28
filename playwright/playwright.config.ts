@@ -109,6 +109,39 @@ export default defineConfig({
             use: {
                 browserName: 'chromium',
                 locale: 'en',
+                launchOptions: {
+                    // Local-iteration knob: when set, point Playwright at a
+                    // non-bundled Chromium binary. The docker harness has the
+                    // bundled Chromium (1194) baked into the image; on a host
+                    // where Playwright's `install chromium` is unsupported
+                    // (e.g. Ubuntu 26.04), set this env var to your system
+                    // Chromium so `npx playwright test --project=account-lifecycle`
+                    // can run locally against an external Vaultwarden.
+                    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+                        ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+                        : {}),
+                },
+            },
+        },
+
+        {
+            // SSO variant of the account lifecycle. Same spec file, same
+            // launch config; differs in `dependencies: ['sso-setup']` (brings
+            // up Keycloak before the test runs) and `account_lifecycle.spec.ts`
+            // detects the project name to switch its `beforeAll` env to
+            // `SSO_ENABLED=true SSO_ONLY=false` and its login choreography
+            // to SSO + MP-unlock.
+            name: 'account-lifecycle-sso',
+            testMatch: 'tests/account_lifecycle.spec.ts',
+            dependencies: ['sso-setup'],
+            use: {
+                browserName: 'chromium',
+                locale: 'en',
+                launchOptions: {
+                    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+                        ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+                        : {}),
+                },
             },
         },
 

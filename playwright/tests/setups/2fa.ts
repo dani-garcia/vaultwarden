@@ -37,7 +37,14 @@ async function ensure2FAProvider(page: Page, kind: TwoFactor['kind']) {
     const probe = kind === 'fido2'
         ? page.locator('iframe[src*="webauthn-connector"]')
         : page.getByLabel(/Verification code/);
-    if (await probe.first().isVisible({ timeout: 1_000 }).catch(() => false)) {
+    // Give the bundled web vault a few seconds to mount the default
+    // provider's input before deciding a picker switch is needed. The
+    // webauthn-connector iframe in particular can take a moment longer
+    // to attach under SSO mode (extra Keycloak round-trip means the
+    // `/#/2fa` mount happens after a navigation chain) and a too-short
+    // probe would race into the switcher path, which can collide with
+    // the connector's auto-fire when the default is already FIDO2.
+    if (await probe.first().isVisible({ timeout: 5_000 }).catch(() => false)) {
         return;
     }
     const switcherText = /Select another method|Need a different method/i;
@@ -64,7 +71,14 @@ async function ensure2FAProvider(page: Page, kind: TwoFactor['kind']) {
  *
  * For TOTP, the code is generated for the *next* period boundary to avoid
  * server-side expiry races when the test submits near a 30-second tick.
+ * The helper also remembers the last-used time-step (module-scoped) and
+ * waits for the next period boundary if a repeat submission would land
+ * on a time-step the server has already consumed — its `last_used`
+ * tracking rejects equal-or-earlier time-steps even when the code is
+ * arithmetically valid.
  */
+let lastSubmittedTotpTimeStep: number | null = null;
+
 export async function submitTwoFactor(test: Test, page: Page, twoFactor: TwoFactor): Promise<void> {
     await test.step(`Submit 2FA (${twoFactor.kind})`, async () => {
         await expect(page.getByRole('heading', { name: 'Verify your Identity' })).toBeVisible();
@@ -72,8 +86,19 @@ export async function submitTwoFactor(test: Test, page: Page, twoFactor: TwoFact
         switch (twoFactor.kind) {
             case 'totp': {
                 const { totp } = twoFactor;
-                const nowSec = Math.floor(Date.now() / 1000);
-                const timestamp = (nowSec + totp.period - (nowSec % totp.period) + 1) * 1000;
+                let nowSec = Math.floor(Date.now() / 1000);
+                let timestamp = (nowSec + totp.period - (nowSec % totp.period) + 1) * 1000;
+                let timeStep = Math.floor(timestamp / 1000 / totp.period);
+                if (lastSubmittedTotpTimeStep !== null && timeStep <= lastSubmittedTotpTimeStep) {
+                    // Server's `last_used` would reject this code — sleep
+                    // until the next period boundary and recompute.
+                    const waitMs = (totp.period - (nowSec % totp.period) + 1) * 1000;
+                    await page.waitForTimeout(waitMs);
+                    nowSec = Math.floor(Date.now() / 1000);
+                    timestamp = (nowSec + totp.period - (nowSec % totp.period) + 1) * 1000;
+                    timeStep = Math.floor(timestamp / 1000 / totp.period);
+                }
+                lastSubmittedTotpTimeStep = timeStep;
                 await page.getByLabel(/Verification code/).fill(totp.generate({ timestamp }));
                 await page.getByRole('button', { name: 'Continue' }).click();
                 break;
@@ -87,7 +112,12 @@ export async function submitTwoFactor(test: Test, page: Page, twoFactor: TwoFact
             case 'fido2':
                 break;
         }
-        await expect(page).toHaveURL(/\/(vault|setup-extension)/, { timeout: 30_000 });
+        // MP login + 2FA lands the user in /vault directly (MP unwrapped the
+        // user key at login). SSO + 2FA lands on /#/lock — the IdP doesn't
+        // carry the unwrap secret, so the SPA routes to the lock screen
+        // for MP/passkey unlock. Accept both so callers in either mode can
+        // pin their own post-2FA assertion.
+        await expect(page).toHaveURL(/#\/(vault|setup-extension|lock)\b/, { timeout: 30_000 });
     });
 }
 

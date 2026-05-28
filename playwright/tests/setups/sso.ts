@@ -32,7 +32,10 @@ export async function logNewUser(
         });
 
         await test.step('Create Vault account', async () => {
-            await expect(page.getByRole('heading', { name: 'Join organisation' })).toBeVisible();
+            // Heading spelling tracks the active locale: `en` ("organization")
+            // vs. `en_GB` ("organisation"). Both project variants use this
+            // helper, so accept either.
+            await expect(page.getByRole('heading', { name: /Join organi[sz]ation/ })).toBeVisible();
             await fillNewMasterPassword(page, user.password);
             await page.getByRole('button', { name: 'Create account' }).click();
         });
@@ -67,6 +70,11 @@ export async function logUser(
     options: {
         mailBuffer?: MailBuffer,
         twoFactor?: TwoFactor,
+        // Override for the Keycloak password when the vault MP and the
+        // SSO-provider credential have diverged (e.g. after a master-
+        // password rotation in vw, where Keycloak's stored credential
+        // is unaffected). Defaults to `user.password` — the common case.
+        kcPassword?: string,
     } = {}
 ) {
     let mailBuffer = options.mailBuffer;
@@ -84,7 +92,7 @@ export async function logUser(
         await test.step('Keycloak login', async () => {
             await expect(page.getByRole('heading', { name: 'Sign in to your account' })).toBeVisible();
             await page.getByLabel(/Username/).fill(user.name);
-            await page.getByLabel('Password', { exact: true }).fill(user.password);
+            await page.getByLabel('Password', { exact: true }).fill(options.kcPassword ?? user.password);
             await page.getByRole('button', { name: 'Sign In' }).click();
         });
 
@@ -93,10 +101,27 @@ export async function logUser(
         }
 
         await test.step('Unlock vault', async () => {
-            await expect(page).toHaveTitle('Vaultwarden Web');
-            await expect(page.getByRole('heading', { name: 'Your vault is locked' })).toBeVisible();
-            await page.getByLabel('Master password').fill(user.password);
-            await page.getByRole('button', { name: 'Unlock' }).click();
+            // After SSO + (optional) 2FA, the bundled web vault routes to
+            // `/#/lock?promptBiometric=true`. When a PRF passkey is
+            // enrolled and the user's authenticator can satisfy the
+            // assertion, the lock screen auto-fires
+            // `navigator.credentials.get()` on mount and the SPA unwraps
+            // the user key without manual interaction — the page lands on
+            // /#/vault directly. If no PRF credential is available (or it
+            // can't satisfy UV), the lock screen waits for MP. Accept
+            // either landing so this helper works for both shapes; the
+            // Default-vault-page step below pins the final state either way.
+            await page.waitForURL(/#\/(lock|vault|setup-extension)\b/, { timeout: 30_000 });
+            if (page.url().includes('#/lock')) {
+                await expect(page).toHaveTitle('Vaultwarden Web');
+                await expect(page.getByRole('heading', { name: 'Your vault is locked' })).toBeVisible();
+                await page.getByLabel('Master password').fill(user.password);
+                // `exact: true` because the lock screen surfaces an additional
+                // "Unlock with passkey" button when the user has a PRF-capable
+                // credential enrolled; a substring "Unlock" match would resolve
+                // to two elements and Playwright's strict mode would throw.
+                await page.getByRole('button', { name: 'Unlock', exact: true }).click();
+            }
         });
 
         await utils.ignoreExtension(page);

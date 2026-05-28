@@ -166,6 +166,7 @@ function dbConfig(testInfo: TestInfo){
         case "sqlite":
         case "sso-sqlite":
         case "account-lifecycle":
+        case "account-lifecycle-sso":
             return { I_REALLY_WANT_VOLATILE_STORAGE: true };
         default:
             throw new Error(`Unknow database name: ${testInfo.project.name}`);
@@ -193,6 +194,7 @@ export async function startVault(browser: Browser, testInfo: TestInfo, env = {},
             case "sqlite":
             case "sso-sqlite":
             case "account-lifecycle":
+            case "account-lifecycle-sso":
                 wipeSqlite();
                 break;
             default:
@@ -233,7 +235,20 @@ export async function checkNotification(page: Page, hasText: string) {
 }
 
 export async function cleanLanding(page: Page) {
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    // The bundled web vault redirects `/` → `/#/login` via Angular's
+    // hash router; under docker's slower I/O that redirect occasionally
+    // fires while `page.goto('/')` is still resolving. Two surface forms
+    // for the same race: "Navigation interrupted by another navigation"
+    // (Playwright wording) or `net::ERR_ABORTED` (Chromium netstack).
+    // Both leave the page on `/#/login`, which is what every caller
+    // expects — swallow them and let the visibility assertion below pin
+    // the final state.
+    try {
+        await page.goto('/', { waitUntil: 'domcontentloaded' });
+    } catch (e: any) {
+        const msg = String(e?.message ?? '');
+        if (!msg.includes('interrupted by another navigation') && !msg.includes('ERR_ABORTED')) throw e;
+    }
     await expect(page.getByRole('button').nth(0)).toBeVisible();
 
     const logged = await page.getByRole('button', { name: 'Log out' }).count();
