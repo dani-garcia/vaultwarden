@@ -80,12 +80,6 @@ test('2fa', async ({ page }) => {
 
     await logUser(test, page, users.user1, { twoFactor: { kind: 'mail2fa', mailBuffer: emails }, mailBuffer: emails });
 
-    await test.step('Dismiss extension prompts', async () => {
-        await page.getByRole('button', { name: 'Add it later' }).click();
-        await page.getByRole('link', { name: 'Skip to web app' }).click();
-        await expect(page).toHaveTitle(/Vaults/);
-    });
-
     await disableEmail(test, page, users.user1);
 
     emails.close();

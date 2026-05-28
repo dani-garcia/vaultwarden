@@ -19,11 +19,48 @@ export type TwoFactor =
     | { kind: 'mail2fa', mailBuffer: MailBuffer }
     | { kind: 'fido2' };
 
+/** Provider-row label inside the "Select another method" picker dialog
+ *  for each `TwoFactor.kind` — matches what the bundled web vault renders
+ *  alongside the enrolled provider in the dialog list. */
+const PICKER_LABEL: Record<TwoFactor['kind'], RegExp> = {
+    totp: /Authenticator app/i,
+    mail2fa: /Email/i,
+    fido2: /Passkey|FIDO2/i,
+};
+
+/** If the page isn't already showing the input for the requested 2FA
+ *  kind (i.e. some other provider is the default), click "Select another
+ *  method" → the target provider row. No-op when the requested kind's
+ *  input is already visible (single-provider case, or it was already the
+ *  default). */
+async function ensure2FAProvider(page: Page, kind: TwoFactor['kind']) {
+    const probe = kind === 'fido2'
+        ? page.locator('iframe[src*="webauthn-connector"]')
+        : page.getByLabel(/Verification code/);
+    if (await probe.first().isVisible({ timeout: 1_000 }).catch(() => false)) {
+        return;
+    }
+    const switcherText = /Select another method|Need a different method/i;
+    const switcher = page
+        .getByRole('button', { name: switcherText })
+        .or(page.getByRole('link', { name: switcherText }))
+        .or(page.getByText(switcherText));
+    await switcher.first().waitFor({ state: 'visible', timeout: 10_000 });
+    await switcher.first().click();
+    const target = page
+        .getByRole('button', { name: PICKER_LABEL[kind] })
+        .or(page.getByRole('link', { name: PICKER_LABEL[kind] }));
+    await target.first().click();
+}
+
 /**
  * Satisfy the /#/2fa challenge for the given `TwoFactor`. Asserts the
  * "Verify your Identity" heading is shown, then dispatches per `kind`:
  *  - `totp` / `mail2fa`: fill the verification code, click Continue.
- *  - `fido2`: throws Not Implemented.
+ *  - `fido2`: the bundled connector iframe auto-fires WebAuthn on mount and
+ *            the page navigates to /vault on its own; the helper just waits
+ *            for that transition (caller must have a virtual authenticator
+ *            attached with auto-presence enabled).
  *
  * For TOTP, the code is generated for the *next* period boundary to avoid
  * server-side expiry races when the test submits near a 30-second tick.
@@ -31,6 +68,7 @@ export type TwoFactor =
 export async function submitTwoFactor(test: Test, page: Page, twoFactor: TwoFactor): Promise<void> {
     await test.step(`Submit 2FA (${twoFactor.kind})`, async () => {
         await expect(page.getByRole('heading', { name: 'Verify your Identity' })).toBeVisible();
+        await ensure2FAProvider(page, twoFactor.kind);
         switch (twoFactor.kind) {
             case 'totp': {
                 const { totp } = twoFactor;
@@ -47,8 +85,9 @@ export async function submitTwoFactor(test: Test, page: Page, twoFactor: TwoFact
                 break;
             }
             case 'fido2':
-                throw new Error('Not Implemented');
+                break;
         }
+        await expect(page).toHaveURL(/\/(vault|setup-extension)/, { timeout: 30_000 });
     });
 }
 
