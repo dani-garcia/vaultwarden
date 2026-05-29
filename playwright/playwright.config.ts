@@ -146,6 +146,27 @@ export default defineConfig({
         },
 
         {
+            // Chromium project for the UI flows at the bottom of
+            // `passkey.spec.ts` — one passkey behaviour per test against
+            // a fresh user. Same Chromium + en-locale requirements as
+            // `account-lifecycle`. `grep` filters out the request-level
+            // suites at the top of the file (those run under the four
+            // multi-DB Firefox projects).
+            name: 'passkey-ui',
+            testMatch: 'tests/passkey.spec.ts',
+            grep: /Passkey UI flows/,
+            use: {
+                browserName: 'chromium',
+                locale: 'en',
+                launchOptions: {
+                    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+                        ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+                        : {}),
+                },
+            },
+        },
+
+        {
             name: 'sso-mariadb',
             testMatch: 'tests/sso_*.spec.ts',
             dependencies: ['sso-setup', 'mariadb-setup'],

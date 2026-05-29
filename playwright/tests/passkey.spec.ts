@@ -2,17 +2,37 @@ import { test, expect, type TestInfo } from '@playwright/test';
 
 import * as utils from '../global-utils';
 import { createAccount } from './setups/user';
+import {
+    addVirtualAuthenticator,
+    clickLoginWithPasskey,
+    enrollLoginPasskey,
+    expectLockScreenButtons,
+    lockVault,
+    removeLoginPasskey,
+    removeVirtualAuthenticator,
+    resetVirtualAuthenticators,
+    unlockWithPasskey,
+} from './setups/account_lifecycle_helpers';
 
 let users = utils.loadEnv();
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN!;
 
+const useExternalVault = process.env.PW_USE_EXTERNAL_VAULT === '1';
+
 test.beforeAll('Setup', async ({ browser }, testInfo: TestInfo) => {
+    if (useExternalVault) return;
     await utils.startVault(browser, testInfo, {});
 });
 
 test.afterAll('Teardown', async () => {
+    if (useExternalVault) return;
     utils.stopVault();
 });
+
+// CDP sessions are bound to a specific Page; Playwright recycles the page
+// between tests, so drop the cached session/authenticator IDs each time
+// (no-op for the request-only suites below; only the UI flows touch CDP).
+test.beforeEach(() => resetVirtualAuthenticators());
 
 // ---------------------------------------------------------------------------
 // Unauthenticated API surface — `GET /identity/accounts/webauthn/assertion-options`
@@ -415,6 +435,90 @@ test.describe('Passkey grant is rejected when SSO_ONLY is on', () => {
         const body: any = await res.json();
         expect(body?.message ?? '').toMatch(/SSO sign-in is required/i);
     });
+
+    test('GET assertion-options (login challenge) denied with an SSO-mentioning message', async ({ request }) => {
+        // The unauthenticated entry point for "Log in with passkey" — the
+        // SPA fetches this BEFORE invoking the WebAuthn ceremony, so the
+        // server-side gate here is what prevents an attacker from
+        // attempting passkey login even with a credential a victim has
+        // previously enrolled. Mirrors `src/api/identity.rs` line 1250.
+        const res = await request.get('/identity/accounts/webauthn/assertion-options');
+        expect(res.status()).toBeGreaterThanOrEqual(400);
+        const body: any = await res.json();
+        expect(body?.message ?? '').toMatch(/SSO sign-in is required/i);
+    });
+});
+
+test.describe('Passkey enrolment is rejected when SSO_ONLY is on', () => {
+    // Defends the deny-by-default gate on the management-side endpoints
+    // (`src/api/core/mod.rs` lines 308, 390, 459, 516 — guarded by
+    // `sso_enabled() && sso_only() && !sso_only_allow_passkey_unlock()`).
+    //
+    // The enrol endpoints are authenticated, so we need a Bearer token
+    // to reach the gate; under `SSO_ONLY=true` fresh logins must go
+    // through the IdP, and the test setup has no Keycloak to satisfy it.
+    // Restarting the vault container with `SSO_ONLY=true` would wipe the
+    // tmpfs-backed sqlite DB (env-change forces docker to recreate the
+    // container), losing both the user and the RSA signing key that the
+    // pre-issued token was signed against. Instead we provision the
+    // account under default config, sniff its Bearer header from a
+    // post-login /api/sync, then toggle `sso_enabled`/`sso_only` at
+    // runtime via `POST /admin/config` — no container restart, the user
+    // + RSA key + access token all stay valid until the 10-min token
+    // expiry.
+    let savedToken: string | undefined;
+    const enrolUser = {
+        email: `e2e-sso-only-enrol-${Date.now()}@example.com`,
+        name: 'SSO_ONLY Enrol',
+        password: 'Master Password',
+    };
+
+    test.beforeAll('Provision user, sniff bearer, flip SSO_ONLY via /admin/config', async ({ browser, request }) => {
+        const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+        const page = await ctx.newPage();
+        const tokens: string[] = [];
+        page.on('request', req => {
+            const auth = req.headers()['authorization'];
+            if (auth?.startsWith('Bearer ')) tokens.push(auth.slice('Bearer '.length));
+        });
+        await createAccount(test, page, enrolUser);
+        await expect.poll(() => tokens.length, { timeout: 10_000 }).toBeGreaterThan(0);
+        savedToken = tokens[tokens.length - 1];
+        await ctx.close();
+
+        await adminLogin(request);
+        const r = await request.post('/admin/config', {
+            data: {
+                sso_enabled: true,
+                sso_only: true,
+                sso_authority: 'http://127.0.0.1:65535/realms/test',
+                sso_client_id: 'test',
+                sso_client_secret: 'test',
+            },
+        });
+        expect(r.status(), 'admin /config toggle must succeed').toBeLessThan(400);
+    });
+
+    test.afterAll('Toggle SSO back off', async ({ request }) => {
+        await adminLogin(request);
+        await request.post('/admin/config', {
+            data: { sso_enabled: false, sso_only: false },
+            failOnStatusCode: false,
+        });
+    });
+
+    test('POST /api/webauthn/attestation-options denied with an SSO-mentioning message', async ({ request }) => {
+        expect(savedToken, 'beforeAll must have sniffed a Bearer token').toBeTruthy();
+        // The SSO_ONLY gate fires before `data.validate(...)` (which
+        // checks the master-password hash), so a dummy payload is fine.
+        const res = await request.post('/api/webauthn/attestation-options', {
+            headers: { Authorization: `Bearer ${savedToken}`, 'Content-Type': 'application/json' },
+            data: { masterPasswordHash: 'gate-fires-before-this-is-validated' },
+        });
+        const text = await res.text();
+        expect(res.status()).toBeGreaterThanOrEqual(400);
+        expect(text).toMatch(/SSO sign-in is required/i);
+    });
 });
 
 test.describe('Passkey login rejects forged unverified-email handles with the generic AUTH_FAILED', () => {
@@ -551,5 +655,131 @@ test.describe('UserDecryption response shapes match upstream Bitwarden', () => {
         const config: any = await res.json();
         expect(config.featureStates, 'featureStates must be an object').toBeTruthy();
         expect(config.featureStates['pm-2035-passkey-unlock']).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// UI flows — Chromium-only, one passkey behaviour per test against a fresh
+// user. Smaller-scope companions to `account_lifecycle.spec.ts`'s 23-step
+// lifecycle: a regression in (say) "Unlock with passkey" takes out only the
+// one relevant test rather than the whole sequence.
+// ---------------------------------------------------------------------------
+
+const MP = 'Master Password';
+
+/** Per-test user. Synthesised fresh so tests don't share state. */
+function freshUser(slug: string) {
+    return {
+        email: `e2e-passkey-${slug}-${Date.now()}@example.com`,
+        name: `Passkey UI ${slug}`,
+        password: MP,
+    };
+}
+
+test.describe('Passkey UI flows', () => {
+    // CDP virtual authenticator + `hmac-secret` PRF extension are
+    // Chromium-only. The request-level suites above are browser-agnostic
+    // and run under every project; these UI flows skip elsewhere.
+    test.skip(
+        ({ browserName }) => browserName !== 'chromium',
+        'requires Chromium CDP virtual authenticator with hmac-secret/PRF',
+    );
+
+    test('Enrol PRF passkey → log out → log in with passkey lands in /vault', async ({ page }) => {
+        await addVirtualAuthenticator(page);
+        const user = freshUser('login');
+
+        await createAccount(test, page, user);
+        await enrollLoginPasskey(page, user.password, 'login-key', { useForEncryption: true });
+
+        await utils.logout(test, page, user);
+        await clickLoginWithPasskey(page);
+
+        // The webauthn grant returns the wrapped user key, the SPA unwraps via
+        // PRF inline, and the user lands directly in /vault — no 2FA challenge
+        // (none enrolled), no lock-screen detour.
+        await expect(page).toHaveURL(/\/(vault|setup-extension)/, { timeout: 30_000 });
+        expect(page.url(), 'passkey-grant login must not visit /#/2fa').not.toMatch(/\/2fa/);
+    });
+
+    test('Enrol PRF passkey → lock vault → unlock with passkey lands in /vault', async ({ page }) => {
+        await addVirtualAuthenticator(page);
+        const user = freshUser('unlock');
+
+        await createAccount(test, page, user);
+        await enrollLoginPasskey(page, user.password, 'unlock-key', { useForEncryption: true });
+
+        // The bundled web vault caches `userDecryption.webAuthnPrfOptions`
+        // from the initial /api/sync and does NOT auto-refresh after a
+        // credential mutation, so a lock-screen check immediately after
+        // enrolment would see the credential-free cache and miss the
+        // newly-enrolled passkey-unlock affordance. Log out + log back
+        // in with the passkey to force a fresh post-login sync —
+        // mirrors the lifecycle spec's pattern around steps 4/19.
+        await utils.logout(test, page, user);
+        await clickLoginWithPasskey(page);
+        await expect(page).toHaveURL(/\/(vault|setup-extension)/, { timeout: 30_000 });
+
+        await lockVault(page, user.name);
+        // Lock screen surfaces BOTH the MP unlock AND the passkey-unlock
+        // affordance once a PRF credential is enrolled.
+        await expectLockScreenButtons(page, true);
+
+        await unlockWithPasskey(page);
+        await expect(page).toHaveURL(/\/(vault|setup-extension)/, { timeout: 30_000 });
+    });
+
+    test('Non-PRF passkey: login affordance present, unlock affordance absent', async ({ page }) => {
+        await addVirtualAuthenticator(page);
+        const user = freshUser('noprf');
+
+        await createAccount(test, page, user);
+        // `useForEncryption: false` enrols the credential without the
+        // PRF-wrapped user-key blobs; /api/sync's `webAuthnPrfOptions` stays
+        // empty (already pinned by `account_lifecycle.spec.ts`'s wire-shape
+        // probe), so the lock-screen "Unlock with passkey" button must stay
+        // hidden even though the credential is registered.
+        await enrollLoginPasskey(page, user.password, 'noprf-key', { useForEncryption: false });
+
+        await lockVault(page, user.name);
+        await expectLockScreenButtons(page, false);
+    });
+
+    test('Two PRF passkeys, remove first, second still unlocks', async ({ page }) => {
+        const first = 'multi-key-1';
+        const second = 'multi-key-2';
+        await addVirtualAuthenticator(page);
+        const user = freshUser('multi');
+
+        await createAccount(test, page, user);
+        await enrollLoginPasskey(page, user.password, first, { useForEncryption: true });
+
+        // Second enrolment requires a second authenticator: the server passes
+        // the existing cred in `excludeCredentials`, and a single authenticator
+        // refuses `credentials.create()` for a user it already holds a cred for.
+        await addVirtualAuthenticator(page);
+        await enrollLoginPasskey(page, user.password, second, { useForEncryption: true });
+
+        // Remove the first passkey — MP fresh from the second enrolment.
+        await removeLoginPasskey(page, user.password, first);
+
+        // Detach the first authenticator: it still holds the now-removed
+        // `multi-key-1` resident credential, and with an empty allow-list a
+        // discoverable `credentials.get()` could non-deterministically answer
+        // with it (→ server AUTH_FAILED). Removing it leaves `multi-key-2` as
+        // the only credential that can satisfy the login.
+        await removeVirtualAuthenticator(0);
+
+        // Log out + log back in (with the remaining passkey) to force a
+        // fresh post-login sync — see the unlock test above for context.
+        await utils.logout(test, page, user);
+        await clickLoginWithPasskey(page);
+        await expect(page).toHaveURL(/\/(vault|setup-extension)/, { timeout: 30_000 });
+
+        // Second credential still wraps the user key, so unlock still works.
+        await lockVault(page, user.name);
+        await expectLockScreenButtons(page, true);
+        await unlockWithPasskey(page);
+        await expect(page).toHaveURL(/\/(vault|setup-extension)/, { timeout: 30_000 });
     });
 });

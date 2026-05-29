@@ -167,6 +167,7 @@ function dbConfig(testInfo: TestInfo){
         case "sso-sqlite":
         case "account-lifecycle":
         case "account-lifecycle-sso":
+        case "passkey-ui":
             return { I_REALLY_WANT_VOLATILE_STORAGE: true };
         default:
             throw new Error(`Unknow database name: ${testInfo.project.name}`);
@@ -195,6 +196,7 @@ export async function startVault(browser: Browser, testInfo: TestInfo, env = {},
             case "sso-sqlite":
             case "account-lifecycle":
             case "account-lifecycle-sso":
+            case "passkey-ui":
                 wipeSqlite();
                 break;
             default:
