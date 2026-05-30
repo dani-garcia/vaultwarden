@@ -5760,7 +5760,7 @@ checksum = "7ba6f5989077681266825251a52748b8c1d8a4ad098cc37e440103d0ea717fc0"
 
 [[package]]
 name = "vaultwarden"
-version = "1.0.0"
+version = "1.35.4"
 dependencies = [
  "argon2",
  "aws-config",
