@@ -20,6 +20,10 @@ if not 2 <= len(sys.argv) <= 3:
 OUTPUT_FILE = sys.argv[1]
 GIT_REF = 'main' if len(sys.argv) == 2 else sys.argv[2]
 
+if not re.match(r'^[a-zA-Z0-9._/-]+$', GIT_REF):
+    print(f"Error: Invalid GIT_REF value: {GIT_REF!r}")
+    sys.exit(1)
+
 BASE_URL = f'https://github.com/bitwarden/server/raw/{GIT_REF}'
 ENUMS_URL = f'{BASE_URL}/src/Core/Enums/GlobalEquivalentDomainsType.cs'
 DOMAIN_LISTS_URL = f'{BASE_URL}/src/Core/Utilities/StaticStore.cs'
