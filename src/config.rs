@@ -1517,6 +1517,17 @@ impl Config {
         }
     }
 
+    /// Tests whether SSO signup is allowed for an email address, taking into
+    /// account the sso_signups_allowed and signups_domains_whitelist settings.
+    pub fn is_sso_signup_allowed(&self, email: &str) -> bool {
+        if self.signups_domains_whitelist().is_empty() {
+            self.sso_signups_allowed()
+        } else {
+            // The whitelist setting overrides the signups_allowed setting.
+            self.is_email_domain_allowed(email)
+        }
+    }
+
     // The registration link should be hidden if
     //  - Signup is not allowed and email whitelist is empty unless mail is disabled and invitations are allowed
     //  - The SSO is activated and password login is disabled.

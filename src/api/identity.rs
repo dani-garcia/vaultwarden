@@ -285,7 +285,7 @@ async fn sso_login(
     // Will trigger 2FA flow if needed
     let (user, mut device, twofactor_token, sso_user) = match user_with_sso {
         None => {
-            if !CONFIG.sso_signups_allowed() {
+            if !CONFIG.is_sso_signup_allowed(&user_infos.email) {
                 if CONFIG.signups_domains_whitelist().is_empty() {
                     err!(
                         "Signups are disabled. You will need an invitation",
@@ -293,14 +293,13 @@ async fn sso_login(
                             event: EventType::UserFailedLogIn
                         }
                     );
-                } else if !CONFIG.is_email_domain_allowed(&user_infos.email) {
-                    err!(
-                        "Email domain not allowed",
-                        ErrorEvent {
-                            event: EventType::UserFailedLogIn
-                        }
-                    );
                 }
+                err!(
+                    "Email domain not allowed",
+                    ErrorEvent {
+                        event: EventType::UserFailedLogIn
+                    }
+                );
             }
 
             match user_infos.email_verified {
