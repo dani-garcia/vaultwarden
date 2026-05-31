@@ -19,7 +19,7 @@ use crate::{
             organizations, users, users_collections, users_organizations,
         },
     },
-    error::MapResult,
+    error::{Error, MapResult},
 };
 use macros::UuidFromParam;
 
@@ -1033,19 +1033,29 @@ impl Membership {
     }
 
     pub async fn find_by_user_and_policy(user_uuid: &UserId, policy_type: OrgPolicyType, conn: &DbConn) -> Vec<Self> {
+        Self::try_find_by_user_and_policy(user_uuid, policy_type, conn).await.unwrap_or_default()
+    }
+
+    pub async fn try_find_by_user_and_policy(
+        user_uuid: &UserId,
+        policy_type: OrgPolicyType,
+        conn: &DbConn,
+    ) -> Result<Vec<Self>, Error> {
+        let user_uuid = user_uuid.clone();
+        let policy_type = policy_type as i32;
         conn.run(move |conn| {
             users_organizations::table
                 .inner_join(
                     org_policies::table.on(org_policies::org_uuid
                         .eq(users_organizations::org_uuid)
-                        .and(users_organizations::user_uuid.eq(user_uuid))
-                        .and(org_policies::atype.eq(policy_type as i32))
+                        .and(users_organizations::user_uuid.eq(&user_uuid))
+                        .and(org_policies::atype.eq(policy_type))
                         .and(org_policies::enabled.eq(true))),
                 )
                 .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .select(users_organizations::all_columns)
                 .load::<Self>(conn)
-                .unwrap_or_default()
+                .map_res("Error loading organization users by policy")
         })
         .await
     }

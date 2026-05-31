@@ -180,15 +180,42 @@ pub async fn enforce_2fa_policy(
     ip: &std::net::IpAddr,
     conn: &DbConn,
 ) -> EmptyResult {
-    for member in Membership::find_by_user_and_policy(&user.uuid, OrgPolicyType::TwoFactorAuthentication, conn).await {
+    for member in
+        Membership::try_find_by_user_and_policy(&user.uuid, OrgPolicyType::TwoFactorAuthentication, conn).await?
+    {
         // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
         if member.atype < MembershipType::Admin {
             if CONFIG.mail_enabled() {
-                let org = Organization::find_by_uuid(&member.org_uuid, conn).await.unwrap();
-                mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
+                // Best-effort notification: the revoke below is the
+                // load-bearing action and must still fire when mail is
+                // unavailable. This function is reachable from unauthenticated
+                // grants where a propagated SMTP error would (a) leave the
+                // user half-enforced (earlier loop iterations revoked +
+                // emailed, later iterations skipped) and (b) leak SMTP
+                // timing/shape upstream of the grant's generic auth-failure
+                // wrap. Log and continue; the OrganizationUserRevoked audit
+                // entries cover recovery for any missed notifications.
+                match Organization::find_by_uuid(&member.org_uuid, conn).await {
+                    Some(org) => {
+                        if let Err(e) = mail::send_2fa_removed_from_org(&user.email, &org.name).await {
+                            warn!(
+                                "enforce_2fa_policy: send_2fa_removed_from_org failed for {} / org {}: {e:#?}; revoke still applied",
+                                user.uuid, member.org_uuid
+                            );
+                        }
+                    }
+                    None => warn!(
+                        "enforce_2fa_policy: org {} disappeared mid-flight; skipping notification",
+                        member.org_uuid
+                    ),
+                }
             }
             let mut member = member;
             member.revoke();
+            // The revoke is the security boundary; unlike notification mail,
+            // it must fail closed. Propagating the error lets callers refuse
+            // the login / policy change instead of reporting success while
+            // the member remains active in a Require-2FA organization.
             member.save(conn).await?;
 
             log_event(
