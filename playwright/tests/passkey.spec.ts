@@ -895,4 +895,96 @@ test.describe('Passkey UI flows', () => {
         await unlockWithPasskey(page);
         await expect(page).toHaveURL(/\/(vault|setup-extension)/, { timeout: 30_000 });
     });
+
+    test('Deleted passkey is refused at login', async ({ page }) => {
+        // Pins the security property that a credential removed server-side can
+        // no longer authenticate. The CDP authenticator keeps its resident key
+        // after the server-side delete, so it still presents a cryptographically
+        // valid assertion — the "remove first, second still unlocks" test above
+        // DETACHES it for determinism; here we deliberately leave it attached so
+        // the deleted credential DOES answer the discoverable `get()`, and assert
+        // the grant refuses it because the credential row is gone (lookup misses
+        // → 4xx, no token).
+        await addVirtualAuthenticator(page);
+        const user = freshUser('deleted-cred');
+
+        await createAccount(test, page, user);
+        await enrollLoginPasskey(page, user.password, 'deleted-key', { useForEncryption: true });
+
+        // Remove the only passkey server-side; the authenticator's resident
+        // credential is intentionally left in place so it still answers below.
+        await removeLoginPasskey(page, user.password, 'deleted-key');
+        await utils.logout(test, page, user);
+
+        // The authenticator presents a valid assertion for the now-deleted
+        // credential; the grant must come back 4xx with no token. Response is
+        // the oracle, robust against web-vault UI wording.
+        const tokenResponse = page.waitForResponse(
+            (r) => r.url().includes('/identity/connect/token') && r.request().method() === 'POST',
+            { timeout: 30_000 },
+        );
+        await clickLoginWithPasskey(page);
+
+        const res = await tokenResponse;
+        expect(res.status(), 'deleted-credential passkey grant must be rejected').toBeGreaterThanOrEqual(400);
+        const body: any = await res.json();
+        expect(body.access_token, 'deleted credential must not receive an access token').toBeUndefined();
+    });
+
+    test('Disabled account cannot complete a real passkey login', async ({ page, request }) => {
+        // Complements the request-level forged-handle test above. That one
+        // drives the PRE-verification path: a bogus assertion fails at
+        // `identify_discoverable_authentication` before any account-state
+        // check runs. This test drives a CRYPTOGRAPHICALLY VALID assertion
+        // from an enrolled credential all the way through signature
+        // verification and into the POST-verification `if !user.enabled`
+        // gate in `webauthn_login` (src/api/identity.rs), which must still
+        // reject the disabled account with the generic AUTH_FAILED (4xx).
+        // The unverified-email gate immediately below it shares this branch.
+        await addVirtualAuthenticator(page);
+        const user = freshUser('disabled');
+
+        await createAccount(test, page, user);
+        await enrollLoginPasskey(page, user.password, 'disabled-key', { useForEncryption: true });
+        await utils.logout(test, page, user);
+
+        // Disable the account while the real discoverable credential remains
+        // enrolled, so the assertion verifies but the account-state gate fires.
+        await adminLogin(request);
+        const adminUser = await adminGetUserByEmail(request, user.email);
+        const disableRes = await request.post(`/admin/users/${adminUser.id}/disable`, {
+            headers: { 'Content-Type': 'application/json' },
+            failOnStatusCode: false,
+        });
+        expect(disableRes.status()).toBe(200);
+
+        try {
+            // The connector iframe POSTs the verified assertion to the
+            // webauthn grant; for a disabled user it must come back 4xx,
+            // never a token. Asserting on the response (rather than a toast
+            // string) keeps the check robust against web-vault UI wording.
+            const tokenResponse = page.waitForResponse(
+                (r) => r.url().includes('/identity/connect/token') && r.request().method() === 'POST',
+                { timeout: 30_000 },
+            );
+            await clickLoginWithPasskey(page);
+
+            // A verified assertion for a disabled account must be rejected by
+            // the grant (4xx) with no token issued. Asserting on the response
+            // (rather than a toast string or post-failure page layout) keeps
+            // the check robust against web-vault UI wording; with no token the
+            // SPA has nothing to unlock with, so the response is the oracle.
+            const res = await tokenResponse;
+            expect(res.status(), 'disabled-account passkey grant must be rejected').toBeGreaterThanOrEqual(400);
+            const body: any = await res.json();
+            expect(body.access_token, 'disabled account must not receive an access token').toBeUndefined();
+        } finally {
+            // Re-enable so the shared default-config vault instance is left
+            // clean for any subsequent test in this describe.
+            await request.post(`/admin/users/${adminUser.id}/enable`, {
+                headers: { 'Content-Type': 'application/json' },
+                failOnStatusCode: false,
+            });
+        }
+    });
 });

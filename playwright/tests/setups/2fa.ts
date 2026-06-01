@@ -12,7 +12,9 @@ import { openAvatarMenu, submitMasterPasswordVerification } from './user';
  *   - `mail2fa`  — email OTP; the helper retrieves the code from `mailBuffer`
  *   - `fido2`    — WebAuthn-as-2FA (the bundled web vault labels this
  *                  provider "FIDO2 WebAuthn" in en_GB / "Passkey" in en).
- *                  Currently unimplemented; `submitTwoFactor` throws.
+ *                  The connector iframe auto-fires WebAuthn on mount, so
+ *                  `submitTwoFactor` just waits for the resulting navigation
+ *                  (the caller must have a virtual authenticator attached).
  */
 export type TwoFactor =
     | { kind: 'totp', totp: OTPAuth.TOTP }
@@ -28,12 +30,29 @@ const PICKER_LABEL: Record<TwoFactor['kind'], RegExp> = {
     fido2: /Passkey|FIDO2/i,
 };
 
+/** URL pattern the SPA lands on after a successful 2FA — vault, lock
+ *  screen (PRF unlock required), or the install-extension nudge. Used to
+ *  short-circuit `ensure2FAProvider` when the webauthn-connector iframe
+ *  auto-fires and navigates before we get a chance to probe its DOM. */
+const POST_TWO_FACTOR_URL = /#\/(vault|setup-extension|lock)\b/;
+
 /** If the page isn't already showing the input for the requested 2FA
  *  kind (i.e. some other provider is the default), click "Select another
  *  method" → the target provider row. No-op when the requested kind's
  *  input is already visible (single-provider case, or it was already the
- *  default). */
+ *  default), or when the FIDO2 auto-fire has already completed and the
+ *  page has navigated past `/#/2fa`. */
 async function ensure2FAProvider(page: Page, kind: TwoFactor['kind']) {
+    // Auto-fire short-circuit: the webauthn-connector iframe runs the
+    // WebAuthn ceremony as soon as it mounts, and a virtual authenticator
+    // with auto-presence finishes it in milliseconds. By the time this
+    // helper runs the page may already have left `/#/2fa`, so waiting for
+    // the iframe or the picker would time out on UI that's no longer in
+    // the DOM. Bail before probing.
+    if (POST_TWO_FACTOR_URL.test(page.url())) {
+        return;
+    }
+
     const probe = kind === 'fido2'
         ? page.locator('iframe[src*="webauthn-connector"]')
         : page.getByLabel(/Verification code/);
@@ -44,9 +63,19 @@ async function ensure2FAProvider(page: Page, kind: TwoFactor['kind']) {
     // `/#/2fa` mount happens after a navigation chain) and a too-short
     // probe would race into the switcher path, which can collide with
     // the connector's auto-fire when the default is already FIDO2.
-    if (await probe.first().isVisible({ timeout: 5_000 }).catch(() => false)) {
+    //
+    // For FIDO2 specifically, the auto-fire can also complete *during*
+    // the mount-grace window — racing the probe against the post-2FA
+    // navigation catches both "iframe mounted" and "ceremony already
+    // finished" outcomes.
+    const visible = probe.first().waitFor({ state: 'visible', timeout: 5_000 })
+        .then(() => true).catch(() => false);
+    const complete = page.waitForURL(POST_TWO_FACTOR_URL, { timeout: 5_000 })
+        .then(() => true).catch(() => false);
+    if (await Promise.race([visible, complete])) {
         return;
     }
+
     const switcherText = /Select another method|Need a different method/i;
     const switcher = page
         .getByRole('button', { name: switcherText })
