@@ -1089,9 +1089,13 @@ async fn send_invite(
                     err!(format!("User already in organization: {email}"))
                 }
 
-                // automatically accept existing users if mail is disabled
-                if !CONFIG.mail_enabled() && !user.password_hash.is_empty() {
-                    member_status = MembershipStatus::Accepted as i32;
+                if !CONFIG.mail_enabled() {
+                    if user.password_hash.is_empty() {
+                        Invitation::new(email).save(&conn).await?;
+                    } else {
+                        // automatically accept existing users if mail is disabled
+                        member_status = MembershipStatus::Accepted as i32;
+                    }
                 }
                 user
             }
@@ -1713,6 +1717,15 @@ async fn delete_member_impl(
 
     if let Some(user) = User::find_by_uuid(&member_to_delete.user_uuid, conn).await {
         nt.send_user_update(UpdateType::SyncOrgKeys, &user, headers.device.push_uuid.as_ref(), conn).await;
+
+        if !CONFIG.mail_enabled()
+            && !Membership::find_invited_by_user(&user.uuid, conn)
+                .await
+                .into_iter()
+                .any(|m| m.uuid != member_to_delete.uuid)
+        {
+            Invitation::take(&user.email, conn).await;
+        }
     }
 
     member_to_delete.delete(conn).await
