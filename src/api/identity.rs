@@ -62,6 +62,18 @@ pub fn routes() -> Vec<Route> {
     ]
 }
 
+/// Deny-by-default SSO gate (mirrors Bitwarden's `SsoRequestValidator`):
+/// non-exempt grants are rejected under `SSO_ONLY`.
+fn check_sso_only(grant_type: &str) -> EmptyResult {
+    if !CONFIG.sso_enabled() || !CONFIG.sso_only() {
+        return Ok(());
+    }
+    match grant_type {
+        "authorization_code" | "client_credentials" | "refresh_token" => Ok(()),
+        _ => err!("SSO sign-in is required"),
+    }
+}
+
 #[post("/connect/token", data = "<data>")]
 async fn login(
     data: Form<ConnectData>,
@@ -71,6 +83,8 @@ async fn login(
 ) -> JsonResult {
     let data: ConnectData = data.into_inner();
 
+    check_sso_only(data.grant_type.as_ref())?;
+
     let mut user_id: Option<UserId> = None;
 
     let login_result = match data.grant_type.as_ref() {
@@ -78,7 +92,6 @@ async fn login(
             check_is_some(data.refresh_token.as_ref(), "refresh_token cannot be blank")?;
             refresh_login(data, &conn, &client_header.ip).await
         }
-        "password" | "webauthn" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
         "password" => {
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
             check_is_some(data.password.as_ref(), "password cannot be blank")?;
