@@ -2,7 +2,8 @@ import { test, expect, type TestInfo } from '@playwright/test';
 
 import * as utils from '../global-utils';
 import { createAccount } from './setups/user';
-import { resetTotpTimeStep } from './setups/2fa';
+import { activateEmail, resetTotpTimeStep } from './setups/2fa';
+import { MailDev } from 'maildev';
 import {
     addVirtualAuthenticator,
     clickLoginWithPasskey,
@@ -985,6 +986,111 @@ test.describe('Passkey UI flows', () => {
                 headers: { 'Content-Type': 'application/json' },
                 failOnStatusCode: false,
             });
+        }
+    });
+});
+
+test.describe('Passkey UI flows: webauthn grant gates on runtime 2FA-usability', () => {
+    // Pins the gate in `webauthn_login` (src/api/identity.rs) that rejects
+    // the passkey grant when the user has policy-relevant 2FA enrolled but no
+    // currently-usable provider — e.g. Email 2FA enrolled, then the operator
+    // clears SMTP via `/admin/config`. Without this gate a passkey holder would
+    // silently bypass the second factor the user configured. A comment in that
+    // function documents the fingerprinting defense; this test pins the
+    // behaviour against silent regression.
+    test.skip(
+        ({ browserName }) => browserName !== 'chromium',
+        'requires Chromium CDP virtual authenticator with hmac-secret/PRF',
+    );
+
+    let mailserver: any;
+
+    test.beforeAll('Start maildev + enable SMTP via /admin/config', async ({ request }) => {
+        test.skip(useExternalVault, 'mutating SMTP config via /admin would touch the externally-running vault');
+        mailserver = new MailDev({
+            port: Number(process.env.MAILDEV_SMTP_PORT),
+            web: { port: Number(process.env.MAILDEV_HTTP_PORT) },
+        });
+        await mailserver.listen();
+        await adminLogin(request);
+        const r = await request.post('/admin/config', {
+            data: {
+                _enable_smtp: true,
+                smtp_host: process.env.MAILDEV_HOST,
+                smtp_port: Number(process.env.MAILDEV_SMTP_PORT),
+                smtp_security: 'off',
+                smtp_from: process.env.PW_SMTP_FROM,
+                smtp_from_name: 'Vaultwarden',
+            },
+            failOnStatusCode: false,
+        });
+        expect(r.status()).toBe(200);
+    });
+
+    test.afterAll('Restore SMTP-off + stop maildev', async ({ request, browserName }) => {
+        // Mirror the describe-level skip: under the non-chromium DB projects the
+        // tests (and beforeAll) are skipped, but afterAll still runs — so guard
+        // it the same way to avoid pointless /admin/config writes there.
+        if (browserName !== 'chromium') return;
+        if (useExternalVault) return;
+        await adminLogin(request).catch(() => {});
+        // The shared default vault posture is `_enable_smtp=true` (config
+        // default) with no smtp_host/smtp_from env vars set. Restore to that
+        // by clearing the runtime overrides and bouncing _enable_smtp off
+        // and back on — the second POST is the validator-safe path since
+        // smtp_host=None && smtp_from='' satisfies the `is_some() == is_empty()`
+        // equality check in src/config.rs (false == true → ok).
+        await request.post('/admin/config', {
+            data: { _enable_smtp: false, smtp_host: '', smtp_from: '', smtp_from_name: '' },
+            failOnStatusCode: false,
+        });
+        await request.post('/admin/config', {
+            data: { _enable_smtp: true },
+            failOnStatusCode: false,
+        });
+        if (mailserver) await mailserver.close();
+    });
+
+    test('Email 2FA enrolled then runtime-disabled blocks passkey-grant login', async ({ page, request }) => {
+        await addVirtualAuthenticator(page);
+        const user = freshUser('twofa-runtime');
+        const mailBuffer = mailserver.buffer(user.email);
+
+        try {
+            await createAccount(test, page, user);
+            await enrollLoginPasskey(page, user.password, 'twofa-key', { useForEncryption: true });
+            await activateEmail(test, page, user, mailBuffer);
+            await utils.logout(test, page, user);
+
+            // Disable Email 2FA at runtime by flipping `_enable_smtp=false`.
+            // `_enable_email_2fa` is auto-derived from
+            // `_enable_smtp && (smtp_host || use_sendmail)` (src/config.rs),
+            // so this flips `is_twofactor_provider_usable(Email)` to false at
+            // the next handler invocation. The Email 2FA row stays in the DB
+            // (still policy-relevant), but no longer usable — exactly the
+            // state the gate is supposed to refuse. POSTing only
+            // `_enable_smtp: false` (rather than blanking smtp_host/smtp_from)
+            // bypasses the validator block in src/config.rs entirely;
+            // a POST that clears smtp_host while smtp_from is still set would
+            // trip the `is_some() == is_empty()` check there.
+            await adminLogin(request);
+            const flip = await request.post('/admin/config', {
+                data: { _enable_smtp: false },
+                failOnStatusCode: false,
+            });
+            expect(flip.status()).toBe(200);
+
+            const tokenResponse = page.waitForResponse(
+                (r) => r.url().includes('/identity/connect/token') && r.request().method() === 'POST',
+                { timeout: 30_000 },
+            );
+            await clickLoginWithPasskey(page);
+            const res = await tokenResponse;
+            expect(res.status(), 'runtime-2FA-unusable passkey grant must be rejected').toBeGreaterThanOrEqual(400);
+            const body: any = await res.json();
+            expect(body.access_token, 'must not receive an access token').toBeUndefined();
+        } finally {
+            mailBuffer.close();
         }
     });
 });
