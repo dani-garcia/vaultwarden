@@ -257,22 +257,28 @@ struct WebAuthnPasskeyAssertionChallenge {
 }
 
 fn passkey_registration_challenge_state(data: &str, token: Option<&str>) -> ApiResult<PasskeyRegistration> {
-    if let Ok(saved) = serde_json::from_str::<WebAuthnPasskeyRegistrationChallenge>(data) {
-        if token != Some(saved.token.as_str()) {
-            err!("Invalid registration challenge. Please try again.")
-        }
-        Ok(saved.state)
-    } else {
-        if token.is_some() {
-            err!("Invalid registration challenge. Please try again.")
-        }
-        Ok(serde_json::from_str::<PasskeyRegistration>(data)?)
+    // Persisted challenge rows are always the `{token, state}` wrapper —
+    // nothing in the current code path writes the bare `PasskeyRegistration`
+    // shape. Reject a row that doesn't deserialise (corrupted, stale schema)
+    // with the same generic message we use for token mismatch, rather than
+    // falling through to an un-tokened legacy path.
+    let Ok(saved) = serde_json::from_str::<WebAuthnPasskeyRegistrationChallenge>(data) else {
+        err!("Invalid registration challenge. Please try again.")
+    };
+    if !token.is_some_and(|t| crypto::ct_eq(t, &saved.token)) {
+        err!("Invalid registration challenge. Please try again.")
     }
+    Ok(saved.state)
 }
 
 fn passkey_assertion_challenge_state(data: &str, token: &str) -> ApiResult<PasskeyAuthentication> {
-    let saved: WebAuthnPasskeyAssertionChallenge = serde_json::from_str(data)?;
-    if token != saved.token.as_str() {
+    // Same shape contract as `passkey_registration_challenge_state` above —
+    // reject undecodable rows with the generic message rather than leaking
+    // the underlying serde error.
+    let Ok(saved) = serde_json::from_str::<WebAuthnPasskeyAssertionChallenge>(data) else {
+        err!("Invalid assertion challenge. Please try again.")
+    };
+    if !crypto::ct_eq(token, &saved.token) {
         err!("Invalid assertion challenge. Please try again.")
     }
     Ok(saved.state)
@@ -321,19 +327,25 @@ async fn post_api_webauthn_attestation_options(
     let (mut challenge, state) =
         WEBAUTHN.start_passkey_registration(user_uuid, &user.email, user.display_name(), Some(existing_cred_ids))?;
 
-    // For passkey login, we need discoverable credentials (resident keys)
-    // and require user verification.
-    // start_passkey_registration() defaults to require_resident_key=false, but passkey login
-    // requires the credential to be discoverable (resident) so the authenticator can find it
-    // without the server providing allowCredentials.
+    // Tell the client we want a discoverable (resident) credential with UV.
+    // `start_passkey_registration` already pins UV=Required in the stored
+    // `state`; resident-key is NOT enforced server-side by webauthn-rs's
+    // `register_credential` (the corresponding field on the state is
+    // destructured as unused), so this mutation is a client-side hint only:
+    // it controls the challenge JSON shipped to the browser, not what the
+    // server validates against. A non-resident credential that completes
+    // the ceremony would still be accepted but later fail discoverable-
+    // login, so honest clients comply and tampering clients shoot themselves.
     if let Some(asc) = challenge.public_key.authenticator_selection.as_mut() {
         asc.user_verification = UserVerificationPolicy::Required;
         asc.require_resident_key = true;
         asc.resident_key = Some(webauthn_rs_proto::ResidentKeyRequirement::Required);
     }
 
-    // Drop any abandoned challenge from a previous, unfinished registration attempt
-    // so these rows cannot accumulate in the database.
+    // Drop any abandoned challenge from a previous, unfinished registration
+    // attempt so these rows cannot accumulate. `TwoFactor::save` below uses
+    // `replace_into` keyed on `uuid` (not on `(user_uuid, atype)`), so without
+    // this delete, sqlite/mysql would insert a sibling row each retry.
     if let Some(tf) =
         TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::WebauthnPasskeyRegisterChallenge as i32, &conn)
             .await
@@ -572,6 +584,13 @@ async fn put_api_webauthn(
     Ok(Status::Ok)
 }
 
+// NOTE: unlike the four enrol/update entry points above, this delete handler
+// is intentionally NOT gated on `sso_enabled() && sso_only()`. SSO_ONLY restricts
+// what a user can ADD to their own account — deletion only narrows capability
+// (revoke a credential, never grants one), so leaving it accessible under
+// SSO_ONLY lets an SSO-authenticated user clean up credentials that were
+// enrolled when the policy was different. The session is still
+// SSO-authenticated by the time this handler runs, so there's no auth bypass.
 #[post("/webauthn/<uuid>/delete", data = "<data>")]
 async fn post_api_webauthn_delete(
     data: Json<PasswordOrOtpData>,
@@ -659,12 +678,20 @@ mod tests {
         assert!(passkey_registration_challenge_state(&data, None).is_err());
     }
 
+    /// `passkey_registration_challenge_state` has no legacy unwrapped fallback —
+    /// the only writer is the attestation-options endpoint, and it always
+    /// persists the `{token, state}` wrapper. A bare `PasskeyRegistration`
+    /// blob in `twofactor.data` (corrupted row, hand-crafted attack) must
+    /// be rejected regardless of whether a token is sent — accepting it
+    /// without a token would let an attacker bypass the token-binding
+    /// check by writing the wrong shape.
     #[test]
-    fn legacy_registration_challenge_rejects_finish_token() {
+    fn registration_challenge_rejects_unwrapped_legacy_state() {
         let data = serde_json::to_string(&registration_state()).unwrap();
 
-        assert!(passkey_registration_challenge_state(&data, None).is_ok());
-        assert!(passkey_registration_challenge_state(&data, Some("token")).is_err());
+        assert!(passkey_registration_challenge_state(&data, None).is_err());
+        assert!(passkey_registration_challenge_state(&data, Some("any-token")).is_err());
+        assert!(passkey_registration_challenge_state(&data, Some("")).is_err());
     }
 
     #[test]

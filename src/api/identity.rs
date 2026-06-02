@@ -1166,14 +1166,22 @@ fn passkey_credential_id(passkey: &Passkey) -> ApiResult<String> {
 }
 
 fn passkey_transports(passkey: &Passkey) -> Vec<String> {
-    serde_json::to_value(passkey)
-        .ok()
-        .and_then(|value| {
-            value
-                .pointer("/cred/transports")
-                .and_then(Value::as_array)
-                .map(|transports| transports.iter().filter_map(Value::as_str).map(str::to_owned).collect::<Vec<_>>())
-        })
+    // Serializing a `webauthn_rs::Passkey` should never fail in practice
+    // (it's a derive(Serialize) on a well-typed struct); if it does, log
+    // and fall through to an empty list rather than silently masking it
+    // — clients can't distinguish "authenticator reported no transports"
+    // from "we failed to encode the passkey" otherwise.
+    let value = match serde_json::to_value(passkey) {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Failed to serialise passkey for transport extraction: {e:#?}");
+            return Vec::new();
+        }
+    };
+    value
+        .pointer("/cred/transports")
+        .and_then(Value::as_array)
+        .map(|transports| transports.iter().filter_map(Value::as_str).map(str::to_owned).collect::<Vec<_>>())
         .unwrap_or_default()
 }
 

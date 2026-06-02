@@ -54,6 +54,17 @@ app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secon
 }
 {{/if}}
 
+/* Hide the `Log in with passkey` button on the login page under SSO_ONLY.
+   The server gate at `src/api/identity.rs` rejects the unauthenticated
+   `/accounts/webauthn/assertion-options` request the button triggers,
+   so clicking it would dead-end with "SSO sign-in is required". Keep the
+   button visible whenever passkey login is reachable (default + SSO modes). */
+{{#if (and sso_enabled sso_only)}}
+.vw-passkey-login {
+  @extend %vw-hide;
+}
+{{/if}}
+
 /* Hide the or text followed by the two buttons hidden above */
 {{#if (webver ">=2025.5.1")}}
 {{#if (or (not sso_enabled) sso_only)}}

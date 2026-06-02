@@ -825,6 +825,13 @@ fn validate_passkey_rotation_data(
         .map(|c| &c.uuid)
         .collect::<HashSet<&WebAuthnCredentialId>>();
     let provided_passkey_ids = passkey_unlock_data.iter().map(|p| &p.id).collect::<HashSet<&WebAuthnCredentialId>>();
+    // Reject duplicate ids before they reach the update loop: the HashSet
+    // de-dups silently, so a payload like `[{id: A, key: K1}, {id: A, key: K2}]`
+    // would pass the superset check above and the loop would apply both
+    // writes in order, with the second silently overwriting the first.
+    if provided_passkey_ids.len() != passkey_unlock_data.len() {
+        err!("Duplicate passkey ids in rotation payload")
+    }
     if !provided_passkey_ids.is_superset(&existing_prf_credential_ids) {
         err!("All passkeys with encryption enabled must be included in the rotation")
     }
@@ -978,6 +985,24 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
             // We force the users to logout after the user has been saved to try and prevent these issues.
             update_cipher_from_data(saved_cipher, cipher_data, &headers, None, &conn, &nt, UpdateType::None).await?;
         }
+    }
+
+    // Re-check the PRF credential set immediately before committing the new
+    // account key. A concurrent enrol (another session/tab) can register a
+    // PRF passkey between the validation re-check above and now — that
+    // credential is missing from `passkey_unlock_data`, so its
+    // `encrypted_user_key` is still wrapped under the OLD account key.
+    // Erroring out here forces the caller to retry the rotation; without
+    // this guard, the new akey commits and the orphan credential can never
+    // unlock the vault again.
+    let post_loop_prf_ids = WebAuthnCredential::find_by_user(user_id, &conn)
+        .await
+        .into_iter()
+        .filter(WebAuthnCredential::has_prf_keyset)
+        .map(|c| c.uuid)
+        .collect::<HashSet<WebAuthnCredentialId>>();
+    if post_loop_prf_ids != snapshot_prf_ids {
+        err!("Passkey credentials changed during key rotation; please retry")
     }
 
     // Update user data
@@ -1850,6 +1875,19 @@ mod tests {
     fn passkey_rotation_rejects_non_prf_credential() {
         let credentials = vec![webauthn_credential("prf", true, true), webauthn_credential("non-prf", false, false)];
         let data = vec![passkey_unlock_data("prf"), passkey_unlock_data("non-prf")];
+
+        assert!(validate_passkey_rotation_data(&data, &credentials).is_err());
+    }
+
+    /// A duplicate id in `passkey_unlock_data` collapses into a single
+    /// `HashSet` entry for the superset check, but the rewrap loop in
+    /// `post_rotatekey` iterates the original `Vec` and would apply BOTH
+    /// updates, silently letting the second blob overwrite the first.
+    /// The validator must reject duplicates upfront.
+    #[test]
+    fn passkey_rotation_rejects_duplicate_ids() {
+        let credentials = vec![webauthn_credential("prf", true, true)];
+        let data = vec![passkey_unlock_data("prf"), passkey_unlock_data("prf")];
 
         assert!(validate_passkey_rotation_data(&data, &credentials).is_err());
     }

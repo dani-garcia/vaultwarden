@@ -159,7 +159,7 @@ impl TwoFactor {
     pub async fn take_by_user_and_type(user_uuid: &UserId, atype: i32, conn: &DbConn) -> Option<Self> {
         let user_uuid = user_uuid.clone();
         conn.run(move |conn| {
-            conn.transaction::<Option<Self>, diesel::result::Error, _>(|conn| {
+            let result = conn.transaction::<Option<Self>, diesel::result::Error, _>(|conn| {
                 let tf = twofactor::table
                     .filter(twofactor::user_uuid.eq(&user_uuid))
                     .filter(twofactor::atype.eq(atype))
@@ -171,8 +171,18 @@ impl TwoFactor {
                 let deleted =
                     diesel::delete(twofactor::table.filter(twofactor::uuid.eq(&existing.uuid))).execute(conn)?;
                 Ok(tf.filter(|_| deleted == 1))
-            })
-            .unwrap_or(None)
+            });
+            match result {
+                Ok(opt) => opt,
+                Err(e) => {
+                    // Surface the underlying error so DB degradation
+                    // (deadlock, conn drop, lock timeout) is operator-
+                    // visible rather than indistinguishable from a normal
+                    // "row consumed by a concurrent caller" result.
+                    error!("TwoFactor::take_by_user_and_type failed for user {user_uuid} atype {atype}: {e:#?}");
+                    None
+                }
+            }
         })
         .await
     }

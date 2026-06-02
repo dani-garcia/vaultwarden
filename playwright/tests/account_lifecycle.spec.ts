@@ -3,7 +3,7 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import * as utils from '../global-utils';
 import { createAccount, logUser as logUserMP } from './setups/user';
 import { logNewUser as ssoLogNewUser, logUser as logUserSSO } from './setups/sso';
-import { activateTOTP, disableTOTP, type TwoFactor } from './setups/2fa';
+import { activateTOTP, disableTOTP, resetTotpTimeStep, type TwoFactor } from './setups/2fa';
 import {
     addVirtualAuthenticator,
     changeKdfIterations,
@@ -87,7 +87,14 @@ test.afterAll('Teardown', async () => {
 // CDP sessions are bound to a specific Page; Playwright recycles the page
 // between tests, so drop the cached session/authenticator IDs each time
 // (the next `addVirtualAuthenticator` lazily re-establishes them).
-test.beforeEach(() => resetVirtualAuthenticators());
+test.beforeEach(() => {
+    resetVirtualAuthenticators();
+    // `submitTwoFactor`'s TOTP `last_used` cache is module-scoped and would
+    // otherwise leak across tests (and across projects under `workers: 1`)
+    // — drop it so each test's first TOTP submission isn't paying a 30s
+    // boundary-wait based on a different test's history.
+    resetTotpTimeStep();
+});
 
 const MP = 'Master Password';
 

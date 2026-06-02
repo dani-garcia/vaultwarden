@@ -175,7 +175,20 @@ function dbConfig(testInfo: TestInfo){
 }
 
 /**
- *  All parameters passed in `env` need to be added to the docker-compose.yml
+ * All parameters passed in `env` need to be added to the docker-compose.yml.
+ *
+ * `resetDB=false` skips the explicit DB wipe, but it does NOT guarantee the
+ * DB survives across calls: `docker compose up -d Vaultwarden` recreates
+ * the container whenever any env var listed in
+ * `playwright/docker-compose.yml`'s `environment:` block
+ * differs from the previous run, and recreation drops the tmpfs-backed
+ * sqlite DB along with the in-process RSA signing key. So
+ * `resetDB=false` reliably preserves state only when consecutive
+ * `startVault` calls pass the SAME env. If you need to preserve user
+ * state across an env change, toggle the relevant settings via
+ * `POST /admin/config` instead of restarting (see the
+ * `Passkey enrolment is rejected when SSO_ONLY is on` describe in
+ * `playwright/tests/passkey.spec.ts` for the pattern).
  **/
 export async function startVault(browser: Browser, testInfo: TestInfo, env = {}, resetDB: Boolean = true) {
     if( resetDB ){

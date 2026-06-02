@@ -2,6 +2,7 @@ import { test, expect, type TestInfo } from '@playwright/test';
 
 import * as utils from '../global-utils';
 import { createAccount } from './setups/user';
+import { resetTotpTimeStep } from './setups/2fa';
 import {
     addVirtualAuthenticator,
     clickLoginWithPasskey,
@@ -32,7 +33,12 @@ test.afterAll('Teardown', async () => {
 // CDP sessions are bound to a specific Page; Playwright recycles the page
 // between tests, so drop the cached session/authenticator IDs each time
 // (no-op for the request-only suites below; only the UI flows touch CDP).
-test.beforeEach(() => resetVirtualAuthenticators());
+// Also drop `submitTwoFactor`'s TOTP `last_used` cache to avoid cross-test
+// boundary-wait penalties — see `resetTotpTimeStep` doc.
+test.beforeEach(() => {
+    resetVirtualAuthenticators();
+    resetTotpTimeStep();
+});
 
 // ---------------------------------------------------------------------------
 // Unauthenticated API surface — `GET /identity/accounts/webauthn/assertion-options`
@@ -410,6 +416,7 @@ test.describe('Passkey grant is rejected when SSO_ONLY is on', () => {
     // vault with SSO_ENABLED + SSO_ONLY for this describe's tests, then
     // restart with default config in afterAll.
     test.beforeAll('Start vault with SSO_ONLY', async ({ browser }, testInfo) => {
+        test.skip(useExternalVault, 'cannot reconfigure an externally-running vault from the test process');
         utils.stopVault(true);
         await utils.startVault(browser, testInfo, {
             SSO_ENABLED: 'true',
@@ -421,6 +428,7 @@ test.describe('Passkey grant is rejected when SSO_ONLY is on', () => {
     });
 
     test.afterAll('Restore default vault', async ({ browser }, testInfo) => {
+        if (useExternalVault) return;
         utils.stopVault(true);
         await utils.startVault(browser, testInfo, {}, false);
     });
@@ -452,7 +460,7 @@ test.describe('Passkey grant is rejected when SSO_ONLY is on', () => {
 test.describe('Passkey enrolment is rejected when SSO_ONLY is on', () => {
     // Defends the deny-by-default gate on the management-side endpoints
     // (`src/api/core/mod.rs` lines 308, 390, 459, 516 — guarded by
-    // `sso_enabled() && sso_only() && !sso_only_allow_passkey_unlock()`).
+    // `sso_enabled() && sso_only()`).
     //
     // The enrol endpoints are authenticated, so we need a Bearer token
     // to reach the gate; under `SSO_ONLY=true` fresh logins must go
@@ -474,10 +482,17 @@ test.describe('Passkey enrolment is rejected when SSO_ONLY is on', () => {
     };
 
     test.beforeAll('Provision user, sniff bearer, flip SSO_ONLY via /admin/config', async ({ browser, request }) => {
+        test.skip(useExternalVault, 'toggling SSO config via /admin would mutate the externally-running vault');
         const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
         const page = await ctx.newPage();
         const tokens: string[] = [];
         page.on('request', req => {
+            // Filter on /api/ to avoid latching onto a non-vault token
+            // (e.g. analytics, manifest fetches that some Bitwarden builds
+            // attach a different bearer to). The /api/ endpoints are the
+            // ones we'll exercise post-toggle, so capturing their bearer
+            // is what we need.
+            if (!req.url().includes('/api/')) return;
             const auth = req.headers()['authorization'];
             if (auth?.startsWith('Bearer ')) tokens.push(auth.slice('Bearer '.length));
         });
@@ -500,9 +515,14 @@ test.describe('Passkey enrolment is rejected when SSO_ONLY is on', () => {
     });
 
     test.afterAll('Toggle SSO back off', async ({ request }) => {
+        if (useExternalVault) return;
         await adminLogin(request);
+        // Blank the SSO authority/client too — without this the throwaway
+        // http://127.0.0.1:65535/realms/test placeholder lingers in
+        // config.json and contaminates any later test that toggles
+        // `sso_enabled=true` without rewriting the URL.
         await request.post('/admin/config', {
-            data: { sso_enabled: false, sso_only: false },
+            data: { sso_enabled: false, sso_only: false, sso_authority: '', sso_client_id: '', sso_client_secret: '' },
             failOnStatusCode: false,
         });
     });
@@ -526,6 +546,7 @@ test.describe('Passkey login rejects forged unverified-email handles with the ge
     // CONFIG.mail_enabled() returns true. Restart vault with that config; the
     // new signup lands in DB with verified_at = NULL.
     test.beforeAll('Start vault with SIGNUPS_VERIFY', async ({ browser }, testInfo) => {
+        test.skip(useExternalVault, 'cannot reconfigure an externally-running vault from the test process');
         utils.stopVault(true);
         await utils.startVault(browser, testInfo, {
             SIGNUPS_VERIFY: 'true',
@@ -538,6 +559,7 @@ test.describe('Passkey login rejects forged unverified-email handles with the ge
     });
 
     test.afterAll('Restore default vault', async ({ browser }, testInfo) => {
+        if (useExternalVault) return;
         utils.stopVault(true);
         await utils.startVault(browser, testInfo, {}, true);
     });
@@ -735,13 +757,22 @@ test.describe('Passkey UI flows', () => {
 
         await createAccount(test, page, user);
         // `useForEncryption: false` enrols the credential without the
-        // PRF-wrapped user-key blobs; /api/sync's `webAuthnPrfOptions` stays
-        // empty (already pinned by `account_lifecycle.spec.ts`'s wire-shape
-        // probe), so the lock-screen "Unlock with passkey" button must stay
-        // hidden even though the credential is registered.
+        // PRF-wrapped user-key blobs. The credential can still authenticate
+        // the user via the discoverable-login grant (login affordance), but
+        // /api/sync's `webAuthnPrfOptions` stays empty so the lock-screen
+        // "Unlock with passkey" button must stay hidden (unlock affordance).
         await enrollLoginPasskey(page, user.password, 'noprf-key', { useForEncryption: false });
 
-        await lockVault(page, user.name);
+        // Log out + log back in via passkey to exercise the "login
+        // affordance present" half of the test's title. Without PRF-wrapped
+        // key blobs, authentication succeeds but vault decryption cannot, so
+        // the expected destination is the MP lock screen.
+        await utils.logout(test, page, user);
+        await clickLoginWithPasskey(page);
+        await expect(page).toHaveURL(/\/lock/, { timeout: 30_000 });
+
+        // Non-PRF credential is in the DB, but webAuthnPrfOptions is empty,
+        // so the lock screen must not surface the passkey-unlock button.
         await expectLockScreenButtons(page, false);
     });
 

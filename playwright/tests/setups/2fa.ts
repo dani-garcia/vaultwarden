@@ -79,6 +79,18 @@ async function ensure2FAProvider(page: Page, kind: TwoFactor['kind']) {
  */
 let lastSubmittedTotpTimeStep: number | null = null;
 
+/**
+ * Drop the module-scoped `last_used` cache. With `workers: 1` the variable
+ * persists across every spec in a single Playwright invocation, so when
+ * project A's lifecycle test consumes a time-step and project B then runs
+ * its first TOTP (different DB, different secret, different time-step) the
+ * stale value would force a 30s sleep before the otherwise-fresh code. Call
+ * this from a `test.beforeEach` in any spec that submits TOTP.
+ */
+export function resetTotpTimeStep() {
+    lastSubmittedTotpTimeStep = null;
+}
+
 export async function submitTwoFactor(test: Test, page: Page, twoFactor: TwoFactor): Promise<void> {
     await test.step(`Submit 2FA (${twoFactor.kind})`, async () => {
         await expect(page.getByRole('heading', { name: 'Verify your Identity' })).toBeVisible();

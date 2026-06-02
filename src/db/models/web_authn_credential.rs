@@ -235,7 +235,7 @@ impl WebAuthnLoginChallenge {
             // ensures the SELECT+DELETE pair rolls back atomically on a DB
             // error, leaving the challenge intact rather than silently
             // consuming it.
-            let taken = conn
+            let taken = match conn
                 .transaction::<Option<WebAuthnLoginChallenge>, diesel::result::Error, _>(|conn| {
                     let challenge = web_authn_login_challenges::table
                         .filter(web_authn_login_challenges::id.eq(id))
@@ -246,8 +246,17 @@ impl WebAuthnLoginChallenge {
                     )
                     .execute(conn)?;
                     Ok(challenge.filter(|_| deleted == 1))
-                })
-                .unwrap_or(None);
+                }) {
+                    Ok(opt) => opt,
+                    Err(e) => {
+                        // Surface the underlying error so a degrading DB
+                        // (deadlock, conn drop, lock timeout) is operator-
+                        // visible instead of masquerading as a stale-token
+                        // rejection at the caller.
+                        error!("WebAuthnLoginChallenge::take failed for id {id}: {e:#?}");
+                        None
+                    }
+                };
 
             let cutoff = Utc::now().naive_utc() - TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS);
             taken.filter(|c| c.created_at >= cutoff)
