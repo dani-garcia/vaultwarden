@@ -1062,7 +1062,7 @@ async fn send_invite(
             && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
             && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
-    let mut user_created: bool = false;
+    let mut user_created: bool;
     for email in &data.emails {
         let mut member_status = MembershipStatus::Invited as i32;
         let user = match User::find_by_mail(email, &conn).await {
@@ -1093,6 +1093,7 @@ async fn send_invite(
                 if !CONFIG.mail_enabled() && !user.password_hash.is_empty() {
                     member_status = MembershipStatus::Accepted as i32;
                 }
+                user_created = false;
                 user
             }
         };
