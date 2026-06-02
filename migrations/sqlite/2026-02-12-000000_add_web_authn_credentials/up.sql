@@ -8,3 +8,5 @@ CREATE TABLE web_authn_credentials (
     encrypted_public_key  TEXT,
     encrypted_private_key TEXT
 );
+
+CREATE INDEX idx_web_authn_credentials_user_uuid ON web_authn_credentials (user_uuid);

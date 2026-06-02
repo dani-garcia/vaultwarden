@@ -567,6 +567,9 @@ make_config! {
         /// Purge incomplete SSO auth. |> Cron schedule of the job that cleans leftover auth in db due to incomplete SSO login.
         /// Defaults to daily. Set blank to disable this job.
         purge_incomplete_sso_auth: String, false,  def,   "0 20 0 * * *".to_owned();
+        /// Passkey login challenge cleanup schedule |> Cron schedule of the job that cleans expired passkey-login challenges from the database.
+        /// Defaults to hourly. Set blank to disable this job.
+        webauthn_login_challenge_purge_schedule: String, false,  def,   "0 30 * * * *".to_owned();
     },
 
     /// General settings
@@ -1240,6 +1243,12 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
 
     if !cfg.auth_request_purge_schedule.is_empty() && cfg.auth_request_purge_schedule.parse::<Schedule>().is_err() {
         err!("`AUTH_REQUEST_PURGE_SCHEDULE` is not a valid cron expression")
+    }
+
+    if !cfg.webauthn_login_challenge_purge_schedule.is_empty()
+        && cfg.webauthn_login_challenge_purge_schedule.parse::<Schedule>().is_err()
+    {
+        err!("`WEBAUTHN_LOGIN_CHALLENGE_PURGE_SCHEDULE` is not a valid cron expression")
     }
 
     if !cfg.disable_admin_token {

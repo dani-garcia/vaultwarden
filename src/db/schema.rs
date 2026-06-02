@@ -351,9 +351,6 @@ table! {
     }
 }
 
-joinable!(archives -> users (user_uuid));
-joinable!(archives -> ciphers (cipher_uuid));
-
 table! {
     web_authn_credentials (uuid) {
         uuid -> Text,
@@ -366,6 +363,17 @@ table! {
         encrypted_private_key -> Nullable<Text>,
     }
 }
+
+table! {
+    web_authn_login_challenges (id) {
+        id -> Text,
+        challenge -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+joinable!(archives -> users (user_uuid));
+joinable!(archives -> ciphers (cipher_uuid));
 
 joinable!(attachments -> ciphers (cipher_uuid));
 joinable!(ciphers -> organizations (organization_uuid));
@@ -424,4 +432,5 @@ allow_tables_to_appear_in_same_query!(
     event,
     auth_requests,
     web_authn_credentials,
+    web_authn_login_challenges,
 );

@@ -23,6 +23,7 @@ use crate::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
             EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId,
             OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
+            WebAuthnCredential, WebAuthnCredentialId,
         },
     },
     mail,
@@ -674,6 +675,14 @@ struct UpdateResetPasswordData {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct UpdateWebAuthnLoginData {
+    id: WebAuthnCredentialId,
+    encrypted_public_key: String,
+    encrypted_user_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct KeyData {
     account_unlock_data: RotateAccountUnlockData,
     account_keys: RotateAccountKeys,
@@ -687,6 +696,9 @@ struct RotateAccountUnlockData {
     emergency_access_unlock_data: Vec<UpdateEmergencyAccessData>,
     master_password_unlock_data: MasterPasswordUnlockData,
     organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
+    // Older clients may not send this; default to an empty list so rotation still works.
+    #[serde(default)]
+    passkey_unlock_data: Vec<UpdateWebAuthnLoginData>,
 }
 
 #[derive(Deserialize)]
@@ -716,6 +728,10 @@ struct RotateAccountData {
     sends: Vec<SendData>,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Per-entity slices mirror the snapshot reads at the top of post_rotatekey"
+)]
 fn validate_keydata(
     data: &KeyData,
     existing_ciphers: &[Cipher],
@@ -723,6 +739,7 @@ fn validate_keydata(
     existing_emergency_access: &[EmergencyAccess],
     existing_memberships: &[Membership],
     existing_sends: &[Send],
+    existing_webauthn_credentials: &[WebAuthnCredential],
     user: &User,
 ) -> EmptyResult {
     if user.client_kdf_type != data.account_unlock_data.master_password_unlock_data.kdf_type
@@ -791,6 +808,19 @@ fn validate_keydata(
         err!("All existing sends must be included in the rotation")
     }
 
+    // Check that all passkeys with PRF encryption enabled are included, so their
+    // encrypted user key is not left stale after the account key is rotated.
+    let existing_prf_credential_ids = existing_webauthn_credentials
+        .iter()
+        .filter(|c| c.has_prf_keyset())
+        .map(|c| &c.uuid)
+        .collect::<HashSet<&WebAuthnCredentialId>>();
+    let provided_passkey_ids =
+        data.account_unlock_data.passkey_unlock_data.iter().map(|p| &p.id).collect::<HashSet<&WebAuthnCredentialId>>();
+    if !provided_passkey_ids.is_superset(&existing_prf_credential_ids) {
+        err!("All passkeys with encryption enabled must be included in the rotation")
+    }
+
     Ok(())
 }
 
@@ -820,6 +850,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // We only rotate the reset password key if it is set.
     existing_memberships.retain(|m| m.reset_password_key.is_some());
     let mut existing_sends = Send::find_by_user(user_id, &conn).await;
+    let existing_webauthn_credentials = WebAuthnCredential::find_by_user(user_id, &conn).await;
 
     validate_keydata(
         &data,
@@ -828,6 +859,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         &existing_emergency_access,
         &existing_memberships,
         &existing_sends,
+        &existing_webauthn_credentials,
         &headers.user,
     )?;
 
@@ -867,6 +899,19 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
 
         membership.reset_password_key = Some(reset_password_data.reset_password_key);
         membership.save(&conn).await?;
+    }
+
+    // Update passkey-login credential keys (the PRF "rotateable key set") so that
+    // passwordless decryption keeps working after the account key is rotated.
+    // The client only sends credentials whose PRF keyset is fully enabled.
+    for passkey_data in data.account_unlock_data.passkey_unlock_data {
+        let Some(mut credential) = WebAuthnCredential::find_by_uuid_and_user(&passkey_data.id, user_id, &conn).await
+        else {
+            err!("Passkey doesn't exist")
+        };
+        credential.encrypted_public_key = Some(passkey_data.encrypted_public_key);
+        credential.encrypted_user_key = Some(passkey_data.encrypted_user_key);
+        credential.update_keys(&conn).await?;
     }
 
     // Update send data

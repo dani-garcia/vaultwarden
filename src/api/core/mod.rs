@@ -216,21 +216,21 @@ fn version() -> Json<&'static str> {
 async fn get_api_webauthn(headers: Headers, conn: DbConn) -> Json<Value> {
     let user = headers.user;
 
-    let data: Vec<WebAuthnCredential> = WebAuthnCredential::find_all_by_user(&user.uuid, &conn).await;
-    let data = data
+    let data: Vec<Value> = WebAuthnCredential::find_by_user(&user.uuid, &conn)
+        .await
         .into_iter()
         .map(|wac| {
             json!({
                 "id": wac.uuid,
                 "name": wac.name,
-                // TODO: Generate prfStatus like GetPrfStatus() does in the C# implementation
-                "prfStatus": i32::from(wac.supports_prf),
+                // 0 = Enabled, 1 = Supported (PRF-capable, keyset not set up), 2 = Unsupported.
+                "prfStatus": wac.prf_status(),
                 "encryptedUserKey": wac.encrypted_user_key,
                 "encryptedPublicKey": wac.encrypted_public_key,
                 "object": "webauthnCredential",
             })
         })
-        .collect::<Value>();
+        .collect();
 
     Json(json!({
         "object": "list",
@@ -248,9 +248,13 @@ async fn post_api_webauthn_attestation_options(
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
+    if CONFIG.sso_enabled() && CONFIG.sso_only() {
+        err!("Passkeys cannot be created when SSO sign-in is required")
+    }
+
     data.validate(&user, false, &conn).await?;
 
-    let all_creds: Vec<WebAuthnCredential> = WebAuthnCredential::find_all_by_user(&user.uuid, &conn).await;
+    let all_creds = WebAuthnCredential::find_by_user(&user.uuid, &conn).await;
     let existing_cred_ids: Vec<_> = all_creds
         .into_iter()
         .filter_map(|wac| {
@@ -259,7 +263,8 @@ async fn post_api_webauthn_attestation_options(
         })
         .collect();
 
-    let user_uuid = uuid::Uuid::parse_str(&user.uuid).expect("Failed to parse user UUID");
+    let user_uuid = uuid::Uuid::parse_str(&user.uuid)
+        .map_err(|_| Error::new("Invalid user", "Could not parse user UUID for passkey registration"))?;
 
     let (mut challenge, state) =
         WEBAUTHN.start_passkey_registration(user_uuid, &user.email, user.display_name(), Some(existing_cred_ids))?;
@@ -273,6 +278,15 @@ async fn post_api_webauthn_attestation_options(
         asc.user_verification = UserVerificationPolicy::Required;
         asc.require_resident_key = true;
         asc.resident_key = Some(webauthn_rs_proto::ResidentKeyRequirement::Required);
+    }
+
+    // Drop any abandoned challenge from a previous, unfinished registration attempt
+    // so these rows cannot accumulate in the database.
+    if let Some(tf) =
+        TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::WebauthnPasskeyRegisterChallenge as i32, &conn)
+            .await
+    {
+        tf.delete(&conn).await?;
     }
 
     // Persist the registration state in the database (same pattern as 2FA webauthn)
@@ -309,6 +323,10 @@ async fn post_api_webauthn(
 ) -> ApiResult<Status> {
     let data: WebAuthnLoginCredentialCreateRequest = data.into_inner();
     let user = headers.user;
+
+    if CONFIG.sso_enabled() && CONFIG.sso_only() {
+        err!("Passkeys cannot be created when SSO sign-in is required")
+    }
 
     // Retrieve and delete the saved challenge state from the database
     let type_ = TwoFactorType::WebauthnPasskeyRegisterChallenge as i32;

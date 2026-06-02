@@ -1292,7 +1292,9 @@ pub async fn refresh_tokens(
             sso::exchange_refresh_token(&device, &user, client_id, refresh_claims).await?
         }
         AuthMethod::Sso => err!("SSO is now disabled, Login again using email and master password"),
-        AuthMethod::Password if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO is now required, Login again"),
+        AuthMethod::Password | AuthMethod::WebAuthn if CONFIG.sso_enabled() && CONFIG.sso_only() => {
+            err!("SSO is now required, Login again")
+        }
         AuthMethod::Password | AuthMethod::WebAuthn => AuthTokens::new(&device, &user, refresh_claims.sub, client_id),
         _ => err!("Invalid auth method, cannot refresh token"),
     };
