@@ -1177,6 +1177,61 @@ fn passkey_transports(passkey: &Passkey) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Augments the base login response (from `authenticated_response`) with the credential-
+/// specific `WebAuthnPrfOption` field that upstream Bitwarden's `UserDecryptionOptionsBuilder`
+/// attaches via `WithWebAuthnLoginCredential` after a successful passkey assertion. Without
+/// this attachment the client receives a valid access token but no way to unlock the vault
+/// from the PRF secret it just derived — login completes, vault stays locked.
+pub(crate) fn build_webauthn_login_response(base: Value, matched_wac: &WebAuthnCredential, passkey: &Passkey) -> Value {
+    let mut result = base;
+    if let Some(prf_option) = build_webauthn_login_prf_option(matched_wac, passkey) {
+        result["UserDecryptionOptions"]["WebAuthnPrfOption"] = prf_option;
+    }
+    result
+}
+
+/// Singular `WebAuthnPrfOption` for the webauthn-login response. The Bitwarden client's
+/// immediate post-passkey-login decryption path reads this field to recover the user key from
+/// the PRF output the assertion just produced. Gated on `has_prf_keyset()` so we never
+/// advertise PRF capability for a credential whose keyset is incomplete.
+pub(crate) fn build_webauthn_login_prf_option(matched_wac: &WebAuthnCredential, passkey: &Passkey) -> Option<Value> {
+    if !matched_wac.has_prf_keyset() {
+        return None;
+    }
+    let credential_id = passkey_credential_id(passkey).ok()?;
+    let transports = passkey_transports(passkey);
+    Some(json!({
+        "EncryptedPrivateKey": matched_wac.encrypted_private_key,
+        "EncryptedUserKey": matched_wac.encrypted_user_key,
+        "CredentialId": credential_id,
+        "Transports": transports,
+    }))
+}
+
+/// `WebAuthnPrfOptions` array for `UserDecryptionOptions` (login response) and
+/// `userDecryption` (sync response). Only credentials with `prf_status() == Enabled`
+/// (supports PRF + complete keyset) appear; corrupted blobs are filter_map'd out
+/// so one broken row doesn't suppress the lock-screen option for healthy
+/// credentials. Mirrors upstream
+/// `SyncResponseModel.UserDecryption.WebAuthnPrfOptions`.
+pub(crate) fn build_webauthn_prf_options(credentials: &[WebAuthnCredential]) -> Vec<Value> {
+    credentials
+        .iter()
+        .filter(|wac| wac.has_prf_keyset())
+        .filter_map(|wac| {
+            let passkey: Passkey = serde_json::from_str(&wac.credential).ok()?;
+            let credential_id = passkey_credential_id(&passkey).ok()?;
+            let transports = passkey_transports(&passkey);
+            Some(json!({
+                "EncryptedPrivateKey": wac.encrypted_private_key,
+                "EncryptedUserKey": wac.encrypted_user_key,
+                "CredentialId": credential_id,
+                "Transports": transports,
+            }))
+        })
+        .collect()
+}
+
 #[get("/accounts/webauthn/assertion-options")]
 async fn get_web_authn_assertion_options(ip: ClientIp, conn: DbConn) -> JsonResult {
     // Same gate the 2FA WebAuthn entry point uses, applied here so a
@@ -1398,25 +1453,12 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
 
     let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::WebAuthn, data.client_id);
 
-    // Build response using the common authenticated_response helper
-    let mut result = authenticated_response(&user, &mut device, auth_tokens, None, conn, ip).await?;
-
-    // Add WebAuthnPrfOption only when the credential is in the PRF "Enabled"
-    // state (supports_prf + all three encrypted blobs present), matching
-    // Bitwarden's `GetPrfStatus() == Enabled` gate.
-    if matched_wac.has_prf_keyset() {
-        let credential_id = passkey_credential_id(&passkey)?;
-        let transports = passkey_transports(&passkey);
-        let Json(ref mut val) = result;
-        val["UserDecryptionOptions"]["WebAuthnPrfOption"] = json!({
-            "EncryptedPrivateKey": matched_wac.encrypted_private_key,
-            "EncryptedUserKey": matched_wac.encrypted_user_key,
-            "CredentialId": credential_id,
-            "Transports": transports,
-        });
-    }
-
-    Ok(result)
+    // Build the common response, then attach the credential-specific `WebAuthnPrfOption`
+    // upstream populates via `WithWebAuthnLoginCredential` after a webauthn-grant assertion.
+    // The wrapped-key payload lets the client unlock the vault using the PRF secret it just
+    // derived; without it, login completes but the vault stays locked.
+    let Json(base) = authenticated_response(&user, &mut device, auth_tokens, None, conn, ip).await?;
+    Ok(Json(build_webauthn_login_response(base, &matched_wac, &passkey)))
 }
 
 // https://github.com/bitwarden/jslib/blob/master/common/src/models/request/tokenRequest.ts
@@ -1692,5 +1734,210 @@ mod tests {
     #[test]
     fn passkey_transports_defaults_to_empty_when_absent() {
         assert!(passkey_transports(&passkey(None)).is_empty());
+    }
+
+    fn make_credential(
+        supports_prf: bool,
+        encrypted_user_key: Option<&str>,
+        encrypted_public_key: Option<&str>,
+        encrypted_private_key: Option<&str>,
+        passkey_json: &str,
+    ) -> WebAuthnCredential {
+        WebAuthnCredential::new(
+            UserId::from(String::from("00000000-0000-0000-0000-000000000000")),
+            String::from("test"),
+            passkey_json.to_owned(),
+            String::from("credential-id-hash"),
+            supports_prf,
+            encrypted_user_key.map(String::from),
+            encrypted_public_key.map(String::from),
+            encrypted_private_key.map(String::from),
+        )
+    }
+
+    #[test]
+    fn webauthn_prf_options_skips_credentials_without_full_keyset() {
+        let pk = serde_json::to_string(&passkey(None)).unwrap();
+        let creds = [
+            make_credential(false, Some("u"), Some("p"), Some("k"), &pk), // PRF unsupported
+            make_credential(true, None, None, None, &pk),                 // PRF supported, no keyset
+            make_credential(true, Some("u"), Some("p"), None, &pk),       // partial keyset
+        ];
+        assert!(build_webauthn_prf_options(&creds).is_empty());
+    }
+
+    #[test]
+    fn webauthn_prf_options_emits_entry_per_enabled_credential() {
+        let pk = serde_json::to_string(&passkey(Some(vec![AuthenticatorTransport::Internal]))).unwrap();
+        let creds = [
+            make_credential(true, Some("uk-a"), Some("pk-a"), Some("priv-a"), &pk),
+            make_credential(true, Some("uk-b"), Some("pk-b"), Some("priv-b"), &pk),
+            make_credential(false, Some("uk-c"), Some("pk-c"), Some("priv-c"), &pk), // skipped
+        ];
+        let options = build_webauthn_prf_options(&creds);
+
+        assert_eq!(options.len(), 2, "only PRF-enabled credentials should produce entries");
+        // Match upstream `WebAuthnPrfDecryptionOption` field names (PascalCase). The Bitwarden
+        // client deserialises case-insensitively, but pinning the casing here catches a
+        // refactor that accidentally renames a key.
+        assert_eq!(options[0]["EncryptedUserKey"], "uk-a");
+        assert_eq!(options[0]["EncryptedPrivateKey"], "priv-a");
+        assert_eq!(options[0]["CredentialId"], "AQIDBA");
+        assert_eq!(options[0]["Transports"], json!(["internal"]));
+        assert_eq!(options[1]["EncryptedUserKey"], "uk-b");
+        assert_eq!(options[1]["EncryptedPrivateKey"], "priv-b");
+    }
+
+    #[test]
+    fn webauthn_login_prf_option_emits_for_enabled_credential() {
+        // Pins the singular `WebAuthnPrfOption` block emitted by the webauthn-login response.
+        // The Bitwarden client's post-passkey-login decryption path reads this specific field
+        // (alongside the plural `WebAuthnPrfOptions` array used by the lock screen). Removing
+        // it leaves the credential just authenticated with un-usable for immediate vault unlock
+        // even though the PRF assertion already produced the output the client would decrypt
+        // with.
+        let pk = passkey(Some(vec![AuthenticatorTransport::Internal]));
+        let pk_blob = serde_json::to_string(&pk).unwrap();
+        let wac = make_credential(true, Some("uk"), Some("pk"), Some("priv"), &pk_blob);
+
+        let option = build_webauthn_login_prf_option(&wac, &pk).expect("PRF-enabled credential emits singular option");
+        assert_eq!(option["EncryptedPrivateKey"], "priv");
+        assert_eq!(option["EncryptedUserKey"], "uk");
+        assert_eq!(option["CredentialId"], "AQIDBA");
+        assert_eq!(option["Transports"], json!(["internal"]));
+    }
+
+    #[test]
+    fn webauthn_login_response_attaches_singular_prf_option_for_enabled_credential() {
+        // Pins the shape of the `webauthn_login` response augmentation: when a PRF-enabled
+        // credential authenticates, `UserDecryptionOptions.WebAuthnPrfOption` (singular) is
+        // attached to the response. Matches upstream Bitwarden's `UserDecryptionOptions`
+        // contract (singular field, populated only by the webauthn grant via
+        // `UserDecryptionOptionsBuilder.WithWebAuthnLoginCredential`).
+        let base = json!({
+            "UserDecryptionOptions": {
+                "HasMasterPassword": true,
+                "Object": "userDecryptionOptions",
+            }
+        });
+        let pk = passkey(Some(vec![AuthenticatorTransport::Internal]));
+        let wac = make_credential(true, Some("uk"), Some("pk"), Some("priv"), &serde_json::to_string(&pk).unwrap());
+
+        let response = build_webauthn_login_response(base, &wac, &pk);
+
+        assert_eq!(response["UserDecryptionOptions"]["WebAuthnPrfOption"]["EncryptedPrivateKey"], "priv");
+        assert_eq!(response["UserDecryptionOptions"]["WebAuthnPrfOption"]["EncryptedUserKey"], "uk");
+        assert_eq!(response["UserDecryptionOptions"]["WebAuthnPrfOption"]["CredentialId"], "AQIDBA");
+        assert_eq!(response["UserDecryptionOptions"]["WebAuthnPrfOption"]["Transports"], json!(["internal"]));
+        // Pre-existing fields are preserved.
+        assert_eq!(response["UserDecryptionOptions"]["HasMasterPassword"], true);
+    }
+
+    #[test]
+    fn webauthn_login_response_omits_singular_prf_option_when_credential_keyset_incomplete() {
+        // PRF-capable but no keyset (Supported, not Enabled) → no field attached, matching
+        // upstream's `GetPrfStatus() == Enabled` gate inside `WithWebAuthnLoginCredential`.
+        let base = json!({
+            "UserDecryptionOptions": { "HasMasterPassword": true, "Object": "userDecryptionOptions" }
+        });
+        let pk = passkey(None);
+        let wac = make_credential(true, None, None, None, &serde_json::to_string(&pk).unwrap());
+
+        let response = build_webauthn_login_response(base, &wac, &pk);
+
+        assert!(response["UserDecryptionOptions"]["WebAuthnPrfOption"].is_null());
+        // Untouched otherwise.
+        assert_eq!(response["UserDecryptionOptions"]["HasMasterPassword"], true);
+    }
+
+    #[test]
+    fn webauthn_login_response_is_noop_for_prf_unsupported_credential() {
+        // Behavior: a credential whose authenticator doesn't support PRF (`supports_prf=false`)
+        // must produce **zero modification** to the response — not a null field, not an empty
+        // object, nothing. The function's contract is "only emit for Enabled". We assert by
+        // comparing the whole response to the input.
+        let base = json!({
+            "UserDecryptionOptions": { "HasMasterPassword": true, "Object": "userDecryptionOptions" }
+        });
+        let pk = passkey(None);
+        // supports_prf=false, even with all blobs present, should still not emit the option.
+        let wac = make_credential(false, Some("uk"), Some("pk"), Some("priv"), &serde_json::to_string(&pk).unwrap());
+
+        let response = build_webauthn_login_response(base.clone(), &wac, &pk);
+
+        assert_eq!(response, base, "PRF-unsupported credential must produce no modification");
+    }
+
+    #[test]
+    fn webauthn_login_response_lands_user_in_vault_for_prf_enabled_credential() {
+        // End-to-end behaviour: after a passkey login with a PRF-enabled credential the
+        // response must carry the wrapped-key payload the client combines with the PRF
+        // secret from the just-completed assertion to recover the user key and unlock the
+        // vault. Without it, the client authenticates successfully but lands on the lock
+        // screen with an MP prompt — which is what triggered the original regression
+        // report. Pins the contract upstream populates via `WithWebAuthnLoginCredential`.
+        let base = json!({
+            "UserDecryptionOptions": { "HasMasterPassword": false, "Object": "userDecryptionOptions" }
+        });
+        let pk = passkey(Some(vec![AuthenticatorTransport::Internal]));
+        let wac = make_credential(true, Some("uk"), Some("pk"), Some("priv"), &serde_json::to_string(&pk).unwrap());
+
+        let response = build_webauthn_login_response(base, &wac, &pk);
+        let prf = &response["UserDecryptionOptions"]["WebAuthnPrfOption"];
+
+        // All four fields must be present for the client to perform the unlock.
+        assert!(prf.is_object(), "unlock payload must be an object, not null");
+        assert!(prf["EncryptedPrivateKey"].as_str().is_some(), "EncryptedPrivateKey required");
+        assert!(prf["EncryptedUserKey"].as_str().is_some(), "EncryptedUserKey required");
+        assert!(prf["CredentialId"].as_str().is_some(), "CredentialId required");
+        assert!(prf["Transports"].is_array(), "Transports required (may be empty)");
+    }
+
+    #[test]
+    fn webauthn_login_response_is_idempotent_for_enabled_credential() {
+        // Behavior: calling the augmentation twice on the same inputs produces an identical
+        // response on each call. Pins that the function is pure (no accumulating side effects)
+        // and that writing the same key twice doesn't change the structure.
+        let base = json!({
+            "UserDecryptionOptions": { "HasMasterPassword": true, "Object": "userDecryptionOptions" }
+        });
+        let pk = passkey(Some(vec![AuthenticatorTransport::Internal]));
+        let wac = make_credential(true, Some("uk"), Some("pk"), Some("priv"), &serde_json::to_string(&pk).unwrap());
+
+        let once = build_webauthn_login_response(base, &wac, &pk);
+        let twice = build_webauthn_login_response(once.clone(), &wac, &pk);
+
+        assert_eq!(once, twice, "idempotent application of the augmentation");
+    }
+
+    #[test]
+    fn webauthn_login_prf_option_suppressed_when_credential_lacks_keyset() {
+        // PRF-capable but no keyset (Supported status) → no singular emission, matching the
+        // `GetPrfStatus() == Enabled` gate the original webauthn-login code already applied.
+        let pk = passkey(None);
+        let pk_blob = serde_json::to_string(&pk).unwrap();
+        let supported_only = make_credential(true, None, None, None, &pk_blob);
+        let unsupported = make_credential(false, Some("uk"), Some("pk"), Some("priv"), &pk_blob);
+        let partial = make_credential(true, Some("uk"), Some("pk"), None, &pk_blob);
+
+        assert!(build_webauthn_login_prf_option(&supported_only, &pk).is_none());
+        assert!(build_webauthn_login_prf_option(&unsupported, &pk).is_none());
+        assert!(build_webauthn_login_prf_option(&partial, &pk).is_none());
+    }
+
+    #[test]
+    fn webauthn_prf_options_skips_corrupted_credential_blob() {
+        // A row whose `credential` column was somehow corrupted should be silently dropped
+        // rather than aborting the whole response — the lock screen should still surface the
+        // healthy credentials.
+        let pk = serde_json::to_string(&passkey(None)).unwrap();
+        let creds = [
+            make_credential(true, Some("uk-a"), Some("pk-a"), Some("priv-a"), "not-json"),
+            make_credential(true, Some("uk-b"), Some("pk-b"), Some("priv-b"), &pk),
+        ];
+        let options = build_webauthn_prf_options(&creds);
+
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0]["EncryptedUserKey"], "uk-b");
     }
 }

@@ -459,3 +459,78 @@ test.describe('Passkey login rejects forged unverified-email handles with the ge
         expect(targetBody?.message).toBe(baselineBody?.message);
     });
 });
+
+// ---------------------------------------------------------------------------
+// `UserDecryptionOptions` (login) and `userDecryption` (sync) response shapes
+// must match upstream Bitwarden. Unit tests pin the helpers in isolation; this
+// integration test pins what the wire-level responses actually look like —
+// catching a regression where a helper exists but is no longer called (or is
+// called from the wrong endpoint).
+// ---------------------------------------------------------------------------
+
+test.describe('UserDecryption response shapes match upstream Bitwarden', () => {
+    test('password login + sync emit upstream-canonical UserDecryption fields', async ({ request }) => {
+        // Upstream contract this test pins:
+        //
+        // 1. `IdentityTokenResponse.UserDecryptionOptions` has only the **singular**
+        //    `WebAuthnPrfOption`, populated solely by the webauthn grant via
+        //    `UserDecryptionOptionsBuilder.WithWebAuthnLoginCredential`. The password grant
+        //    must NOT emit the plural `WebAuthnPrfOptions` here — that field doesn't exist
+        //    on this model upstream. A prior refactor added it as API-surface drift; this
+        //    assertion catches a regression in that direction.
+        //
+        // 2. `SyncResponseModel.UserDecryption.WebAuthnPrfOptions` (plural array) MUST be
+        //    present on every /sync response. An empty array is the correct shape when the
+        //    user has no PRF-enabled credentials. The Bitwarden client's lock-screen
+        //    "Unlock with passkey" option reads from this field; if it's absent, the option
+        //    never renders even when the user qualifies.
+
+        const email = `prf-shape-${Date.now()}@example.com`;
+        const password = `master-pw-${Date.now()}`;
+
+        const reg = await request.post('/identity/accounts/register', {
+            data: {
+                email,
+                name: 'PRF Shape Test',
+                kdfType: 0,
+                kdfIterations: 600000,
+                userSymmetricKey: '2.test-key',
+                masterPasswordHash: password,
+                masterPasswordHint: null,
+            },
+        });
+        expect(reg.status()).toBe(200);
+
+        const tokenRes = await request.post('/identity/connect/token', {
+            form: {
+                grant_type: 'password',
+                username: email,
+                password,
+                scope: 'api offline_access',
+                client_id: 'web',
+                device_identifier: '11111111-1111-1111-1111-111111111111',
+                device_name: 'pw-shape-test',
+                device_type: '9',
+            },
+        });
+        expect(tokenRes.status()).toBe(200);
+        const token: any = await tokenRes.json();
+
+        // (1) password-grant login response must NOT carry the plural — upstream doesn't
+        //     emit it on this model regardless of grant type. The singular is also absent
+        //     for password grant (the builder only populates it on webauthn grant).
+        expect(token.UserDecryptionOptions).toBeTruthy();
+        expect(token.UserDecryptionOptions).not.toHaveProperty('WebAuthnPrfOptions');
+        expect(token.UserDecryptionOptions).not.toHaveProperty('WebAuthnPrfOption');
+
+        // (2) /sync MUST carry `webAuthnPrfOptions` as an array, possibly empty.
+        const syncRes = await request.get('/api/sync', {
+            headers: { Authorization: `Bearer ${token.access_token}` },
+        });
+        expect(syncRes.status()).toBe(200);
+        const sync: any = await syncRes.json();
+        expect(sync.userDecryption).toBeTruthy();
+        expect(Array.isArray(sync.userDecryption.webAuthnPrfOptions)).toBe(true);
+        expect(sync.userDecryption.webAuthnPrfOptions).toEqual([]);
+    });
+});

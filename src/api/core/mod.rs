@@ -424,7 +424,7 @@ async fn post_api_webauthn_assertion_options(
     Ok(Json(json!({
         "options": response.public_key,
         "token": token,
-        "object": "webauthnCredentialAssertionOptions"
+        "object": "webAuthnLoginAssertionOptions"
     })))
 }
 
