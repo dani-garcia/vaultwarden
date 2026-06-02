@@ -145,6 +145,11 @@ impl TwoFactor {
         }
     }
 
+    /// Consumes `self` and deletes the row by `uuid` only. The simpler form
+    /// for callers that already own the [`TwoFactor`] and don't need to
+    /// observe whether anything was actually deleted (e.g., legacy 2FA
+    /// management flows where the caller looked the row up via
+    /// `find_by_user_and_type` immediately before).
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
         conn.run(move |conn| {
             diesel::delete(twofactor::table.filter(twofactor::uuid.eq(self.uuid)))
@@ -154,13 +159,29 @@ impl TwoFactor {
         .await
     }
 
-    /// Load provider rows while preserving DB transients for the
-    /// unauthenticated `webauthn_login` grant. Authenticated 2FA flows
-    /// still use the panicking `find_by_user` sibling (see upstream
-    /// pattern); the unauthenticated grant must distinguish a transient
-    /// 503 from a 401 to avoid the grant becoming an account-state oracle
-    /// and to give legitimate users a "retry later" signal instead of
-    /// AUTH_FAILED.
+    /// Borrowing-and-rowcount-returning sibling of [`Self::delete`].
+    /// Filters by both `(uuid, user_uuid)` for defense-in-depth and returns
+    /// `Ok(true)` only if a row was actually deleted. Used by the passkey
+    /// management endpoints' validate-then-delete pattern, which needs the
+    /// rowcount to detect a multi-replica race where another node consumed
+    /// the challenge row between this caller's SELECT and DELETE.
+    pub async fn delete_by_uuid(&self, conn: &DbConn) -> Result<bool, Error> {
+        let uuid = self.uuid.clone();
+        let user_uuid = self.user_uuid.clone();
+        conn.run(move |conn| {
+            diesel::delete(twofactor::table.filter(twofactor::uuid.eq(uuid)).filter(twofactor::user_uuid.eq(user_uuid)))
+                .execute(conn)
+                .map(|rows| rows > 0)
+                .map_res("Error deleting twofactor by uuid")
+        })
+        .await
+    }
+
+    /// Load provider rows while preserving DB transients for auth paths that
+    /// must distinguish a transient server failure from an empty provider set.
+    /// The unauthenticated `webauthn_login` grant additionally maps those
+    /// transients to a generic 503 so a legitimate user gets a retry-later
+    /// signal instead of AUTH_FAILED.
     pub async fn try_find_by_user(user_uuid: &UserId, conn: &DbConn) -> Result<Vec<Self>, Error> {
         let user_uuid = user_uuid.clone();
         conn.run(move |conn| {
@@ -184,6 +205,12 @@ impl TwoFactor {
         .await
     }
 
+    /// Legacy `Option`-typed lookup that collapses DB transients (deadlock,
+    /// conn drop) and a genuinely absent row into the same `None`. Used by
+    /// authenticated 2FA-management flows where the caller already owns the
+    /// user context and a 5xx-vs-401 distinction at this lookup doesn't
+    /// matter. For new callers — especially anything reachable from an
+    /// unauthenticated grant — prefer [`Self::try_find_by_user_and_type`].
     pub async fn find_by_user_and_type(user_uuid: &UserId, atype: i32, conn: &DbConn) -> Option<Self> {
         conn.run(move |conn| {
             twofactor::table
@@ -191,6 +218,28 @@ impl TwoFactor {
                 .filter(twofactor::atype.eq(atype))
                 .first::<Self>(conn)
                 .ok()
+        })
+        .await
+    }
+
+    /// `Result`-typed sibling of [`Self::find_by_user_and_type`] that
+    /// propagates DB transients as `Err(_)` instead of collapsing them into
+    /// `Ok(None)`. Required for the unauthenticated `webauthn_login` grant
+    /// (and any other unauthenticated caller) so a deadlock or conn drop can
+    /// surface as a 5xx retry signal rather than a 4xx "no such row" — the
+    /// latter would let the grant become an account-state oracle.
+    pub async fn try_find_by_user_and_type(
+        user_uuid: &UserId,
+        atype: i32,
+        conn: &DbConn,
+    ) -> Result<Option<Self>, Error> {
+        conn.run(move |conn| {
+            twofactor::table
+                .filter(twofactor::user_uuid.eq(user_uuid))
+                .filter(twofactor::atype.eq(atype))
+                .first::<Self>(conn)
+                .optional()
+                .map_res("Error loading twofactor by type")
         })
         .await
     }

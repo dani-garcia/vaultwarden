@@ -10,7 +10,7 @@ use webauthn_rs::{
 };
 use webauthn_rs_proto::{
     AuthenticationExtensionsClientOutputs, AuthenticatorAssertionResponseRaw, AuthenticatorAttestationResponseRaw,
-    AuthenticatorTransport, PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs,
+    PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs,
     RequestAuthenticationExtensions, UserVerificationPolicy,
 };
 
@@ -185,39 +185,35 @@ struct EnableWebauthnData {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RegisterPublicKeyCredentialCopy {
+struct RegisterPublicKeyCredentialCopy {
     pub id: String,
     pub raw_id: Base64UrlSafeData,
     pub response: AuthenticatorAttestationResponseRawCopy,
-    #[serde(default, alias = "clientExtensionResults")]
-    pub extensions: RegistrationExtensionsClientOutputs,
     pub r#type: String,
 }
 
 // This is copied from AuthenticatorAttestationResponseRaw to change clientDataJSON to clientDataJson
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AuthenticatorAttestationResponseRawCopy {
+struct AuthenticatorAttestationResponseRawCopy {
     #[serde(rename = "AttestationObject", alias = "attestationObject")]
     pub attestation_object: Base64UrlSafeData,
     #[serde(rename = "clientDataJson", alias = "clientDataJSON")]
     pub client_data_json: Base64UrlSafeData,
-    pub transports: Option<Vec<AuthenticatorTransport>>,
 }
 
 impl From<RegisterPublicKeyCredentialCopy> for RegisterPublicKeyCredential {
     fn from(r: RegisterPublicKeyCredentialCopy) -> Self {
-        let transports = r.response.transports;
         Self {
             id: r.id,
             raw_id: r.raw_id,
             response: AuthenticatorAttestationResponseRaw {
                 attestation_object: r.response.attestation_object,
                 client_data_json: r.response.client_data_json,
-                transports,
+                transports: None,
             },
             type_: r.r#type,
-            extensions: r.extensions,
+            extensions: RegistrationExtensionsClientOutputs::default(),
         }
     }
 }
@@ -535,42 +531,61 @@ mod tests {
     use super::*;
 
     #[test]
-    fn register_public_key_credential_copy_preserves_transports() {
-        let transports = vec![AuthenticatorTransport::Internal, AuthenticatorTransport::Hybrid];
+    fn register_public_key_credential_copy_strips_transports() {
         let copy = RegisterPublicKeyCredentialCopy {
             id: String::from("credential"),
             raw_id: Base64UrlSafeData::from([1, 2, 3]),
             response: AuthenticatorAttestationResponseRawCopy {
                 attestation_object: Base64UrlSafeData::from([4, 5, 6]),
                 client_data_json: Base64UrlSafeData::from([7, 8, 9]),
-                transports: Some(transports.clone()),
             },
-            extensions: RegistrationExtensionsClientOutputs::default(),
-            r#type: String::from("public-key"),
-        };
-
-        let converted: RegisterPublicKeyCredential = copy.into();
-
-        assert_eq!(converted.response.transports, Some(transports));
-    }
-
-    #[test]
-    fn register_public_key_credential_copy_keeps_absent_transports_absent() {
-        let copy = RegisterPublicKeyCredentialCopy {
-            id: String::from("credential"),
-            raw_id: Base64UrlSafeData::from([1, 2, 3]),
-            response: AuthenticatorAttestationResponseRawCopy {
-                attestation_object: Base64UrlSafeData::from([4, 5, 6]),
-                client_data_json: Base64UrlSafeData::from([7, 8, 9]),
-                transports: None,
-            },
-            extensions: RegistrationExtensionsClientOutputs::default(),
             r#type: String::from("public-key"),
         };
 
         let converted: RegisterPublicKeyCredential = copy.into();
 
         assert_eq!(converted.response.transports, None);
+    }
+
+    #[test]
+    fn register_public_key_credential_copy_ignores_extra_client_fields() {
+        let copy = serde_json::from_value::<RegisterPublicKeyCredentialCopy>(json!({
+            "id": "credential",
+            "rawId": "AQID",
+            "response": {
+                "attestationObject": "BAUG",
+                "clientDataJson": "BwgJ",
+                "transports": ["internal", "hybrid"]
+            },
+            "clientExtensionResults": {},
+            "type": "public-key"
+        }))
+        .unwrap();
+
+        let converted: RegisterPublicKeyCredential = copy.into();
+
+        assert_eq!(converted.response.transports, None);
+    }
+
+    #[test]
+    fn register_public_key_credential_copy_defaults_extensions() {
+        let copy = RegisterPublicKeyCredentialCopy {
+            id: String::from("credential"),
+            raw_id: Base64UrlSafeData::from([1, 2, 3]),
+            response: AuthenticatorAttestationResponseRawCopy {
+                attestation_object: Base64UrlSafeData::from([4, 5, 6]),
+                client_data_json: Base64UrlSafeData::from([7, 8, 9]),
+            },
+            r#type: String::from("public-key"),
+        };
+
+        let converted: RegisterPublicKeyCredential = copy.into();
+
+        assert!(converted.extensions.appid.is_none());
+        assert!(converted.extensions.cred_props.is_none());
+        assert!(converted.extensions.hmac_secret.is_none());
+        assert!(converted.extensions.cred_protect.is_none());
+        assert!(converted.extensions.min_pin_length.is_none());
     }
 
     #[test]

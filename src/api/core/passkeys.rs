@@ -1,22 +1,27 @@
 use chrono::Utc;
 use rocket::{Route, http::Status, serde::json::Json, serde::json::Value};
 use webauthn_rs::prelude::{
-    CreationChallengeResponse, Credential as WebauthnCredentialData, Passkey, PasskeyAuthentication,
+    Base64UrlSafeData, CreationChallengeResponse, Credential as WebauthnCredentialData, Passkey, PasskeyAuthentication,
     PasskeyRegistration,
 };
-use webauthn_rs_proto::{ExtnState, RequestRegistrationExtensions, UserVerificationPolicy};
+use webauthn_rs_proto::{
+    AuthenticatorAttestationResponseRaw, AuthenticatorTransport, ExtnState, RegisterPublicKeyCredential,
+    RegistrationExtensionsClientOutputs, RequestRegistrationExtensions, UserVerificationPolicy,
+};
 
 use crate::{
     CONFIG,
     api::{
         ApiResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
-        core::two_factor::webauthn::{PublicKeyCredentialCopy, RegisterPublicKeyCredentialCopy, WEBAUTHN},
+        core::two_factor::webauthn::{PublicKeyCredentialCopy, WEBAUTHN},
     },
     auth::Headers,
     crypto,
     db::{
         DbConn,
-        models::{TwoFactor, TwoFactorType, User, WebAuthnCredential, WebAuthnCredentialId},
+        models::{
+            TwoFactor, TwoFactorType, User, WebAuthnCredential, WebAuthnCredentialId, is_concurrent_modification,
+        },
     },
     error::Error,
     util::get_uuid,
@@ -81,6 +86,43 @@ struct WebAuthnPasskeyAssertionChallenge {
     created_at: i64,
     user_security_stamp: String,
     state: PasskeyAuthentication,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PasskeyRegisterPublicKeyCredentialCopy {
+    id: String,
+    raw_id: Base64UrlSafeData,
+    response: PasskeyAuthenticatorAttestationResponseRawCopy,
+    #[serde(default, alias = "clientExtensionResults")]
+    extensions: RegistrationExtensionsClientOutputs,
+    r#type: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PasskeyAuthenticatorAttestationResponseRawCopy {
+    #[serde(rename = "AttestationObject", alias = "attestationObject")]
+    attestation_object: Base64UrlSafeData,
+    #[serde(rename = "clientDataJson", alias = "clientDataJSON")]
+    client_data_json: Base64UrlSafeData,
+    transports: Option<Vec<AuthenticatorTransport>>,
+}
+
+impl From<PasskeyRegisterPublicKeyCredentialCopy> for RegisterPublicKeyCredential {
+    fn from(r: PasskeyRegisterPublicKeyCredentialCopy) -> Self {
+        Self {
+            id: r.id,
+            raw_id: r.raw_id,
+            response: AuthenticatorAttestationResponseRaw {
+                attestation_object: r.response.attestation_object,
+                client_data_json: r.response.client_data_json,
+                transports: r.response.transports,
+            },
+            type_: r.r#type,
+            extensions: r.extensions,
+        }
+    }
 }
 
 fn passkey_management_challenge_is_fresh(created_at: i64) -> bool {
@@ -156,8 +198,29 @@ fn passkey_count_limit_reached(count: usize) -> bool {
     count >= MAX_WEBAUTHN_CREDENTIALS
 }
 
+/// Single source of truth for whether the deployment posture permits account
+/// passkeys — gates `/sync`'s `webAuthnPrfOptions`, `/api/config`'s
+/// `pm-2035-passkey-unlock` flag, and [`check_passkey_endpoint_preconditions`]
+/// so the lock-screen affordance the client renders agrees with the server's
+/// actual acceptance posture.
 pub(crate) fn account_passkeys_allowed() -> bool {
-    !(CONFIG.sso_enabled() && CONFIG.sso_only()) && CONFIG.is_webauthn_2fa_supported()
+    account_passkeys_disabled_reason().is_none()
+}
+
+#[derive(Clone, Copy)]
+enum AccountPasskeysDisabledReason {
+    WebAuthnUnsupported,
+    SsoOnly,
+}
+
+fn account_passkeys_disabled_reason() -> Option<AccountPasskeysDisabledReason> {
+    if !CONFIG.is_webauthn_2fa_supported() {
+        Some(AccountPasskeysDisabledReason::WebAuthnUnsupported)
+    } else if CONFIG.sso_enabled() && CONFIG.sso_only() {
+        Some(AccountPasskeysDisabledReason::SsoOnly)
+    } else {
+        None
+    }
 }
 
 fn request_passkey_prf_extension(
@@ -184,7 +247,22 @@ fn passkey_supports_prf(passkey: &Passkey) -> bool {
     matches!(credential.extensions.hmac_create_secret, ExtnState::Set(true))
 }
 
-type PasskeyRegistrationPrfData = (bool, Option<String>, Option<String>, Option<String>);
+/// `webauthn-rs`'s `Passkey::cred` is `pub(crate)`, so there is no direct
+/// accessor for the stored signature counter; the only path is to clone the
+/// struct and convert into `Credential`. Centralised here so a future upstream
+/// `Passkey::counter()` accessor is a one-line swap.
+pub(crate) fn passkey_counter(passkey: &Passkey) -> u32 {
+    let credential: WebauthnCredentialData = passkey.clone().into();
+    credential.counter
+}
+
+#[derive(Debug, PartialEq)]
+struct PasskeyRegistrationPrfData {
+    supports_prf: bool,
+    encrypted_user_key: Option<String>,
+    encrypted_public_key: Option<String>,
+    encrypted_private_key: Option<String>,
+}
 
 fn passkey_registration_prf_data(
     client_supports_prf: bool,
@@ -201,7 +279,12 @@ fn passkey_registration_prf_data(
         if has_key_material {
             err!("Passkey does not support PRF")
         }
-        return Ok((false, None, None, None));
+        return Ok(PasskeyRegistrationPrfData {
+            supports_prf: false,
+            encrypted_user_key: None,
+            encrypted_public_key: None,
+            encrypted_private_key: None,
+        });
     }
 
     // Chromium/CDP does not consistently reflect the registration PRF
@@ -209,7 +292,12 @@ fn passkey_registration_prf_data(
     // whether the browser ceremony supports PRF. Store that client capability
     // signal; only the presence of wrapped key blobs controls unlock.
     if !has_key_material {
-        return Ok((true, None, None, None));
+        return Ok(PasskeyRegistrationPrfData {
+            supports_prf: true,
+            encrypted_user_key: None,
+            encrypted_public_key: None,
+            encrypted_private_key: None,
+        });
     }
 
     let Some(encrypted_user_key) = encrypted_user_key else {
@@ -222,34 +310,42 @@ fn passkey_registration_prf_data(
         err!("Encrypted private key is required")
     };
 
-    Ok((true, Some(encrypted_user_key), Some(encrypted_public_key), Some(encrypted_private_key)))
+    Ok(PasskeyRegistrationPrfData {
+        supports_prf: true,
+        encrypted_user_key: Some(encrypted_user_key),
+        encrypted_public_key: Some(encrypted_public_key),
+        encrypted_private_key: Some(encrypted_private_key),
+    })
 }
 
-/// Gates every passkey-management entry point in this module on the same
-/// three preconditions:
-///   • `check_limit_login` — IP-level rate limit shared with the password
-///     login path. Runs FIRST so a misconfigured DOMAIN can't be turned
-///     into an uncapped error-log generator: every refused request would
-///     otherwise short-circuit on `is_webauthn_2fa_supported` without
-///     consuming a rate-limit token.
-///   • `is_webauthn_2fa_supported` — refuses cleanly when DOMAIN is
-///     incompatible with WebAuthn (must run before the `WEBAUTHN` LazyLock
-///     is touched, which would otherwise panic).
-///   • SSO_ONLY — refuses passkey mutations when the operator has required
-///     SSO sign-in.
+/// Gates the passkey-management MUTATION endpoints (POST/PUT `/webauthn` and
+/// the two `*-options` endpoints) in order:
+///   - `check_limit_login` - shared IP rate limit, FIRST so a misconfigured
+///     DOMAIN can't become an uncapped error-log generator (a refused request
+///     would otherwise short-circuit without consuming a rate-limit token).
+///   - `is_webauthn_2fa_supported` - refuses cleanly when DOMAIN is
+///     incompatible; must run before the `WEBAUTHN` LazyLock is touched, which
+///     would otherwise panic.
+///   - SSO_ONLY - refuses passkey mutations under required SSO (Bitwarden parity).
 ///
-/// `action_verb` parameterises the SSO refusal message between the create
-/// and update endpoints ("created" / "updated"). The delete endpoint is
-/// intentionally NOT gated — see the comment on `post_api_webauthn_delete`.
+/// `get_api_webauthn` (read-only) and `post_api_webauthn_delete`
+/// (capability-narrowing; gating it would strand credentials) are intentionally
+/// NOT gated here. The unauthenticated `get_web_authn_assertion_options` in
+/// `identity.rs` inlines the same checks but collapses them to the opaque
+/// `PASSKEY_AUTH_FAILED` — the admin-facing wording below must not reach
+/// anonymous callers. `action_verb` ("created"/"updated") keeps the SSO refusal
+/// message precise.
 pub(crate) fn check_passkey_endpoint_preconditions(ip: &std::net::IpAddr, action_verb: &str) -> ApiResult<()> {
     crate::ratelimit::check_limit_login(ip)?;
-    if !CONFIG.is_webauthn_2fa_supported() {
-        err!("Webauthn is not supported on this server. Set `DOMAIN` to a valid URL with a parseable host.")
+    match account_passkeys_disabled_reason() {
+        Some(AccountPasskeysDisabledReason::WebAuthnUnsupported) => {
+            err!("Webauthn is not supported on this server. Set `DOMAIN` to a valid URL with a parseable host.")
+        }
+        Some(AccountPasskeysDisabledReason::SsoOnly) => {
+            err!(format!("Passkeys cannot be {action_verb} when SSO sign-in is required"))
+        }
+        None => Ok(()),
     }
-    if CONFIG.sso_enabled() && CONFIG.sso_only() {
-        err!(format!("Passkeys cannot be {action_verb} when SSO sign-in is required"))
-    }
-    Ok(())
 }
 
 #[post("/webauthn/attestation-options", data = "<data>")]
@@ -270,11 +366,24 @@ async fn post_api_webauthn_attestation_options(
         err!("Maximum number of passkeys reached")
     }
 
+    // Skip credentials whose stored blob fails to deserialize rather than
+    // propagating: a single corrupt row would otherwise block the user from
+    // enrolling ANY new passkey. The browser's excludeCredentials list ends
+    // up missing those entries, but the UNIQUE(user_uuid, credential_id_hash)
+    // constraint at `save_with_user_limit` still catches a re-enrolment of
+    // the corrupt row's authenticator. Surface the corruption to ops via
+    // `warn!` so the bad row can be investigated.
     let existing_cred_ids: Vec<_> = all_creds
         .into_iter()
-        .filter_map(|wac| {
-            let passkey: Passkey = serde_json::from_str(&wac.credential).ok()?;
-            Some(passkey.cred_id().to_owned())
+        .filter_map(|wac| match serde_json::from_str::<Passkey>(&wac.credential) {
+            Ok(passkey) => Some(passkey.cred_id().to_owned()),
+            Err(e) => {
+                warn!(
+                    "post_api_webauthn_attestation_options: corrupt credential blob for {} (user {}), skipping from excludeCredentials: {e:#?}",
+                    wac.uuid, wac.user_uuid
+                );
+                None
+            }
         })
         .collect();
 
@@ -343,11 +452,25 @@ async fn post_api_webauthn_assertion_options(
 
     data.validate(&user, true, &conn).await?;
 
+    // Skip credentials whose stored blob fails to deserialize rather than
+    // propagating: a single corrupt PRF row would otherwise block the user
+    // from EVER initiating PRF unlock with any other healthy passkey. Same
+    // shape as `post_api_webauthn_attestation_options` above — surface the
+    // corruption to ops via `warn!` so the bad row can be investigated.
     let credentials: Vec<Passkey> = WebAuthnCredential::find_by_user(&user.uuid, &conn)
         .await?
         .into_iter()
         .filter(|wac| wac.supports_prf)
-        .filter_map(|wac| serde_json::from_str(&wac.credential).ok())
+        .filter_map(|wac| match serde_json::from_str::<Passkey>(&wac.credential) {
+            Ok(passkey) => Some(passkey),
+            Err(e) => {
+                warn!(
+                    "post_api_webauthn_assertion_options: corrupt credential blob for {} (user {}), skipping PRF-capable passkey: {e:#?}",
+                    wac.uuid, wac.user_uuid
+                );
+                None
+            }
+        })
         .collect();
 
     if credentials.is_empty() {
@@ -386,7 +509,7 @@ async fn post_api_webauthn_assertion_options(
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WebAuthnLoginCredentialCreateRequest {
-    device_response: RegisterPublicKeyCredentialCopy,
+    device_response: PasskeyRegisterPublicKeyCredentialCopy,
     name: String,
     token: Option<String>,
     supports_prf: bool,
@@ -407,10 +530,11 @@ async fn post_api_webauthn(
     let data: WebAuthnLoginCredentialCreateRequest = data.into_inner();
     let user = headers.user;
 
-    // Atomically take the saved challenge state (single-use): concurrent
-    // finishes for the same registration row cannot both succeed and create
-    // duplicate `web_authn_credentials` entries — only the caller whose DELETE
-    // removes the row proceeds.
+    // Consume the exact challenge row only after token/security-stamp
+    // validation, so a stale tab can't delete the user's current challenge
+    // with an old token. A failed validation leaves the row until the next
+    // options request replaces it; UNIQUE(user_uuid, atype) bounds it to one
+    // stale-but-unredeemable row per user/type.
     let Some(mut current_user) = User::try_find_by_uuid(&user.uuid, &conn).await? else {
         err!("User not found")
     };
@@ -420,20 +544,28 @@ async fn post_api_webauthn(
     }
 
     let type_ = TwoFactorType::WebauthnPasskeyRegisterChallenge as i32;
-    let Some(tf) = TwoFactor::take_by_user_and_type(&user.uuid, type_, &conn).await? else {
+    let Some(tf) = TwoFactor::try_find_by_user_and_type(&user.uuid, type_, &conn).await? else {
         err!("No registration challenge found. Please try again.")
     };
     let state = passkey_registration_challenge_state(&tf.data, data.token.as_deref(), &current_user.security_stamp)?;
+    if !tf.delete_by_uuid(&conn).await? {
+        err!("No registration challenge found. Please try again.")
+    }
+
     let credential = WEBAUTHN.finish_passkey_registration(&data.device_response.into(), &state)?;
     let credential_id_hash = passkey_credential_id_hash(credential.cred_id().as_slice());
-    let (supports_prf, encrypted_user_key, encrypted_public_key, encrypted_private_key) =
-        passkey_registration_prf_data(
-            data.supports_prf,
-            data.encrypted_user_key,
-            data.encrypted_public_key,
-            data.encrypted_private_key,
-            passkey_supports_prf(&credential),
-        )?;
+    let PasskeyRegistrationPrfData {
+        supports_prf,
+        encrypted_user_key,
+        encrypted_public_key,
+        encrypted_private_key,
+    } = passkey_registration_prf_data(
+        data.supports_prf,
+        data.encrypted_user_key,
+        data.encrypted_public_key,
+        data.encrypted_private_key,
+        passkey_supports_prf(&credential),
+    )?;
 
     // Duplicate detection rests on the UNIQUE `(user_uuid, credential_id_hash)`
     // index: `save_with_user_limit` below maps the `UniqueViolation` to
@@ -492,19 +624,23 @@ async fn put_api_webauthn(
         err!("Encrypted private key is required")
     };
 
-    // Atomically take the saved challenge state (single-use): concurrent
-    // updates for the same assertion row cannot both succeed and apply
-    // different blob payloads — only the caller whose DELETE removes the row
-    // proceeds.
+    // Consume the exact challenge row only after token/security-stamp
+    // validation, so a stale tab can't delete the user's current challenge
+    // with an old token. A failed validation leaves the row until the next
+    // options request replaces it; UNIQUE(user_uuid, atype) bounds it to one
+    // stale-but-unredeemable row per user/type.
     let Some(mut current_user) = User::try_find_by_uuid(&user.uuid, &conn).await? else {
         err!("User not found")
     };
 
     let type_ = TwoFactorType::WebauthnPasskeyAssertionChallenge as i32;
-    let Some(tf) = TwoFactor::take_by_user_and_type(&user.uuid, type_, &conn).await? else {
+    let Some(tf) = TwoFactor::try_find_by_user_and_type(&user.uuid, type_, &conn).await? else {
         err!("No assertion challenge found. Please try again.")
     };
     let state = passkey_assertion_challenge_state(&tf.data, &data.token, &current_user.security_stamp)?;
+    if !tf.delete_by_uuid(&conn).await? {
+        err!("No assertion challenge found. Please try again.")
+    }
 
     let credential_response = data.device_response.into();
 
@@ -527,27 +663,44 @@ async fn put_api_webauthn(
         err!("Passkey does not support PRF")
     }
 
-    let mut passkey: Passkey = serde_json::from_str(&matched_wac.credential)?;
+    let previous_credential = matched_wac.credential.clone();
+    let mut passkey: Passkey = serde_json::from_str(&previous_credential)?;
 
-    // Persist the (optional) signature-counter advance and the PRF keyset
-    // together. The assertion challenge was atomically consumed via
-    // `take_by_user_and_type` above, so a half-applied state would block
-    // any retry — the helper folds both writes into a single UPDATE.
-    //
-    // `advanced_counter` gates the `credential` column write. Passing `false`
-    // when the counter did not advance avoids clobbering a counter blob a
-    // parallel replica may have just persisted via `webauthn_login`'s
-    // counter advance (the per-process DashMap lock does not serialise
-    // across replicas). The helper surfaces 0-rows as a Simple error so a
-    // concurrent DELETE doesn't yield a misleading 200 OK with no row.
-    let advanced_counter = passkey.update_credential(&authentication_result) == Some(true);
+    // Persist the PRF keyset, optionally folding a signature-counter advance
+    // into the same UPDATE. Backup-state-only WebAuthn changes are not written:
+    // with blob storage, writing a stale backup-state toggle can roll back a
+    // counter advanced by a parallel replica.
+    let previous_counter = passkey_counter(&passkey);
+    let updated_credential = passkey.update_credential(&authentication_result) == Some(true);
+    let advanced_counter = updated_credential && authentication_result.counter() > previous_counter;
     if advanced_counter {
         matched_wac.credential = serde_json::to_string(&passkey)?;
     }
     matched_wac.encrypted_user_key = Some(encrypted_user_key);
     matched_wac.encrypted_public_key = Some(encrypted_public_key);
     matched_wac.encrypted_private_key = Some(encrypted_private_key);
-    matched_wac.update_credential_and_prf_keyset(advanced_counter, &conn).await?;
+    if let Err(e) = matched_wac
+        .update_credential_and_prf_keyset(
+            advanced_counter,
+            advanced_counter.then_some(previous_credential.as_str()),
+            &conn,
+        )
+        .await
+    {
+        // Surface a CAS-loser race as a 409 + retry hint. This INTENTIONALLY
+        // diverges from `webauthn_login`, which is unauthenticated and masks CM
+        // behind a generic 503/INFO so an attacker gets no retry signal; here
+        // the caller is authenticated and can act on the 409, and operators
+        // want ERROR-level visibility into PRF-enrol contention.
+        if is_concurrent_modification(&e) {
+            err_code!(
+                "Passkey credential modified concurrently. Try again.",
+                format!("user {} credential {}: {e:#?}", user.uuid, matched_wac.uuid),
+                Status::Conflict.code
+            )
+        }
+        return Err(e);
+    }
 
     current_user.update_revision(&conn).await?;
     nt.send_user_update(UpdateType::SyncVault, &current_user, headers.device.push_uuid.as_ref(), &conn).await;
@@ -575,10 +728,13 @@ async fn post_api_webauthn_delete(
 
     data.validate(&user, true, &conn).await?;
 
-    WebAuthnCredential::delete_by_uuid_and_user(&uuid, &user.uuid, &conn).await?;
-
-    user.update_revision(&conn).await?;
-    nt.send_user_update(UpdateType::SyncVault, &user, headers.device.push_uuid.as_ref(), &conn).await;
+    let deleted = WebAuthnCredential::delete_by_uuid_and_user(&uuid, &user.uuid, &conn).await?;
+    if deleted {
+        user.update_revision(&conn).await?;
+        nt.send_user_update(UpdateType::SyncVault, &user, headers.device.push_uuid.as_ref(), &conn).await;
+    } else {
+        debug!("post_api_webauthn_delete: credential {uuid} was not registered for user {}", user.uuid);
+    }
 
     Ok(Status::Ok)
 }
@@ -595,6 +751,47 @@ mod tests {
     fn webauthn() -> Webauthn {
         let origin = Url::parse("http://localhost").unwrap();
         WebauthnBuilder::new("localhost", &origin).unwrap().rp_name("localhost").build().unwrap()
+    }
+
+    #[test]
+    fn passkey_register_public_key_credential_copy_preserves_transports() {
+        let transports = vec![AuthenticatorTransport::Internal, AuthenticatorTransport::Hybrid];
+        let copy = PasskeyRegisterPublicKeyCredentialCopy {
+            id: String::from("credential"),
+            raw_id: Base64UrlSafeData::from([1, 2, 3]),
+            response: PasskeyAuthenticatorAttestationResponseRawCopy {
+                attestation_object: Base64UrlSafeData::from([4, 5, 6]),
+                client_data_json: Base64UrlSafeData::from([7, 8, 9]),
+                transports: Some(transports.clone()),
+            },
+            extensions: RegistrationExtensionsClientOutputs::default(),
+            r#type: String::from("public-key"),
+        };
+
+        let converted: RegisterPublicKeyCredential = copy.into();
+
+        assert_eq!(converted.response.transports, Some(transports));
+    }
+
+    #[test]
+    fn passkey_register_public_key_credential_copy_accepts_client_extension_results_alias() {
+        let copy = serde_json::from_value::<PasskeyRegisterPublicKeyCredentialCopy>(json!({
+            "id": "credential",
+            "rawId": "AQID",
+            "response": {
+                "attestationObject": "BAUG",
+                "clientDataJson": "BwgJ",
+                "transports": ["internal"]
+            },
+            "clientExtensionResults": {},
+            "type": "public-key"
+        }))
+        .unwrap();
+
+        let converted: RegisterPublicKeyCredential = copy.into();
+
+        assert_eq!(converted.id, "credential");
+        assert_eq!(converted.response.transports, Some(vec![AuthenticatorTransport::Internal]));
     }
 
     fn passkey() -> Passkey {
@@ -655,6 +852,16 @@ mod tests {
         .into()
     }
 
+    /// Regression guard: `request_passkey_prf_extension` drills into
+    /// `webauthn-rs`'s `PasskeyRegistration` via the JSON-Value path
+    /// `rs.extensions.hmacCreateSecret`. The `rs` field is `pub(crate)` in
+    /// upstream and its serde name is the field identifier — any future
+    /// webauthn-rs version that renames the wrapper, restructures
+    /// `RegistrationState`, or moves the extensions sub-object out of it
+    /// would silently break PRF registration with no compile-time signal.
+    /// This test exercises the same path the production helper does and
+    /// asserts the extension lands in both the client-facing challenge
+    /// AND the round-tripped server-side state.
     #[test]
     fn request_passkey_prf_extension_marks_challenge_and_stored_state() {
         let user_uuid = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap();
@@ -687,7 +894,12 @@ mod tests {
                 false,
             )
             .unwrap(),
-            (true, Some("user-key".to_owned()), Some("public-key".to_owned()), Some("private-key".to_owned()),)
+            PasskeyRegistrationPrfData {
+                supports_prf: true,
+                encrypted_user_key: Some("user-key".to_owned()),
+                encrypted_public_key: Some("public-key".to_owned()),
+                encrypted_private_key: Some("private-key".to_owned()),
+            }
         );
     }
 
@@ -727,15 +939,26 @@ mod tests {
                 true,
             )
             .unwrap(),
-            (true, Some("user-key".to_owned()), Some("public-key".to_owned()), Some("private-key".to_owned()),)
+            PasskeyRegistrationPrfData {
+                supports_prf: true,
+                encrypted_user_key: Some("user-key".to_owned()),
+                encrypted_public_key: Some("public-key".to_owned()),
+                encrypted_private_key: Some("private-key".to_owned()),
+            }
         );
     }
 
     #[test]
     fn passkey_registration_prf_data_records_prf_support_even_without_client_keyset() {
-        assert_eq!(passkey_registration_prf_data(false, None, None, None, true).unwrap(), (true, None, None, None));
-        assert_eq!(passkey_registration_prf_data(true, None, None, None, false).unwrap(), (true, None, None, None));
-        assert_eq!(passkey_registration_prf_data(false, None, None, None, false).unwrap(), (false, None, None, None));
+        let only_support = |supports_prf| PasskeyRegistrationPrfData {
+            supports_prf,
+            encrypted_user_key: None,
+            encrypted_public_key: None,
+            encrypted_private_key: None,
+        };
+        assert_eq!(passkey_registration_prf_data(false, None, None, None, true).unwrap(), only_support(true));
+        assert_eq!(passkey_registration_prf_data(true, None, None, None, false).unwrap(), only_support(true));
+        assert_eq!(passkey_registration_prf_data(false, None, None, None, false).unwrap(), only_support(false));
     }
 
     #[test]

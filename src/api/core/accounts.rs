@@ -23,7 +23,7 @@ use crate::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
             EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId,
             OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
-            WebAuthnCredential, WebAuthnCredentialId,
+            WebAuthnCredential, WebAuthnCredentialId, is_concurrent_modification,
         },
     },
     mail,
@@ -1007,15 +1007,34 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     if save_result.is_ok() {
         for credential in &rewrapped_credentials {
             if let Err(e) = credential.update_keys(&conn).await {
+                // A concurrent passkey delete (multi-replica) racing rotation is
+                // the common case here — log at INFO so ops alerts only fire on
+                // genuine DB transients. The follow-up clear is also a no-op
+                // for the same reason, so skip it on the benign branch.
+                if is_concurrent_modification(&e) {
+                    info!(
+                        "post_rotatekey: WebAuthn PRF credential {} for user {} was deleted concurrently with key rotation; skipping rewrap",
+                        credential.uuid, user.uuid
+                    );
+                    continue;
+                }
                 warn!(
                     "post_rotatekey: failed to rewrap WebAuthn PRF credential {} for user {} after key rotation: {e:#?}",
                     credential.uuid, user.uuid
                 );
-                if let Err(clear_error) = credential.clear_prf_keyset(&conn).await {
-                    warn!(
-                        "post_rotatekey: failed to clear stale WebAuthn PRF keyset for credential {} after rewrap failure: {clear_error:#?}",
+                match credential.clear_account_key_prf_keyset(&conn).await {
+                    Ok(()) => info!(
+                        "post_rotatekey: cleared stale account-key PRF keyset for credential {} after rewrap failure",
                         credential.uuid
-                    );
+                    ),
+                    Err(clear_error) if is_concurrent_modification(&clear_error) => info!(
+                        "post_rotatekey: WebAuthn PRF credential {} for user {} was deleted concurrently after rewrap failure; nothing to clear",
+                        credential.uuid, user.uuid
+                    ),
+                    Err(clear_error) => warn!(
+                        "post_rotatekey: failed to clear stale account-key WebAuthn PRF keyset for credential {} after rewrap failure: {clear_error:#?}",
+                        credential.uuid
+                    ),
                 }
             }
         }

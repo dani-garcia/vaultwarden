@@ -15,6 +15,18 @@ use super::UserId;
 const WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS: i64 = 300;
 const WEBAUTHN_LOGIN_CHALLENGE_CLOCK_SKEW_SECONDS: i64 = 30;
 
+/// Sentinel message produced by [`WebAuthnCredential::ensure_credential_present`]
+/// when an UPDATE/DELETE matched zero rows. External callers detect this via
+/// [`is_concurrent_modification`] rather than touching the string directly —
+/// the constant is private to keep the predicate as the single API surface.
+const WEBAUTHN_CREDENTIAL_MODIFIED_CONCURRENTLY: &str = "Webauthn credential modified concurrently";
+
+/// Predicate for the message produced by [`WebAuthnCredential::ensure_credential_present`].
+/// See the sentinel constant above for the use case.
+pub(crate) fn is_concurrent_modification(err: &Error) -> bool {
+    err.message() == WEBAUTHN_CREDENTIAL_MODIFIED_CONCURRENTLY
+}
+
 #[derive(Clone, Debug, Identifiable, Queryable, Insertable)]
 #[diesel(table_name = web_authn_credentials)]
 #[diesel(primary_key(uuid))]
@@ -119,21 +131,14 @@ impl WebAuthnCredential {
             .map_err(|_| Error::new("Error counting web_authn_credentials", "Credential count overflow"))
     }
 
-    /// Guard the rowcount returned by an UPDATE against a concurrent
-    /// credential delete. A 0-row result means a `post_api_webauthn_delete`
-    /// (or `User::delete` cascade) removed the row inside our window — a
-    /// concurrent-state outcome that deserves a clean refusal.
-    ///
-    /// Returns a Simple error so the routine concurrent-delete race does NOT
-    /// emit an `error!()` log line from the Rocket responder. The message
-    /// itself describes an expected concurrent-state outcome, not a server
-    /// bug, and a multi-replica deployment would otherwise spam operator logs.
-    /// Visible to sibling modules so credential rewrap paths can share the
-    /// same rowcount-zero handling rather than re-implementing it for every
-    /// update statement.
+    /// Guard an UPDATE/DELETE rowcount against a concurrent credential
+    /// mutation: 0 rows means a peer deleted the row or a CAS guard rejected a
+    /// stale counter write. Returns a `Simple` error (not `Db(NotFound)`) so
+    /// the Rocket responder does not log this routine race at ERROR level.
+    /// `pub(crate)` so sibling rewrap paths share one rowcount-zero handling.
     pub(crate) fn ensure_credential_present(rows: usize) -> EmptyResult {
         if rows == 0 {
-            return Err(Error::new_msg("Webauthn credential modified concurrently"));
+            return Err(Error::new_msg(WEBAUTHN_CREDENTIAL_MODIFIED_CONCURRENTLY));
         }
         Ok(())
     }
@@ -141,9 +146,21 @@ impl WebAuthnCredential {
     /// Persist the serialized passkey blob after a successful assertion advances
     /// its signature counter. Touches only the `credential` column so a concurrent
     /// key rotation cannot clobber it (see [`Self::update_keys`]).
-    pub async fn update_credential(&self, conn: &DbConn) -> EmptyResult {
+    ///
+    /// `previous_credential` is the exact blob this request verified against.
+    /// Including it in the UPDATE predicate prevents a stale replica from writing
+    /// counter=12 over another replica's already-committed counter=15. The
+    /// WebAuthn counter lives inside the serialized `Passkey`, so an exact-blob
+    /// compare-and-swap is the narrowest portable guard across sqlite/mysql/pg.
+    pub async fn update_credential(&self, previous_credential: &str, conn: &DbConn) -> EmptyResult {
+        let previous_credential = previous_credential.to_owned();
         db_run! { conn: {
-            let rows: usize = diesel::update(web_authn_credentials::table.filter(web_authn_credentials::uuid.eq(&self.uuid)))
+            let rows: usize = diesel::update(
+                web_authn_credentials::table
+                    .filter(web_authn_credentials::uuid.eq(&self.uuid))
+                    .filter(web_authn_credentials::user_uuid.eq(&self.user_uuid))
+                    .filter(web_authn_credentials::credential.eq(previous_credential)),
+            )
                 .set(web_authn_credentials::credential.eq(&self.credential))
                 .execute(conn)
                 .map_res("Error updating web_authn_credential signature counter")?;
@@ -159,7 +176,11 @@ impl WebAuthnCredential {
     /// inside our window) so callers can treat the rewrap as a degraded no-op.
     pub async fn update_keys(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
-            let rows: usize = diesel::update(web_authn_credentials::table.filter(web_authn_credentials::uuid.eq(&self.uuid)))
+            let rows: usize = diesel::update(
+                web_authn_credentials::table
+                    .filter(web_authn_credentials::uuid.eq(&self.uuid))
+                    .filter(web_authn_credentials::user_uuid.eq(&self.user_uuid)),
+            )
                 .set((
                     web_authn_credentials::encrypted_user_key.eq(&self.encrypted_user_key),
                     web_authn_credentials::encrypted_public_key.eq(&self.encrypted_public_key),
@@ -170,46 +191,62 @@ impl WebAuthnCredential {
         }}
     }
 
-    /// Drop all PRF unlock blobs so clients stop advertising unlock-with-passkey
-    /// for a credential whose key material could not be rewrapped after account
-    /// key rotation.
-    pub async fn clear_prf_keyset(&self, conn: &DbConn) -> EmptyResult {
+    /// Drop the account-key-wrapped PRF unlock blobs so clients stop
+    /// advertising unlock-with-passkey for a credential whose key material
+    /// could not be rewrapped after account key rotation. The passkey-wrapped
+    /// private key is left intact because `update_keys` has not modified it.
+    pub async fn clear_account_key_prf_keyset(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
-            let rows: usize = diesel::update(web_authn_credentials::table.filter(web_authn_credentials::uuid.eq(&self.uuid)))
+            let rows: usize = diesel::update(
+                web_authn_credentials::table
+                    .filter(web_authn_credentials::uuid.eq(&self.uuid))
+                    .filter(web_authn_credentials::user_uuid.eq(&self.user_uuid)),
+            )
                 .set((
                     web_authn_credentials::encrypted_user_key.eq::<Option<String>>(None),
                     web_authn_credentials::encrypted_public_key.eq::<Option<String>>(None),
-                    web_authn_credentials::encrypted_private_key.eq::<Option<String>>(None),
                 ))
                 .execute(conn)
-                .map_res("Error clearing web_authn_credential PRF keyset")?;
+                .map_res("Error clearing web_authn_credential account-key PRF keyset")?;
             Self::ensure_credential_present(rows)
         }}
     }
 
-    /// Persist a complete PRF unlock keyset after a user enables vault
-    /// encryption for an existing passkey-login credential, optionally
-    /// folding the signature-counter advance from the assertion that
-    /// authorised the enrolment into the same UPDATE — both the keyset
-    /// and the counter are written in one statement so a half-applied
-    /// state is impossible without involving a separate transaction.
+    /// Persist a complete PRF unlock keyset when a user enables vault
+    /// encryption for an existing passkey-login credential, optionally folding
+    /// the assertion's signature-counter advance into the same UPDATE so a
+    /// half-applied state is impossible.
     ///
-    /// `advanced_counter` gates the `credential` blob write. The caller
-    /// passes `true` only when `Passkey::update_credential` reported a real
-    /// counter advance; otherwise the column is left untouched so a
-    /// concurrent counter advance committed by another instance (e.g. a
-    /// parallel `webauthn_login` in a multi-replica deployment) is not
-    /// silently overwritten with the stale blob loaded here.
-    ///
-    /// A 0-rows result is surfaced as a `Simple` error (NOT `Db(NotFound)`)
-    /// via [`Self::ensure_credential_present`] so the renderer at
-    /// `error.rs` does not log a routine concurrent-delete race at ERROR
-    /// level.
-    pub async fn update_credential_and_prf_keyset(&self, advanced_counter: bool, conn: &DbConn) -> EmptyResult {
+    /// `advanced_counter` gates the `credential` blob write; when true,
+    /// `previous_credential` must be the exact blob this request verified
+    /// against so the UPDATE rejects stale cross-replica counter writes.
+    /// Backup-state-only changes are not persisted: writing a stale blob for a
+    /// backup-state toggle could roll back a counter advanced by a peer replica,
+    /// and counter monotonicity matters more than that metadata bit.
+    pub async fn update_credential_and_prf_keyset(
+        &self,
+        advanced_counter: bool,
+        previous_credential: Option<&str>,
+        conn: &DbConn,
+    ) -> EmptyResult {
+        let previous_credential = if advanced_counter {
+            Some(
+                previous_credential
+                    .ok_or_else(|| Error::new_msg("Previous WebAuthn credential blob is required for counter updates"))?
+                    .to_owned(),
+            )
+        } else {
+            None
+        };
+
         db_run! { conn: {
-            let target = web_authn_credentials::table.filter(web_authn_credentials::uuid.eq(&self.uuid));
-            let rows: usize = if advanced_counter {
-                diesel::update(target)
+            let target = || {
+                web_authn_credentials::table
+                    .filter(web_authn_credentials::uuid.eq(&self.uuid))
+                    .filter(web_authn_credentials::user_uuid.eq(&self.user_uuid))
+            };
+            let rows: usize = if let Some(previous_credential) = previous_credential {
+                diesel::update(target().filter(web_authn_credentials::credential.eq(previous_credential)))
                     .set((
                         web_authn_credentials::credential.eq(&self.credential),
                         web_authn_credentials::encrypted_user_key.eq(&self.encrypted_user_key),
@@ -219,7 +256,7 @@ impl WebAuthnCredential {
                     .execute(conn)
                     .map_res("Error updating web_authn_credential PRF keyset")?
             } else {
-                diesel::update(target)
+                diesel::update(target())
                     .set((
                         web_authn_credentials::encrypted_user_key.eq(&self.encrypted_user_key),
                         web_authn_credentials::encrypted_public_key.eq(&self.encrypted_public_key),
@@ -278,24 +315,33 @@ impl WebAuthnCredential {
                 .count()
                 .get_result(conn)
                 .map_res("Error checking web_authn_credential presence")?;
+            // `uuid` is the PRIMARY KEY, so this filter caps the count at 0 or 1,
+            // and collapsing `rows > 0` into a 0-or-1 usize satisfies
+            // `ensure_credential_present`'s UPDATE-rowcount contract. Do NOT copy
+            // this idiom to a filter on non-unique columns: collapsing COUNT > 1
+            // to 1 would mask multi-row anomalies.
             Self::ensure_credential_present(usize::from(rows > 0))
         }}
     }
 
+    /// Idempotent: a request to delete a uuid that's already gone (double-click,
+    /// concurrent tab, stale client list) returns `Ok(false)` rather than a
+    /// "modified concurrently" error. The rowcount check belongs only on UPDATE
+    /// paths where zero rows is the genuine "raced with a cascade" signal.
     pub async fn delete_by_uuid_and_user(
         uuid: &WebAuthnCredentialId,
         user_uuid: &UserId,
         conn: &DbConn,
-    ) -> EmptyResult {
+    ) -> Result<bool, Error> {
         db_run! { conn: {
-            let rows = diesel::delete(
+            let rows: usize = diesel::delete(
                 web_authn_credentials::table
                     .filter(web_authn_credentials::uuid.eq(uuid))
                     .filter(web_authn_credentials::user_uuid.eq(user_uuid)),
             )
             .execute(conn)
             .map_res("Error removing web_authn_credential")?;
-            Self::ensure_credential_present(rows)
+            Ok(rows > 0)
         }}
     }
 
@@ -531,6 +577,26 @@ mod tests {
     fn credential_rowcount_guard_rejects_missing_rows() {
         assert!(WebAuthnCredential::ensure_credential_present(1).is_ok());
         assert!(WebAuthnCredential::ensure_credential_present(0).is_err());
+    }
+
+    /// Pins the contract between [`WebAuthnCredential::ensure_credential_present`]'s
+    /// 0-row error and [`is_concurrent_modification`]. Without this assertion a
+    /// future refactor that adds `.with_msg(...)` wrapping, replaces
+    /// `Error::new_msg` with `err!()` (which prepends the user message), or
+    /// inserts a `.map_res(...)` layer would silently degrade the predicate to
+    /// always-false — observers (accounts.rs, identity.rs, passkeys.rs) would
+    /// then fall through to ERROR-level logging on a benign CM race with no
+    /// other CI signal.
+    #[test]
+    fn concurrent_modification_predicate_matches_ensure_credential_present() {
+        let err = WebAuthnCredential::ensure_credential_present(0).expect_err("0 rows must error");
+        assert!(
+            is_concurrent_modification(&err),
+            "predicate must match the sentinel ensure_credential_present produces"
+        );
+
+        let other = Error::new_msg("Some other failure");
+        assert!(!is_concurrent_modification(&other), "predicate must NOT match unrelated errors");
     }
 
     /// Exhaust the 2^4 truth table for `has_prf_keyset` and `prf_status`:

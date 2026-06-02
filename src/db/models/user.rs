@@ -352,6 +352,7 @@ impl User {
             })
             .await;
         delete_result?;
+
         Ok(())
     }
 
