@@ -24,9 +24,11 @@ services:
     environment:
       - ADMIN_TOKEN
       - DATABASE_URL
+      - DOMAIN
       - I_REALLY_WANT_VOLATILE_STORAGE
       - LOG_LEVEL
       - LOGIN_RATELIMIT_MAX_BURST
+      - ROCKET_PORT
       - SIGNUPS_VERIFY
       - SMTP_HOST
       - SMTP_FROM

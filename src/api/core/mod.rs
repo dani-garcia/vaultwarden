@@ -15,6 +15,7 @@ pub use emergency_access::{emergency_notification_reminder_job, emergency_reques
 pub use events::{event_cleanup_job, log_event, log_user_event};
 pub use sends::purge_sends;
 
+use chrono::Utc;
 use reqwest::Method;
 use rocket::{Catcher, Route, http::Status, serde::json::Json, serde::json::Value};
 use webauthn_rs::prelude::{Passkey, PasskeyAuthentication, PasskeyRegistration};
@@ -40,6 +41,8 @@ use crate::{
     mail,
     util::{FeatureFlagFilter, get_uuid, parse_experimental_client_feature_flags},
 };
+
+const WEBAUTHN_PASSKEY_CHALLENGE_TTL_SECONDS: i64 = 300;
 
 pub fn routes() -> Vec<Route> {
     let mut eq_domains_routes = routes![get_settings_domains, post_settings_domains, put_settings_domains];
@@ -207,7 +210,7 @@ fn alive(_conn: DbConn) -> Json<String> {
 
 #[get("/now")]
 pub fn now() -> Json<String> {
-    Json(crate::util::format_date(&chrono::Utc::now().naive_utc()))
+    Json(crate::util::format_date(&Utc::now().naive_utc()))
 }
 
 #[get("/version")]
@@ -216,11 +219,11 @@ fn version() -> Json<&'static str> {
 }
 
 #[get("/webauthn")]
-async fn get_api_webauthn(headers: Headers, conn: DbConn) -> Json<Value> {
+async fn get_api_webauthn(headers: Headers, conn: DbConn) -> JsonResult {
     let user = headers.user;
 
     let data: Vec<Value> = WebAuthnCredential::find_by_user(&user.uuid, &conn)
-        .await
+        .await?
         .into_iter()
         .map(|wac| {
             json!({
@@ -235,17 +238,19 @@ async fn get_api_webauthn(headers: Headers, conn: DbConn) -> Json<Value> {
         })
         .collect();
 
-    Json(json!({
+    Ok(Json(json!({
         "object": "list",
         "data": data,
         "continuationToken": null
-    }))
+    })))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WebAuthnPasskeyRegistrationChallenge {
     token: String,
+    created_at: i64,
+    user_security_stamp: String,
     state: PasskeyRegistration,
 }
 
@@ -253,10 +258,26 @@ struct WebAuthnPasskeyRegistrationChallenge {
 #[serde(rename_all = "camelCase")]
 struct WebAuthnPasskeyAssertionChallenge {
     token: String,
+    created_at: i64,
+    user_security_stamp: String,
     state: PasskeyAuthentication,
 }
 
-fn passkey_registration_challenge_state(data: &str, token: Option<&str>) -> ApiResult<PasskeyRegistration> {
+fn passkey_management_challenge_is_fresh(created_at: i64) -> bool {
+    // Lower-bound-only: `created_at` is server-stamped at challenge issuance
+    // and cannot legitimately be in the future. An upper bound here would only
+    // matter under a backward clock-jump (NTP correction), and in that case
+    // it would *extend* the validity window past the documented TTL — strictly
+    // worse than the one-sided check used by `WebAuthnLoginChallenge::take`.
+    let cutoff = Utc::now().timestamp() - WEBAUTHN_PASSKEY_CHALLENGE_TTL_SECONDS;
+    created_at >= cutoff
+}
+
+fn passkey_registration_challenge_state(
+    data: &str,
+    token: Option<&str>,
+    user_security_stamp: &str,
+) -> ApiResult<PasskeyRegistration> {
     // Persisted challenge rows are always the `{token, state}` wrapper —
     // nothing in the current code path writes the bare `PasskeyRegistration`
     // shape. Reject a row that doesn't deserialise (corrupted, stale schema)
@@ -268,10 +289,20 @@ fn passkey_registration_challenge_state(data: &str, token: Option<&str>) -> ApiR
     if !token.is_some_and(|t| crypto::ct_eq(t, &saved.token)) {
         err!("Invalid registration challenge. Please try again.")
     }
+    if !passkey_management_challenge_is_fresh(saved.created_at) {
+        err!("Invalid registration challenge. Please try again.")
+    }
+    if !crypto::ct_eq(user_security_stamp, &saved.user_security_stamp) {
+        err!("Invalid registration challenge. Please try again.")
+    }
     Ok(saved.state)
 }
 
-fn passkey_assertion_challenge_state(data: &str, token: &str) -> ApiResult<PasskeyAuthentication> {
+fn passkey_assertion_challenge_state(
+    data: &str,
+    token: &str,
+    user_security_stamp: &str,
+) -> ApiResult<PasskeyAuthentication> {
     // Same shape contract as `passkey_registration_challenge_state` above —
     // reject undecodable rows with the generic message rather than leaking
     // the underlying serde error.
@@ -279,6 +310,12 @@ fn passkey_assertion_challenge_state(data: &str, token: &str) -> ApiResult<Passk
         err!("Invalid assertion challenge. Please try again.")
     };
     if !crypto::ct_eq(token, &saved.token) {
+        err!("Invalid assertion challenge. Please try again.")
+    }
+    if !passkey_management_challenge_is_fresh(saved.created_at) {
+        err!("Invalid assertion challenge. Please try again.")
+    }
+    if !crypto::ct_eq(user_security_stamp, &saved.user_security_stamp) {
         err!("Invalid assertion challenge. Please try again.")
     }
     Ok(saved.state)
@@ -312,7 +349,7 @@ async fn post_api_webauthn_attestation_options(
 
     data.validate(&user, true, &conn).await?;
 
-    let all_creds = WebAuthnCredential::find_by_user(&user.uuid, &conn).await;
+    let all_creds = WebAuthnCredential::find_by_user(&user.uuid, &conn).await?;
     let existing_cred_ids: Vec<_> = all_creds
         .into_iter()
         .filter_map(|wac| {
@@ -342,20 +379,16 @@ async fn post_api_webauthn_attestation_options(
         asc.resident_key = Some(webauthn_rs_proto::ResidentKeyRequirement::Required);
     }
 
-    // Drop any abandoned challenge from a previous, unfinished registration
-    // attempt so these rows cannot accumulate. `TwoFactor::save` below uses
-    // `replace_into` keyed on `uuid` (not on `(user_uuid, atype)`), so without
-    // this delete, sqlite/mysql would insert a sibling row each retry.
-    if let Some(tf) =
-        TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::WebauthnPasskeyRegisterChallenge as i32, &conn)
-            .await
-    {
-        tf.delete(&conn).await?;
-    }
+    // Atomically drop any abandoned challenge from a previous, unfinished
+    // registration attempt so only one in-flight challenge state per user
+    // exists at any time.
+    TwoFactor::take_by_user_and_type(&user.uuid, TwoFactorType::WebauthnPasskeyRegisterChallenge as i32, &conn).await?;
 
     let token = get_uuid();
     let saved_challenge = WebAuthnPasskeyRegistrationChallenge {
         token: token.clone(),
+        created_at: Utc::now().timestamp(),
+        user_security_stamp: user.security_stamp,
         state,
     };
 
@@ -401,7 +434,7 @@ async fn post_api_webauthn_assertion_options(
     data.validate(&user, true, &conn).await?;
 
     let credentials: Vec<Passkey> = WebAuthnCredential::find_by_user(&user.uuid, &conn)
-        .await
+        .await?
         .into_iter()
         .filter(|wac| wac.supports_prf)
         .filter_map(|wac| serde_json::from_str(&wac.credential).ok())
@@ -413,16 +446,16 @@ async fn post_api_webauthn_assertion_options(
 
     let (response, state) = WEBAUTHN.start_passkey_authentication(&credentials)?;
 
-    if let Some(tf) =
-        TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::WebauthnPasskeyAssertionChallenge as i32, &conn)
-            .await
-    {
-        tf.delete(&conn).await?;
-    }
+    // Atomically drop any abandoned challenge from a previous attempt — see
+    // the comment on `post_api_webauthn_attestation_options`.
+    TwoFactor::take_by_user_and_type(&user.uuid, TwoFactorType::WebauthnPasskeyAssertionChallenge as i32, &conn)
+        .await?;
 
     let token = get_uuid();
     let saved_challenge = WebAuthnPasskeyAssertionChallenge {
         token: token.clone(),
+        created_at: Utc::now().timestamp(),
+        user_security_stamp: user.security_stamp,
         state,
     };
     TwoFactor::new(
@@ -457,11 +490,19 @@ async fn post_api_webauthn(
     data: Json<WebAuthnLoginCredentialCreateRequest>,
     headers: Headers,
     conn: DbConn,
+    nt: Notify<'_>,
 ) -> ApiResult<Status> {
     crate::ratelimit::check_limit_login(&headers.ip.ip)?;
 
     let data: WebAuthnLoginCredentialCreateRequest = data.into_inner();
     let user = headers.user;
+
+    // Same gate the `*-options` endpoints use (lines 333, 423). Without it, a
+    // misconfigured `DOMAIN` that passes startup's `http://` prefix check but
+    // fails `Url::parse` panics on the `WEBAUTHN` `LazyLock` initializer below.
+    if !CONFIG.is_webauthn_2fa_supported() {
+        err!("Webauthn is not supported on this server. Set `DOMAIN` to a valid URL with a parseable host.")
+    }
 
     if CONFIG.sso_enabled() && CONFIG.sso_only() {
         err!("Passkeys cannot be created when SSO sign-in is required")
@@ -471,20 +512,27 @@ async fn post_api_webauthn(
     // finishes for the same registration row cannot both succeed and create
     // duplicate `web_authn_credentials` entries — only the caller whose DELETE
     // removes the row proceeds.
+    let Some(mut current_user) = User::find_by_uuid(&user.uuid, &conn).await else {
+        err!("User not found")
+    };
+
     let type_ = TwoFactorType::WebauthnPasskeyRegisterChallenge as i32;
-    let Some(tf) = TwoFactor::take_by_user_and_type(&user.uuid, type_, &conn).await else {
+    let Some(tf) = TwoFactor::take_by_user_and_type(&user.uuid, type_, &conn).await? else {
         err!("No registration challenge found. Please try again.")
     };
-    let state = passkey_registration_challenge_state(&tf.data, data.token.as_deref())?;
+    let state = passkey_registration_challenge_state(&tf.data, data.token.as_deref(), &current_user.security_stamp)?;
     let credential = WEBAUTHN.finish_passkey_registration(&data.device_response.into(), &state)?;
     let credential_id_hash = passkey_credential_id_hash(&credential);
 
-    if WebAuthnCredential::credential_id_hash_exists(&credential_id_hash, &conn).await {
-        err!("Passkey is already registered")
-    }
+    // Duplicate detection is enforced by the `web_authn_credentials` table's
+    // unique index on `credential_id_hash`: `WebAuthnCredential::save` below
+    // maps the resulting `UniqueViolation` to "Passkey is already registered",
+    // so an explicit pre-check would just double the queries on the happy
+    // path and (because it collapses transient read errors to `false`) is
+    // not even a reliable guard.
 
     WebAuthnCredential::new(
-        user.uuid,
+        current_user.uuid.clone(),
         data.name,
         serde_json::to_string(&credential)?,
         credential_id_hash,
@@ -495,6 +543,9 @@ async fn post_api_webauthn(
     )
     .save(&conn)
     .await?;
+
+    current_user.update_revision(&conn).await?;
+    nt.send_user_update(UpdateType::SyncVault, &current_user, headers.device.push_uuid.as_ref(), &conn).await;
 
     Ok(Status::Ok)
 }
@@ -514,11 +565,19 @@ async fn put_api_webauthn(
     data: Json<WebAuthnLoginCredentialUpdateRequest>,
     headers: Headers,
     conn: DbConn,
+    nt: Notify<'_>,
 ) -> ApiResult<Status> {
     crate::ratelimit::check_limit_login(&headers.ip.ip)?;
 
     let data: WebAuthnLoginCredentialUpdateRequest = data.into_inner();
     let user = headers.user;
+
+    // Same gate the `*-options` endpoints use (lines 333, 423). Without it, a
+    // misconfigured `DOMAIN` that passes startup's `http://` prefix check but
+    // fails `Url::parse` panics on the `WEBAUTHN` `LazyLock` initializer below.
+    if !CONFIG.is_webauthn_2fa_supported() {
+        err!("Webauthn is not supported on this server. Set `DOMAIN` to a valid URL with a parseable host.")
+    }
 
     if CONFIG.sso_enabled() && CONFIG.sso_only() {
         err!("Passkeys cannot be updated when SSO sign-in is required")
@@ -538,16 +597,20 @@ async fn put_api_webauthn(
     // updates for the same assertion row cannot both succeed and apply
     // different blob payloads — only the caller whose DELETE removes the row
     // proceeds.
+    let Some(mut current_user) = User::find_by_uuid(&user.uuid, &conn).await else {
+        err!("User not found")
+    };
+
     let type_ = TwoFactorType::WebauthnPasskeyAssertionChallenge as i32;
-    let Some(tf) = TwoFactor::take_by_user_and_type(&user.uuid, type_, &conn).await else {
+    let Some(tf) = TwoFactor::take_by_user_and_type(&user.uuid, type_, &conn).await? else {
         err!("No assertion challenge found. Please try again.")
     };
-    let state = passkey_assertion_challenge_state(&tf.data, &data.token)?;
+    let state = passkey_assertion_challenge_state(&tf.data, &data.token, &current_user.security_stamp)?;
 
     let credential_response = data.device_response.into();
     let mut parsed_credentials: Vec<(WebAuthnCredential, Passkey)> =
-        WebAuthnCredential::find_by_user(&user.uuid, &conn)
-            .await
+        WebAuthnCredential::find_by_user(&current_user.uuid, &conn)
+            .await?
             .into_iter()
             .filter_map(|wac| {
                 let passkey: Passkey = serde_json::from_str(&wac.credential).ok()?;
@@ -581,6 +644,9 @@ async fn put_api_webauthn(
     matched_wac.encrypted_private_key = Some(encrypted_private_key);
     matched_wac.update_prf_keyset(&conn).await?;
 
+    current_user.update_revision(&conn).await?;
+    nt.send_user_update(UpdateType::SyncVault, &current_user, headers.device.push_uuid.as_ref(), &conn).await;
+
     Ok(Status::Ok)
 }
 
@@ -597,15 +663,19 @@ async fn post_api_webauthn_delete(
     uuid: WebAuthnCredentialId,
     headers: Headers,
     conn: DbConn,
+    nt: Notify<'_>,
 ) -> ApiResult<Status> {
     crate::ratelimit::check_limit_login(&headers.ip.ip)?;
 
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
     data.validate(&user, true, &conn).await?;
 
     WebAuthnCredential::delete_by_uuid_and_user(&uuid, &user.uuid, &conn).await?;
+
+    user.update_revision(&conn).await?;
+    nt.send_user_update(UpdateType::SyncVault, &user, headers.device.push_uuid.as_ref(), &conn).await;
 
     Ok(Status::Ok)
 }
@@ -659,23 +729,53 @@ mod tests {
     fn registration_challenge_accepts_wrapped_state_with_matching_token() {
         let saved = WebAuthnPasskeyRegistrationChallenge {
             token: String::from("token"),
+            created_at: Utc::now().timestamp(),
+            user_security_stamp: String::from("stamp"),
             state: registration_state(),
         };
         let data = serde_json::to_string(&saved).unwrap();
 
-        assert!(passkey_registration_challenge_state(&data, Some("token")).is_ok());
+        assert!(passkey_registration_challenge_state(&data, Some("token"), "stamp").is_ok());
     }
 
     #[test]
     fn registration_challenge_rejects_wrapped_state_without_matching_token() {
         let saved = WebAuthnPasskeyRegistrationChallenge {
             token: String::from("token"),
+            created_at: Utc::now().timestamp(),
+            user_security_stamp: String::from("stamp"),
             state: registration_state(),
         };
         let data = serde_json::to_string(&saved).unwrap();
 
-        assert!(passkey_registration_challenge_state(&data, Some("wrong")).is_err());
-        assert!(passkey_registration_challenge_state(&data, None).is_err());
+        assert!(passkey_registration_challenge_state(&data, Some("wrong"), "stamp").is_err());
+        assert!(passkey_registration_challenge_state(&data, None, "stamp").is_err());
+    }
+
+    #[test]
+    fn registration_challenge_rejects_expired_state() {
+        let saved = WebAuthnPasskeyRegistrationChallenge {
+            token: String::from("token"),
+            created_at: Utc::now().timestamp() - WEBAUTHN_PASSKEY_CHALLENGE_TTL_SECONDS - 1,
+            user_security_stamp: String::from("stamp"),
+            state: registration_state(),
+        };
+        let data = serde_json::to_string(&saved).unwrap();
+
+        assert!(passkey_registration_challenge_state(&data, Some("token"), "stamp").is_err());
+    }
+
+    #[test]
+    fn registration_challenge_rejects_stale_account_revision() {
+        let saved = WebAuthnPasskeyRegistrationChallenge {
+            token: String::from("token"),
+            created_at: Utc::now().timestamp(),
+            user_security_stamp: String::from("old-stamp"),
+            state: registration_state(),
+        };
+        let data = serde_json::to_string(&saved).unwrap();
+
+        assert!(passkey_registration_challenge_state(&data, Some("token"), "new-stamp").is_err());
     }
 
     /// `passkey_registration_challenge_state` has no legacy unwrapped fallback —
@@ -689,9 +789,9 @@ mod tests {
     fn registration_challenge_rejects_unwrapped_legacy_state() {
         let data = serde_json::to_string(&registration_state()).unwrap();
 
-        assert!(passkey_registration_challenge_state(&data, None).is_err());
-        assert!(passkey_registration_challenge_state(&data, Some("any-token")).is_err());
-        assert!(passkey_registration_challenge_state(&data, Some("")).is_err());
+        assert!(passkey_registration_challenge_state(&data, None, "stamp").is_err());
+        assert!(passkey_registration_challenge_state(&data, Some("any-token"), "stamp").is_err());
+        assert!(passkey_registration_challenge_state(&data, Some(""), "stamp").is_err());
     }
 
     #[test]
@@ -699,12 +799,42 @@ mod tests {
         let (_response, state) = webauthn().start_passkey_authentication(&[passkey()]).unwrap();
         let saved = WebAuthnPasskeyAssertionChallenge {
             token: String::from("token"),
+            created_at: Utc::now().timestamp(),
+            user_security_stamp: String::from("stamp"),
             state,
         };
         let data = serde_json::to_string(&saved).unwrap();
 
-        assert!(passkey_assertion_challenge_state(&data, "token").is_ok());
-        assert!(passkey_assertion_challenge_state(&data, "wrong").is_err());
+        assert!(passkey_assertion_challenge_state(&data, "token", "stamp").is_ok());
+        assert!(passkey_assertion_challenge_state(&data, "wrong", "stamp").is_err());
+    }
+
+    #[test]
+    fn assertion_challenge_rejects_expired_state() {
+        let (_response, state) = webauthn().start_passkey_authentication(&[passkey()]).unwrap();
+        let saved = WebAuthnPasskeyAssertionChallenge {
+            token: String::from("token"),
+            created_at: Utc::now().timestamp() - WEBAUTHN_PASSKEY_CHALLENGE_TTL_SECONDS - 1,
+            user_security_stamp: String::from("stamp"),
+            state,
+        };
+        let data = serde_json::to_string(&saved).unwrap();
+
+        assert!(passkey_assertion_challenge_state(&data, "token", "stamp").is_err());
+    }
+
+    #[test]
+    fn assertion_challenge_rejects_stale_account_revision() {
+        let (_response, state) = webauthn().start_passkey_authentication(&[passkey()]).unwrap();
+        let saved = WebAuthnPasskeyAssertionChallenge {
+            token: String::from("token"),
+            created_at: Utc::now().timestamp(),
+            user_security_stamp: String::from("old-stamp"),
+            state,
+        };
+        let data = serde_json::to_string(&saved).unwrap();
+
+        assert!(passkey_assertion_challenge_state(&data, "token", "new-stamp").is_err());
     }
 
     #[test]
@@ -766,19 +896,22 @@ mod tests {
         let (_response, state) = webauthn().start_passkey_authentication(&[passkey()]).unwrap();
         let bare = serde_json::to_string(&state).unwrap();
 
-        assert!(passkey_assertion_challenge_state(&bare, "any-token").is_err());
-        assert!(passkey_assertion_challenge_state(&bare, "").is_err());
+        assert!(passkey_assertion_challenge_state(&bare, "any-token", "stamp").is_err());
+        assert!(passkey_assertion_challenge_state(&bare, "", "stamp").is_err());
     }
 
-    /// `build_feature_states` must emit `pm-2035-passkey-unlock = true`
-    /// unconditionally — without it, the web vault's
-    /// `WebAuthnPrfUnlockService.isPrfUnlockAvailable` short-circuits to false
-    /// and the lock-screen "Unlock with passkey" option never renders even for
-    /// a user with a PRF-enabled passkey enrolled.
+    /// `build_feature_states` must emit `pm-2035-passkey-unlock = true` when
+    /// account passkeys are allowed; without it, the web vault's
+    /// `WebAuthnPrfUnlockService.isPrfUnlockAvailable` short-circuits to false.
     #[test]
-    fn feature_states_emits_passkey_unlock_flag_unconditionally() {
-        assert_eq!(build_feature_states("").get("pm-2035-passkey-unlock"), Some(&true));
-        assert_eq!(build_feature_states("some-unrelated-flag").get("pm-2035-passkey-unlock"), Some(&true));
+    fn feature_states_emits_passkey_unlock_flag_when_allowed() {
+        assert_eq!(build_feature_states("", true).get("pm-2035-passkey-unlock"), Some(&true));
+        assert_eq!(build_feature_states("some-unrelated-flag", true).get("pm-2035-passkey-unlock"), Some(&true));
+    }
+
+    #[test]
+    fn feature_states_omits_passkey_unlock_flag_when_disallowed() {
+        assert!(!build_feature_states("", false).contains_key("pm-2035-passkey-unlock"));
     }
 
     /// `build_feature_states` must also emit `pm-19148-innovation-archive`
@@ -786,7 +919,8 @@ mod tests {
     /// alongside the passkey-unlock entry.
     #[test]
     fn feature_states_emits_innovation_archive_flag_unconditionally() {
-        assert_eq!(build_feature_states("").get("pm-19148-innovation-archive"), Some(&true));
+        assert_eq!(build_feature_states("", true).get("pm-19148-innovation-archive"), Some(&true));
+        assert_eq!(build_feature_states("", false).get("pm-19148-innovation-archive"), Some(&true));
     }
 
     /// Valid experimental flags from the SUPPORTED list pass through; invalid
@@ -795,13 +929,13 @@ mod tests {
     #[test]
     fn feature_states_passes_through_valid_experimental_flag() {
         let probe = crate::config::SUPPORTED_FEATURE_FLAGS.iter().next().expect("at least one supported flag");
-        let states = build_feature_states(probe);
+        let states = build_feature_states(probe, true);
         assert_eq!(states.get(*probe), Some(&true));
     }
 
     #[test]
     fn feature_states_drops_unknown_experimental_flag() {
-        let states = build_feature_states("definitely-not-a-real-bitwarden-flag");
+        let states = build_feature_states("definitely-not-a-real-bitwarden-flag", true);
         assert!(!states.contains_key("definitely-not-a-real-bitwarden-flag"));
     }
 }
@@ -815,24 +949,29 @@ mod tests {
 /// Client (v2026.2.1): https://github.com/bitwarden/clients/blob/f96380c3138291a028bdd2c7a5fee540d5c98ba5/libs/common/src/enums/feature-flag.enum.ts#L12
 /// Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
 /// iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
-fn build_feature_states(experimental_client_feature_flags: &str) -> std::collections::HashMap<String, bool> {
+fn build_feature_states(
+    experimental_client_feature_flags: &str,
+    account_passkeys_allowed: bool,
+) -> std::collections::HashMap<String, bool> {
     let mut feature_states =
         parse_experimental_client_feature_flags(experimental_client_feature_flags, &FeatureFlagFilter::ValidOnly);
     feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
     // Gates the web-vault's `Unlock with passkey` lock-screen option (and the
     // matching desktop/mobile UI). `WebAuthnPrfUnlockService.isPrfUnlockAvailable`
-    // short-circuits to `false` when this flag is absent or unset, hiding the
-    // option even for users with a PRF-enabled passkey enrolled. Vaultwarden
-    // supports PRF-passkey unlock end-to-end via `userDecryption.webAuthnPrfOptions`
-    // on /sync, so the flag is advertised unconditionally.
-    feature_states.insert("pm-2035-passkey-unlock".to_owned(), true);
+    // short-circuits to `false` when this flag is absent or unset. Vaultwarden
+    // advertises it whenever account passkeys are allowed; SSO_ONLY suppresses
+    // it to match Bitwarden's "Require SSO" passkey restriction.
+    if account_passkeys_allowed {
+        feature_states.insert("pm-2035-passkey-unlock".to_owned(), true);
+    }
     feature_states
 }
 
 #[get("/config")]
 fn config() -> Json<Value> {
     let domain = CONFIG.domain();
-    let feature_states = build_feature_states(&CONFIG.experimental_client_feature_flags());
+    let feature_states =
+        build_feature_states(&CONFIG.experimental_client_feature_flags(), !(CONFIG.sso_enabled() && CONFIG.sso_only()));
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns

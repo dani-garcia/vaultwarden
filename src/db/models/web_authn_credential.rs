@@ -6,7 +6,7 @@ use macros::UuidFromParam;
 use crate::api::EmptyResult;
 use crate::db::schema::{web_authn_credentials, web_authn_login_challenges};
 use crate::db::{DbConn, DbPool};
-use crate::error::MapResult;
+use crate::error::{Error, MapResult};
 use crate::util::get_uuid;
 
 use super::UserId;
@@ -84,24 +84,13 @@ impl WebAuthnCredential {
 
             match result {
                 Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::UniqueViolation, _)) => {
-                    Err(crate::error::Error::new(
+                    Err(Error::new(
                         "Passkey is already registered",
                         "Duplicate WebAuthn credential ID",
                     ))
                 }
                 result => result.map_res("Error saving web_authn_credential"),
             }
-        }}
-    }
-
-    pub async fn credential_id_hash_exists(credential_id_hash: &str, conn: &DbConn) -> bool {
-        db_run! { conn: {
-            web_authn_credentials::table
-                .filter(web_authn_credentials::credential_id_hash.eq(credential_id_hash))
-                .select(web_authn_credentials::credential_id_hash)
-                .first::<String>(conn)
-                .optional()
-                .is_ok_and(|credential| credential.is_some())
         }}
     }
 
@@ -148,12 +137,17 @@ impl WebAuthnCredential {
         }}
     }
 
-    pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
+    /// Surface DB errors so callers can convert them into proper failure
+    /// responses instead of panicking inside `conn.run`'s blocking closure.
+    /// In particular, this is reachable from the unauthenticated
+    /// `webauthn_login` grant in `src/api/identity.rs`, where a transient
+    /// DB error must not crash the worker.
+    pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Result<Vec<Self>, Error> {
         db_run! { conn: {
             web_authn_credentials::table
                 .filter(web_authn_credentials::user_uuid.eq(user_uuid))
                 .load::<Self>(conn)
-                .expect("Error loading web_authn_credentials")
+                .map_res("Error loading web_authn_credentials")
         }}
     }
 
@@ -223,9 +217,20 @@ impl WebAuthnLoginChallenge {
         }}
     }
 
-    /// Fetch and delete a pending challenge (single-use). Returns `None` when the
-    /// token is unknown, has already been consumed, or the challenge has expired.
-    pub async fn take(id: &WebAuthnLoginChallengeId, conn: &DbConn) -> Option<Self> {
+    /// Fetch and delete a pending challenge (single-use). Three outcomes:
+    /// - `Ok(Some(_))` — winner of the SELECT+DELETE race; the row has been
+    ///   removed and the caller may verify the assertion against the state.
+    /// - `Ok(None)` — token unknown, already consumed by a concurrent caller,
+    ///   or the row was current but past the TTL cutoff (post-transaction
+    ///   filter). All three collapse to a single "stale or invalid challenge"
+    ///   path so the caller can't distinguish them — a small AUTH_FAILED
+    ///   information-leak hardening for the unauthenticated login endpoint.
+    /// - `Err(_)` — DB degradation (deadlock, conn drop, lock timeout). The
+    ///   surrounding transaction rolled back atomically, so the row is intact
+    ///   rather than silently consumed; propagating via `?` lets the caller
+    ///   surface a 5xx instead of an indistinguishable 4xx stale-token
+    ///   response.
+    pub async fn take(id: &WebAuthnLoginChallengeId, conn: &DbConn) -> Result<Option<Self>, Error> {
         db_run! { conn: {
             // Single-use is enforced by the `deleted == 1` row-count guard, not
             // by isolation: concurrent callers may all see the row in the
@@ -235,7 +240,7 @@ impl WebAuthnLoginChallenge {
             // ensures the SELECT+DELETE pair rolls back atomically on a DB
             // error, leaving the challenge intact rather than silently
             // consuming it.
-            let taken = match conn
+            let taken = conn
                 .transaction::<Option<WebAuthnLoginChallenge>, diesel::result::Error, _>(|conn| {
                     let challenge = web_authn_login_challenges::table
                         .filter(web_authn_login_challenges::id.eq(id))
@@ -246,20 +251,11 @@ impl WebAuthnLoginChallenge {
                     )
                     .execute(conn)?;
                     Ok(challenge.filter(|_| deleted == 1))
-                }) {
-                    Ok(opt) => opt,
-                    Err(e) => {
-                        // Surface the underlying error so a degrading DB
-                        // (deadlock, conn drop, lock timeout) is operator-
-                        // visible instead of masquerading as a stale-token
-                        // rejection at the caller.
-                        error!("WebAuthnLoginChallenge::take failed for id {id}: {e:#?}");
-                        None
-                    }
-                };
+                })
+                .map_res("Error taking web_authn_login_challenge")?;
 
             let cutoff = Utc::now().naive_utc() - TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS);
-            taken.filter(|c| c.created_at >= cutoff)
+            Ok(taken.filter(|c| c.created_at >= cutoff))
         }}
     }
 

@@ -7,7 +7,7 @@ use webauthn_rs_proto::{AttestationFormat, RegisteredExtensions};
 use crate::{
     api::{EmptyResult, core::two_factor::webauthn::WebauthnRegistration},
     db::{DbConn, schema::twofactor},
-    error::MapResult,
+    error::{Error, MapResult},
 };
 
 use super::UserId;
@@ -150,16 +150,21 @@ impl TwoFactor {
         .await
     }
 
-    /// Atomically fetch and delete the row for this user+type. Returns Some
-    /// only when the caller's DELETE actually removed a row, so two concurrent
-    /// callers (e.g. a double-clicked enrollment finish) cannot both proceed
-    /// with the same single-use challenge state — the loser sees None. The
-    /// surrounding transaction rolls back the SELECT+DELETE pair atomically
-    /// on a DB error, leaving the row intact rather than silently consuming it.
-    pub async fn take_by_user_and_type(user_uuid: &UserId, atype: i32, conn: &DbConn) -> Option<Self> {
+    /// Atomically fetch and delete the row for this user+type. Three outcomes:
+    /// - `Ok(Some(_))` — winner of the SELECT+DELETE race; the row has been
+    ///   removed and the caller may consume the single-use challenge state.
+    /// - `Ok(None)` — token absent, already consumed by a concurrent caller
+    ///   (e.g. a double-clicked enrolment finish), or never existed. The
+    ///   caller should treat this as a normal "stale challenge" response.
+    /// - `Err(_)` — DB degradation (deadlock, conn drop, lock timeout). The
+    ///   surrounding transaction rolled back atomically, so the row is
+    ///   intact rather than silently consumed; propagating via `?` lets the
+    ///   caller surface a 5xx instead of an indistinguishable 4xx stale-token
+    ///   response.
+    pub async fn take_by_user_and_type(user_uuid: &UserId, atype: i32, conn: &DbConn) -> Result<Option<Self>, Error> {
         let user_uuid = user_uuid.clone();
         conn.run(move |conn| {
-            let result = conn.transaction::<Option<Self>, diesel::result::Error, _>(|conn| {
+            conn.transaction::<Option<Self>, diesel::result::Error, _>(|conn| {
                 let tf = twofactor::table
                     .filter(twofactor::user_uuid.eq(&user_uuid))
                     .filter(twofactor::atype.eq(atype))
@@ -171,18 +176,8 @@ impl TwoFactor {
                 let deleted =
                     diesel::delete(twofactor::table.filter(twofactor::uuid.eq(&existing.uuid))).execute(conn)?;
                 Ok(tf.filter(|_| deleted == 1))
-            });
-            match result {
-                Ok(opt) => opt,
-                Err(e) => {
-                    // Surface the underlying error so DB degradation
-                    // (deadlock, conn drop, lock timeout) is operator-
-                    // visible rather than indistinguishable from a normal
-                    // "row consumed by a concurrent caller" result.
-                    error!("TwoFactor::take_by_user_and_type failed for user {user_uuid} atype {atype}: {e:#?}");
-                    None
-                }
-            }
+            })
+            .map_res("Error taking twofactor challenge")
         })
         .await
     }

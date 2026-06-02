@@ -8,12 +8,10 @@ use rocket::{
     serde::json::Json,
 };
 use serde_json::Value;
-use webauthn_rs::prelude::{Base64UrlSafeData, DiscoverableAuthentication, DiscoverableKey, Passkey};
-use webauthn_rs_proto::{
-    AuthenticationExtensionsClientOutputs, AuthenticatorAssertionResponseRaw, PublicKeyCredential,
-};
+use webauthn_rs::prelude::{DiscoverableAuthentication, DiscoverableKey, Passkey};
+use webauthn_rs_proto::PublicKeyCredential;
 
-use crate::api::core::two_factor::webauthn::WEBAUTHN;
+use crate::api::core::two_factor::webauthn::{PublicKeyCredentialCopy, WEBAUTHN};
 use crate::{
     CONFIG,
     api::{
@@ -1119,45 +1117,6 @@ async fn register_finish(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
     register(data, true, conn).await
 }
 
-// Copied from webauthn-rs to rename clientDataJSON -> clientDataJson for Bitwarden compatibility
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AssertionResponseCopy {
-    pub authenticator_data: Base64UrlSafeData,
-    #[serde(rename = "clientDataJson", alias = "clientDataJSON")]
-    pub client_data_json: Base64UrlSafeData,
-    pub signature: Base64UrlSafeData,
-    pub user_handle: Option<Base64UrlSafeData>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PublicKeyCredentialCopy {
-    pub id: String,
-    pub raw_id: Base64UrlSafeData,
-    pub response: AssertionResponseCopy,
-    pub r#type: String,
-    #[allow(dead_code)]
-    pub extensions: Option<Value>,
-}
-
-impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
-    fn from(p: PublicKeyCredentialCopy) -> Self {
-        Self {
-            id: p.id,
-            raw_id: p.raw_id,
-            response: AuthenticatorAssertionResponseRaw {
-                authenticator_data: p.response.authenticator_data,
-                client_data_json: p.response.client_data_json,
-                signature: p.response.signature,
-                user_handle: p.response.user_handle,
-            },
-            extensions: AuthenticationExtensionsClientOutputs::default(),
-            type_: p.r#type,
-        }
-    }
-}
-
 fn passkey_credential_id(passkey: &Passkey) -> ApiResult<String> {
     serde_json::to_value(passkey.cred_id())?
         .as_str()
@@ -1294,7 +1253,7 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
     // or which user the assertion later claims — a caller with a valid token
     // cannot repeatedly replay it with malformed bodies.
     let token = WebAuthnLoginChallengeId::from(data.token.as_ref().unwrap().clone());
-    let Some(saved_challenge) = WebAuthnLoginChallenge::take(&token, conn).await else {
+    let Some(saved_challenge) = WebAuthnLoginChallenge::take(&token, conn).await? else {
         err!(
             AUTH_FAILED,
             format!("IP: {}. Missing or expired passkey login challenge.", ip.ip),
@@ -1353,15 +1312,28 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
 
     let username = user.email.clone();
 
-    // Load this user's passkey-login credentials.
-    let parsed_credentials: Vec<(WebAuthnCredential, Passkey)> = WebAuthnCredential::find_by_user(&user.uuid, conn)
-        .await
-        .into_iter()
-        .filter_map(|wac| {
-            let passkey: Passkey = serde_json::from_str(&wac.credential).ok()?;
-            Some((wac, passkey))
-        })
-        .collect();
+    // Load this user's passkey-login credentials. A DB transient (deadlock-
+    // victim, conn drop, lock timeout) is converted to AUTH_FAILED here rather
+    // than propagating: this endpoint is unauthenticated, so a panic or a
+    // distinct DB-error response would let an attacker amplify DB pressure
+    // into worker DoS or fingerprint server state.
+    let parsed_credentials: Vec<(WebAuthnCredential, Passkey)> =
+        match WebAuthnCredential::find_by_user(&user.uuid, conn).await {
+            Ok(creds) => creds
+                .into_iter()
+                .filter_map(|wac| {
+                    let passkey: Passkey = serde_json::from_str(&wac.credential).ok()?;
+                    Some((wac, passkey))
+                })
+                .collect(),
+            Err(e) => err!(
+                AUTH_FAILED,
+                format!("IP: {}. Username: {username}. DB error loading passkey credentials: {e:#?}", ip.ip),
+                ErrorEvent {
+                    event: EventType::UserFailedLogIn
+                }
+            ),
+        };
 
     if parsed_credentials.is_empty() {
         err!(
@@ -1436,6 +1408,11 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
     };
 
     // Persist any signature-counter advance from this assertion.
+    //
+    // Exempt from the `update_revision` + `send_user_update(SyncVault, ...)`
+    // pair the four management endpoints in `src/api/core/mod.rs` emit after
+    // credential mutations: the signature counter is not part of any sync
+    // payload the clients read, so a notify here would be a no-op.
     if passkey.update_credential(&authentication_result) == Some(true) {
         matched_wac.credential = serde_json::to_string(&passkey)?;
         matched_wac.update_credential(conn).await?;

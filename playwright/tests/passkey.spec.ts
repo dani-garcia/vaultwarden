@@ -455,6 +455,58 @@ test.describe('Passkey grant is rejected when SSO_ONLY is on', () => {
         const body: any = await res.json();
         expect(body?.message ?? '').toMatch(/SSO sign-in is required/i);
     });
+
+    test('Login page hides "Log in with passkey" button under SSO_ONLY', async ({ page }) => {
+        // Defends the `.vw-passkey-login` hide rule in
+        // `src/static/templates/scss/vaultwarden.scss.hbs` (under
+        // `sso_enabled && sso_only`). Without the hide, the SPA renders
+        // the affordance and clicking it dead-ends with the server's
+        // "SSO sign-in is required" response from the assertion-options
+        // endpoint above — UX dead end.
+        await utils.cleanLanding(page);
+        // The button is in the DOM but %vw-hide applies `display: none`, so
+        // `toBeHidden()` (not `toHaveCount(0)`) is the right check — but pin
+        // presence first so a future class rename can't make it pass vacuously
+        // (an absent element also satisfies toBeHidden()).
+        await expect(page.locator('.vw-passkey-login')).toHaveCount(1);
+        await expect(page.locator('.vw-passkey-login')).toBeHidden();
+    });
+
+    test('/api/config omits pm-2035-passkey-unlock under SSO_ONLY', async ({ request }) => {
+        // Server-side gate at `build_feature_states` (mod.rs). The bundled web
+        // vault's `WebAuthnPrfUnlockService.isPrfUnlockAvailable` short-circuits
+        // to false when the flag is absent, hiding the lock-screen "Unlock with
+        // passkey" option client-side.
+        const configRes = await request.get('/api/config');
+        expect(configRes.status()).toBe(200);
+        const config: any = await configRes.json();
+        expect(config.featureStates, 'featureStates must be present in /api/config').toBeTruthy();
+        expect(config.featureStates['pm-2035-passkey-unlock']).toBeUndefined();
+    });
+
+    test('/css/vaultwarden.css emits the Add-passkey-button hide selector under SSO_ONLY', async ({ request }) => {
+        // Defends the SCSS conditional in
+        // `src/static/templates/scss/vaultwarden.scss.hbs` that emits
+        // `app-webauthn-login-settings > button[bitbutton]` under
+        // `(and sso_enabled sso_only)`. Mirrors Bitwarden's upstream
+        // template gate `*ngIf="hasData && !limitReached && !requireSsoPolicyEnabled"`
+        // on the "Turn on" / "New passkey" Add button — vaultwarden
+        // doesn't surface org policies to the client, so we apply the
+        // same hide via CSS. The credentials list + per-row Remove
+        // buttons (`button[bitlink]`, deeper in the `<table>`) stay
+        // rendered so users can revoke legacy credentials.
+        //
+        // String check rather than live DOM: the management page
+        // requires authentication, and a browser flow under SSO_ONLY
+        // would need the full Keycloak setup, so this pins the rule at the
+        // CSS layer. Rendered-UI coverage of the hide *under SSO_ONLY* is
+        // covered separately; the `account-lifecycle-sso` project runs
+        // SSO_ONLY=false.
+        const cssRes = await request.get('/css/vaultwarden.css');
+        expect(cssRes.status()).toBe(200);
+        const css = await cssRes.text();
+        expect(css).toContain('app-webauthn-login-settings>button[bitbutton]');
+    });
 });
 
 test.describe('Passkey enrolment is rejected when SSO_ONLY is on', () => {

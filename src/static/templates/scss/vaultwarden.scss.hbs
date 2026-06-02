@@ -63,6 +63,19 @@ app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secon
 .vw-passkey-login {
   @extend %vw-hide;
 }
+
+/* Mirror Bitwarden's `app-webauthn-login-settings` template gate
+   `*ngIf="hasData && !limitReached && !requireSsoPolicyEnabled"` on the
+   "Turn on" / "New passkey" Add button. Bitwarden suppresses just that
+   button under Require SSO; the credentials `<table>` and per-row Remove
+   buttons stay rendered so users can revoke legacy credentials from the
+   UI. Vaultwarden doesn't surface org policies to the client, so we apply
+   the same hide via CSS. The Add button is the only direct-child
+   `button[bitbutton]` of the component (per-row buttons use `bitlink` and
+   live deeper inside `<table>`). */
+app-webauthn-login-settings > button[bitbutton] {
+  @extend %vw-hide;
+}
 {{/if}}
 
 /* Hide the or text followed by the two buttons hidden above */

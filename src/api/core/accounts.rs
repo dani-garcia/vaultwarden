@@ -26,6 +26,7 @@ use crate::{
             WebAuthnCredential, WebAuthnCredentialId,
         },
     },
+    error::Error,
     mail,
     util::{NumberOrString, deser_opt_nonempty_str, format_date},
 };
@@ -874,7 +875,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // We only rotate the reset password key if it is set.
     existing_memberships.retain(|m| m.reset_password_key.is_some());
     let mut existing_sends = Send::find_by_user(user_id, &conn).await;
-    let existing_webauthn_credentials = WebAuthnCredential::find_by_user(user_id, &conn).await;
+    let existing_webauthn_credentials = WebAuthnCredential::find_by_user(user_id, &conn).await?;
 
     validate_keydata(
         &data,
@@ -893,7 +894,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         .map(|c| c.uuid.clone())
         .collect::<HashSet<WebAuthnCredentialId>>();
     let current_prf_ids = WebAuthnCredential::find_by_user(user_id, &conn)
-        .await
+        .await?
         .into_iter()
         .filter(WebAuthnCredential::has_prf_keyset)
         .map(|c| c.uuid)
@@ -940,29 +941,6 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         membership.save(&conn).await?;
     }
 
-    // Update passkey-login credential keys (the PRF "rotateable key set") so that
-    // passwordless decryption keeps working after the account key is rotated.
-    // The client only sends credentials whose PRF keyset is fully enabled.
-    //
-    for passkey_data in data.account_unlock_data.passkey_unlock_data {
-        let Some(mut credential) = WebAuthnCredential::find_by_uuid_and_user(&passkey_data.id, user_id, &conn).await
-        else {
-            err!("Passkey doesn't exist")
-        };
-        // Refuse to write rotation data to a credential that isn't in the
-        // "Enabled" PRF state. Otherwise a credential with only the two
-        // rotated columns set (and `encrypted_private_key` still NULL) would
-        // be left as a partial keyset that `prf_status` reports as Supported.
-        if !credential.has_prf_keyset() {
-            err!("Passkey is not in a PRF-enabled state")
-        }
-        // Mutate only the two columns `update_keys` persists; other fields on
-        // the loaded credential are not written back.
-        credential.encrypted_public_key = Some(passkey_data.encrypted_public_key);
-        credential.encrypted_user_key = Some(passkey_data.encrypted_user_key);
-        credential.update_keys(&conn).await?;
-    }
-
     // Update send data
     for send_data in data.account_data.sends {
         let Some(send) = existing_sends.iter_mut().find(|s| &s.uuid == send_data.id.as_ref().unwrap()) else {
@@ -996,7 +974,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // this guard, the new akey commits and the orphan credential can never
     // unlock the vault again.
     let post_loop_prf_ids = WebAuthnCredential::find_by_user(user_id, &conn)
-        .await
+        .await?
         .into_iter()
         .filter(WebAuthnCredential::has_prf_keyset)
         .map(|c| c.uuid)
@@ -1020,12 +998,62 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
 
     let save_result = user.save(&conn).await;
 
+    // Rewrap the passkey-login PRF blobs ONLY if `user.save` committed the new
+    // account key. The proper fix is a single transaction over the user-record
+    // write and every per-credential `update_keys` (the function-head comment
+    // already calls this out); until that's in place, this ordering is the
+    // strict improvement over running the loop before `user.save`:
+    //   • `user.save` fails → skip the rewrap entirely. The user's old master
+    //     password still works and the credential blobs still match the
+    //     (uncommitted) old account key.
+    //   • `user.save` commits but a credential rewrap fails mid-loop → the
+    //     user has the new master password, the rewrapped credentials match
+    //     the new akey, and the not-yet-rewrapped credentials are stranded
+    //     (their PRF blobs reference the old akey). Recoverable: log in via
+    //     the new master password and re-enrol the stranded credentials.
+    // Running the loop before `user.save` had the inverse failure: rewrapped
+    // credentials referenced an akey that was never committed, so they
+    // couldn't unlock at all and the user could only log in via the still-
+    // old master password — strictly worse.
+    let rewrap_result: EmptyResult = if save_result.is_ok() {
+        let mut outcome: EmptyResult = Ok(());
+        for passkey_data in data.account_unlock_data.passkey_unlock_data {
+            let Some(mut credential) =
+                WebAuthnCredential::find_by_uuid_and_user(&passkey_data.id, &user.uuid, &conn).await
+            else {
+                outcome = Err(Error::new("Passkey doesn't exist", "Passkey doesn't exist"));
+                break;
+            };
+            // Refuse to write rotation data to a credential that isn't in the
+            // "Enabled" PRF state. Otherwise a credential with only the two
+            // rotated columns set (and `encrypted_private_key` still NULL)
+            // would be left as a partial keyset that `prf_status` reports as
+            // Supported.
+            if !credential.has_prf_keyset() {
+                outcome =
+                    Err(Error::new("Passkey is not in a PRF-enabled state", "Passkey is not in a PRF-enabled state"));
+                break;
+            }
+            // Mutate only the two columns `update_keys` persists; other
+            // fields on the loaded credential are not written back.
+            credential.encrypted_public_key = Some(passkey_data.encrypted_public_key);
+            credential.encrypted_user_key = Some(passkey_data.encrypted_user_key);
+            if let Err(e) = credential.update_keys(&conn).await {
+                outcome = Err(e);
+                break;
+            }
+        }
+        outcome
+    } else {
+        Ok(())
+    };
+
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
     nt.send_logout(&user, Some(&headers.device), &conn).await;
 
-    save_result
+    save_result.and(rewrap_result)
 }
 
 #[post("/accounts/security-stamp", data = "<data>")]
