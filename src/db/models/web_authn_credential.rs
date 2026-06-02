@@ -13,8 +13,9 @@ use super::UserId;
 
 /// How long a pending passkey-login challenge stays valid before it is rejected.
 const WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS: i64 = 300;
+const WEBAUTHN_LOGIN_CHALLENGE_CLOCK_SKEW_SECONDS: i64 = 30;
 
-#[derive(Debug, Identifiable, Queryable, Insertable)]
+#[derive(Clone, Debug, Identifiable, Queryable, Insertable)]
 #[diesel(table_name = web_authn_credentials)]
 #[diesel(primary_key(uuid))]
 pub struct WebAuthnCredential {
@@ -76,22 +77,65 @@ impl WebAuthnCredential {
         }
     }
 
-    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
-            let result = diesel::insert_into(web_authn_credentials::table)
-                .values(self)
-                .execute(conn);
+    pub async fn save_with_user_limit(&self, limit: usize, conn: &DbConn) -> EmptyResult {
+        let credential = self.clone();
+        let limit = i64::try_from(limit).map_err(|_| Error::new("Invalid passkey limit", "Passkey limit overflow"))?;
 
-            match result {
-                Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::UniqueViolation, _)) => {
-                    Err(Error::new(
-                        "Passkey is already registered",
-                        "Duplicate WebAuthn credential ID",
-                    ))
+        db_run! { conn: {
+            conn.transaction::<(), Error, _>(|conn| {
+                let count = web_authn_credentials::table
+                    .filter(web_authn_credentials::user_uuid.eq(&credential.user_uuid))
+                    .count()
+                    .get_result::<i64>(conn)
+                    .map_res("Error counting web_authn_credentials")?;
+                if count >= limit {
+                    return Err(Error::new("Maximum number of passkeys reached", "WebAuthn credential limit reached"));
                 }
-                result => result.map_res("Error saving web_authn_credential"),
-            }
+
+                let result = diesel::insert_into(web_authn_credentials::table)
+                    .values(&credential)
+                    .execute(conn);
+                match result {
+                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::UniqueViolation, _)) => {
+                        Err(Error::new("Passkey is already registered", "Duplicate WebAuthn credential ID"))
+                    }
+                    result => result.map_res("Error saving web_authn_credential"),
+                }
+            })
         }}
+    }
+
+    pub async fn count_by_user(user_uuid: &UserId, conn: &DbConn) -> Result<usize, Error> {
+        let user_uuid = user_uuid.clone();
+        let count = db_run! { conn: {
+            web_authn_credentials::table
+                .filter(web_authn_credentials::user_uuid.eq(user_uuid))
+                .count()
+                .get_result::<i64>(conn)
+                .map_res("Error counting web_authn_credentials")
+        }}?;
+
+        usize::try_from(count)
+            .map_err(|_| Error::new("Error counting web_authn_credentials", "Credential count overflow"))
+    }
+
+    /// Guard the rowcount returned by an UPDATE against a concurrent
+    /// credential delete. A 0-row result means a `post_api_webauthn_delete`
+    /// (or `User::delete` cascade) removed the row inside our window — a
+    /// concurrent-state outcome that deserves a clean refusal.
+    ///
+    /// Returns a Simple error so the routine concurrent-delete race does NOT
+    /// emit an `error!()` log line from the Rocket responder. The message
+    /// itself describes an expected concurrent-state outcome, not a server
+    /// bug, and a multi-replica deployment would otherwise spam operator logs.
+    /// Visible to sibling modules so credential rewrap paths can share the
+    /// same rowcount-zero handling rather than re-implementing it for every
+    /// update statement.
+    pub(crate) fn ensure_credential_present(rows: usize) -> EmptyResult {
+        if rows == 0 {
+            return Err(Error::new_msg("Webauthn credential modified concurrently"));
+        }
+        Ok(())
     }
 
     /// Persist the serialized passkey blob after a successful assertion advances
@@ -99,41 +143,92 @@ impl WebAuthnCredential {
     /// key rotation cannot clobber it (see [`Self::update_keys`]).
     pub async fn update_credential(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
-            diesel::update(web_authn_credentials::table.filter(web_authn_credentials::uuid.eq(&self.uuid)))
+            let rows: usize = diesel::update(web_authn_credentials::table.filter(web_authn_credentials::uuid.eq(&self.uuid)))
                 .set(web_authn_credentials::credential.eq(&self.credential))
                 .execute(conn)
-                .map_res("Error updating web_authn_credential signature counter")
+                .map_res("Error updating web_authn_credential signature counter")?;
+            Self::ensure_credential_present(rows)
         }}
     }
 
-    /// Persist the PRF unlock blobs that the rotation flow re-encrypts under the
-    /// new account key. Touches only the two columns that key rotation actually
-    /// changes, so it cannot clobber a concurrent signature-counter advance (see
-    /// [`Self::update_credential`]) nor the enrollment-time `encrypted_private_key`.
+    /// Persist the PRF unlock blobs the rotation flow re-encrypts under the new
+    /// account key. Touches only the two account-key-wrapped columns, so it
+    /// cannot clobber a concurrent counter advance (see [`Self::update_credential`])
+    /// nor the enrollment-time `encrypted_private_key`. The
+    /// `ensure_credential_present` guard reports a 0-row UPDATE (row deleted
+    /// inside our window) so callers can treat the rewrap as a degraded no-op.
     pub async fn update_keys(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
-            diesel::update(web_authn_credentials::table.filter(web_authn_credentials::uuid.eq(&self.uuid)))
+            let rows: usize = diesel::update(web_authn_credentials::table.filter(web_authn_credentials::uuid.eq(&self.uuid)))
                 .set((
                     web_authn_credentials::encrypted_user_key.eq(&self.encrypted_user_key),
                     web_authn_credentials::encrypted_public_key.eq(&self.encrypted_public_key),
                 ))
                 .execute(conn)
-                .map_res("Error updating web_authn_credential keys")
+                .map_res("Error updating web_authn_credential keys")?;
+            Self::ensure_credential_present(rows)
+        }}
+    }
+
+    /// Drop all PRF unlock blobs so clients stop advertising unlock-with-passkey
+    /// for a credential whose key material could not be rewrapped after account
+    /// key rotation.
+    pub async fn clear_prf_keyset(&self, conn: &DbConn) -> EmptyResult {
+        db_run! { conn: {
+            let rows: usize = diesel::update(web_authn_credentials::table.filter(web_authn_credentials::uuid.eq(&self.uuid)))
+                .set((
+                    web_authn_credentials::encrypted_user_key.eq::<Option<String>>(None),
+                    web_authn_credentials::encrypted_public_key.eq::<Option<String>>(None),
+                    web_authn_credentials::encrypted_private_key.eq::<Option<String>>(None),
+                ))
+                .execute(conn)
+                .map_res("Error clearing web_authn_credential PRF keyset")?;
+            Self::ensure_credential_present(rows)
         }}
     }
 
     /// Persist a complete PRF unlock keyset after a user enables vault
-    /// encryption for an existing passkey-login credential.
-    pub async fn update_prf_keyset(&self, conn: &DbConn) -> EmptyResult {
+    /// encryption for an existing passkey-login credential, optionally
+    /// folding the signature-counter advance from the assertion that
+    /// authorised the enrolment into the same UPDATE — both the keyset
+    /// and the counter are written in one statement so a half-applied
+    /// state is impossible without involving a separate transaction.
+    ///
+    /// `advanced_counter` gates the `credential` blob write. The caller
+    /// passes `true` only when `Passkey::update_credential` reported a real
+    /// counter advance; otherwise the column is left untouched so a
+    /// concurrent counter advance committed by another instance (e.g. a
+    /// parallel `webauthn_login` in a multi-replica deployment) is not
+    /// silently overwritten with the stale blob loaded here.
+    ///
+    /// A 0-rows result is surfaced as a `Simple` error (NOT `Db(NotFound)`)
+    /// via [`Self::ensure_credential_present`] so the renderer at
+    /// `error.rs` does not log a routine concurrent-delete race at ERROR
+    /// level.
+    pub async fn update_credential_and_prf_keyset(&self, advanced_counter: bool, conn: &DbConn) -> EmptyResult {
         db_run! { conn: {
-            diesel::update(web_authn_credentials::table.filter(web_authn_credentials::uuid.eq(&self.uuid)))
-                .set((
-                    web_authn_credentials::encrypted_user_key.eq(&self.encrypted_user_key),
-                    web_authn_credentials::encrypted_public_key.eq(&self.encrypted_public_key),
-                    web_authn_credentials::encrypted_private_key.eq(&self.encrypted_private_key),
-                ))
-                .execute(conn)
-                .map_res("Error updating web_authn_credential PRF keyset")
+            let target = web_authn_credentials::table.filter(web_authn_credentials::uuid.eq(&self.uuid));
+            let rows: usize = if advanced_counter {
+                diesel::update(target)
+                    .set((
+                        web_authn_credentials::credential.eq(&self.credential),
+                        web_authn_credentials::encrypted_user_key.eq(&self.encrypted_user_key),
+                        web_authn_credentials::encrypted_public_key.eq(&self.encrypted_public_key),
+                        web_authn_credentials::encrypted_private_key.eq(&self.encrypted_private_key),
+                    ))
+                    .execute(conn)
+                    .map_res("Error updating web_authn_credential PRF keyset")?
+            } else {
+                diesel::update(target)
+                    .set((
+                        web_authn_credentials::encrypted_user_key.eq(&self.encrypted_user_key),
+                        web_authn_credentials::encrypted_public_key.eq(&self.encrypted_public_key),
+                        web_authn_credentials::encrypted_private_key.eq(&self.encrypted_private_key),
+                    ))
+                    .execute(conn)
+                    .map_res("Error updating web_authn_credential PRF keyset")?
+            };
+            Self::ensure_credential_present(rows)
         }}
     }
 
@@ -151,13 +246,39 @@ impl WebAuthnCredential {
         }}
     }
 
-    pub async fn find_by_uuid_and_user(uuid: &WebAuthnCredentialId, user_uuid: &UserId, conn: &DbConn) -> Option<Self> {
+    /// Look up a single credential by `(user_uuid, credential_id_hash)`,
+    /// using the UNIQUE index of the same name. Used by `put_api_webauthn`
+    /// to locate the row matching a verified assertion without loading the
+    /// user's entire passkey set.
+    pub async fn find_by_user_and_credential_id_hash(
+        user_uuid: &UserId,
+        credential_id_hash: &str,
+        conn: &DbConn,
+    ) -> Result<Option<Self>, Error> {
         db_run! { conn: {
             web_authn_credentials::table
-                .filter(web_authn_credentials::uuid.eq(uuid))
                 .filter(web_authn_credentials::user_uuid.eq(user_uuid))
+                .filter(web_authn_credentials::credential_id_hash.eq(credential_id_hash))
                 .first::<Self>(conn)
-                .ok()
+                .optional()
+                .map_res("Error loading web_authn_credential by credential_id_hash")
+        }}
+    }
+
+    /// Re-check that the credential row still exists without changing it.
+    /// This protects successful assertions whose authenticators do not
+    /// advance a signature counter: there is no UPDATE rowcount to observe in
+    /// that case, so callers need an explicit existence probe before they
+    /// mint a login response.
+    pub async fn ensure_still_registered(&self, conn: &DbConn) -> EmptyResult {
+        db_run! { conn: {
+            let rows: i64 = web_authn_credentials::table
+                .filter(web_authn_credentials::uuid.eq(&self.uuid))
+                .filter(web_authn_credentials::user_uuid.eq(&self.user_uuid))
+                .count()
+                .get_result(conn)
+                .map_res("Error checking web_authn_credential presence")?;
+            Self::ensure_credential_present(usize::from(rows > 0))
         }}
     }
 
@@ -167,13 +288,14 @@ impl WebAuthnCredential {
         conn: &DbConn,
     ) -> EmptyResult {
         db_run! { conn: {
-            diesel::delete(
+            let rows = diesel::delete(
                 web_authn_credentials::table
                     .filter(web_authn_credentials::uuid.eq(uuid))
                     .filter(web_authn_credentials::user_uuid.eq(user_uuid)),
             )
             .execute(conn)
-            .map_res("Error removing web_authn_credential")
+            .map_res("Error removing web_authn_credential")?;
+            Self::ensure_credential_present(rows)
         }}
     }
 
@@ -217,6 +339,27 @@ impl WebAuthnLoginChallenge {
         }}
     }
 
+    fn is_fresh(created_at: NaiveDateTime) -> bool {
+        Self::is_fresh_at(created_at, Utc::now().naive_utc())
+    }
+
+    /// Pure freshness predicate. The `now` parameter exists so tests can
+    /// assert the inclusive `>=` / `<=` boundaries deterministically without
+    /// racing the `Utc::now()` call inside the production wrapper above.
+    fn is_fresh_at(created_at: NaiveDateTime, now: NaiveDateTime) -> bool {
+        crate::util::is_within_freshness_window(
+            created_at,
+            now,
+            TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS),
+            TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_CLOCK_SKEW_SECONDS),
+        )
+    }
+
+    #[cfg(test)]
+    fn is_purgeable_at(created_at: NaiveDateTime, now: NaiveDateTime) -> bool {
+        !Self::is_fresh_at(created_at, now)
+    }
+
     /// Fetch and delete a pending challenge (single-use). Three outcomes:
     /// - `Ok(Some(_))` — winner of the SELECT+DELETE race; the row has been
     ///   removed and the caller may verify the assertion against the state.
@@ -232,15 +375,17 @@ impl WebAuthnLoginChallenge {
     ///   response.
     pub async fn take(id: &WebAuthnLoginChallengeId, conn: &DbConn) -> Result<Option<Self>, Error> {
         db_run! { conn: {
-            // Single-use is enforced by the `deleted == 1` row-count guard, not
-            // by isolation: concurrent callers may all see the row in the
-            // SELECT, but only the one whose DELETE removes it (returns 1) is
-            // allowed to use the challenge. The remaining callers see
-            // `deleted == 0` and get `None`. The surrounding transaction
-            // ensures the SELECT+DELETE pair rolls back atomically on a DB
-            // error, leaving the challenge intact rather than silently
-            // consuming it.
-            let taken = conn
+            // Single-use rests on the `deleted == 1` row-count guard, not on
+            // isolation: concurrent callers may all SELECT the row, but only
+            // the one whose DELETE returns 1 may use it; the rest get `None`.
+            // The transaction rolls the SELECT+DELETE back atomically on a DB
+            // error, leaving the row intact rather than silently consumed.
+            //
+            // `is_fresh` runs INSIDE the transaction closure, AFTER the DELETE,
+            // reading the wall clock at consume time, so a stale row is still
+            // purged on a consumption attempt rather than lingering until the
+            // background sweeper runs.
+            conn
                 .transaction::<Option<WebAuthnLoginChallenge>, diesel::result::Error, _>(|conn| {
                     let challenge = web_authn_login_challenges::table
                         .filter(web_authn_login_challenges::id.eq(id))
@@ -250,12 +395,9 @@ impl WebAuthnLoginChallenge {
                         web_authn_login_challenges::table.filter(web_authn_login_challenges::id.eq(id)),
                     )
                     .execute(conn)?;
-                    Ok(challenge.filter(|_| deleted == 1))
+                    Ok(challenge.filter(|c| deleted == 1 && Self::is_fresh(c.created_at)))
                 })
-                .map_res("Error taking web_authn_login_challenge")?;
-
-            let cutoff = Utc::now().naive_utc() - TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS);
-            Ok(taken.filter(|c| c.created_at >= cutoff))
+                .map_res("Error taking web_authn_login_challenge")
         }}
     }
 
@@ -263,9 +405,15 @@ impl WebAuthnLoginChallenge {
     pub async fn delete_expired(pool: DbPool) -> EmptyResult {
         debug!("Purging expired web_authn_login_challenges");
         if let Ok(conn) = pool.get().await {
-            let cutoff = Utc::now().naive_utc() - TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS);
+            let now = Utc::now().naive_utc();
+            let oldest = now - TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS);
+            let newest = now + TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_CLOCK_SKEW_SECONDS);
             db_run! { conn: {
-                diesel::delete(web_authn_login_challenges::table.filter(web_authn_login_challenges::created_at.lt(cutoff)))
+                diesel::delete(web_authn_login_challenges::table.filter(
+                    web_authn_login_challenges::created_at
+                        .lt(oldest)
+                        .or(web_authn_login_challenges::created_at.gt(newest)),
+                ))
                     .execute(conn)
                     .map_res("Error deleting expired web_authn_login_challenges")
             }}
@@ -379,6 +527,12 @@ mod tests {
         assert_eq!(cred.encrypted_private_key.as_deref(), Some("private-key"));
     }
 
+    #[test]
+    fn credential_rowcount_guard_rejects_missing_rows() {
+        assert!(WebAuthnCredential::ensure_credential_present(1).is_ok());
+        assert!(WebAuthnCredential::ensure_credential_present(0).is_err());
+    }
+
     /// Exhaust the 2^4 truth table for `has_prf_keyset` and `prf_status`:
     /// only `(supports_prf=true, all three blobs Some)` reports
     /// `has_prf_keyset() == true` / `prf_status() == 0` (Enabled). Any
@@ -416,5 +570,85 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn login_challenge_freshness_allows_current_window() {
+        let now = Utc::now().naive_utc();
+
+        assert!(WebAuthnLoginChallenge::is_fresh(now));
+        assert!(WebAuthnLoginChallenge::is_fresh(now - TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS - 5)));
+        assert!(WebAuthnLoginChallenge::is_fresh(
+            now + TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_CLOCK_SKEW_SECONDS - 5)
+        ));
+    }
+
+    #[test]
+    fn login_challenge_freshness_rejects_old_or_far_future_rows() {
+        let now = Utc::now().naive_utc();
+
+        assert!(!WebAuthnLoginChallenge::is_fresh(now - TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS + 1)));
+        assert!(!WebAuthnLoginChallenge::is_fresh(
+            now + TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_CLOCK_SKEW_SECONDS + 1)
+        ));
+    }
+
+    /// Exact-boundary coverage. The production `is_fresh` reads `Utc::now()`
+    /// inside the function, so a test against `now - TTL` would race the
+    /// internal clock read by microseconds and assert FALSE for the boundary
+    /// row that should be inclusive. `is_fresh_at` takes `now` as a parameter
+    /// so the comparison is deterministic.
+    #[test]
+    fn login_challenge_freshness_inclusive_at_both_boundaries() {
+        let now = Utc::now().naive_utc();
+
+        assert!(
+            WebAuthnLoginChallenge::is_fresh_at(now - TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS), now),
+            "created_at exactly TTL old must remain fresh (`>=` is inclusive)"
+        );
+        assert!(
+            WebAuthnLoginChallenge::is_fresh_at(
+                now + TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_CLOCK_SKEW_SECONDS),
+                now
+            ),
+            "created_at exactly skew seconds ahead must remain fresh (`<=` is inclusive)"
+        );
+        assert!(
+            !WebAuthnLoginChallenge::is_fresh_at(
+                now - TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS) - TimeDelta::nanoseconds(1),
+                now
+            ),
+            "one nanosecond past the TTL boundary must reject"
+        );
+        assert!(
+            !WebAuthnLoginChallenge::is_fresh_at(
+                now + TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_CLOCK_SKEW_SECONDS) + TimeDelta::nanoseconds(1),
+                now
+            ),
+            "one nanosecond past the skew boundary must reject"
+        );
+    }
+
+    #[test]
+    fn login_challenge_cleanup_purges_only_outside_fresh_window() {
+        let now = Utc::now().naive_utc();
+
+        assert!(!WebAuthnLoginChallenge::is_purgeable_at(now, now));
+        assert!(!WebAuthnLoginChallenge::is_purgeable_at(
+            now - TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS),
+            now,
+        ));
+        assert!(!WebAuthnLoginChallenge::is_purgeable_at(
+            now + TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_CLOCK_SKEW_SECONDS),
+            now,
+        ));
+        assert!(WebAuthnLoginChallenge::is_purgeable_at(
+            now - TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_TTL_SECONDS) - TimeDelta::nanoseconds(1),
+            now,
+        ));
+        assert!(WebAuthnLoginChallenge::is_purgeable_at(
+            now + TimeDelta::seconds(WEBAUTHN_LOGIN_CHALLENGE_CLOCK_SKEW_SECONDS) + TimeDelta::nanoseconds(1),
+            now,
+        ));
     }
 }

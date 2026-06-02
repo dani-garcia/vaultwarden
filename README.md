@@ -50,6 +50,10 @@ A nearly complete implementation of the Bitwarden Client API is provided, includ
      [FIDO2 WebAuthn](https://bitwarden.com/help/setup-two-step-login-fido/),
      [YubiKey](https://bitwarden.com/help/setup-two-step-login-yubikey/),
      [Duo](https://bitwarden.com/help/setup-two-step-login-duo/)
+ * Log in with passkey (account passkeys). A successful account-passkey login is treated as a primary authentication
+   method, so it does not prompt again for configured two-step login providers. Require SSO disables account-passkey
+   sign-in and enrollment. Account-passkey ceremonies are bound to the configured `DOMAIN` origin; same-site split
+   web/API deployments must still serve the web vault from that origin.
  * [Emergency Access](https://bitwarden.com/help/emergency-access/)
  * [Vaultwarden Admin Backend](https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page)
  * [Modified Web Vault client](https://github.com/dani-garcia/bw_web_builds) (Bundled within our containers)

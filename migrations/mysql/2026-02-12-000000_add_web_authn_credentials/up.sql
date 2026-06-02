@@ -12,4 +12,4 @@ CREATE TABLE web_authn_credentials (
 );
 
 CREATE INDEX idx_web_authn_credentials_user_uuid ON web_authn_credentials (user_uuid);
-CREATE UNIQUE INDEX idx_web_authn_credentials_credential_id_hash ON web_authn_credentials (credential_id_hash);
+CREATE UNIQUE INDEX idx_web_authn_credentials_credential_id_hash ON web_authn_credentials (user_uuid, credential_id_hash);

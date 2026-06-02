@@ -1597,7 +1597,14 @@ impl Config {
     }
 
     pub fn is_webauthn_2fa_supported(&self) -> bool {
-        Url::parse(&self.domain()).expect("DOMAIN not a valid URL").domain().is_some()
+        // The startup `starts_with("http://"|"https://")` check accepts values
+        // like `"http://"` (empty host) that `Url::parse` rejects with
+        // `EmptyHost`. This gate IS the protection against the WEBAUTHN
+        // LazyLock's `.expect` initializer panicking, so the gate itself must
+        // not panic on the same input. Map any parse failure to `false` so
+        // every webauthn entry point cleanly refuses instead of crashing the
+        // worker thread.
+        Url::parse(&self.domain()).ok().is_some_and(|u| u.domain().is_some())
     }
 
     /// Tests whether the admin token is set to a non-empty value.

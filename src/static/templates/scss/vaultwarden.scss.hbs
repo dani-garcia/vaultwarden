@@ -78,6 +78,13 @@ app-webauthn-login-settings > button[bitbutton] {
 }
 {{/if}}
 
+{{#unless webauthn_2fa_supported}}
+.vw-passkey-login,
+app-webauthn-login-settings > button[bitbutton] {
+  @extend %vw-hide;
+}
+{{/unless}}
+
 /* Hide the or text followed by the two buttons hidden above */
 {{#if (webver ">=2025.5.1")}}
 {{#if (or (not sso_enabled) sso_only)}}

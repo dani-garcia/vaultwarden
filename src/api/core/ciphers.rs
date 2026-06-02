@@ -191,12 +191,12 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     // Always include `webAuthnPrfOptions` (possibly empty) so the client's lock-screen logic
     // can render the "Unlock with passkey" option without an extra round-trip. The shape mirrors
     // upstream `SyncResponseModel.UserDecryption.WebAuthnPrfOptions`.
-    // Bitwarden disallows account passkeys under Require SSO; expose the
-    // canonical empty array so clients keep the unlock affordance hidden.
-    let webauthn_prf_options = if CONFIG.sso_enabled() && CONFIG.sso_only() {
-        Vec::new()
-    } else {
+    // Expose the canonical empty array whenever account passkeys are not
+    // usable, so clients keep the lock-screen affordance hidden.
+    let webauthn_prf_options = if api::core::account_passkeys_allowed() {
         api::identity::build_webauthn_prf_options(&WebAuthnCredential::find_by_user(&headers.user.uuid, &conn).await?)
+    } else {
+        Vec::new()
     };
 
     Ok(Json(json!({

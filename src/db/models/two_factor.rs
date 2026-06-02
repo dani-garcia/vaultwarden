@@ -51,6 +51,16 @@ pub enum TwoFactorType {
 
 /// Local methods
 impl TwoFactor {
+    const POLICY_PROVIDER_TYPES: [i32; 7] = [
+        TwoFactorType::Authenticator as i32,
+        TwoFactorType::Email as i32,
+        TwoFactorType::Duo as i32,
+        TwoFactorType::YubiKey as i32,
+        TwoFactorType::U2f as i32,
+        TwoFactorType::OrganizationDuo as i32,
+        TwoFactorType::Webauthn as i32,
+    ];
+
     pub fn new(user_uuid: UserId, atype: TwoFactorType, data: String) -> Self {
         Self {
             uuid: TwoFactorId(crate::util::get_uuid()),
@@ -59,6 +69,22 @@ impl TwoFactor {
             enabled: true,
             data,
             last_used: 0,
+        }
+    }
+
+    pub fn is_policy_provider(&self) -> bool {
+        Self::POLICY_PROVIDER_TYPES.contains(&self.atype)
+    }
+
+    pub fn is_policy_provider_or_unknown(&self) -> bool {
+        if self.atype >= 1000 {
+            return false;
+        }
+
+        match <TwoFactorType as num_traits::FromPrimitive>::from_i32(self.atype) {
+            Some(TwoFactorType::Remember | TwoFactorType::RecoveryCode) => false,
+            Some(_) => self.is_policy_provider(),
+            None => true,
         }
     }
 
@@ -124,6 +150,25 @@ impl TwoFactor {
             diesel::delete(twofactor::table.filter(twofactor::uuid.eq(self.uuid)))
                 .execute(conn)
                 .map_res("Error deleting twofactor")
+        })
+        .await
+    }
+
+    /// Load provider rows while preserving DB transients for the
+    /// unauthenticated `webauthn_login` grant. Authenticated 2FA flows
+    /// still use the panicking `find_by_user` sibling (see upstream
+    /// pattern); the unauthenticated grant must distinguish a transient
+    /// 503 from a 401 to avoid the grant becoming an account-state oracle
+    /// and to give legitimate users a "retry later" signal instead of
+    /// AUTH_FAILED.
+    pub async fn try_find_by_user(user_uuid: &UserId, conn: &DbConn) -> Result<Vec<Self>, Error> {
+        let user_uuid = user_uuid.clone();
+        conn.run(move |conn| {
+            twofactor::table
+                .filter(twofactor::user_uuid.eq(&user_uuid))
+                .filter(twofactor::atype.lt(1000)) // Filter implementation types
+                .load::<Self>(conn)
+                .map_res("Error loading twofactor")
         })
         .await
     }
@@ -316,5 +361,35 @@ impl From<WebauthnRegistrationV3> for WebauthnRegistration {
             migrated: value.migrated,
             credential: Credential::from(value.credential).into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn twofactor(atype: i32) -> TwoFactor {
+        TwoFactor {
+            uuid: TwoFactorId(String::from("tf")),
+            user_uuid: UserId::from(String::from("user")),
+            atype,
+            enabled: true,
+            data: String::new(),
+            last_used: 0,
+        }
+    }
+
+    #[test]
+    fn policy_provider_or_unknown_counts_forward_migrated_rows() {
+        assert!(twofactor(9).is_policy_provider_or_unknown());
+    }
+
+    #[test]
+    fn policy_provider_or_unknown_ignores_bypass_and_challenge_rows() {
+        assert!(!twofactor(TwoFactorType::Remember as i32).is_policy_provider_or_unknown());
+        assert!(!twofactor(TwoFactorType::RecoveryCode as i32).is_policy_provider_or_unknown());
+        assert!(!twofactor(TwoFactorType::WebauthnLoginChallenge as i32).is_policy_provider_or_unknown());
+        assert!(!twofactor(TwoFactorType::WebauthnPasskeyRegisterChallenge as i32).is_policy_provider_or_unknown());
+        assert!(!twofactor(TwoFactorType::WebauthnPasskeyAssertionChallenge as i32).is_policy_provider_or_unknown());
     }
 }

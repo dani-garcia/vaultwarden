@@ -189,6 +189,8 @@ pub struct RegisterPublicKeyCredentialCopy {
     pub id: String,
     pub raw_id: Base64UrlSafeData,
     pub response: AuthenticatorAttestationResponseRawCopy,
+    #[serde(default, alias = "clientExtensionResults")]
+    pub extensions: RegistrationExtensionsClientOutputs,
     pub r#type: String,
 }
 
@@ -215,7 +217,7 @@ impl From<RegisterPublicKeyCredentialCopy> for RegisterPublicKeyCredential {
                 transports,
             },
             type_: r.r#type,
-            extensions: RegistrationExtensionsClientOutputs::default(),
+            extensions: r.extensions,
         }
     }
 }
@@ -226,6 +228,7 @@ pub struct PublicKeyCredentialCopy {
     pub id: String,
     pub raw_id: Base64UrlSafeData,
     pub response: AuthenticatorAssertionResponseRawCopy,
+    #[serde(default, alias = "clientExtensionResults")]
     pub extensions: AuthenticationExtensionsClientOutputs,
     pub r#type: String,
 }
@@ -542,6 +545,7 @@ mod tests {
                 client_data_json: Base64UrlSafeData::from([7, 8, 9]),
                 transports: Some(transports.clone()),
             },
+            extensions: RegistrationExtensionsClientOutputs::default(),
             r#type: String::from("public-key"),
         };
 
@@ -560,11 +564,50 @@ mod tests {
                 client_data_json: Base64UrlSafeData::from([7, 8, 9]),
                 transports: None,
             },
+            extensions: RegistrationExtensionsClientOutputs::default(),
             r#type: String::from("public-key"),
         };
 
         let converted: RegisterPublicKeyCredential = copy.into();
 
         assert_eq!(converted.response.transports, None);
+    }
+
+    #[test]
+    fn register_public_key_credential_copy_accepts_missing_extensions() {
+        let copy = serde_json::from_value::<RegisterPublicKeyCredentialCopy>(json!({
+            "id": "credential",
+            "rawId": "AQID",
+            "response": {
+                "attestationObject": "BAUG",
+                "clientDataJson": "BwgJ"
+            },
+            "type": "public-key"
+        }))
+        .unwrap();
+
+        let converted: RegisterPublicKeyCredential = copy.into();
+
+        assert_eq!(converted.id, "credential");
+    }
+
+    #[test]
+    fn public_key_credential_copy_accepts_client_extension_results_alias() {
+        let copy = serde_json::from_value::<PublicKeyCredentialCopy>(json!({
+            "id": "credential",
+            "rawId": "AQID",
+            "response": {
+                "authenticatorData": "BAUG",
+                "clientDataJson": "BwgJ",
+                "signature": "CgsM"
+            },
+            "clientExtensionResults": {},
+            "type": "public-key"
+        }))
+        .unwrap();
+
+        let converted: PublicKeyCredential = copy.into();
+
+        assert_eq!(converted.id, "credential");
     }
 }

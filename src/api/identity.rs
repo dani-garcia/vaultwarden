@@ -3,12 +3,13 @@ use num_traits::FromPrimitive;
 use rocket::{
     Route,
     form::{Form, FromForm},
-    http::{Cookie, CookieJar, SameSite},
+    http::{Cookie, CookieJar, SameSite, Status},
+    request::{FromRequest, Outcome, Request},
     response::Redirect,
     serde::json::Json,
 };
 use serde_json::Value;
-use webauthn_rs::prelude::{DiscoverableAuthentication, DiscoverableKey, Passkey};
+use webauthn_rs::prelude::{Credential, DiscoverableAuthentication, DiscoverableKey, Passkey};
 use webauthn_rs_proto::PublicKeyCredential;
 
 use crate::api::core::two_factor::webauthn::{PublicKeyCredentialCopy, WEBAUTHN};
@@ -18,7 +19,7 @@ use crate::{
         ApiResult, EmptyResult, JsonResult,
         core::{
             accounts::{PreloginData, RegisterData, kdf_upgrade, prelogin, register},
-            log_user_event,
+            check_passkey_endpoint_preconditions, log_user_event, passkey_credential_id_hash,
             two_factor::{
                 authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn,
                 yubikey,
@@ -126,15 +127,15 @@ async fn login(
         }
         "authorization_code" => err!("SSO sign-in is not available"),
         "webauthn" => {
-            check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
-            check_is_some(data.scope.as_ref(), "scope cannot be blank")?;
+            check_is_nonempty(data.client_id.as_ref(), "client_id cannot be blank")?;
+            check_is_nonempty(data.scope.as_ref(), "scope cannot be blank")?;
 
-            check_is_some(data.device_identifier.as_ref(), "device_identifier cannot be blank")?;
-            check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
-            check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
+            check_is_nonempty(data.device_identifier.as_ref(), "device_identifier cannot be blank")?;
+            check_is_nonempty(data.device_name.as_ref(), "device_name cannot be blank")?;
+            check_is_nonempty(data.device_type.as_ref(), "device_type cannot be blank")?;
 
-            check_is_some(data.device_response.as_ref(), "device_response cannot be blank")?;
-            check_is_some(data.token.as_ref(), "token cannot be blank")?;
+            check_is_nonempty(data.device_response.as_ref(), "device_response cannot be blank")?;
+            check_is_nonempty(data.token.as_ref(), "token cannot be blank")?;
 
             webauthn_login(data, &mut user_id, &conn, &client_header.ip).await
         }
@@ -773,7 +774,7 @@ async fn organization_api_key_login(data: ConnectData, conn: &DbConn, ip: &Clien
 async fn get_device(data: &ConnectData, conn: &DbConn, user: &User) -> ApiResult<Device> {
     // On iOS, device_type sends "iOS", on others it sends a number
     // When unknown or unable to parse, return 14, which is 'Unknown Browser'
-    let device_type = util::try_parse_string(data.device_type.as_ref()).unwrap_or(14);
+    let device_type = connect_device_type(data);
     let device_id = data.device_identifier.clone().expect("No device id provided");
     let device_name = data.device_name.clone().expect("No device name provided");
 
@@ -796,7 +797,7 @@ async fn twofactor_auth(
     client_version: Option<&ClientVersion>,
     conn: &DbConn,
 ) -> ApiResult<Option<String>> {
-    let twofactors = TwoFactor::find_by_user(&user.uuid, conn).await;
+    let twofactors = TwoFactor::try_find_by_user(&user.uuid, conn).await?;
 
     // No twofactor token if twofactor is disabled
     if twofactors.is_empty() {
@@ -1117,31 +1118,21 @@ async fn register_finish(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
     register(data, true, conn).await
 }
 
-fn passkey_credential_id(passkey: &Passkey) -> ApiResult<String> {
-    serde_json::to_value(passkey.cred_id())?
-        .as_str()
-        .map(str::to_owned)
-        .ok_or_else(|| crate::error::Error::new("Invalid passkey credential", "Could not serialize credential id"))
+fn passkey_credential_id(passkey: &Passkey) -> String {
+    // `Passkey::cred_id()` returns bytes; the wire format the Bitwarden
+    // client expects is base64url-no-pad. Encoding directly via
+    // `data_encoding::BASE64URL_NOPAD` skips the `serde_json::to_value`
+    // round-trip the earlier shape did (one extra Value allocation +
+    // .as_str()+to_owned per credential per /sync). The encoding step is
+    // infallible (`Encoding::encode` returns `String`), so the function
+    // returns `String` directly — callers no longer need a `.ok()?`
+    // adapter that could silently swallow a fictitious failure mode.
+    data_encoding::BASE64URL_NOPAD.encode(passkey.cred_id().as_slice())
 }
 
 fn passkey_transports(passkey: &Passkey) -> Vec<String> {
-    // Serializing a `webauthn_rs::Passkey` should never fail in practice
-    // (it's a derive(Serialize) on a well-typed struct); if it does, log
-    // and fall through to an empty list rather than silently masking it
-    // — clients can't distinguish "authenticator reported no transports"
-    // from "we failed to encode the passkey" otherwise.
-    let value = match serde_json::to_value(passkey) {
-        Ok(v) => v,
-        Err(e) => {
-            error!("Failed to serialise passkey for transport extraction: {e:#?}");
-            return Vec::new();
-        }
-    };
-    value
-        .pointer("/cred/transports")
-        .and_then(Value::as_array)
-        .map(|transports| transports.iter().filter_map(Value::as_str).map(str::to_owned).collect::<Vec<_>>())
-        .unwrap_or_default()
+    let credential: Credential = passkey.clone().into();
+    credential.transports.into_iter().flatten().map(|transport| transport.to_string()).collect()
 }
 
 /// Augments the base login response (from `authenticated_response`) with the credential-
@@ -1151,8 +1142,10 @@ fn passkey_transports(passkey: &Passkey) -> Vec<String> {
 /// from the PRF secret it just derived — login completes, vault stays locked.
 pub(crate) fn build_webauthn_login_response(base: Value, matched_wac: &WebAuthnCredential, passkey: &Passkey) -> Value {
     let mut result = base;
-    if let Some(prf_option) = build_webauthn_login_prf_option(matched_wac, passkey) {
-        result["UserDecryptionOptions"]["WebAuthnPrfOption"] = prf_option;
+    if let Some(prf_option) = build_webauthn_login_prf_option(matched_wac, passkey)
+        && let Some(user_decryption_options) = result.get_mut("UserDecryptionOptions").and_then(Value::as_object_mut)
+    {
+        user_decryption_options.insert("WebAuthnPrfOption".to_owned(), prf_option);
     }
     result
 }
@@ -1165,13 +1158,11 @@ pub(crate) fn build_webauthn_login_prf_option(matched_wac: &WebAuthnCredential, 
     if !matched_wac.has_prf_keyset() {
         return None;
     }
-    let credential_id = passkey_credential_id(passkey).ok()?;
-    let transports = passkey_transports(passkey);
     Some(json!({
         "EncryptedPrivateKey": matched_wac.encrypted_private_key,
         "EncryptedUserKey": matched_wac.encrypted_user_key,
-        "CredentialId": credential_id,
-        "Transports": transports,
+        "CredentialId": passkey_credential_id(passkey),
+        "Transports": passkey_transports(passkey),
     }))
 }
 
@@ -1184,38 +1175,25 @@ pub(crate) fn build_webauthn_login_prf_option(matched_wac: &WebAuthnCredential, 
 pub(crate) fn build_webauthn_prf_options(credentials: &[WebAuthnCredential]) -> Vec<Value> {
     credentials
         .iter()
+        // Cheap structural check first — skips the heavyweight Passkey JSON
+        // parse for `Supported` (PRF-capable but no keyset) and `Unsupported`
+        // rows. On /sync this matters because clients sync frequently and
+        // a user with many passkeys may have only a subset PRF-enabled.
         .filter(|wac| wac.has_prf_keyset())
         .filter_map(|wac| {
+            // The Passkey blob must parse for the entry to contribute; a
+            // single corrupted row silently drops out, matching the
+            // `filter_map` shape on the login path.
             let passkey: Passkey = serde_json::from_str(&wac.credential).ok()?;
-            let credential_id = passkey_credential_id(&passkey).ok()?;
-            let transports = passkey_transports(&passkey);
-            Some(json!({
-                "EncryptedPrivateKey": wac.encrypted_private_key,
-                "EncryptedUserKey": wac.encrypted_user_key,
-                "CredentialId": credential_id,
-                "Transports": transports,
-            }))
+            build_webauthn_login_prf_option(wac, &passkey)
         })
         .collect()
 }
 
 #[get("/accounts/webauthn/assertion-options")]
-async fn get_web_authn_assertion_options(ip: ClientIp, conn: DbConn) -> JsonResult {
-    // Same gate the 2FA WebAuthn entry point uses, applied here so a
-    // misconfigured DOMAIN (e.g., IP literal that has no parseable host)
-    // returns a clean error instead of panicking inside the `WEBAUTHN`
-    // `LazyLock` initializer.
-    if !CONFIG.is_webauthn_2fa_supported() {
-        err!("Configured `DOMAIN` is not compatible with Webauthn")
-    }
-
-    if CONFIG.sso_enabled() && CONFIG.sso_only() {
-        err!("SSO sign-in is required")
-    }
-
-    // This endpoint is unauthenticated; rate-limit it so it cannot be abused to
-    // flood the challenge table. Expired rows are removed by a scheduled job.
-    crate::ratelimit::check_limit_login(&ip.ip)?;
+async fn get_web_authn_assertion_options(ip: ClientIp, fetch_metadata: FetchMetadata, conn: DbConn) -> JsonResult {
+    reject_cross_site_passkey_challenge_request(&fetch_metadata)?;
+    check_passkey_endpoint_preconditions(&ip.ip, "used")?;
 
     // start_discoverable_authentication() requests an empty allow-list
     // (discoverable credentials) and user verification.
@@ -1239,202 +1217,364 @@ async fn get_web_authn_assertion_options(ip: ClientIp, conn: DbConn) -> JsonResu
     })))
 }
 
+struct FetchMetadata {
+    sec_fetch_site: Option<String>,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for FetchMetadata {
+    type Error = ();
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        Outcome::Success(Self {
+            sec_fetch_site: request.headers().get_one("Sec-Fetch-Site").map(str::to_owned),
+        })
+    }
+}
+
+/// The passkey-login challenge endpoint is a state-changing GET because the
+/// bundled clients fetch it that way. Fetch Metadata lets modern browsers tell
+/// us when that GET was initiated from another site; reject those before we
+/// spend a login-rate-limit token or insert a challenge row. Missing headers
+/// are allowed for older browsers and non-browser clients.
+fn reject_cross_site_passkey_challenge_request(fetch_metadata: &FetchMetadata) -> EmptyResult {
+    let Some(sec_fetch_site) = fetch_metadata.sec_fetch_site.as_deref() else {
+        return Ok(());
+    };
+
+    if sec_fetch_site.eq_ignore_ascii_case("same-origin")
+        || sec_fetch_site.eq_ignore_ascii_case("same-site")
+        || sec_fetch_site.eq_ignore_ascii_case("none")
+    {
+        return Ok(());
+    }
+
+    err_code!("Passkey login challenge requests must be same-site", Status::Forbidden.code)
+}
+
 async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbConn, ip: &ClientIp) -> JsonResult {
-    // A single generic message is returned to the client for every failure so the
-    // endpoint cannot be used to probe which accounts exist or have passkeys.
+    // Credential and account-state failures use a single generic message so
+    // the endpoint cannot be used to probe which accounts exist or have passkeys.
+    // Server-side availability failures get a distinct temporary-unavailable
+    // response below so real users are not told their credential failed when
+    // the backend simply could not complete the login.
     const AUTH_FAILED: &str = "Passkey authentication failed.";
+    const SERVER_ERROR: &str = "A server error occurred. Try again later.";
+
+    /// `err!(AUTH_FAILED, format!(detail), ErrorEvent { event: UserFailedLogIn })`
+    /// in one line. Credential and account-state failure branches use exactly
+    /// this triple — a Simple-variant error with the constant user-facing
+    /// message and a UserFailedLogIn audit event — so the unauthenticated
+    /// grant cannot be used as an account-state oracle.
+    ///
+    /// Scoped INSIDE `webauthn_login` so the macro is lexically unreachable
+    /// from any other function. A future contributor adding an auth handler
+    /// elsewhere in the module cannot accidentally invoke this macro (it
+    /// would fail to resolve), forcing them to make an explicit decision
+    /// about what their function's audit-event semantics should be rather
+    /// than silently inheriting `EventType::UserFailedLogIn` here.
+    macro_rules! auth_fail {
+        ($($fmt_arg:tt)*) => {
+            err!(
+                AUTH_FAILED,
+                format!($($fmt_arg)*),
+                ErrorEvent { event: EventType::UserFailedLogIn }
+            )
+        };
+    }
+
+    macro_rules! server_fail {
+        ($($fmt_arg:tt)*) => {
+            err_code!(
+                SERVER_ERROR,
+                format!("IP: {}. {}", ip.ip, format!($($fmt_arg)*)),
+                Status::ServiceUnavailable.code
+            )
+        };
+    }
 
     // Validate scope and rate-limit the login.
     AuthMethod::WebAuthn.check_scope(data.scope.as_ref())?;
     crate::ratelimit::check_limit_login(&ip.ip)?;
 
+    // Match the gate the four management endpoints in `src/api/core/mod.rs`
+    // apply. Without it a misconfigured `DOMAIN` (passes the startup `http://`
+    // prefix check, fails `Url::parse().domain()`) panics the `WEBAUTHN`
+    // `LazyLock` on first touch inside `identify_discoverable_authentication`
+    // below. Returning AUTH_FAILED rather than the descriptive admin message
+    // keeps the unauthenticated grant from leaking server-config detail.
+    if !CONFIG.is_webauthn_2fa_supported() {
+        auth_fail!("IP: {}. Webauthn unsupported on this server.", ip.ip)
+    }
+
     // Recover and consume (single-use) the saved challenge state. Every
     // submission carrying a valid token is spent, regardless of body content
     // or which user the assertion later claims — a caller with a valid token
     // cannot repeatedly replay it with malformed bodies.
-    let token = WebAuthnLoginChallengeId::from(data.token.as_ref().unwrap().clone());
-    let Some(saved_challenge) = WebAuthnLoginChallenge::take(&token, conn).await? else {
-        err!(
-            AUTH_FAILED,
-            format!("IP: {}. Missing or expired passkey login challenge.", ip.ip),
-            ErrorEvent {
-                event: EventType::UserFailedLogIn
-            }
-        )
+    //
+    // A DB transient (deadlock-victim, conn drop, lock timeout) is converted
+    // to a generic 503 here rather than propagated via `?`: the endpoint is
+    // unauthenticated, so the response must not include raw DB wording, but
+    // legitimate users should still learn this is a server-side retry-later
+    // condition rather than a passkey-authentication failure.
+    //
+    // Defense-in-depth on the form-extracted fields: the dispatch site
+    // pre-validates `data.token`/`data.device_response` via `check_is_some`,
+    // but a future refactor of that dispatch could omit the pre-check; an
+    // explicit `let Some(...) else err!(AUTH_FAILED, ...)` keeps the
+    // unauthenticated grant from ever panicking the worker on missing
+    // fields regardless of how the function is reached.
+    let Some(token_str) = data.token.as_ref().filter(|token| !token.is_empty()) else {
+        auth_fail!("IP: {}. Missing passkey login token.", ip.ip)
+    };
+    let token = WebAuthnLoginChallengeId::from(token_str.clone());
+    let saved_challenge = match WebAuthnLoginChallenge::take(&token, conn).await {
+        Ok(Some(c)) => c,
+        Ok(None) => auth_fail!("IP: {}. Missing or expired passkey login challenge.", ip.ip),
+        Err(e) => server_fail!("DB error taking passkey login challenge: {e:#?}"),
     };
     let Ok(state) = serde_json::from_str::<DiscoverableAuthentication>(&saved_challenge.challenge) else {
-        err!(
-            AUTH_FAILED,
-            format!("IP: {}. Corrupt passkey login challenge state.", ip.ip),
-            ErrorEvent {
-                event: EventType::UserFailedLogIn
-            }
-        )
+        auth_fail!("IP: {}. Corrupt passkey login challenge state.", ip.ip)
     };
 
     // Parse the authenticator assertion. A malformed body must yield the same
     // generic error as any other failure, not a raw deserialization error.
-    let Ok(device_response) = serde_json::from_str::<PublicKeyCredentialCopy>(data.device_response.as_ref().unwrap())
-    else {
-        err!(
-            AUTH_FAILED,
-            format!("IP: {}. Malformed passkey assertion.", ip.ip),
-            ErrorEvent {
-                event: EventType::UserFailedLogIn
-            }
-        )
+    //
+    // Same defense-in-depth as the `data.token` check above — refuse a
+    // missing field with AUTH_FAILED rather than .unwrap-panic.
+    let Some(device_response_str) = data.device_response.as_ref().filter(|response| !response.is_empty()) else {
+        auth_fail!("IP: {}. Missing passkey device_response.", ip.ip)
+    };
+    let Ok(device_response) = serde_json::from_str::<PublicKeyCredentialCopy>(device_response_str) else {
+        auth_fail!("IP: {}. Malformed passkey assertion.", ip.ip)
     };
     let credential: PublicKeyCredential = device_response.into();
 
-    // Identify which user the discoverable credential claims to belong to from
-    // its user handle. This only parses client-supplied data; user-scoped event
-    // logging is delayed until the assertion is cryptographically verified.
-    let user_uuid = match WEBAUTHN.identify_discoverable_authentication(&credential) {
-        Ok((user_uuid, _)) => UserId::from(user_uuid.to_string()),
-        Err(e) => err!(
-            AUTH_FAILED,
-            format!("IP: {}. Could not identify passkey credential: {e:?}", ip.ip),
-            ErrorEvent {
-                event: EventType::UserFailedLogIn
-            }
-        ),
+    // Identify which user AND credential the discoverable assertion claims
+    // to belong to from its user handle and rawId. Both values are
+    // client-supplied at this point — the cryptographic signature check is
+    // still pending — but they let us narrow the credential lookup to a
+    // single indexed row instead of loading every passkey the user owns.
+    // User-scoped event logging is delayed until the assertion is verified.
+    let (user_uuid, cred_id) = match WEBAUTHN.identify_discoverable_authentication(&credential) {
+        Ok((user_uuid, cred_id)) => (UserId::from(user_uuid.to_string()), cred_id),
+        Err(e) => auth_fail!("IP: {}. Could not identify passkey credential: {e:?}", ip.ip),
     };
 
-    let Some(user) = User::find_by_uuid(&user_uuid, conn).await else {
-        err!(
-            AUTH_FAILED,
-            format!("IP: {}. No user matches passkey user handle {user_uuid}.", ip.ip),
-            ErrorEvent {
-                event: EventType::UserFailedLogIn
-            }
-        )
+    // Use the Result-returning sibling so a DB transient on the user lookup
+    // is distinguishable from a genuinely missing user. The default
+    // `find_by_uuid` collapses both to `None`, which would mask DB pressure
+    // as a misleading 'no user matches' diagnostic on the unauthenticated
+    // grant — masking a retry-later condition as a missing-user auth failure.
+    let user = match User::try_find_by_uuid(&user_uuid, conn).await {
+        Ok(Some(u)) => u,
+        Ok(None) => auth_fail!("IP: {}. No user matches passkey user handle {user_uuid}.", ip.ip),
+        Err(e) => server_fail!("DB error loading user {user_uuid}: {e:#?}"),
     };
 
-    let username = user.email.clone();
+    // The load-bearing protection against a `User::delete` cascade racing
+    // this flow is `WebAuthnCredential::update_credential`'s rowcount check:
+    // a concurrent cascade deletes the credential rows before the counter
+    // UPDATE, the UPDATE matches 0 rows, the helper returns an Err, and the
+    // surrounding failure handling refuses the login.
 
-    // Load this user's passkey-login credentials. A DB transient (deadlock-
-    // victim, conn drop, lock timeout) is converted to AUTH_FAILED here rather
-    // than propagating: this endpoint is unauthenticated, so a panic or a
-    // distinct DB-error response would let an attacker amplify DB pressure
-    // into worker DoS or fingerprint server state.
-    let parsed_credentials: Vec<(WebAuthnCredential, Passkey)> =
-        match WebAuthnCredential::find_by_user(&user.uuid, conn).await {
-            Ok(creds) => creds
-                .into_iter()
-                .filter_map(|wac| {
-                    let passkey: Passkey = serde_json::from_str(&wac.credential).ok()?;
-                    Some((wac, passkey))
-                })
-                .collect(),
-            Err(e) => err!(
-                AUTH_FAILED,
-                format!("IP: {}. Username: {username}. DB error loading passkey credentials: {e:#?}", ip.ip),
-                ErrorEvent {
-                    event: EventType::UserFailedLogIn
-                }
-            ),
+    // Locate the single credential the assertion claims to be for via the
+    // indexed `(user_uuid, credential_id_hash)` UNIQUE index. The cred_id
+    // we hash is client-supplied (no signature check yet), so the lookup
+    // may legitimately miss — that case yields AUTH_FAILED indistinguishable
+    // from a verification failure. Loading only the matched row keeps this
+    // hot login path O(1) per credential rather than O(N) parse-every-blob.
+    //
+    // DB transients become a generic 503 (not a raw `?`) for the same
+    // unauthenticated-endpoint reason as the challenge-take above.
+    let credential_id_hash = passkey_credential_id_hash(cred_id);
+    // `mut` here so the counter-advance commit below can update
+    // `matched_wac.credential` in place without a subsequent rebind.
+    let mut matched_wac =
+        match WebAuthnCredential::find_by_user_and_credential_id_hash(&user.uuid, &credential_id_hash, conn).await {
+            // Pre-verification: identify the user only by UUID, not email. The
+            // user_handle that resolved to this UserId is client-supplied and
+            // attacker-controlled; logging `user.email` here would let any
+            // caller who can read the server log harvest UUID->email
+            // mappings via deliberately-malformed assertions.
+            Ok(Some(wac)) => wac,
+            Ok(None) => auth_fail!("IP: {}. UserUuid: {user_uuid}. No matching passkey credential.", ip.ip),
+            Err(e) => server_fail!("UserUuid: {user_uuid}. DB error loading passkey credential: {e:#?}"),
         };
 
-    if parsed_credentials.is_empty() {
-        err!(
-            AUTH_FAILED,
-            format!("IP: {}. Username: {username}. No passkey credentials registered.", ip.ip),
-            ErrorEvent {
-                event: EventType::UserFailedLogIn
-            }
-        )
-    }
+    // Parse the stored Passkey blob. A corrupt row blocks login for THIS
+    // credential only; the user can retry with another passkey, which
+    // routes through its own one-row lookup. `warn!` lets ops find the
+    // bad row immediately rather than via manual DB inspection.
+    let mut passkey: Passkey = match serde_json::from_str(&matched_wac.credential) {
+        Ok(p) => p,
+        Err(e) => {
+            warn!(
+                "webauthn_login: failed to deserialize stored Passkey blob for credential {} (user {}): {e:#?}",
+                matched_wac.uuid, matched_wac.user_uuid
+            );
+            auth_fail!("IP: {}. UserUuid: {user_uuid}. Corrupt passkey credential blob.", ip.ip)
+        }
+    };
 
-    let discoverable_keys: Vec<DiscoverableKey> =
-        parsed_credentials.iter().map(|(_, passkey)| DiscoverableKey::from(passkey)).collect();
-
-    // Verify the assertion. webauthn-rs checks the signature, challenge, origin,
-    // user verification and the signature counter against the registered keys.
+    // Verify the assertion against the single matched credential. webauthn-rs
+    // checks the signature, challenge, origin, user verification and the
+    // signature counter against the supplied DiscoverableKey set. A stack
+    // array (rather than a heap-allocated Vec) for the single element
+    // suffices — `finish_discoverable_authentication` takes `&[DiscoverableKey]`.
+    let discoverable_keys = [DiscoverableKey::from(&passkey)];
     let authentication_result =
         match WEBAUTHN.finish_discoverable_authentication(&credential, state, &discoverable_keys) {
             Ok(result) => result,
-            Err(e) => err!(
-                AUTH_FAILED,
-                format!("IP: {}. Username: {username}. WebAuthn verification failed: {e:?}", ip.ip),
-                ErrorEvent {
-                    event: EventType::UserFailedLogIn
-                }
-            ),
+            // Still pre-verification: UUID, not email. (See the
+            // load-credentials branch above for rationale.)
+            Err(e) => auth_fail!("IP: {}. UserUuid: {user_uuid}. WebAuthn verification failed: {e:?}", ip.ip),
         };
 
     // The assertion is now bound to a registered credential for this user. From
     // this point on, failed account-state checks can be attributed to the user
-    // without allowing arbitrary user-handle event log pollution.
+    // without allowing arbitrary user-handle event log pollution. The single
+    // matched_wac IS the verified credential — we looked it up by this exact
+    // cred_id's hash before verification, and webauthn-rs's verifier just
+    // confirmed the signature matches that credential, so no second lookup is
+    // needed.
     *user_id = Some(user.uuid.clone());
+    let username = user.email.clone();
 
     if !user.enabled {
-        err!(
-            AUTH_FAILED,
-            format!("IP: {}. Username: {username}. Account is disabled.", ip.ip),
-            ErrorEvent {
-                event: EventType::UserFailedLogIn
-            }
-        )
+        auth_fail!("IP: {}. Username: {username}. Account is disabled.", ip.ip)
     }
 
     // Reject an unverified account before doing any server-side persistence.
     // Mirrors the password-login email-verify gate but elides the verification
     // reminder email and the distinguishable error message. Returning the same
-    // `AUTH_FAILED` as every other branch prevents using passkey login as an
-    // oracle for verification state. The descriptive hint still reaches
-    // legitimate users via password login.
+    // `AUTH_FAILED` as other account-state branches prevents using passkey
+    // login as an oracle for verification state. The descriptive hint still
+    // reaches legitimate users via password login.
     if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
-        err!(
-            AUTH_FAILED,
-            format!("IP: {}. Username: {username}. Account is not email-verified.", ip.ip),
-            ErrorEvent {
-                event: EventType::UserFailedLogIn
-            }
-        )
+        auth_fail!("IP: {}. Username: {username}. Account is not email-verified.", ip.ip)
     }
 
-    // Locate the credential that was actually used and persist any counter update.
-    let Some((mut matched_wac, mut passkey)) = parsed_credentials
-        .into_iter()
-        .find(|(_, passkey)| crypto::ct_eq(passkey.cred_id().as_slice(), authentication_result.cred_id().as_slice()))
-    else {
-        err!(
-            AUTH_FAILED,
-            format!("IP: {}. Username: {username}. Verified credential is not registered.", ip.ip),
-            ErrorEvent {
-                event: EventType::UserFailedLogIn
-            }
-        )
-    };
-
-    // Persist any signature-counter advance from this assertion.
+    // Compute the 2FA-state gate decision BEFORE committing the
+    // signature-counter advance. Mirrors the gate password login applies
+    // (twofactor_auth):
+    // - no providers at all → enforce_2fa_policy below (revoke from
+    //   RequireTwoFactor orgs the user no longer satisfies) and let the
+    //   passkey login proceed.
+    // - rows exist but every provider is disabled or unusable → reject,
+    //   same message the password path returns. The passkey is the auth,
+    //   so we don't ask for a 2FA token when usable providers exist.
     //
-    // Exempt from the `update_revision` + `send_user_update(SyncVault, ...)`
-    // pair the four management endpoints in `src/api/core/mod.rs` emit after
-    // credential mutations: the signature counter is not part of any sync
-    // payload the clients read, so a notify here would be a no-op.
+    // Doing the gate up front narrows the window where the counter has
+    // advanced but the login was ultimately refused (see the counter-write
+    // site below for why that residual window is acceptable).
+    //
+    // `try_find_by_user` returns `Result`, so the transient is mapped to a
+    // generic 503 here (same unauthenticated-endpoint reason as above) rather
+    // than inheriting the authenticated handlers' backend-specific error body.
+    let twofactors = match TwoFactor::try_find_by_user(&user.uuid, conn).await {
+        Ok(t) => t,
+        Err(e) => server_fail!("Username: {username}. DB error loading 2FA state: {e:#?}"),
+    };
+    // Only real 2FA providers satisfy RequireTwoFactor policy. Remember tokens
+    // and recovery codes are bypass/fallback mechanisms, and implementation
+    // rows are challenge state, so those rows are ignored for policy purposes.
+    // Unknown atype<1000 rows are treated as a configured provider for
+    // forward-migration tolerance: if an operator rolls back after a newer
+    // build introduced a provider, this older build must not revoke the user
+    // from RequireTwoFactor orgs just because it cannot decode the row.
+    let needs_2fa_policy_enforcement = !twofactors.iter().any(TwoFactor::is_policy_provider_or_unknown);
+    if !needs_2fa_policy_enforcement && !twofactors.iter().any(passkey_policy_provider_usable_or_unknown) {
+        // Use the AUTH_FAILED facade and emit a UserFailedLogIn event, like
+        // other credential/account-state failures in this function. The unauthenticated
+        // grant must NOT return a distinguishable error body — a passkey
+        // holder could otherwise fingerprint the victim's 2FA configuration
+        // (rows-exist-but-disabled vs no-rows-at-all) by observing which
+        // branch fires.
+        auth_fail!("IP: {}. Username: {username}. No enabled and usable two-factor providers configured.", ip.ip)
+    }
+
+    // Gate passed — now safe to commit the counter advance. Exempt from the
+    // `update_revision` + `send_user_update(SyncVault, ...)` pair the four
+    // management endpoints in `src/api/core/mod.rs` emit: the signature
+    // counter is not part of any sync payload the clients read, so a
+    // notify here would be a no-op.
+    //
+    // Counter semantics note: the persisted counter is webauthn-rs's
+    // clone-detection primitive, not an audit-trail signal. A successful
+    // assertion may still fail post-verification (e.g. SMTP timeout inside
+    // `enforce_2fa_policy` / `authenticated_response` below), leaving the
+    // counter advanced without an issued auth token. This is intentional:
+    // the contract is monotonicity, not strict 1:1 with completed logins.
+    //
+    // A DB transient on this write is converted to a generic 503 rather than
+    // propagated as `?`. The endpoint is unauthenticated; raw DB wording would
+    // leak server internals, but users still need a retry-later signal.
     if passkey.update_credential(&authentication_result) == Some(true) {
-        matched_wac.credential = serde_json::to_string(&passkey)?;
-        matched_wac.update_credential(conn).await?;
+        matched_wac.credential = match serde_json::to_string(&passkey) {
+            Ok(credential) => credential,
+            Err(e) => server_fail!("Username: {username}. Failed to serialize updated passkey credential: {e:#?}"),
+        };
+        if let Err(e) = matched_wac.update_credential(conn).await {
+            server_fail!("Username: {username}. DB error persisting signature counter: {e:#?}")
+        }
+    } else if let Err(e) = matched_wac.ensure_still_registered(conn).await {
+        server_fail!("Username: {username}. DB error checking passkey credential presence: {e:#?}")
     }
 
-    let mut device = get_device(&data, conn, &user).await?;
+    let device_type = connect_device_type(&data);
 
-    // Mirror the 2FA-state gate that password login applies (twofactor_auth):
-    // - no providers at all → enforce_2fa_policy (revoke from RequireTwoFactor
-    //   orgs the user no longer satisfies) and let the passkey login proceed.
-    // - rows exist but every provider is disabled or unusable → reject, same
-    //   message the password path returns. The passkey is the auth, so we
-    //   don't ask for a 2FA token when usable providers exist.
-    let twofactors = TwoFactor::find_by_user(&user.uuid, conn).await;
-    if twofactors.is_empty() {
-        enforce_2fa_policy(&user, &user.uuid, device.atype, &ip.ip, conn).await?;
-    } else if !twofactors.iter().any(|tf| {
-        TwoFactorType::from_i32(tf.atype)
-            .is_some_and(|t| tf.enabled && is_twofactor_provider_usable(&t, Some(&tf.data)))
-    }) {
-        err!("No enabled and usable two factor providers are available for this account")
+    if needs_2fa_policy_enforcement {
+        // 2FA-state TOCTOU note: `disable_twofactor` / `activate_authenticator`
+        // / etc. do NOT acquire the per-user passkey lock, so the snapshot we
+        // captured above can drift before this enforcement runs. Holding the
+        // lock longer would not close the race (the disable path is
+        // unsynchronised regardless). The realistic worst case is a single
+        // user with two concurrent sessions racing a 2FA change against their
+        // own passkey login — bounded policy drift, not auth bypass.
+        if let Err(e) = enforce_2fa_policy(&user, &user.uuid, device_type, &ip.ip, conn).await {
+            server_fail!("Username: {username}. 2FA policy enforcement failed: {e:#?}")
+        }
     }
+
+    // Re-read the mutable account/credential state before any login side
+    // effects (device persistence, notification mail, success log). The
+    // process-local passkey lock blocks same-node delete/rotation while this
+    // request is active; this final DB read closes the common multi-replica
+    // window where another node deleted the matched credential or rotated the
+    // account key after our initial credential load.
+    match User::try_find_by_uuid(&user.uuid, conn).await {
+        Ok(Some(current_user)) => {
+            if current_user.security_stamp != user.security_stamp {
+                server_fail!("Username: {username}. Account key changed during passkey login.")
+            }
+            if !current_user.enabled {
+                auth_fail!("IP: {}. Username: {username}. Account is disabled.", ip.ip)
+            }
+            if current_user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
+                auth_fail!("IP: {}. Username: {username}. Account is not email-verified.", ip.ip)
+            }
+        }
+        Ok(None) => server_fail!("Username: {username}. Account deleted during passkey login."),
+        Err(e) => server_fail!("Username: {username}. DB error revalidating account state: {e:#?}"),
+    }
+
+    let response_wac =
+        match WebAuthnCredential::find_by_user_and_credential_id_hash(&user.uuid, &credential_id_hash, conn).await {
+            Ok(Some(wac)) => wac,
+            Ok(None) => server_fail!("Username: {username}. Passkey credential deleted during login."),
+            Err(e) => server_fail!("Username: {username}. DB error revalidating passkey credential: {e:#?}"),
+        };
+
+    // Post-verification downstream calls (get_device / authenticated_response)
+    // must not leak raw Error::Db / Error::Smtp / Error::Lettre details on
+    // this unauthenticated grant. Collapse them to a generic 503 instead of
+    // AUTH_FAILED so a valid passkey user gets the correct "server
+    // unavailable" guidance.
+    let mut device = match get_device(&data, conn, &user).await {
+        Ok(d) => d,
+        Err(e) => server_fail!("Username: {username}. Device lookup/create failed: {e:#?}"),
+    };
 
     let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::WebAuthn, data.client_id);
 
@@ -1442,8 +1582,21 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
     // upstream populates via `WithWebAuthnLoginCredential` after a webauthn-grant assertion.
     // The wrapped-key payload lets the client unlock the vault using the PRF secret it just
     // derived; without it, login completes but the vault stays locked.
-    let Json(base) = authenticated_response(&user, &mut device, auth_tokens, None, conn, ip).await?;
-    Ok(Json(build_webauthn_login_response(base, &matched_wac, &passkey)))
+    let Json(base) = match authenticated_response(&user, &mut device, auth_tokens, None, conn, ip).await {
+        Ok(j) => j,
+        Err(e) => server_fail!("Username: {username}. Authenticated response build failed: {e:#?}"),
+    };
+
+    Ok(Json(build_webauthn_login_response(base, &response_wac, &passkey)))
+}
+
+fn passkey_policy_provider_usable_or_unknown(tf: &TwoFactor) -> bool {
+    match TwoFactorType::from_i32(tf.atype) {
+        Some(provider_type) => {
+            tf.is_policy_provider() && tf.enabled && is_twofactor_provider_usable(&provider_type, Some(&tf.data))
+        }
+        None => tf.is_policy_provider_or_unknown(),
+    }
 }
 
 // https://github.com/bitwarden/jslib/blob/master/common/src/models/request/tokenRequest.ts
@@ -1513,11 +1666,23 @@ struct ConnectData {
     #[field(name = uncased("token"))]
     token: Option<String>,
 }
+fn connect_device_type(data: &ConnectData) -> i32 {
+    util::try_parse_string(data.device_type.as_ref()).unwrap_or(14)
+}
+
 fn check_is_some<T>(value: Option<&T>, msg: &str) -> EmptyResult {
-    if value.is_none() {
+    if value.is_some() {
+        Ok(())
+    } else {
         err!(msg)
     }
-    Ok(())
+}
+
+fn check_is_nonempty<T: ToString>(value: Option<&T>, msg: &str) -> EmptyResult {
+    match value {
+        Some(value) if !value.to_string().is_empty() => Ok(()),
+        _ => err!(msg),
+    }
 }
 
 #[get("/sso/prevalidate")]
@@ -1705,8 +1870,28 @@ mod tests {
     }
 
     #[test]
+    fn check_is_some_only_rejects_missing_values() {
+        let value = String::from("present");
+        let empty = String::new();
+
+        assert!(check_is_some(Some(&value), "value cannot be blank").is_ok());
+        assert!(check_is_some(Some(&empty), "value cannot be blank").is_ok());
+        assert!(check_is_some::<String>(None, "value cannot be blank").is_err());
+    }
+
+    #[test]
+    fn check_is_nonempty_rejects_missing_or_empty_values() {
+        let value = String::from("present");
+        let empty = String::new();
+
+        assert!(check_is_nonempty(Some(&value), "value cannot be blank").is_ok());
+        assert!(check_is_nonempty(Some(&empty), "value cannot be blank").is_err());
+        assert!(check_is_nonempty::<String>(None, "value cannot be blank").is_err());
+    }
+
+    #[test]
     fn passkey_credential_id_returns_browser_credential_id() {
-        assert_eq!(passkey_credential_id(&passkey(None)).unwrap(), "AQIDBA");
+        assert_eq!(passkey_credential_id(&passkey(None)), "AQIDBA");
     }
 
     #[test]
@@ -1719,6 +1904,32 @@ mod tests {
     #[test]
     fn passkey_transports_defaults_to_empty_when_absent() {
         assert!(passkey_transports(&passkey(None)).is_empty());
+    }
+
+    #[test]
+    fn passkey_challenge_fetch_metadata_allows_same_site_same_origin_or_absent() {
+        for sec_fetch_site in
+            [None, Some("same-origin".to_owned()), Some("same-site".to_owned()), Some("none".to_owned())]
+        {
+            assert!(
+                reject_cross_site_passkey_challenge_request(&FetchMetadata {
+                    sec_fetch_site
+                })
+                .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn passkey_challenge_fetch_metadata_rejects_cross_origin_contexts() {
+        for sec_fetch_site in ["cross-site", "Cross-Site", "unexpected-value"] {
+            assert!(
+                reject_cross_site_passkey_challenge_request(&FetchMetadata {
+                    sec_fetch_site: Some(sec_fetch_site.to_owned())
+                })
+                .is_err()
+            );
+        }
     }
 
     fn make_credential(
@@ -1833,6 +2044,20 @@ mod tests {
         assert!(response["UserDecryptionOptions"]["WebAuthnPrfOption"].is_null());
         // Untouched otherwise.
         assert_eq!(response["UserDecryptionOptions"]["HasMasterPassword"], true);
+    }
+
+    #[test]
+    fn webauthn_login_response_is_noop_when_user_decryption_options_is_not_an_object() {
+        let pk = passkey(None);
+        let wac = make_credential(true, Some("user"), Some("pub"), Some("priv"), &serde_json::to_string(&pk).unwrap());
+        let base = json!({
+            "UserDecryptionOptions": null,
+            "Other": true
+        });
+
+        let response = build_webauthn_login_response(base.clone(), &wac, &pk);
+
+        assert_eq!(response, base);
     }
 
     #[test]

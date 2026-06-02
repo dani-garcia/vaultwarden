@@ -70,6 +70,15 @@ test.describe('Passkey login challenge endpoint', () => {
         expect(body.token.length).toBeGreaterThan(0);
     });
 
+    test('GET assertion-options rejects cross-site Fetch Metadata before minting a challenge', async ({ request }) => {
+        const res = await request.get('/identity/accounts/webauthn/assertion-options', {
+            headers: { 'Sec-Fetch-Site': 'cross-site' },
+        });
+        expect(res.status()).toBe(403);
+        const body: any = await res.json();
+        expect(body?.message ?? '').toMatch(/same-site/i);
+    });
+
     test('assertion-options returns a fresh token and challenge on every call', async ({ request }) => {
         // Each call inserts a row in `web_authn_login_challenges`. Token AND
         // challenge bytes must both be unique across calls; if a future
@@ -165,11 +174,14 @@ test.describe('Passkey grant rejects all bad input with the same message', () =>
         const { token } = await (await request.get('/identity/accounts/webauthn/assertion-options')).json();
         // A shape that parses as PublicKeyCredentialCopy but cannot identify
         // any registered discoverable credential — same end state as garbage,
-        // but reaches a deeper branch in `webauthn_login`.
+        // but reaches a deeper branch in `webauthn_login`. Keep an explicit
+        // empty extensions object here to mirror the modern browser shape,
+        // even though the server also accepts older clients that omit it.
         const fakeAssertion = JSON.stringify({
             id: 'AAAA',
             rawId: 'AAAA',
             type: 'public-key',
+            extensions: {},
             response: {
                 authenticatorData: 'AAAA',
                 clientDataJson: 'AAAA',
@@ -303,8 +315,18 @@ test.describe('Passkey UI surface', () => {
 // treated as a proven login attempt for that user.
 // ---------------------------------------------------------------------------
 
-function base64url(s: string): string {
-    return Buffer.from(s, 'utf8').toString('base64')
+// WebAuthn user_handle is the user's 16-byte UUID (raw bytes), base64url-encoded.
+// The server parses it via `Uuid::from_slice(decoded)` which requires exactly 16
+// bytes — encoding the UUID's 36-character ASCII representation would short-circuit
+// at `identify_discoverable_authentication` before the test reaches the
+// pre-verification find_by_uuid path it intends to exercise.
+function uuidToUserHandle(uuid: string): string {
+    const hex = uuid.replace(/-/g, '');
+    if (hex.length !== 32) {
+        throw new Error(`uuidToUserHandle: expected 32 hex chars after stripping dashes, got ${hex.length} (${uuid})`);
+    }
+    return Buffer.from(hex, 'hex')
+        .toString('base64')
         .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
@@ -320,11 +342,18 @@ function webauthnGrantTargetingUser(token: string, userUuid: string): Record<str
             id: 'AAAA',
             rawId: 'AAAA',
             type: 'public-key',
+            // Optional: `PublicKeyCredentialCopy.extensions` is
+            // `#[serde(default)]`, so the server also accepts clients that
+            // omit it. Included to mirror the modern browser shape; the
+            // payload still parses and reaches the pre-verification user
+            // lookup (`identify_discoverable_authentication`) these tests
+            // are intended to exercise.
+            extensions: {},
             response: {
                 authenticatorData: 'AAAA',
                 clientDataJson: 'AAAA',
                 signature: 'AAAA',
-                userHandle: base64url(userUuid),
+                userHandle: uuidToUserHandle(userUuid),
             },
         }),
         token,
@@ -449,7 +478,8 @@ test.describe('Passkey grant is rejected when SSO_ONLY is on', () => {
         // SPA fetches this BEFORE invoking the WebAuthn ceremony, so the
         // server-side gate here is what prevents an attacker from
         // attempting passkey login even with a credential a victim has
-        // previously enrolled. Mirrors `src/api/identity.rs` line 1250.
+        // previously enrolled. Mirrors the SSO_ONLY gate in
+        // `get_web_authn_assertion_options` (src/api/identity.rs).
         const res = await request.get('/identity/accounts/webauthn/assertion-options');
         expect(res.status()).toBeGreaterThanOrEqual(400);
         const body: any = await res.json();
@@ -510,9 +540,9 @@ test.describe('Passkey grant is rejected when SSO_ONLY is on', () => {
 });
 
 test.describe('Passkey enrolment is rejected when SSO_ONLY is on', () => {
-    // Defends the deny-by-default gate on the management-side endpoints
-    // (`src/api/core/mod.rs` lines 308, 390, 459, 516 — guarded by
-    // `sso_enabled() && sso_only()`).
+    // Defends the deny-by-default gate on the management-side endpoints:
+    // `check_passkey_endpoint_preconditions` (src/api/core/passkeys.rs)
+    // refuses them under `sso_enabled() && sso_only()`.
     //
     // The enrol endpoints are authenticated, so we need a Bearer token
     // to reach the gate; under `SSO_ONLY=true` fresh logins must go
