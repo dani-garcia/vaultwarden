@@ -59,7 +59,7 @@ impl Attachment {
 
         if crate::storage::is_fs_operator(&operator) {
             let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
-            Ok(format!("{host}/attachments/{}/{}?token={token}", self.cipher_uuid, self.id))
+            Ok(attachment_download_url(host, &token))
         } else {
             Ok(operator.presign_read(&self.get_file_path(), Duration::from_mins(5)).await?.uri().to_string())
         }
@@ -75,6 +75,23 @@ impl Attachment {
             "key": self.akey,
             "object": "attachment"
         }))
+    }
+}
+
+fn attachment_download_url(host: &str, token: &str) -> String {
+    format!("{host}/api/ciphers/attachment/download?token={token}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::attachment_download_url;
+
+    #[test]
+    fn attachment_download_url_uses_api_endpoint() {
+        assert_eq!(
+            attachment_download_url("https://vault.example", "download.token"),
+            "https://vault.example/api/ciphers/attachment/download?token=download.token"
+        );
     }
 }
 

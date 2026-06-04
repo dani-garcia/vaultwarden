@@ -1,11 +1,14 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use chrono::{NaiveDateTime, Utc};
 use num_traits::ToPrimitive;
 use rocket::{
     Route,
     form::{Form, FromForm},
-    fs::TempFile,
+    fs::{NamedFile, TempFile},
     serde::json::Json,
 };
 use serde_json::Value;
@@ -13,7 +16,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::{self, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType, core::log_event},
-    auth::ClientVersion,
+    auth::{ClientVersion, decode_file_download},
     auth::{Headers, OrgIdGuard, OwnerHeaders},
     config::PathType,
     crypto,
@@ -53,6 +56,7 @@ pub fn routes() -> Vec<Route> {
         post_ciphers_create,
         post_ciphers_import,
         get_attachment,
+        download_attachment,
         post_attachment_v2,
         post_attachment_v2_data,
         post_attachment,       // legacy
@@ -1102,6 +1106,18 @@ async fn get_attachment(
         Some(_) => err!("Attachment doesn't belong to cipher"),
         None => err!("Attachment doesn't exist"),
     }
+}
+
+/// Serves a locally stored attachment file using a time-limited, signed token.
+#[get("/ciphers/attachment/download?<token>")]
+async fn download_attachment(token: String) -> Option<NamedFile> {
+    let Ok(claims) = decode_file_download(&token) else {
+        return None;
+    };
+
+    NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(claims.sub.as_ref()).join(claims.file_id.as_ref()))
+        .await
+        .ok()
 }
 
 #[derive(Deserialize)]
