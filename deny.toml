@@ -18,6 +18,13 @@ ignore = [
     # wrapper around rustls-pki-types and pulled in transitively via rustls 0.21.x.
     # Removing it requires upstream crates to drop their rustls 0.21 dependency.
     { id = "RUSTSEC-2025-0134", reason = "Transitive via rustls 0.21.x compat chain; blocked on upstream upgrade." },
+
+    # `rustls-webpki` v0.101.x bugs fixed in >=0.103.12/>=0.104.0-alpha.7 but that
+    # requires rustls >=0.22; rocket_http still pulls rustls 0.21.x. Blocked on
+    # upstream upgrade.
+    { id = "RUSTSEC-2026-0098", reason = "Transitive via rustls 0.21.x compat chain; blocked on upstream upgrade." },
+    { id = "RUSTSEC-2026-0099", reason = "Transitive via rustls 0.21.x compat chain; blocked on upstream upgrade." },
+    { id = "RUSTSEC-2026-0104", reason = "Transitive via rustls 0.21.x compat chain; blocked on upstream upgrade." },
 ]
 
 # =============================================================================
