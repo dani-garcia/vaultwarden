@@ -1,10 +1,11 @@
 //
 // Error generator macro
 //
+use std::error::Error as StdError;
+
 use crate::db::models::EventType;
 use crate::http_client::CustomHttpClientError;
 use serde::ser::{Serialize, SerializeStruct, Serializer};
-use std::error::Error as StdError;
 
 macro_rules! make_error {
     ( $( $name:ident ( $ty:ty ): $src_fn:expr, $usr_msg_fun:expr ),+ $(,)? ) => {
@@ -14,24 +15,24 @@ macro_rules! make_error {
 
         #[derive(Debug)]
         pub struct ErrorEvent { pub event: EventType }
-        pub struct Error { message: String, error: ErrorKind, error_code: u16, event: Option<ErrorEvent> }
+        pub struct Error { message: String, kind: ErrorKind, code: u16, event: Option<ErrorEvent> }
 
         $(impl From<$ty> for Error {
             fn from(err: $ty) -> Self { Error::from((stringify!($name), err)) }
         })+
         $(impl<S: Into<String>> From<(S, $ty)> for Error {
             fn from(val: (S, $ty)) -> Self {
-                Error { message: val.0.into(), error: ErrorKind::$name(val.1), error_code: BAD_REQUEST, event: None }
+                Error { message: val.0.into(), kind: ErrorKind::$name(val.1), code: BAD_REQUEST, event: None }
             }
         })+
         impl StdError for Error {
             fn source(&self) -> Option<&(dyn StdError + 'static)> {
-                match &self.error {$( ErrorKind::$name(e) => $src_fn(e), )+}
+                match &self.kind {$( ErrorKind::$name(e) => $src_fn(e), )+}
             }
         }
         impl std::fmt::Display for Error {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match &self.error {$(
+                match &self.kind {$(
                    ErrorKind::$name(e) => f.write_str(&$usr_msg_fun(e, &self.message)),
                 )+}
             }
@@ -39,10 +40,10 @@ macro_rules! make_error {
     };
 }
 
+use diesel::ConnectionError as DieselConErr;
 use diesel::r2d2::Error as R2d2Err;
 use diesel::r2d2::PoolError as R2d2PoolErr;
 use diesel::result::Error as DieselErr;
-use diesel::ConnectionError as DieselConErr;
 use handlebars::RenderError as HbErr;
 use jsonwebtoken::errors::Error as JwtErr;
 use lettre::address::AddressError as AddrErr;
@@ -71,46 +72,46 @@ pub struct Compact {}
 // The second one contains the function used to obtain the response sent to the client
 make_error! {
     // Just an empty error
-    Empty(Empty):     _no_source, _serialize,
+    Empty(Empty):     no_source, serialize,
     // Used to represent err! calls
-    Simple(String):  _no_source,  _api_error,
-    Compact(Compact):  _no_source,  _compact_api_error,
+    Simple(String):  no_source,  api_error,
+    Compact(Compact):  no_source,  compact_api_error,
 
     // Used in our custom http client to handle non-global IPs and blocked domains
-    CustomHttpClient(CustomHttpClientError): _has_source, _api_error,
+    CustomHttpClient(CustomHttpClientError): has_source, api_error,
 
     // Used for special return values, like 2FA errors
-    Json(Value):           _no_source,  _serialize,
-    Db(DieselErr):         _has_source, _api_error,
-    R2d2(R2d2Err):         _has_source, _api_error,
-    R2d2Pool(R2d2PoolErr): _has_source, _api_error,
-    Serde(SerdeErr):       _has_source, _api_error,
-    JWt(JwtErr):           _has_source, _api_error,
-    Handlebars(HbErr):     _has_source, _api_error,
+    Json(Value):           no_source,  serialize,
+    Db(DieselErr):         has_source, api_error,
+    R2d2(R2d2Err):         has_source, api_error,
+    R2d2Pool(R2d2PoolErr): has_source, api_error,
+    Serde(SerdeErr):       has_source, api_error,
+    JWt(JwtErr):           has_source, api_error,
+    Handlebars(HbErr):     has_source, api_error,
 
-    Io(IoErr):       _has_source, _api_error,
-    Time(TimeErr):   _has_source, _api_error,
-    Req(ReqErr):     _has_source, _api_error,
-    Regex(RegexErr): _has_source, _api_error,
-    Yubico(YubiErr): _has_source, _api_error,
+    Io(IoErr):       has_source, api_error,
+    Time(TimeErr):   has_source, api_error,
+    Req(ReqErr):     has_source, api_error,
+    Regex(RegexErr): has_source, api_error,
+    Yubico(YubiErr): has_source, api_error,
 
-    Lettre(LettreErr): _has_source, _api_error,
-    Address(AddrErr):  _has_source, _api_error,
-    Smtp(SmtpErr):     _has_source, _api_error,
-    OpenSSL(SSLErr):   _has_source, _api_error,
-    Rocket(RocketErr): _has_source, _api_error,
+    Lettre(LettreErr): has_source, api_error,
+    Address(AddrErr):  has_source, api_error,
+    Smtp(SmtpErr):     has_source, api_error,
+    OpenSSL(SSLErr):   has_source, api_error,
+    Rocket(RocketErr): has_source, api_error,
 
-    DieselCon(DieselConErr): _has_source, _api_error,
-    Webauthn(WebauthnErr):   _has_source, _api_error,
+    DieselCon(DieselConErr): has_source, api_error,
+    Webauthn(WebauthnErr):   has_source, api_error,
 
-    OpenDAL(OpenDALErr): _has_source, _api_error,
+    OpenDAL(OpenDALErr): has_source, api_error,
 }
 
 impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.source() {
             Some(e) => write!(f, "{}.\n[CAUSE] {:#?}", self.message, e),
-            None => match self.error {
+            None => match self.kind {
                 ErrorKind::Empty(_) => Ok(()),
                 ErrorKind::Simple(ref s) => {
                     if &self.message == s {
@@ -135,6 +136,7 @@ impl Error {
         (usr_msg.clone(), usr_msg.into()).into()
     }
 
+    #[must_use]
     pub fn empty() -> Self {
         Empty {}.into()
     }
@@ -147,13 +149,13 @@ impl Error {
 
     #[must_use]
     pub fn with_kind(mut self, kind: ErrorKind) -> Self {
-        self.error = kind;
+        self.kind = kind;
         self
     }
 
     #[must_use]
     pub const fn with_code(mut self, code: u16) -> Self {
-        self.error_code = code;
+        self.code = code;
         self
     }
 
@@ -194,14 +196,14 @@ impl<S> MapResult<S> for Option<S> {
     }
 }
 
-const fn _has_source<T>(e: T) -> Option<T> {
+const fn has_source<T>(e: T) -> Option<T> {
     Some(e)
 }
-fn _no_source<T, S>(_: T) -> Option<S> {
+fn no_source<T, S>(_: T) -> Option<S> {
     None
 }
 
-fn _serialize(e: &impl Serialize, _msg: &str) -> String {
+fn serialize(e: &impl Serialize, _msg: &str) -> String {
     serde_json::to_string(e).unwrap()
 }
 
@@ -280,14 +282,14 @@ struct ApiErrorResponse<'a>(ApiErrorMsg<'a>);
 /// The custom serialization adds all other needed fields
 struct CompactApiErrorResponse<'a>(ApiErrorMsg<'a>);
 
-fn _api_error(_: &impl std::any::Any, msg: &str) -> String {
+fn api_error(_: &impl std::any::Any, msg: &str) -> String {
     let response = ApiErrorMsg {
         message: msg,
     };
     serde_json::to_string(&ApiErrorResponse(response)).unwrap()
 }
 
-fn _compact_api_error(_: &impl std::any::Any, msg: &str) -> String {
+fn compact_api_error(_: &impl std::any::Any, msg: &str) -> String {
     let response = ApiErrorMsg {
         message: msg,
     };
@@ -299,18 +301,20 @@ fn _compact_api_error(_: &impl std::any::Any, msg: &str) -> String {
 //
 use std::io::Cursor;
 
-use rocket::http::{ContentType, Status};
-use rocket::request::Request;
-use rocket::response::{self, Responder, Response};
+use rocket::{
+    http::{ContentType, Status},
+    request::Request,
+    response::{self, Responder, Response},
+};
 
 impl Responder<'_, 'static> for Error {
     fn respond_to(self, _: &Request<'_>) -> response::Result<'static> {
-        match self.error {
+        match self.kind {
             ErrorKind::Empty(_) | ErrorKind::Simple(_) | ErrorKind::Compact(_) => {} // Don't print the error in this situation
             _ => error!(target: "error", "{self:#?}"),
-        };
+        }
 
-        let code = Status::from_code(self.error_code).unwrap_or(Status::BadRequest);
+        let code = Status::from_code(self.code).unwrap_or(Status::BadRequest);
         let body = self.to_string();
         Response::build().status(code).header(ContentType::JSON).sized_body(Some(body.len()), Cursor::new(body)).ok()
     }

@@ -1,14 +1,17 @@
 use derive_more::{AsRef, From};
+use diesel::prelude::*;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::api::core::two_factor;
-use crate::api::EmptyResult;
-use crate::db::schema::{org_policies, users_organizations};
-use crate::db::DbConn;
-use crate::error::MapResult;
-use crate::CONFIG;
-use diesel::prelude::*;
+use crate::{
+    CONFIG,
+    api::{EmptyResult, core::two_factor},
+    db::{
+        DbConn,
+        schema::{org_policies, users_organizations},
+    },
+    error::MapResult,
+};
 
 use super::{Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId, TwoFactor, UserId};
 
@@ -148,37 +151,38 @@ impl OrgPolicy {
     }
 
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::delete(org_policies::table.filter(org_policies::uuid.eq(self.uuid)))
                 .execute(conn)
                 .map_res("Error deleting org_policy")
-        }}
+        })
+        .await
     }
 
     pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             org_policies::table
                 .filter(org_policies::org_uuid.eq(org_uuid))
                 .load::<Self>(conn)
                 .expect("Error loading org_policy")
-        }}
+        })
+        .await
     }
 
     pub async fn find_confirmed_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             org_policies::table
                 .inner_join(
-                    users_organizations::table.on(
-                        users_organizations::org_uuid.eq(org_policies::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid)))
+                    users_organizations::table.on(users_organizations::org_uuid
+                        .eq(org_policies::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid))),
                 )
-                .filter(
-                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
-                )
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .select(org_policies::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading org_policy")
-        }}
+        })
+        .await
     }
 
     pub async fn find_by_org_and_type(
@@ -186,21 +190,23 @@ impl OrgPolicy {
         policy_type: OrgPolicyType,
         conn: &DbConn,
     ) -> Option<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             org_policies::table
                 .filter(org_policies::org_uuid.eq(org_uuid))
                 .filter(org_policies::atype.eq(policy_type as i32))
                 .first::<Self>(conn)
                 .ok()
-        }}
+        })
+        .await
     }
 
     pub async fn delete_all_by_organization(org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::delete(org_policies::table.filter(org_policies::org_uuid.eq(org_uuid)))
                 .execute(conn)
                 .map_res("Error deleting org_policy")
-        }}
+        })
+        .await
     }
 
     pub async fn find_accepted_and_confirmed_by_user_and_active_policy(
@@ -208,25 +214,22 @@ impl OrgPolicy {
         policy_type: OrgPolicyType,
         conn: &DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             org_policies::table
                 .inner_join(
-                    users_organizations::table.on(
-                        users_organizations::org_uuid.eq(org_policies::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid)))
+                    users_organizations::table.on(users_organizations::org_uuid
+                        .eq(org_policies::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid))),
                 )
-                .filter(
-                    users_organizations::status.eq(MembershipStatus::Accepted as i32)
-                )
-                .or_filter(
-                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
-                )
+                .filter(users_organizations::status.eq(MembershipStatus::Accepted as i32))
+                .or_filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(org_policies::atype.eq(policy_type as i32))
                 .filter(org_policies::enabled.eq(true))
                 .select(org_policies::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading org_policy")
-        }}
+        })
+        .await
     }
 
     pub async fn find_confirmed_by_user_and_active_policy(
@@ -234,22 +237,21 @@ impl OrgPolicy {
         policy_type: OrgPolicyType,
         conn: &DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             org_policies::table
                 .inner_join(
-                    users_organizations::table.on(
-                        users_organizations::org_uuid.eq(org_policies::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid)))
+                    users_organizations::table.on(users_organizations::org_uuid
+                        .eq(org_policies::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid))),
                 )
-                .filter(
-                    users_organizations::status.eq(MembershipStatus::Confirmed as i32)
-                )
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(org_policies::atype.eq(policy_type as i32))
                 .filter(org_policies::enabled.eq(true))
                 .select(org_policies::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading org_policy")
-        }}
+        })
+        .await
     }
 
     /// Returns true if the user belongs to an org that has enabled the specified policy type,
@@ -269,10 +271,10 @@ impl OrgPolicy {
                 continue;
             }
 
-            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
-                if user.atype < MembershipType::Admin {
-                    return true;
-                }
+            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await
+                && user.atype < MembershipType::Admin
+            {
+                return true;
             }
         }
         false
@@ -282,13 +284,13 @@ impl OrgPolicy {
         if m.atype < MembershipType::Admin && m.status > (MembershipStatus::Invited as i32) {
             // Enforce TwoFactor/TwoStep login
             if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::TwoFactorAuthentication, conn).await
+                && p.enabled
+                && TwoFactor::find_by_user(&m.user_uuid, conn).await.is_empty()
             {
-                if p.enabled && TwoFactor::find_by_user(&m.user_uuid, conn).await.is_empty() {
-                    if CONFIG.email_2fa_auto_fallback() {
-                        two_factor::email::find_and_activate_email_2fa(&m.user_uuid, conn).await?;
-                    } else {
-                        err!(format!("Cannot {} because 2FA is required (membership {})", action, m.uuid));
-                    }
+                if CONFIG.email_2fa_auto_fallback() {
+                    two_factor::email::find_and_activate_email_2fa(&m.user_uuid, conn).await?;
+                } else {
+                    err!(format!("Cannot {} because 2FA is required (membership {})", action, m.uuid));
                 }
             }
 
@@ -300,12 +302,14 @@ impl OrgPolicy {
                 ));
             }
 
-            if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::SingleOrg, conn).await {
-                if p.enabled
-                    && Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await > 0
-                {
-                    err!(format!("Cannot {} because the organization policy forbids being part of other organization (membership {})", action, m.uuid));
-                }
+            if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::SingleOrg, conn).await
+                && p.enabled
+                && Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await > 0
+            {
+                err!(format!(
+                    "Cannot {} because the organization policy forbids being part of other organization (membership {})",
+                    action, m.uuid
+                ));
             }
         }
 
@@ -332,16 +336,16 @@ impl OrgPolicy {
         for policy in
             OrgPolicy::find_confirmed_by_user_and_active_policy(user_uuid, OrgPolicyType::SendOptions, conn).await
         {
-            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await {
-                if user.atype < MembershipType::Admin {
-                    match serde_json::from_str::<SendOptionsPolicyData>(&policy.data) {
-                        Ok(opts) => {
-                            if opts.disable_hide_email {
-                                return true;
-                            }
+            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await
+                && user.atype < MembershipType::Admin
+            {
+                match serde_json::from_str::<SendOptionsPolicyData>(&policy.data) {
+                    Ok(opts) => {
+                        if opts.disable_hide_email {
+                            return true;
                         }
-                        _ => error!("Failed to deserialize SendOptionsPolicyData: {}", policy.data),
                     }
+                    _ => error!("Failed to deserialize SendOptionsPolicyData: {}", policy.data),
                 }
             }
         }
@@ -349,10 +353,10 @@ impl OrgPolicy {
     }
 
     pub async fn is_enabled_for_member(member_uuid: &MembershipId, policy_type: OrgPolicyType, conn: &DbConn) -> bool {
-        if let Some(member) = Membership::find_by_uuid(member_uuid, conn).await {
-            if let Some(policy) = OrgPolicy::find_by_org_and_type(&member.org_uuid, policy_type, conn).await {
-                return policy.enabled;
-            }
+        if let Some(member) = Membership::find_by_uuid(member_uuid, conn).await
+            && let Some(policy) = OrgPolicy::find_by_org_and_type(&member.org_uuid, policy_type, conn).await
+        {
+            return policy.enabled;
         }
         false
     }

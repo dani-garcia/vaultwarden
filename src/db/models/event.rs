@@ -1,11 +1,18 @@
 use chrono::{NaiveDateTime, TimeDelta, Utc};
-//use derive_more::{AsRef, Deref, Display, From};
+use diesel::prelude::*;
 use serde_json::Value;
 
+use crate::{
+    CONFIG,
+    api::EmptyResult,
+    db::{
+        DbConn,
+        schema::{event, users_organizations},
+    },
+    error::MapResult,
+};
+
 use super::{CipherId, CollectionId, GroupId, MembershipId, OrgPolicyId, OrganizationId, UserId};
-use crate::db::schema::{event, users_organizations};
-use crate::{api::EmptyResult, db::DbConn, error::MapResult, CONFIG};
-use diesel::prelude::*;
 
 // https://bitwarden.com/help/event-logs/
 
@@ -249,11 +256,10 @@ impl Event {
     }
 
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
-            diesel::delete(event::table.filter(event::uuid.eq(self.uuid)))
-                .execute(conn)
-                .map_res("Error deleting event")
-        }}
+        conn.run(move |conn| {
+            diesel::delete(event::table.filter(event::uuid.eq(self.uuid))).execute(conn).map_res("Error deleting event")
+        })
+        .await
     }
 
     /// ##############
@@ -264,7 +270,7 @@ impl Event {
         end: &NaiveDateTime,
         conn: &DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             event::table
                 .filter(event::org_uuid.eq(org_uuid))
                 .filter(event::event_date.between(start, end))
@@ -272,18 +278,15 @@ impl Event {
                 .limit(Self::PAGE_SIZE)
                 .load::<Self>(conn)
                 .expect("Error filtering events")
-        }}
+        })
+        .await
     }
 
     pub async fn count_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> i64 {
-        db_run! { conn: {
-            event::table
-                .filter(event::org_uuid.eq(org_uuid))
-                .count()
-                .first::<i64>(conn)
-                .ok()
-                .unwrap_or(0)
-        }}
+        conn.run(move |conn| {
+            event::table.filter(event::org_uuid.eq(org_uuid)).count().first::<i64>(conn).ok().unwrap_or(0)
+        })
+        .await
     }
 
     pub async fn find_by_org_and_member(
@@ -293,18 +296,23 @@ impl Event {
         end: &NaiveDateTime,
         conn: &DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             event::table
                 .inner_join(users_organizations::table.on(users_organizations::uuid.eq(member_uuid)))
                 .filter(event::org_uuid.eq(org_uuid))
                 .filter(event::event_date.between(start, end))
-                .filter(event::user_uuid.eq(users_organizations::user_uuid.nullable()).or(event::act_user_uuid.eq(users_organizations::user_uuid.nullable())))
+                .filter(
+                    event::user_uuid
+                        .eq(users_organizations::user_uuid.nullable())
+                        .or(event::act_user_uuid.eq(users_organizations::user_uuid.nullable())),
+                )
                 .select(event::all_columns)
                 .order_by(event::event_date.desc())
                 .limit(Self::PAGE_SIZE)
                 .load::<Self>(conn)
                 .expect("Error filtering events")
-        }}
+        })
+        .await
     }
 
     pub async fn find_by_cipher_uuid(
@@ -313,7 +321,7 @@ impl Event {
         end: &NaiveDateTime,
         conn: &DbConn,
     ) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             event::table
                 .filter(event::cipher_uuid.eq(cipher_uuid))
                 .filter(event::event_date.between(start, end))
@@ -321,17 +329,19 @@ impl Event {
                 .limit(Self::PAGE_SIZE)
                 .load::<Self>(conn)
                 .expect("Error filtering events")
-        }}
+        })
+        .await
     }
 
     pub async fn clean_events(conn: &DbConn) -> EmptyResult {
         if let Some(days_to_retain) = CONFIG.events_days_retain() {
             let dt = Utc::now().naive_utc() - TimeDelta::try_days(days_to_retain).unwrap();
-            db_run! { conn: {
+            conn.run(move |conn| {
                 diesel::delete(event::table.filter(event::event_date.lt(dt)))
-                .execute(conn)
-                .map_res("Error cleaning old events")
-            }}
+                    .execute(conn)
+                    .map_res("Error cleaning old events")
+            })
+            .await
         } else {
             Ok(())
         }

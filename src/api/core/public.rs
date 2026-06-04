@@ -1,23 +1,24 @@
-use chrono::Utc;
-use rocket::{
-    request::{FromRequest, Outcome},
-    serde::json::Json,
-    Request, Route,
-};
-
 use std::collections::HashSet;
 
+use chrono::Utc;
+use rocket::{
+    Request, Route,
+    request::{FromRequest, Outcome},
+    serde::json::Json,
+};
+
 use crate::{
+    CONFIG,
     api::EmptyResult,
     auth,
     db::{
+        DbConn,
         models::{
             Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, Organization,
             OrganizationApiKey, OrganizationId, User,
         },
-        DbConn,
     },
-    mail, CONFIG,
+    mail,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -90,19 +91,18 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
             }
         } else {
             // If user is not part of the organization
-            let user = match User::find_by_mail(&user_data.email, &conn).await {
-                Some(user) => user, // exists in vaultwarden
-                None => {
-                    // User does not exist yet
-                    let mut new_user = User::new(&user_data.email, None);
-                    new_user.save(&conn).await?;
+            let user = if let Some(user) = User::find_by_mail(&user_data.email, &conn).await {
+                user
+            } else {
+                // User does not exist yet
+                let mut new_user = User::new(&user_data.email, None);
+                new_user.save(&conn).await?;
 
-                    if !CONFIG.mail_enabled() {
-                        Invitation::new(&new_user.email).save(&conn).await?;
-                    }
-                    user_created = true;
-                    new_user
+                if !CONFIG.mail_enabled() {
+                    Invitation::new(&new_user.email).save(&conn).await?;
                 }
+                user_created = true;
+                new_user
             };
             let member_status = if CONFIG.mail_enabled() || user.password_hash.is_empty() {
                 MembershipStatus::Invited as i32
@@ -110,9 +110,10 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
                 MembershipStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
             };
 
-            let (org_name, org_email) = match Organization::find_by_uuid(&org_id, &conn).await {
-                Some(org) => (org.name, org.billing_email),
-                None => err!("Error looking up organization"),
+            let (org_name, org_email) = if let Some(org) = Organization::find_by_uuid(&org_id, &conn).await {
+                (org.name, org.billing_email)
+            } else {
+                err!("Error looking up organization")
             };
 
             let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), Some(org_email.clone()));
@@ -123,37 +124,33 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
 
             new_member.save(&conn).await?;
 
-            if CONFIG.mail_enabled() {
-                if let Err(e) =
+            if CONFIG.mail_enabled()
+                && let Err(e) =
                     mail::send_invite(&user, org_id.clone(), new_member.uuid.clone(), &org_name, Some(org_email)).await
-                {
-                    // Upon error delete the user, invite and org member records when needed
-                    if user_created {
-                        user.delete(&conn).await?;
-                    } else {
-                        new_member.delete(&conn).await?;
-                    }
-
-                    err!(format!("Error sending invite: {e:?} "));
+            {
+                // Upon error delete the user, invite and org member records when needed
+                if user_created {
+                    user.delete(&conn).await?;
+                } else {
+                    new_member.delete(&conn).await?;
                 }
+
+                err!(format!("Error sending invite: {e:?} "));
             }
         }
     }
 
     if CONFIG.org_groups_enabled() {
         for group_data in &data.groups {
-            let group_uuid = match Group::find_by_external_id_and_org(&group_data.external_id, &org_id, &conn).await {
-                Some(group) => group.uuid,
-                None => {
-                    let mut group = Group::new(
-                        org_id.clone(),
-                        group_data.name.clone(),
-                        false,
-                        Some(group_data.external_id.clone()),
-                    );
-                    group.save(&conn).await?;
-                    group.uuid
-                }
+            let group_uuid = if let Some(group) =
+                Group::find_by_external_id_and_org(&group_data.external_id, &org_id, &conn).await
+            {
+                group.uuid
+            } else {
+                let mut group =
+                    Group::new(org_id.clone(), group_data.name.clone(), false, Some(group_data.external_id.clone()));
+                group.save(&conn).await?;
+                group.uuid
             };
 
             GroupUser::delete_all_by_group(&group_uuid, &org_id, &conn).await?;
@@ -174,18 +171,17 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
         // Generate a HashSet to quickly verify if a member is listed or not.
         let sync_members: HashSet<String> = data.members.into_iter().map(|m| m.external_id).collect();
         for member in Membership::find_by_org(&org_id, &conn).await {
-            if let Some(ref user_external_id) = member.external_id {
-                if !sync_members.contains(user_external_id) {
-                    if member.atype == MembershipType::Owner && member.status == MembershipStatus::Confirmed as i32 {
-                        // Removing owner, check that there is at least one other confirmed owner
-                        if Membership::count_confirmed_by_org_and_type(&org_id, MembershipType::Owner, &conn).await <= 1
-                        {
-                            warn!("Can't delete the last owner");
-                            continue;
-                        }
+            if let Some(ref user_external_id) = member.external_id
+                && !sync_members.contains(user_external_id)
+            {
+                if member.atype == MembershipType::Owner && member.status == MembershipStatus::Confirmed as i32 {
+                    // Removing owner, check that there is at least one other confirmed owner
+                    if Membership::count_confirmed_by_org_and_type(&org_id, MembershipType::Owner, &conn).await <= 1 {
+                        warn!("Can't delete the last owner");
+                        continue;
                     }
-                    member.delete(&conn).await?;
                 }
+                member.delete(&conn).await?;
             }
         }
     }
@@ -202,12 +198,14 @@ impl<'r> FromRequest<'r> for PublicToken {
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = request.headers();
         // Get access_token
-        let access_token: &str = match headers.get_one("Authorization") {
-            Some(a) => match a.rsplit("Bearer ").next() {
-                Some(split) => split,
-                None => err_handler!("No access token provided"),
-            },
-            None => err_handler!("No access token provided"),
+        let access_token: &str = if let Some(a) = headers.get_one("Authorization") {
+            if let Some(split) = a.rsplit("Bearer ").next() {
+                split
+            } else {
+                err_handler!("No access token provided")
+            }
+        } else {
+            err_handler!("No access token provided")
         };
         // Check JWT token is valid and get device and user from it
         let Ok(claims) = auth::decode_api_org(access_token) else {
@@ -229,14 +227,13 @@ impl<'r> FromRequest<'r> for PublicToken {
 
         // Check if claims.sub is org_api_key.uuid
         // Check if claims.client_sub is org_api_key.org_uuid
-        let conn = match DbConn::from_request(request).await {
-            Outcome::Success(conn) => conn,
-            _ => err_handler!("Error getting DB"),
+        let Outcome::Success(conn) = DbConn::from_request(request).await else {
+            err_handler!("Error getting DB")
         };
         let Some(org_id) = claims.client_id.strip_prefix("organization.") else {
             err_handler!("Malformed client_id")
         };
-        let org_id: OrganizationId = org_id.to_string().into();
+        let org_id: OrganizationId = org_id.to_owned().into();
         let Some(org_api_key) = OrganizationApiKey::find_by_org_uuid(&org_id, &conn).await else {
             err_handler!("Invalid client_id")
         };

@@ -5,8 +5,8 @@ use crate::{
     api::{EmptyResult, JsonResult, Notify, UpdateType},
     auth::Headers,
     db::{
-        models::{Folder, FolderId},
         DbConn,
+        models::{Folder, FolderId},
     },
     util::deser_opt_nonempty_str,
 };
@@ -29,9 +29,10 @@ async fn get_folders(headers: Headers, conn: DbConn) -> Json<Value> {
 
 #[get("/folders/<folder_id>")]
 async fn get_folder(folder_id: FolderId, headers: Headers, conn: DbConn) -> JsonResult {
-    match Folder::find_by_uuid_and_user(&folder_id, &headers.user.uuid, &conn).await {
-        Some(folder) => Ok(Json(folder.to_json())),
-        _ => err!("Invalid folder", "Folder does not exist or belongs to another user"),
+    if let Some(folder) = Folder::find_by_uuid_and_user(&folder_id, &headers.user.uuid, &conn).await {
+        Ok(Json(folder.to_json()))
+    } else {
+        err!("Invalid folder", "Folder does not exist or belongs to another user")
     }
 }
 

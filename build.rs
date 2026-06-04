@@ -1,21 +1,20 @@
-use std::env;
-use std::process::Command;
+use std::{env, io::Error, process::Command};
 
 fn main() {
-    // This allow using #[cfg(sqlite)] instead of #[cfg(feature = "sqlite")], which helps when trying to add them through macros
-    #[cfg(feature = "sqlite")]
+    // These allow using e.g. #[cfg(mysql)] instead of #[cfg(feature = "mysql")], which helps when trying to add them through macros
+    #[cfg(feature = "sqlite_system")] // The `sqlite` feature implies this one.
     println!("cargo:rustc-cfg=sqlite");
     #[cfg(feature = "mysql")]
     println!("cargo:rustc-cfg=mysql");
     #[cfg(feature = "postgresql")]
     println!("cargo:rustc-cfg=postgresql");
-    #[cfg(feature = "s3")]
-    println!("cargo:rustc-cfg=s3");
-
-    #[cfg(not(any(feature = "sqlite", feature = "mysql", feature = "postgresql")))]
+    #[cfg(not(any(feature = "sqlite_system", feature = "mysql", feature = "postgresql")))]
     compile_error!(
         "You need to enable one DB backend. To build with previous defaults do: cargo build --features sqlite"
     );
+
+    #[cfg(feature = "s3")]
+    println!("cargo:rustc-cfg=s3");
 
     // Use check-cfg to let cargo know which cfg's we define,
     // and avoid warnings when they are used in the code.
@@ -42,13 +41,12 @@ fn main() {
     }
 }
 
-fn run(args: &[&str]) -> Result<String, std::io::Error> {
+fn run(args: &[&str]) -> Result<String, Error> {
     let out = Command::new(args[0]).args(&args[1..]).output()?;
     if !out.status.success() {
-        use std::io::Error;
         return Err(Error::other("Command not successful"));
     }
-    Ok(String::from_utf8(out.stdout).unwrap().trim().to_string())
+    Ok(String::from_utf8(out.stdout).unwrap().trim().to_owned())
 }
 
 /// This method reads info from Git, namely tags, branch, and revision
@@ -58,7 +56,7 @@ fn run(args: &[&str]) -> Result<String, std::io::Error> {
 ///    - `env!("GIT_BRANCH")`
 ///    - `env!("GIT_REV")`
 ///    - `env!("VW_VERSION")`
-fn version_from_git_info() -> Result<String, std::io::Error> {
+fn version_from_git_info() -> Result<String, Error> {
     // The exact tag for the current commit, can be empty when
     // the current commit doesn't have an associated tag
     let exact_tag = run(&["git", "describe", "--abbrev=0", "--tags", "--exact-match"]).ok();

@@ -1,22 +1,21 @@
 use chrono::Utc;
 use data_encoding::BASE64;
-use rocket::serde::json::Json;
-use rocket::Route;
+use rocket::{Route, serde::json::Json};
 
 use crate::{
+    CONFIG,
     api::{
-        core::log_user_event, core::two_factor::_generate_recover_code, ApiResult, EmptyResult, JsonResult,
-        PasswordOrOtpData,
+        ApiResult, EmptyResult, JsonResult, PasswordOrOtpData, core::log_user_event,
+        core::two_factor::generate_recover_code,
     },
     auth::Headers,
     crypto,
     db::{
-        models::{EventType, TwoFactor, TwoFactorType, User, UserId},
         DbConn,
+        models::{EventType, TwoFactor, TwoFactorType, User, UserId},
     },
     error::MapResult,
     http_client::make_http_request,
-    CONFIG,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -82,8 +81,7 @@ enum DuoStatus {
 impl DuoStatus {
     fn data(self) -> Option<DuoData> {
         match self {
-            DuoStatus::Global(data) => Some(data),
-            DuoStatus::User(data) => Some(data),
+            DuoStatus::Global(data) | DuoStatus::User(data) => Some(data),
             DuoStatus::Disabled(_) => None,
         }
     }
@@ -182,7 +180,7 @@ async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, conn: DbConn)
     let twofactor = TwoFactor::new(user.uuid.clone(), type_, data_str);
     twofactor.save(&conn).await?;
 
-    _generate_recover_code(&mut user, &conn).await;
+    generate_recover_code(&mut user, &conn).await;
 
     log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
@@ -201,14 +199,14 @@ async fn activate_duo_put(data: Json<EnableDuoData>, headers: Headers, conn: DbC
 }
 
 async fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {
-    use reqwest::{header, Method};
+    use reqwest::{Method, header};
     use std::str::FromStr;
 
     // https://duo.com/docs/authapi#api-details
-    let url = format!("https://{}{path}", &data.host);
-    let date = Utc::now().to_rfc2822();
+    let url = format!("https://{}{path}", data.host);
+    let dt = Utc::now().to_rfc2822();
     let username = &data.ik;
-    let fields = [&date, method, &data.host, path, params];
+    let fields = [&dt, method, &data.host, path, params];
     let password = crypto::hmac_sign(&data.sk, &fields.join("\n"));
 
     let m = Method::from_str(method).unwrap_or_default();
@@ -216,7 +214,7 @@ async fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData)
     make_http_request(m, &url)?
         .basic_auth(username, Some(password))
         .header(header::USER_AGENT, "vaultwarden:Duo/1.0 (Rust)")
-        .header(header::DATE, date)
+        .header(header::DATE, dt)
         .send()
         .await?
         .error_for_status()?;
@@ -356,9 +354,10 @@ fn parse_duo_values(key: &str, val: &str, ikey: &str, prefix: &str, time: i64) -
         err!("Invalid ikey")
     }
 
-    let expire: i64 = match expire.parse() {
-        Ok(e) => e,
-        Err(_) => err!("Invalid expire time"),
+    let expire: i64 = if let Ok(e) = expire.parse() {
+        e
+    } else {
+        err!("Invalid expire time")
     };
 
     if time >= expire {

@@ -1,16 +1,17 @@
-use chrono::{naive::serde::ts_seconds, NaiveDateTime, TimeDelta, Utc};
-use rocket::{serde::json::Json, Route};
+use chrono::{NaiveDateTime, TimeDelta, Utc, naive::serde::ts_seconds};
+use rocket::{Route, serde::json::Json};
 
 use crate::{
+    CONFIG,
     api::EmptyResult,
     auth::Headers,
     crypto,
     db::{
-        models::{TwoFactor, TwoFactorType, UserId},
         DbConn,
+        models::{TwoFactor, TwoFactorType, UserId},
     },
     error::{Error, MapResult},
-    mail, CONFIG,
+    mail,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -44,9 +45,10 @@ impl ProtectedActionData {
 
     pub fn from_json(string: &str) -> Result<Self, Error> {
         let res: Result<Self, serde_json::Error> = serde_json::from_str(string);
-        match res {
-            Ok(x) => Ok(x),
-            Err(_) => err!("Could not decode ProtectedActionData from string"),
+        if let Ok(x) = res {
+            Ok(x)
+        } else {
+            err!("Could not decode ProtectedActionData from string")
         }
     }
 
@@ -62,7 +64,9 @@ impl ProtectedActionData {
 #[post("/accounts/request-otp")]
 async fn request_otp(headers: Headers, conn: DbConn) -> EmptyResult {
     if !CONFIG.mail_enabled() {
-        err!("Email is disabled for this server. Either enable email or login using your master password instead of login via device.");
+        err!(
+            "Email is disabled for this server. Either enable email or login using your master password instead of login via device."
+        );
     }
 
     let user = headers.user;
@@ -102,7 +106,9 @@ struct ProtectedActionVerify {
 #[post("/accounts/verify-otp", data = "<data>")]
 async fn verify_otp(data: Json<ProtectedActionVerify>, headers: Headers, conn: DbConn) -> EmptyResult {
     if !CONFIG.mail_enabled() {
-        err!("Email is disabled for this server. Either enable email or login using your master password instead of login via device.");
+        err!(
+            "Email is disabled for this server. Either enable email or login using your master password instead of login via device."
+        );
     }
 
     let user = headers.user;
@@ -133,7 +139,7 @@ pub async fn validate_protected_action_otp(
     }
 
     // Check if the token has expired (Using the email 2fa expiration time)
-    let max_time = CONFIG.email_expiration_time() as i64;
+    let max_time = CONFIG.email_expiration_time().cast_signed();
     if pa_data.time_since_sent().num_seconds() > max_time {
         pa.delete(conn).await?;
         err!("Token has expired")
