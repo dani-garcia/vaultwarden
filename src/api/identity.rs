@@ -220,6 +220,24 @@ async fn sso_login(
                     }
                 )
             }
+            Some((user, None))
+                if user.private_key.is_none()
+                    && !CONFIG.sso_signups_allowed()
+                    && !CONFIG.is_email_domain_allowed(&user.email)
+                    && !CONFIG.mail_enabled()
+                    && Invitation::find_by_mail(&user.email, conn).await.is_none() =>
+            {
+                error!(
+                    "Login failure ({}), no invitation with email ({}) was found",
+                    user_infos.identifier, user.email
+                );
+                err_silent!(
+                    "Missing invitation",
+                    ErrorEvent {
+                        event: EventType::UserFailedLogIn
+                    }
+                )
+            }
             Some((user, None)) if user.private_key.is_some() && !CONFIG.sso_signups_match_email() => {
                 error!(
                     "Login failure ({}), existing non SSO user ({}) with same email ({}) and association is disabled",
@@ -267,7 +285,15 @@ async fn sso_login(
     // Will trigger 2FA flow if needed
     let (user, mut device, twofactor_token, sso_user) = match user_with_sso {
         None => {
-            if !CONFIG.is_email_domain_allowed(&user_infos.email) {
+            if !CONFIG.is_sso_signup_allowed(&user_infos.email) {
+                if CONFIG.signups_domains_whitelist().is_empty() {
+                    err!(
+                        "Signups are disabled. You will need an invitation",
+                        ErrorEvent {
+                            event: EventType::UserFailedLogIn
+                        }
+                    );
+                }
                 err!(
                     "Email domain not allowed",
                     ErrorEvent {
