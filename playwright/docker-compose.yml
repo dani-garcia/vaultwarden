@@ -35,6 +35,7 @@ services:
       - SSO_FRONTEND
       - SSO_ONLY
       - SSO_SCOPES
+      - SSO_TRUSTED_DEVICE_ENCRYPTION
     restart: "no"
     depends_on:
       - VaultwardenPrebuild
