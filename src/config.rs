@@ -623,7 +623,7 @@ make_config! {
         signups_verify_resend_time: u64, true,  def,    3_600;
         /// If signups require email verification, limit how many emails are automatically sent when login is attempted (0 means no limit)
         signups_verify_resend_limit: u32, true, def,    6;
-        /// Email domain whitelist |> Allow signups only from this list of comma-separated domains, even when signups are otherwise disabled
+        /// Email domain whitelist |> Restrict email addresses to this list of comma-separated domains
         signups_domains_whitelist: String, true, def,   String::new();
         /// Enable event logging |> Enables event logging for organizations.
         org_events_enabled:     bool,   false,  def,    false;
@@ -1507,21 +1507,14 @@ impl Config {
     /// Tests whether signup is allowed for an email address, taking into
     /// account the signups_allowed and signups_domains_whitelist settings.
     pub fn is_signup_allowed(&self, email: &str) -> bool {
-        if self.signups_domains_whitelist().is_empty() {
-            self.signups_allowed()
-        } else {
-            // The whitelist setting overrides the signups_allowed setting.
-            self.is_email_domain_allowed(email)
-        }
+        self.signups_allowed() && self.is_email_domain_allowed(email)
     }
 
     // The registration link should be hidden if
-    //  - Signup is not allowed and email whitelist is empty unless mail is disabled and invitations are allowed
+    //  - Signup is not allowed unless mail is disabled and invitations are allowed
     //  - The SSO is activated and password login is disabled.
     pub fn is_signup_disabled(&self) -> bool {
-        (!self.signups_allowed()
-            && self.signups_domains_whitelist().is_empty()
-            && (self.mail_enabled() || !self.invitations_allowed()))
+        (!self.signups_allowed() && (self.mail_enabled() || !self.invitations_allowed()))
             || (self.sso_enabled() && self.sso_only())
     }
 
