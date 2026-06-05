@@ -4,7 +4,11 @@ import * as utils from '../../global-utils';
 
 export async function create(test, page: Page, name: string) {
     await test.step('Create Org', async () => {
-        await page.locator('a').filter({ hasText: 'Password Manager' }).first().click();
+        // The product-switch nav links are icon-only (accessible name set on
+        // the link, no text content), so `filter({hasText})` no longer matches
+        // on the current bundled web vault — use the accessible-name role
+        // selector instead.
+        await page.getByRole('link', { name: 'Password Manager' }).click();
         await expect(page.getByTitle('All vaults', { exact: true })).toBeVisible();
         await page.getByRole('link', { name: 'New organisation' }).click();
         await page.getByLabel('Organisation name (required)').fill(name);
@@ -16,9 +20,11 @@ export async function create(test, page: Page, name: string) {
 
 export async function policies(test, page: Page, name: string) {
     await test.step(`Navigate to ${name} policies`, async () => {
-        await page.locator('a').filter({ hasText: 'Admin Console' }).first().click();
+        await page.getByRole('link', { name: 'Admin Console' }).first().click();
         await page.locator('org-switcher').getByLabel(/Toggle collapse/).click();
-        await page.locator('org-switcher').getByRole('link', { name: `${name}` }).first().click();
+        // The org row in the switcher has a hover tooltip that intercepts the
+        // click on the current bundled web vault; force-click past it.
+        await page.locator('org-switcher').getByRole('link', { name: `${name}` }).first().click({ force: true });
         await expect(page.getByRole('heading', { name: `${name} collections` })).toBeVisible();
         await page.getByRole('button', { name: 'Toggle collapse Settings' }).click();
         await page.getByRole('link', { name: 'Policies' }).click();
@@ -28,11 +34,13 @@ export async function policies(test, page: Page, name: string) {
 
 export async function members(test, page: Page, name: string) {
     await test.step(`Navigate to ${name} members`, async () => {
-        await page.locator('a').filter({ hasText: 'Admin Console' }).first().click();
+        await page.getByRole('link', { name: 'Admin Console' }).first().click();
         await page.locator('org-switcher').getByLabel(/Toggle collapse/).click();
-        await page.locator('org-switcher').getByRole('link', { name: `${name}` }).first().click();
+        // The org row in the switcher has a hover tooltip that intercepts the
+        // click on the current bundled web vault; force-click past it.
+        await page.locator('org-switcher').getByRole('link', { name: `${name}` }).first().click({ force: true });
         await expect(page.getByRole('heading', { name: `${name} collections` })).toBeVisible();
-        await page.locator('div').filter({ hasText: 'Members' }).nth(2).click();
+        await page.getByRole('link', { name: 'Members' }).click();
         await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
         await expect(page.getByRole('cell', { name: 'All' })).toBeVisible();
     });
