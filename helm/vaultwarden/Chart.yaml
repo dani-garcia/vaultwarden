@@ -1,0 +1,18 @@
+apiVersion: v2
+name: vaultwarden
+description: Vaultwarden - unofficial Bitwarden-compatible server written in Rust
+type: application
+version: 0.1.0
+appVersion: "1.35.3"
+home: https://github.com/dani-garcia/vaultwarden
+icon: https://raw.githubusercontent.com/dani-garcia/vaultwarden/main/resources/vaultwarden-icon.svg
+sources:
+  - https://github.com/dani-garcia/vaultwarden
+keywords:
+  - vaultwarden
+  - bitwarden
+  - password-manager
+  - secrets
+maintainers:
+  - name: dani-garcia
+    url: https://github.com/dani-garcia

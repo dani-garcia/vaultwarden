@@ -1,0 +1,228 @@
+{{- /* Validation */}}
+{{- if and .Values.vaultwarden.admin.enabled (not .Values.vaultwarden.admin.token) (not .Values.vaultwarden.admin.existingSecret) }}
+  {{- fail "vaultwarden.admin.enabled is true but neither admin.token nor admin.existingSecret is set" }}
+{{- end }}
+{{- if and (ne .Values.database.type "sqlite") .Values.database.host (not .Values.database.credentialsSecret) }}
+  {{- fail "database.host is set but database.credentialsSecret is not — provide the secret containing database credentials" }}
+{{- end }}
+{{- if and (ne .Values.database.type "sqlite") (not .Values.database.host) (not .Values.database.url) (not .Values.database.existingSecret) }}
+  {{- fail "database.type is not sqlite but no database connection is configured — set database.host (with credentialsSecret), database.url, or database.existingSecret" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vaultwarden.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vaultwarden.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  {{- if .Values.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- end }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "vaultwarden.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/configmap: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "vaultwarden.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "vaultwarden.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vaultwarden
+          image: "{{ .Values.image.repository }}:{{ include "vaultwarden.imageTag" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.vaultwarden.rocketPort }}
+              name: http
+              protocol: TCP
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "vaultwarden.fullname" . }}
+          env:
+            {{- /* Admin token */}}
+            {{- if .Values.vaultwarden.admin.enabled }}
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vaultwarden.adminSecretName" . }}
+                  key: {{ .Values.vaultwarden.admin.existingSecretKey | default "admin-token" }}
+            {{- end }}
+            {{- /* SMTP credentials */}}
+            {{- if and .Values.vaultwarden.smtp.host (or .Values.vaultwarden.smtp.username .Values.vaultwarden.smtp.existingSecret) }}
+            - name: SMTP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vaultwarden.smtpSecretName" . }}
+                  key: {{ .Values.vaultwarden.smtp.existingSecretUsernameKey | default "smtp-username" }}
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vaultwarden.smtpSecretName" . }}
+                  key: {{ .Values.vaultwarden.smtp.existingSecretPasswordKey | default "smtp-password" }}
+            {{- end }}
+            {{- /* SSO credentials */}}
+            {{- if .Values.vaultwarden.sso.enabled }}
+            - name: SSO_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vaultwarden.ssoSecretName" . }}
+                  key: {{ .Values.vaultwarden.sso.existingSecretClientIdKey | default "sso-client-id" }}
+            - name: SSO_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vaultwarden.ssoSecretName" . }}
+                  key: {{ .Values.vaultwarden.sso.existingSecretClientSecretKey | default "sso-client-secret" }}
+            {{- end }}
+            {{- /* Database URL — Option 2: compose from parts */}}
+            {{- if and (ne .Values.database.type "sqlite") .Values.database.host }}
+            - name: _DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "database.credentialsSecret is required when database.host is set" .Values.database.credentialsSecret }}
+                  key: {{ .Values.database.credentialsSecretUsernameKey | default "username" }}
+            - name: _DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.credentialsSecret }}
+                  key: {{ .Values.database.credentialsSecretPasswordKey | default "password" }}
+            - name: DATABASE_URL
+              value: {{ .Values.database.type }}://$(_DB_USER):$(_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.dbName }}
+            {{- /* Database URL — Option 1: full URL from secret */}}
+            {{- else if ne .Values.database.type "sqlite" }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vaultwarden.databaseSecretName" . }}
+                  key: {{ .Values.database.existingSecretKey | default "database-url" }}
+            {{- end }}
+            {{- /* Push notifications */}}
+            {{- if .Values.vaultwarden.push.enabled }}
+            - name: PUSH_INSTALLATION_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vaultwarden.pushSecretName" . }}
+                  key: {{ .Values.vaultwarden.push.existingSecretInstallationIdKey | default "push-installation-id" }}
+            - name: PUSH_INSTALLATION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vaultwarden.pushSecretName" . }}
+                  key: {{ .Values.vaultwarden.push.existingSecretInstallationKeyKey | default "push-installation-key" }}
+            {{- end }}
+            {{- /* Yubico */}}
+            {{- if .Values.vaultwarden.yubico.enabled }}
+            - name: YUBICO_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vaultwarden.yubicoSecretName" . }}
+                  key: {{ .Values.vaultwarden.yubico.existingSecretClientIdKey | default "yubico-client-id" }}
+            - name: YUBICO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vaultwarden.yubicoSecretName" . }}
+                  key: {{ .Values.vaultwarden.yubico.existingSecretSecretKeyKey | default "yubico-secret-key" }}
+            {{- end }}
+            {{- /* Plain env vars from env map */}}
+            {{- range $name, $value := .Values.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- /* Secret env vars from secretEnv map */}}
+            {{- range $name, $ref := .Values.secretEnv }}
+            - name: {{ $name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $ref.secretName }}
+                  key: {{ $ref.secretKey }}
+            {{- end }}
+            {{- /* Raw extra env vars */}}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (include "vaultwarden.fullname" .) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

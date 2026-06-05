@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vaultwarden.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vaultwarden.labels" . | nindent 4 }}
+data:
+  ROCKET_PORT: {{ .Values.vaultwarden.rocketPort | quote }}
+  SIGNUPS_ALLOWED: {{ .Values.vaultwarden.signupsAllowed | quote }}
+  ENABLE_WEBSOCKET: {{ .Values.vaultwarden.websocket.enabled | quote }}
+  LOG_LEVEL: {{ .Values.vaultwarden.logging.level | quote }}
+  ICON_SERVICE: {{ .Values.vaultwarden.icons.service | quote }}
+  {{- if .Values.vaultwarden.domain }}
+  DOMAIN: {{ .Values.vaultwarden.domain | quote }}
+  {{- end }}
+  {{- if eq .Values.database.type "sqlite" }}
+  ENABLE_DB_WAL: {{ .Values.database.wal | quote }}
+  {{- end }}
+  DATABASE_MAX_CONNS: {{ .Values.database.maxConnections | quote }}
+  {{- if .Values.vaultwarden.smtp.host }}
+  SMTP_HOST: {{ .Values.vaultwarden.smtp.host | quote }}
+  SMTP_FROM: {{ .Values.vaultwarden.smtp.from | quote }}
+  SMTP_PORT: {{ .Values.vaultwarden.smtp.port | quote }}
+  SMTP_SECURITY: {{ .Values.vaultwarden.smtp.security | quote }}
+  {{- end }}
+  {{- if .Values.vaultwarden.sso.enabled }}
+  SSO_ENABLED: "true"
+  SSO_ONLY: {{ .Values.vaultwarden.sso.only | quote }}
+  SSO_AUTHORITY: {{ .Values.vaultwarden.sso.authority | quote }}
+  {{- end }}
+  {{- if .Values.vaultwarden.push.enabled }}
+  PUSH_ENABLED: "true"
+  {{- if .Values.vaultwarden.push.relayUri }}
+  PUSH_RELAY_URI: {{ .Values.vaultwarden.push.relayUri | quote }}
+  {{- end }}
+  {{- if .Values.vaultwarden.push.identityUri }}
+  PUSH_IDENTITY_URI: {{ .Values.vaultwarden.push.identityUri | quote }}
+  {{- end }}
+  {{- end }}
