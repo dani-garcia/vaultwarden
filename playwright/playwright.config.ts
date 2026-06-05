@@ -35,6 +35,7 @@ export default defineConfig({
         /* Base URL to use in actions like `await page.goto('/')`. */
         baseURL: process.env.DOMAIN,
         browserName: 'firefox',
+        ignoreHTTPSErrors: true,
         locale: 'en-GB',
         timezoneId: 'Europe/London',
 
@@ -76,25 +77,93 @@ export default defineConfig({
         {
             name: 'mariadb',
             testMatch: 'tests/*.spec.ts',
-            testIgnore: 'tests/sso_*.spec.ts',
+            testIgnore: ['tests/sso_*.spec.ts', 'tests/account_lifecycle.spec.ts'],
             dependencies: ['mariadb-setup'],
         },
         {
             name: 'mysql',
             testMatch: 'tests/*.spec.ts',
-            testIgnore: 'tests/sso_*.spec.ts',
+            testIgnore: ['tests/sso_*.spec.ts', 'tests/account_lifecycle.spec.ts'],
             dependencies: ['mysql-setup'],
         },
         {
             name: 'postgres',
             testMatch: 'tests/*.spec.ts',
-            testIgnore: 'tests/sso_*.spec.ts',
+            testIgnore: ['tests/sso_*.spec.ts', 'tests/account_lifecycle.spec.ts'],
             dependencies: ['postgres-setup'],
         },
         {
             name: 'sqlite',
             testMatch: 'tests/*.spec.ts',
-            testIgnore: 'tests/sso_*.spec.ts',
+            testIgnore: ['tests/sso_*.spec.ts', 'tests/account_lifecycle.spec.ts'],
+        },
+
+        {
+            // Chromium-only project for the WebAuthn account-lifecycle spec — the rest
+            // of the suite runs Firefox, but the spec uses CDP's virtual
+            // authenticator (Chromium-only) and the `hmac-secret` PRF extension.
+            // SQLite-backed, en locale (the bundled web vault renders different
+            // labels for the WebAuthn provider row under `en_GB`).
+            name: 'account-lifecycle',
+            testMatch: 'tests/account_lifecycle.spec.ts',
+            use: {
+                browserName: 'chromium',
+                locale: 'en',
+                launchOptions: {
+                    // Local-iteration knob: when set, point Playwright at a
+                    // non-bundled Chromium binary. The docker harness has the
+                    // bundled Chromium (1194) baked into the image; on a host
+                    // where Playwright's `install chromium` is unsupported
+                    // (e.g. Ubuntu 26.04), set this env var to your system
+                    // Chromium so `npx playwright test --project=account-lifecycle`
+                    // can run locally against an external Vaultwarden.
+                    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+                        ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+                        : {}),
+                },
+            },
+        },
+
+        {
+            // SSO variant of the account lifecycle. Same spec file, same
+            // launch config; differs in `dependencies: ['sso-setup']` (brings
+            // up Keycloak before the test runs) and `account_lifecycle.spec.ts`
+            // detects the project name to switch its `beforeAll` env to
+            // `SSO_ENABLED=true SSO_ONLY=false` and its login choreography
+            // to SSO + MP-unlock.
+            name: 'account-lifecycle-sso',
+            testMatch: 'tests/account_lifecycle.spec.ts',
+            dependencies: ['sso-setup'],
+            use: {
+                browserName: 'chromium',
+                locale: 'en',
+                launchOptions: {
+                    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+                        ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+                        : {}),
+                },
+            },
+        },
+
+        {
+            // Chromium project for the UI flows at the bottom of
+            // `passkey.spec.ts` — one passkey behaviour per test against
+            // a fresh user. Same Chromium + en-locale requirements as
+            // `account-lifecycle`. `grep` filters out the request-level
+            // suites at the top of the file (those run under the four
+            // multi-DB Firefox projects).
+            name: 'passkey-ui',
+            testMatch: 'tests/passkey.spec.ts',
+            grep: /Passkey UI flows/,
+            use: {
+                browserName: 'chromium',
+                locale: 'en',
+                launchOptions: {
+                    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+                        ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+                        : {}),
+                },
+            },
         },
 
         {

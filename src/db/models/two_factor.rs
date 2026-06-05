@@ -7,7 +7,7 @@ use webauthn_rs_proto::{AttestationFormat, RegisteredExtensions};
 use crate::{
     api::{EmptyResult, core::two_factor::webauthn::WebauthnRegistration},
     db::{DbConn, schema::twofactor},
-    error::MapResult,
+    error::{Error, MapResult},
 };
 
 use super::UserId;
@@ -42,6 +42,8 @@ pub enum TwoFactorType {
     EmailVerificationChallenge = 1002,
     WebauthnRegisterChallenge = 1003,
     WebauthnLoginChallenge = 1004,
+    WebauthnPasskeyRegisterChallenge = 1005,
+    WebauthnPasskeyAssertionChallenge = 1006,
 
     // Special type for Protected Actions verification via email
     ProtectedActions = 2000,
@@ -49,6 +51,16 @@ pub enum TwoFactorType {
 
 /// Local methods
 impl TwoFactor {
+    const POLICY_PROVIDER_TYPES: [i32; 7] = [
+        TwoFactorType::Authenticator as i32,
+        TwoFactorType::Email as i32,
+        TwoFactorType::Duo as i32,
+        TwoFactorType::YubiKey as i32,
+        TwoFactorType::U2f as i32,
+        TwoFactorType::OrganizationDuo as i32,
+        TwoFactorType::Webauthn as i32,
+    ];
+
     pub fn new(user_uuid: UserId, atype: TwoFactorType, data: String) -> Self {
         Self {
             uuid: TwoFactorId(crate::util::get_uuid()),
@@ -57,6 +69,22 @@ impl TwoFactor {
             enabled: true,
             data,
             last_used: 0,
+        }
+    }
+
+    pub fn is_policy_provider(&self) -> bool {
+        Self::POLICY_PROVIDER_TYPES.contains(&self.atype)
+    }
+
+    pub fn is_policy_provider_or_unknown(&self) -> bool {
+        if self.atype >= 1000 {
+            return false;
+        }
+
+        match <TwoFactorType as num_traits::FromPrimitive>::from_i32(self.atype) {
+            Some(TwoFactorType::Remember | TwoFactorType::RecoveryCode) => false,
+            Some(_) => self.is_policy_provider(),
+            None => true,
         }
     }
 
@@ -117,11 +145,51 @@ impl TwoFactor {
         }
     }
 
+    /// Consumes `self` and deletes the row by `uuid` only. The simpler form
+    /// for callers that already own the [`TwoFactor`] and don't need to
+    /// observe whether anything was actually deleted (e.g., legacy 2FA
+    /// management flows where the caller looked the row up via
+    /// `find_by_user_and_type` immediately before).
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
         conn.run(move |conn| {
             diesel::delete(twofactor::table.filter(twofactor::uuid.eq(self.uuid)))
                 .execute(conn)
                 .map_res("Error deleting twofactor")
+        })
+        .await
+    }
+
+    /// Borrowing-and-rowcount-returning sibling of [`Self::delete`].
+    /// Filters by both `(uuid, user_uuid)` for defense-in-depth and returns
+    /// `Ok(true)` only if a row was actually deleted. Used by the passkey
+    /// management endpoints' validate-then-delete pattern, which needs the
+    /// rowcount to detect a multi-replica race where another node consumed
+    /// the challenge row between this caller's SELECT and DELETE.
+    pub async fn delete_by_uuid(&self, conn: &DbConn) -> Result<bool, Error> {
+        let uuid = self.uuid.clone();
+        let user_uuid = self.user_uuid.clone();
+        conn.run(move |conn| {
+            diesel::delete(twofactor::table.filter(twofactor::uuid.eq(uuid)).filter(twofactor::user_uuid.eq(user_uuid)))
+                .execute(conn)
+                .map(|rows| rows > 0)
+                .map_res("Error deleting twofactor by uuid")
+        })
+        .await
+    }
+
+    /// Load provider rows while preserving DB transients for auth paths that
+    /// must distinguish a transient server failure from an empty provider set.
+    /// The unauthenticated `webauthn_login` grant additionally maps those
+    /// transients to a generic 503 so a legitimate user gets a retry-later
+    /// signal instead of AUTH_FAILED.
+    pub async fn try_find_by_user(user_uuid: &UserId, conn: &DbConn) -> Result<Vec<Self>, Error> {
+        let user_uuid = user_uuid.clone();
+        conn.run(move |conn| {
+            twofactor::table
+                .filter(twofactor::user_uuid.eq(&user_uuid))
+                .filter(twofactor::atype.lt(1000)) // Filter implementation types
+                .load::<Self>(conn)
+                .map_res("Error loading twofactor")
         })
         .await
     }
@@ -137,6 +205,12 @@ impl TwoFactor {
         .await
     }
 
+    /// Legacy `Option`-typed lookup that collapses DB transients (deadlock,
+    /// conn drop) and a genuinely absent row into the same `None`. Used by
+    /// authenticated 2FA-management flows where the caller already owns the
+    /// user context and a 5xx-vs-401 distinction at this lookup doesn't
+    /// matter. For new callers — especially anything reachable from an
+    /// unauthenticated grant — prefer [`Self::try_find_by_user_and_type`].
     pub async fn find_by_user_and_type(user_uuid: &UserId, atype: i32, conn: &DbConn) -> Option<Self> {
         conn.run(move |conn| {
             twofactor::table
@@ -144,6 +218,60 @@ impl TwoFactor {
                 .filter(twofactor::atype.eq(atype))
                 .first::<Self>(conn)
                 .ok()
+        })
+        .await
+    }
+
+    /// `Result`-typed sibling of [`Self::find_by_user_and_type`] that
+    /// propagates DB transients as `Err(_)` instead of collapsing them into
+    /// `Ok(None)`. Required for the unauthenticated `webauthn_login` grant
+    /// (and any other unauthenticated caller) so a deadlock or conn drop can
+    /// surface as a 5xx retry signal rather than a 4xx "no such row" — the
+    /// latter would let the grant become an account-state oracle.
+    pub async fn try_find_by_user_and_type(
+        user_uuid: &UserId,
+        atype: i32,
+        conn: &DbConn,
+    ) -> Result<Option<Self>, Error> {
+        conn.run(move |conn| {
+            twofactor::table
+                .filter(twofactor::user_uuid.eq(user_uuid))
+                .filter(twofactor::atype.eq(atype))
+                .first::<Self>(conn)
+                .optional()
+                .map_res("Error loading twofactor by type")
+        })
+        .await
+    }
+
+    /// Atomically fetch and delete the row for this user+type. Three outcomes:
+    /// - `Ok(Some(_))` — winner of the SELECT+DELETE race; the row has been
+    ///   removed and the caller may consume the single-use challenge state.
+    /// - `Ok(None)` — token absent, already consumed by a concurrent caller
+    ///   (e.g. a double-clicked enrolment finish), or never existed. The
+    ///   caller should treat this as a normal "stale challenge" response.
+    /// - `Err(_)` — DB degradation (deadlock, conn drop, lock timeout). The
+    ///   surrounding transaction rolled back atomically, so the row is
+    ///   intact rather than silently consumed; propagating via `?` lets the
+    ///   caller surface a 5xx instead of an indistinguishable 4xx stale-token
+    ///   response.
+    pub async fn take_by_user_and_type(user_uuid: &UserId, atype: i32, conn: &DbConn) -> Result<Option<Self>, Error> {
+        let user_uuid = user_uuid.clone();
+        conn.run(move |conn| {
+            conn.transaction::<Option<Self>, diesel::result::Error, _>(|conn| {
+                let tf = twofactor::table
+                    .filter(twofactor::user_uuid.eq(&user_uuid))
+                    .filter(twofactor::atype.eq(atype))
+                    .first::<Self>(conn)
+                    .optional()?;
+                let Some(existing) = &tf else {
+                    return Ok(None);
+                };
+                let deleted =
+                    diesel::delete(twofactor::table.filter(twofactor::uuid.eq(&existing.uuid))).execute(conn)?;
+                Ok(tf.filter(|_| deleted == 1))
+            })
+            .map_res("Error taking twofactor challenge")
         })
         .await
     }
@@ -282,5 +410,35 @@ impl From<WebauthnRegistrationV3> for WebauthnRegistration {
             migrated: value.migrated,
             credential: Credential::from(value.credential).into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn twofactor(atype: i32) -> TwoFactor {
+        TwoFactor {
+            uuid: TwoFactorId(String::from("tf")),
+            user_uuid: UserId::from(String::from("user")),
+            atype,
+            enabled: true,
+            data: String::new(),
+            last_used: 0,
+        }
+    }
+
+    #[test]
+    fn policy_provider_or_unknown_counts_forward_migrated_rows() {
+        assert!(twofactor(9).is_policy_provider_or_unknown());
+    }
+
+    #[test]
+    fn policy_provider_or_unknown_ignores_bypass_and_challenge_rows() {
+        assert!(!twofactor(TwoFactorType::Remember as i32).is_policy_provider_or_unknown());
+        assert!(!twofactor(TwoFactorType::RecoveryCode as i32).is_policy_provider_or_unknown());
+        assert!(!twofactor(TwoFactorType::WebauthnLoginChallenge as i32).is_policy_provider_or_unknown());
+        assert!(!twofactor(TwoFactorType::WebauthnPasskeyRegisterChallenge as i32).is_policy_provider_or_unknown());
+        assert!(!twofactor(TwoFactorType::WebauthnPasskeyAssertionChallenge as i32).is_policy_provider_or_unknown());
     }
 }

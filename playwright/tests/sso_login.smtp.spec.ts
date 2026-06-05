@@ -45,7 +45,7 @@ test('Create and activate 2FA', async ({ page }) => {
 test('Log and disable', async ({ page }) => {
     const mailBuffer = mailserver.buffer(users.user1.email);
 
-    await logUser(test, page, users.user1, {mailBuffer: mailBuffer, mail2fa: true});
+    await logUser(test, page, users.user1, { mailBuffer, twoFactor: { kind: 'mail2fa', mailBuffer } });
 
     await disableEmail(test, page, users.user1);
 

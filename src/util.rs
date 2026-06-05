@@ -357,6 +357,18 @@ pub fn get_uuid() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
+/// Inclusive freshness-window check: whether `created_at` lies within
+/// `[now - ttl, now + skew]`. Generic over the timestamp type so the
+/// epoch-second (passkey-management) and `NaiveDateTime` (passkey-login)
+/// challenge checks share one definition of the window semantics while each
+/// keeps its own TTL/skew constants.
+pub fn is_within_freshness_window<T, D>(created_at: T, now: T, ttl: D, skew: D) -> bool
+where
+    T: Copy + PartialOrd + std::ops::Sub<D, Output = T> + std::ops::Add<D, Output = T>,
+{
+    created_at >= now - ttl && created_at <= now + skew
+}
+
 //
 // String util methods
 //

@@ -6,6 +6,7 @@ mod emergency_access;
 mod events;
 mod folders;
 mod organizations;
+mod passkeys;
 mod public;
 mod sends;
 
@@ -13,8 +14,10 @@ pub use accounts::purge_auth_requests;
 pub use ciphers::{CipherData, CipherSyncData, CipherSyncType, purge_trashed_ciphers};
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use events::{event_cleanup_job, log_event, log_user_event};
+pub(crate) use passkeys::{account_passkeys_allowed, passkey_counter, passkey_credential_id_hash};
 pub use sends::purge_sends;
 
+use chrono::Utc;
 use reqwest::Method;
 use rocket::{Catcher, Route, serde::json::Json, serde::json::Value};
 
@@ -35,7 +38,7 @@ use crate::{
 pub fn routes() -> Vec<Route> {
     let mut eq_domains_routes = routes![get_settings_domains, post_settings_domains, put_settings_domains];
     let mut hibp_routes = routes![hibp_breach];
-    let mut meta_routes = routes![alive, now, version, config, get_api_webauthn];
+    let mut meta_routes = routes![alive, now, version, config];
 
     let mut routes = Vec::new();
     routes.append(&mut accounts::routes());
@@ -47,6 +50,7 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut two_factor::routes());
     routes.append(&mut sends::routes());
     routes.append(&mut public::routes());
+    routes.append(&mut passkeys::routes());
     routes.append(&mut eq_domains_routes);
     routes.append(&mut hibp_routes);
     routes.append(&mut meta_routes);
@@ -187,7 +191,7 @@ fn alive(_conn: DbConn) -> Json<String> {
 
 #[get("/now")]
 pub fn now() -> Json<String> {
-    Json(crate::util::format_date(&chrono::Utc::now().naive_utc()))
+    Json(crate::util::format_date(&Utc::now().naive_utc()))
 }
 
 #[get("/version")]
@@ -195,31 +199,86 @@ fn version() -> Json<&'static str> {
     Json(crate::VERSION.unwrap_or_default())
 }
 
-#[get("/webauthn")]
-fn get_api_webauthn(_headers: Headers) -> Json<Value> {
-    // Prevent a 404 error, which also causes key-rotation issues
-    // It looks like this is used when login with passkeys is enabled, which Vaultwarden does not (yet) support
-    // An empty list/data also works fine
-    Json(json!({
-        "object": "list",
-        "data": [],
-        "continuationToken": null
-    }))
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `build_feature_states` must emit `pm-2035-passkey-unlock = true` when
+    /// account passkeys are allowed; without it, the web vault's
+    /// `WebAuthnPrfUnlockService.isPrfUnlockAvailable` short-circuits to false.
+    #[test]
+    fn feature_states_emits_passkey_unlock_flag_when_allowed() {
+        assert_eq!(build_feature_states("", true).get("pm-2035-passkey-unlock"), Some(&true));
+        assert_eq!(build_feature_states("some-unrelated-flag", true).get("pm-2035-passkey-unlock"), Some(&true));
+    }
+
+    #[test]
+    fn feature_states_omits_passkey_unlock_flag_when_disallowed() {
+        assert!(!build_feature_states("", false).contains_key("pm-2035-passkey-unlock"));
+    }
+
+    /// `build_feature_states` must also emit `pm-19148-innovation-archive`
+    /// unconditionally — the existing companion flag the web vault expects
+    /// alongside the passkey-unlock entry.
+    #[test]
+    fn feature_states_emits_innovation_archive_flag_unconditionally() {
+        assert_eq!(build_feature_states("", true).get("pm-19148-innovation-archive"), Some(&true));
+        assert_eq!(build_feature_states("", false).get("pm-19148-innovation-archive"), Some(&true));
+    }
+
+    /// Valid experimental flags from the SUPPORTED list pass through; invalid
+    /// names are dropped (the `ValidOnly` filter). This pins the contract that
+    /// admin-configured `EXPERIMENTAL_CLIENT_FEATURE_FLAGS` reaches the wire.
+    #[test]
+    fn feature_states_passes_through_valid_experimental_flag() {
+        let probe = crate::config::SUPPORTED_FEATURE_FLAGS.iter().next().expect("at least one supported flag");
+        let states = build_feature_states(probe, true);
+        assert_eq!(states.get(*probe), Some(&true));
+    }
+
+    #[test]
+    fn feature_states_drops_unknown_experimental_flag() {
+        let states = build_feature_states("definitely-not-a-real-bitwarden-flag", true);
+        assert!(!states.contains_key("definitely-not-a-real-bitwarden-flag"));
+    }
+}
+
+/// Build the `featureStates` map returned by `/api/config`. Pure function
+/// over the experimental-flags string so it can be exercised by unit tests
+/// without `CONFIG` initialisation.
+///
+/// Official available feature flags can be found here:
+/// Server (v2026.2.1): https://github.com/bitwarden/server/blob/0e42725d0837bd1c0dabd864ff621a579959744b/src/Core/Constants.cs#L135
+/// Client (v2026.2.1): https://github.com/bitwarden/clients/blob/f96380c3138291a028bdd2c7a5fee540d5c98ba5/libs/common/src/enums/feature-flag.enum.ts#L12
+/// Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
+/// iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
+fn build_feature_states(
+    experimental_client_feature_flags: &str,
+    account_passkeys_allowed: bool,
+) -> std::collections::HashMap<String, bool> {
+    let mut feature_states =
+        parse_experimental_client_feature_flags(experimental_client_feature_flags, &FeatureFlagFilter::ValidOnly);
+    feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
+    // Gates the web-vault's `Unlock with passkey` lock-screen option (and the
+    // matching desktop/mobile UI). `WebAuthnPrfUnlockService.isPrfUnlockAvailable`
+    // short-circuits to `false` when this flag is absent or unset. Vaultwarden
+    // advertises it whenever account passkeys are allowed; SSO_ONLY suppresses
+    // it to match Bitwarden's "Require SSO" passkey restriction.
+    if account_passkeys_allowed {
+        feature_states.insert("pm-2035-passkey-unlock".to_owned(), true);
+    }
+    feature_states
 }
 
 #[get("/config")]
 fn config() -> Json<Value> {
     let domain = CONFIG.domain();
-    // Official available feature flags can be found here:
-    // Server (v2026.2.1): https://github.com/bitwarden/server/blob/0e42725d0837bd1c0dabd864ff621a579959744b/src/Core/Constants.cs#L135
-    // Client (v2026.2.1): https://github.com/bitwarden/clients/blob/f96380c3138291a028bdd2c7a5fee540d5c98ba5/libs/common/src/enums/feature-flag.enum.ts#L12
-    // Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
-    // iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
-    let mut feature_states = parse_experimental_client_feature_flags(
-        &CONFIG.experimental_client_feature_flags(),
-        &FeatureFlagFilter::ValidOnly,
-    );
-    feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
+    // The pm-2035 unlock affordance is meaningless on a DOMAIN that webauthn
+    // can't bind to (IP literal, missing host) — every passkey endpoint
+    // refuses up front, so advertising the lock-screen button would render
+    // an option that always 4xxs. Gating the feature-flag here keeps the
+    // client UI consistent with the server's actual capabilities.
+    let feature_states = build_feature_states(&CONFIG.experimental_client_feature_flags(), account_passkeys_allowed());
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns

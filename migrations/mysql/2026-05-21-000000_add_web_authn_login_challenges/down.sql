@@ -1,0 +1,1 @@
+DROP TABLE web_authn_login_challenges;

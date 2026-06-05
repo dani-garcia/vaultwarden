@@ -3,7 +3,7 @@ import { MailDev } from 'maildev';
 
 import * as utils from '../global-utils';
 import * as orgs from './setups/orgs';
-import { createAccount, logUser } from './setups/user';
+import { createAccount, fillNewMasterPassword, logUser } from './setups/user';
 
 let users = utils.loadEnv();
 
@@ -57,12 +57,11 @@ test('invited with new account', async ({ page }) => {
         await expect(page).toHaveTitle(/Create account | Vaultwarden Web/);
 
         //await page.getByLabel('Name').fill(users.user2.name);
-        await page.getByLabel('Master password (required)', { exact: true }).fill(users.user2.password);
-        await page.getByLabel('Confirm master password (').fill(users.user2.password);
+        await fillNewMasterPassword(page, users.user2.password);
         await page.getByRole('button', { name: 'Create account' }).click();
         await utils.checkNotification(page, 'Your new account has been created');
 
-        await utils.checkNotification(page, 'Invitation accepted');
+        await utils.checkNotification(page, 'Successfully accepted your invitation');
         await utils.ignoreExtension(page);
 
         // Redirected to the vault
@@ -93,7 +92,7 @@ test('invited with existing account', async ({ page }) => {
     await page.getByLabel('Master password').fill(users.user3.password);
     await page.getByRole('button', { name: 'Log in with master password' }).click();
 
-    await utils.checkNotification(page, 'Invitation accepted');
+    await utils.checkNotification(page, 'Successfully accepted your invitation');
     await utils.ignoreExtension(page);
 
     // We are now in the default vault page
@@ -104,7 +103,7 @@ test('invited with existing account', async ({ page }) => {
 });
 
 test('Confirm invited user', async ({ page }) => {
-    await logUser(test, page, users.user1, mail1Buffer);
+    await logUser(test, page, users.user1, { mailBuffer: mail1Buffer });
 
     await orgs.members(test, page, 'Test');
     await orgs.confirm(test, page, 'Test', users.user2.email);
@@ -113,7 +112,7 @@ test('Confirm invited user', async ({ page }) => {
 });
 
 test('Organization is visible', async ({ page }) => {
-    await logUser(test, page, users.user2, mail2Buffer);
+    await logUser(test, page, users.user2, { mailBuffer: mail2Buffer });
     await page.getByRole('button', { name: 'vault: Test', exact: true }).click();
     await expect(page.getByLabel('Filter: Default collection')).toBeVisible();
 });

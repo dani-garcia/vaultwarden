@@ -22,7 +22,7 @@ use crate::{
         models::{
             Archive, Attachment, AttachmentId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup,
             CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, Membership,
-            MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
+            MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId, WebAuthnCredential,
         },
     },
     util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
@@ -188,6 +188,17 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         Value::Null
     };
 
+    // Always include `webAuthnPrfOptions` (possibly empty) so the client's lock-screen logic
+    // can render the "Unlock with passkey" option without an extra round-trip. The shape mirrors
+    // upstream `SyncResponseModel.UserDecryption.WebAuthnPrfOptions`.
+    // Expose the canonical empty array whenever account passkeys are not
+    // usable, so clients keep the lock-screen affordance hidden.
+    let webauthn_prf_options = if api::core::account_passkeys_allowed() {
+        api::identity::build_webauthn_prf_options(&WebAuthnCredential::find_by_user(&headers.user.uuid, &conn).await?)
+    } else {
+        Vec::new()
+    };
+
     Ok(Json(json!({
         "profile": user_json,
         "folders": folders_json,
@@ -198,6 +209,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "sends": sends_json,
         "userDecryption": {
             "masterPasswordUnlock": master_password_unlock,
+            "webAuthnPrfOptions": webauthn_prf_options,
         },
         "object": "sync"
     })))

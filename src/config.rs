@@ -567,6 +567,9 @@ make_config! {
         /// Purge incomplete SSO auth. |> Cron schedule of the job that cleans leftover auth in db due to incomplete SSO login.
         /// Defaults to daily. Set blank to disable this job.
         purge_incomplete_sso_auth: String, false,  def,   "0 20 0 * * *".to_owned();
+        /// Passkey login challenge cleanup schedule |> Cron schedule of the job that cleans expired passkey-login challenges from the database.
+        /// Defaults to hourly. Set blank to disable this job.
+        webauthn_login_challenge_purge_schedule: String, false,  def,   "0 30 * * * *".to_owned();
     },
 
     /// General settings
@@ -1242,6 +1245,12 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         err!("`AUTH_REQUEST_PURGE_SCHEDULE` is not a valid cron expression")
     }
 
+    if !cfg.webauthn_login_challenge_purge_schedule.is_empty()
+        && cfg.webauthn_login_challenge_purge_schedule.parse::<Schedule>().is_err()
+    {
+        err!("`WEBAUTHN_LOGIN_CHALLENGE_PURGE_SCHEDULE` is not a valid cron expression")
+    }
+
     if !cfg.disable_admin_token {
         match cfg.admin_token.as_ref() {
             Some(t) if t.starts_with("$argon2") => {
@@ -1588,7 +1597,14 @@ impl Config {
     }
 
     pub fn is_webauthn_2fa_supported(&self) -> bool {
-        Url::parse(&self.domain()).expect("DOMAIN not a valid URL").domain().is_some()
+        // The startup `starts_with("http://"|"https://")` check accepts values
+        // like `"http://"` (empty host) that `Url::parse` rejects with
+        // `EmptyHost`. This gate IS the protection against the WEBAUTHN
+        // LazyLock's `.expect` initializer panicking, so the gate itself must
+        // not panic on the same input. Map any parse failure to `false` so
+        // every webauthn entry point cleanly refuses instead of crashing the
+        // worker thread.
+        Url::parse(&self.domain()).ok().is_some_and(|u| u.domain().is_some())
     }
 
     /// Tests whether the admin token is set to a non-empty value.

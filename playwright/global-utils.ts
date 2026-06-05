@@ -38,7 +38,7 @@ export async function waitFor(url: String, browser: Browser) {
 
     do {
         try {
-            context = await browser.newContext();
+            context = await browser.newContext({ ignoreHTTPSErrors: true });
             const page = await context.newPage();
             await page.waitForTimeout(500);
             const result = await page.goto(url);
@@ -165,6 +165,9 @@ function dbConfig(testInfo: TestInfo){
             return { DATABASE_URL: `mysql://${process.env.MYSQL_USER}:${process.env.MYSQL_PASSWORD}@127.0.0.1:${process.env.MYSQL_PORT}/${process.env.MYSQL_DATABASE}`};
         case "sqlite":
         case "sso-sqlite":
+        case "account-lifecycle":
+        case "account-lifecycle-sso":
+        case "passkey-ui":
             return { I_REALLY_WANT_VOLATILE_STORAGE: true };
         default:
             throw new Error(`Unknow database name: ${testInfo.project.name}`);
@@ -172,7 +175,20 @@ function dbConfig(testInfo: TestInfo){
 }
 
 /**
- *  All parameters passed in `env` need to be added to the docker-compose.yml
+ * All parameters passed in `env` need to be added to the docker-compose.yml.
+ *
+ * `resetDB=false` skips the explicit DB wipe, but it does NOT guarantee the
+ * DB survives across calls: `docker compose up -d Vaultwarden` recreates
+ * the container whenever any env var listed in
+ * `playwright/docker-compose.yml`'s `environment:` block
+ * differs from the previous run, and recreation drops the tmpfs-backed
+ * sqlite DB along with the in-process RSA signing key. So
+ * `resetDB=false` reliably preserves state only when consecutive
+ * `startVault` calls pass the SAME env. If you need to preserve user
+ * state across an env change, toggle the relevant settings via
+ * `POST /admin/config` instead of restarting (see the
+ * `Passkey enrolment is rejected when SSO_ONLY is on` describe in
+ * `playwright/tests/passkey.spec.ts` for the pattern).
  **/
 export async function startVault(browser: Browser, testInfo: TestInfo, env = {}, resetDB: Boolean = true) {
     if( resetDB ){
@@ -191,6 +207,9 @@ export async function startVault(browser: Browser, testInfo: TestInfo, env = {},
                 break;
             case "sqlite":
             case "sso-sqlite":
+            case "account-lifecycle":
+            case "account-lifecycle-sso":
+            case "passkey-ui":
                 wipeSqlite();
                 break;
             default:
@@ -231,7 +250,20 @@ export async function checkNotification(page: Page, hasText: string) {
 }
 
 export async function cleanLanding(page: Page) {
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    // The bundled web vault redirects `/` → `/#/login` via Angular's
+    // hash router; under docker's slower I/O that redirect occasionally
+    // fires while `page.goto('/')` is still resolving. Two surface forms
+    // for the same race: "Navigation interrupted by another navigation"
+    // (Playwright wording) or `net::ERR_ABORTED` (Chromium netstack).
+    // Both leave the page on `/#/login`, which is what every caller
+    // expects — swallow them and let the visibility assertion below pin
+    // the final state.
+    try {
+        await page.goto('/', { waitUntil: 'domcontentloaded' });
+    } catch (e: any) {
+        const msg = String(e?.message ?? '');
+        if (!msg.includes('interrupted by another navigation') && !msg.includes('ERR_ABORTED')) throw e;
+    }
     await expect(page.getByRole('button').nth(0)).toBeVisible();
 
     const logged = await page.getByRole('button', { name: 'Log out' }).count();

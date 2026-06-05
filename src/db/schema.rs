@@ -351,6 +351,28 @@ table! {
     }
 }
 
+table! {
+    web_authn_credentials (uuid) {
+        uuid -> Text,
+        user_uuid -> Text,
+        name -> Text,
+        credential -> Text,
+        credential_id_hash -> Text,
+        supports_prf -> Bool,
+        encrypted_user_key -> Nullable<Text>,
+        encrypted_public_key -> Nullable<Text>,
+        encrypted_private_key -> Nullable<Text>,
+    }
+}
+
+table! {
+    web_authn_login_challenges (id) {
+        id -> Text,
+        challenge -> Text,
+        created_at -> Timestamp,
+    }
+}
+
 joinable!(archives -> users (user_uuid));
 joinable!(archives -> ciphers (cipher_uuid));
 joinable!(attachments -> ciphers (cipher_uuid));
@@ -382,6 +404,7 @@ joinable!(collections_groups -> groups (groups_uuid));
 joinable!(event -> users_organizations (uuid));
 joinable!(auth_requests -> users (user_uuid));
 joinable!(sso_users -> users (user_uuid));
+joinable!(web_authn_credentials -> users (user_uuid));
 
 allow_tables_to_appear_in_same_query!(
     archives,
@@ -408,4 +431,6 @@ allow_tables_to_appear_in_same_query!(
     collections_groups,
     event,
     auth_requests,
+    web_authn_credentials,
+    web_authn_login_challenges,
 );

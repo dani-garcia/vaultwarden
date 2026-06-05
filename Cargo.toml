@@ -153,7 +153,8 @@ yubico = { package = "yubico_ng", version = "0.15.0", default-features = false, 
 # WebAuthn libraries
 # danger-allow-state-serialisation is needed to save the state in the db
 # danger-credential-internals is needed to support U2F to Webauthn migration
-webauthn-rs = { version = "0.5.5", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
+# conditional-ui is needed for the discoverable-credential APIs used by passkey login
+webauthn-rs = { version = "0.5.5", features = ["conditional-ui", "danger-allow-state-serialisation", "danger-credential-internals"] }
 webauthn-rs-proto = "0.5.5"
 webauthn-rs-core = "0.5.5"
 

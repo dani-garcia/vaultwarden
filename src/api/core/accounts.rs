@@ -23,6 +23,7 @@ use crate::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
             EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId,
             OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
+            WebAuthnCredential, WebAuthnCredentialId, is_concurrent_modification,
         },
     },
     mail,
@@ -674,6 +675,14 @@ struct UpdateResetPasswordData {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct UpdateWebAuthnLoginData {
+    id: WebAuthnCredentialId,
+    encrypted_public_key: String,
+    encrypted_user_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct KeyData {
     account_unlock_data: RotateAccountUnlockData,
     account_keys: RotateAccountKeys,
@@ -687,6 +696,9 @@ struct RotateAccountUnlockData {
     emergency_access_unlock_data: Vec<UpdateEmergencyAccessData>,
     master_password_unlock_data: MasterPasswordUnlockData,
     organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
+    // Older clients may not send this; default to an empty list so rotation still works.
+    #[serde(default)]
+    passkey_unlock_data: Vec<UpdateWebAuthnLoginData>,
 }
 
 #[derive(Deserialize)]
@@ -716,6 +728,10 @@ struct RotateAccountData {
     sends: Vec<SendData>,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Per-entity slices mirror the snapshot reads at the top of post_rotatekey"
+)]
 fn validate_keydata(
     data: &KeyData,
     existing_ciphers: &[Cipher],
@@ -723,6 +739,7 @@ fn validate_keydata(
     existing_emergency_access: &[EmergencyAccess],
     existing_memberships: &[Membership],
     existing_sends: &[Send],
+    existing_webauthn_credentials: &[WebAuthnCredential],
     user: &User,
 ) -> EmptyResult {
     if user.client_kdf_type != data.account_unlock_data.master_password_unlock_data.kdf_type
@@ -791,7 +808,66 @@ fn validate_keydata(
         err!("All existing sends must be included in the rotation")
     }
 
+    validate_passkey_rotation_data(&data.account_unlock_data.passkey_unlock_data, existing_webauthn_credentials)?;
+
     Ok(())
+}
+
+fn validate_passkey_rotation_data(
+    passkey_unlock_data: &[UpdateWebAuthnLoginData],
+    existing_webauthn_credentials: &[WebAuthnCredential],
+) -> EmptyResult {
+    // Check that all passkeys with PRF encryption enabled are included, so their
+    // encrypted user key is not left stale after the account key is rotated.
+    let existing_prf_credential_ids = existing_webauthn_credentials
+        .iter()
+        .filter(|c| c.has_prf_keyset())
+        .map(|c| &c.uuid)
+        .collect::<HashSet<&WebAuthnCredentialId>>();
+    let provided_passkey_ids = passkey_unlock_data.iter().map(|p| &p.id).collect::<HashSet<&WebAuthnCredentialId>>();
+    // Reject duplicate ids before they reach the update loop: the HashSet
+    // de-dups silently, so a payload like `[{id: A, key: K1}, {id: A, key: K2}]`
+    // would pass the superset check above and the loop would apply both
+    // writes in order, with the second silently overwriting the first.
+    if provided_passkey_ids.len() != passkey_unlock_data.len() {
+        err!("Duplicate passkey ids in rotation payload")
+    }
+    if !provided_passkey_ids.is_superset(&existing_prf_credential_ids) {
+        err!("All passkeys with encryption enabled must be included in the rotation")
+    }
+
+    for passkey_data in passkey_unlock_data {
+        let Some(credential) = existing_webauthn_credentials.iter().find(|c| c.uuid == passkey_data.id) else {
+            err!("Passkey doesn't exist")
+        };
+        if !credential.has_prf_keyset() {
+            err!("Passkey is not in a PRF-enabled state")
+        }
+    }
+
+    Ok(())
+}
+
+fn prepare_rewrapped_passkey_credentials(
+    passkey_unlock_data: &[UpdateWebAuthnLoginData],
+    existing_webauthn_credentials: &[WebAuthnCredential],
+) -> ApiResult<Vec<WebAuthnCredential>> {
+    let mut rewrapped_credentials = Vec::with_capacity(passkey_unlock_data.len());
+    for passkey_data in passkey_unlock_data {
+        let Some(mut credential) = existing_webauthn_credentials.iter().find(|c| c.uuid == passkey_data.id).cloned()
+        else {
+            err!("Passkey doesn't exist")
+        };
+        if !credential.has_prf_keyset() {
+            err!("Passkey is not in a PRF-enabled state")
+        }
+
+        credential.encrypted_public_key = Some(passkey_data.encrypted_public_key.clone());
+        credential.encrypted_user_key = Some(passkey_data.encrypted_user_key.clone());
+        rewrapped_credentials.push(credential);
+    }
+
+    Ok(rewrapped_credentials)
 }
 
 #[post("/accounts/key-management/rotate-user-account-keys", data = "<data>")]
@@ -820,6 +896,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // We only rotate the reset password key if it is set.
     existing_memberships.retain(|m| m.reset_password_key.is_some());
     let mut existing_sends = Send::find_by_user(user_id, &conn).await;
+    let existing_webauthn_credentials = WebAuthnCredential::find_by_user(user_id, &conn).await?;
 
     validate_keydata(
         &data,
@@ -828,7 +905,19 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         &existing_emergency_access,
         &existing_memberships,
         &existing_sends,
+        &existing_webauthn_credentials,
         &headers.user,
+    )?;
+
+    // Prepare the PRF rewrap payload before mutating any vault data. The
+    // rotate-key endpoint is not fully transactional (see TODO above), so no
+    // passkey-specific validation/read may run after folders/sends/ciphers
+    // have been rewritten but before the user key is committed; that would add
+    // a new branch-specific way to return an error while vault data already
+    // expects the new account key.
+    let rewrapped_credentials = prepare_rewrapped_passkey_credentials(
+        &data.account_unlock_data.passkey_unlock_data,
+        &existing_webauthn_credentials,
     )?;
 
     // Update folder data
@@ -907,6 +996,49 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     .await?;
 
     let save_result = user.save(&conn).await;
+
+    // Once the new account key is committed, make a best-effort pass over the
+    // PRF credentials that were present in the initial snapshot. A late
+    // passkey-row delete or DB transient must not turn a completed master-key
+    // rotation into an API error: the user row and vault data are already on
+    // the new key, and returning failure would mislead the client into trying
+    // the old password. A failed PRF rewrap only degrades passkey unlock for
+    // that credential; the master password remains authoritative.
+    if save_result.is_ok() {
+        for credential in &rewrapped_credentials {
+            if let Err(e) = credential.update_keys(&conn).await {
+                // A concurrent passkey delete (multi-replica) racing rotation is
+                // the common case here — log at INFO so ops alerts only fire on
+                // genuine DB transients. The follow-up clear is also a no-op
+                // for the same reason, so skip it on the benign branch.
+                if is_concurrent_modification(&e) {
+                    info!(
+                        "post_rotatekey: WebAuthn PRF credential {} for user {} was deleted concurrently with key rotation; skipping rewrap",
+                        credential.uuid, user.uuid
+                    );
+                    continue;
+                }
+                warn!(
+                    "post_rotatekey: failed to rewrap WebAuthn PRF credential {} for user {} after key rotation: {e:#?}",
+                    credential.uuid, user.uuid
+                );
+                match credential.clear_account_key_prf_keyset(&conn).await {
+                    Ok(()) => info!(
+                        "post_rotatekey: cleared stale account-key PRF keyset for credential {} after rewrap failure",
+                        credential.uuid
+                    ),
+                    Err(clear_error) if is_concurrent_modification(&clear_error) => info!(
+                        "post_rotatekey: WebAuthn PRF credential {} for user {} was deleted concurrently after rewrap failure; nothing to clear",
+                        credential.uuid, user.uuid
+                    ),
+                    Err(clear_error) => warn!(
+                        "post_rotatekey: failed to clear stale account-key WebAuthn PRF keyset for credential {} after rewrap failure: {clear_error:#?}",
+                        credential.uuid
+                    ),
+                }
+            }
+        }
+    }
 
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
@@ -1705,5 +1837,92 @@ pub async fn purge_auth_requests(pool: DbPool) {
         AuthRequest::purge_expired_auth_requests(&conn).await;
     } else {
         error!("Failed to get DB connection while purging auth requests");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn webauthn_credential(id: &str, supports_prf: bool, has_keyset: bool) -> WebAuthnCredential {
+        let key = has_keyset.then_some(String::from("key"));
+        let mut credential = WebAuthnCredential::new(
+            UserId::from(String::from("user")),
+            String::from("passkey"),
+            String::from("{}"),
+            format!("{id}-credential-id-hash"),
+            supports_prf,
+            key.clone(),
+            key.clone(),
+            key,
+        );
+        credential.uuid = WebAuthnCredentialId::from(id.to_owned());
+        credential
+    }
+
+    fn passkey_unlock_data(id: &str) -> UpdateWebAuthnLoginData {
+        UpdateWebAuthnLoginData {
+            id: WebAuthnCredentialId::from(id.to_owned()),
+            encrypted_public_key: String::from("public"),
+            encrypted_user_key: String::from("user"),
+        }
+    }
+
+    #[test]
+    fn passkey_rotation_accepts_exact_prf_set() {
+        let credentials = vec![webauthn_credential("prf", true, true)];
+        let data = vec![passkey_unlock_data("prf")];
+
+        assert!(validate_passkey_rotation_data(&data, &credentials).is_ok());
+    }
+
+    #[test]
+    fn passkey_rotation_prepares_rewrap_payload_from_initial_snapshot() {
+        let credentials = vec![webauthn_credential("prf", true, true)];
+        let data = vec![passkey_unlock_data("prf")];
+
+        let prepared = prepare_rewrapped_passkey_credentials(&data, &credentials).unwrap();
+
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(prepared[0].uuid, WebAuthnCredentialId::from(String::from("prf")));
+        assert_eq!(prepared[0].encrypted_user_key.as_deref(), Some("user"));
+        assert_eq!(prepared[0].encrypted_public_key.as_deref(), Some("public"));
+        assert_eq!(prepared[0].encrypted_private_key.as_deref(), Some("key"));
+    }
+
+    #[test]
+    fn passkey_rotation_rejects_missing_prf_credential() {
+        let credentials = vec![webauthn_credential("prf", true, true)];
+
+        assert!(validate_passkey_rotation_data(&[], &credentials).is_err());
+    }
+
+    #[test]
+    fn passkey_rotation_rejects_unknown_credential() {
+        let credentials = vec![webauthn_credential("prf", true, true)];
+        let data = vec![passkey_unlock_data("prf"), passkey_unlock_data("missing")];
+
+        assert!(validate_passkey_rotation_data(&data, &credentials).is_err());
+    }
+
+    #[test]
+    fn passkey_rotation_rejects_non_prf_credential() {
+        let credentials = vec![webauthn_credential("prf", true, true), webauthn_credential("non-prf", false, false)];
+        let data = vec![passkey_unlock_data("prf"), passkey_unlock_data("non-prf")];
+
+        assert!(validate_passkey_rotation_data(&data, &credentials).is_err());
+    }
+
+    /// A duplicate id in `passkey_unlock_data` collapses into a single
+    /// `HashSet` entry for the superset check, but the rewrap loop in
+    /// `post_rotatekey` iterates the original `Vec` and would apply BOTH
+    /// updates, silently letting the second blob overwrite the first.
+    /// The validator must reject duplicates upfront.
+    #[test]
+    fn passkey_rotation_rejects_duplicate_ids() {
+        let credentials = vec![webauthn_credential("prf", true, true)];
+        let data = vec![passkey_unlock_data("prf"), passkey_unlock_data("prf")];
+
+        assert!(validate_passkey_rotation_data(&data, &credentials).is_err());
     }
 }

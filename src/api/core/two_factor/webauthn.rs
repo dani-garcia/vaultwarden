@@ -30,7 +30,7 @@ use crate::{
     util::NumberOrString,
 };
 
-static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
+pub static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
     let domain = CONFIG.domain();
     let domain_origin = CONFIG.domain_origin();
     let rp_id = Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
@@ -130,6 +130,10 @@ async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbC
 
 #[post("/two-factor/get-webauthn-challenge", data = "<data>")]
 async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
+    if !CONFIG.is_webauthn_2fa_supported() {
+        err!("Configured `DOMAIN` is not compatible with Webauthn")
+    }
+
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
@@ -191,7 +195,7 @@ struct RegisterPublicKeyCredentialCopy {
 // This is copied from AuthenticatorAttestationResponseRaw to change clientDataJSON to clientDataJson
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AuthenticatorAttestationResponseRawCopy {
+struct AuthenticatorAttestationResponseRawCopy {
     #[serde(rename = "AttestationObject", alias = "attestationObject")]
     pub attestation_object: Base64UrlSafeData,
     #[serde(rename = "clientDataJson", alias = "clientDataJSON")]
@@ -220,6 +224,7 @@ pub struct PublicKeyCredentialCopy {
     pub id: String,
     pub raw_id: Base64UrlSafeData,
     pub response: AuthenticatorAssertionResponseRawCopy,
+    #[serde(default, alias = "clientExtensionResults")]
     pub extensions: AuthenticationExtensionsClientOutputs,
     pub r#type: String,
 }
@@ -254,6 +259,10 @@ impl From<PublicKeyCredentialCopy> for PublicKeyCredential {
 
 #[post("/two-factor/webauthn", data = "<data>")]
 async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, conn: DbConn) -> JsonResult {
+    if !CONFIG.is_webauthn_2fa_supported() {
+        err!("Configured `DOMAIN` is not compatible with Webauthn")
+    }
+
     let data: EnableWebauthnData = data.into_inner();
     let mut user = headers.user;
 
@@ -515,4 +524,105 @@ fn check_and_update_backup_eligible(
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn register_public_key_credential_copy_strips_transports() {
+        let copy = RegisterPublicKeyCredentialCopy {
+            id: String::from("credential"),
+            raw_id: Base64UrlSafeData::from([1, 2, 3]),
+            response: AuthenticatorAttestationResponseRawCopy {
+                attestation_object: Base64UrlSafeData::from([4, 5, 6]),
+                client_data_json: Base64UrlSafeData::from([7, 8, 9]),
+            },
+            r#type: String::from("public-key"),
+        };
+
+        let converted: RegisterPublicKeyCredential = copy.into();
+
+        assert_eq!(converted.response.transports, None);
+    }
+
+    #[test]
+    fn register_public_key_credential_copy_ignores_extra_client_fields() {
+        let copy = serde_json::from_value::<RegisterPublicKeyCredentialCopy>(json!({
+            "id": "credential",
+            "rawId": "AQID",
+            "response": {
+                "attestationObject": "BAUG",
+                "clientDataJson": "BwgJ",
+                "transports": ["internal", "hybrid"]
+            },
+            "clientExtensionResults": {},
+            "type": "public-key"
+        }))
+        .unwrap();
+
+        let converted: RegisterPublicKeyCredential = copy.into();
+
+        assert_eq!(converted.response.transports, None);
+    }
+
+    #[test]
+    fn register_public_key_credential_copy_defaults_extensions() {
+        let copy = RegisterPublicKeyCredentialCopy {
+            id: String::from("credential"),
+            raw_id: Base64UrlSafeData::from([1, 2, 3]),
+            response: AuthenticatorAttestationResponseRawCopy {
+                attestation_object: Base64UrlSafeData::from([4, 5, 6]),
+                client_data_json: Base64UrlSafeData::from([7, 8, 9]),
+            },
+            r#type: String::from("public-key"),
+        };
+
+        let converted: RegisterPublicKeyCredential = copy.into();
+
+        assert!(converted.extensions.appid.is_none());
+        assert!(converted.extensions.cred_props.is_none());
+        assert!(converted.extensions.hmac_secret.is_none());
+        assert!(converted.extensions.cred_protect.is_none());
+        assert!(converted.extensions.min_pin_length.is_none());
+    }
+
+    #[test]
+    fn register_public_key_credential_copy_accepts_missing_extensions() {
+        let copy = serde_json::from_value::<RegisterPublicKeyCredentialCopy>(json!({
+            "id": "credential",
+            "rawId": "AQID",
+            "response": {
+                "attestationObject": "BAUG",
+                "clientDataJson": "BwgJ"
+            },
+            "type": "public-key"
+        }))
+        .unwrap();
+
+        let converted: RegisterPublicKeyCredential = copy.into();
+
+        assert_eq!(converted.id, "credential");
+    }
+
+    #[test]
+    fn public_key_credential_copy_accepts_client_extension_results_alias() {
+        let copy = serde_json::from_value::<PublicKeyCredentialCopy>(json!({
+            "id": "credential",
+            "rawId": "AQID",
+            "response": {
+                "authenticatorData": "BAUG",
+                "clientDataJson": "BwgJ",
+                "signature": "CgsM"
+            },
+            "clientExtensionResults": {},
+            "type": "public-key"
+        }))
+        .unwrap();
+
+        let converted: PublicKeyCredential = copy.into();
+
+        assert_eq!(converted.id, "credential");
+    }
 }

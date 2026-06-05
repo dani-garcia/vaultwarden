@@ -12,7 +12,7 @@ use crate::{
         models::DeviceId,
         schema::{invitations, sso_users, twofactor_incomplete, users},
     },
-    error::MapResult,
+    error::{Error, MapResult},
     sso::OIDCIdentifier,
     util::{format_date, get_uuid, retry},
 };
@@ -20,6 +20,7 @@ use macros::UuidFromParam;
 
 use super::{
     Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
+    WebAuthnCredential,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
@@ -340,12 +341,19 @@ impl User {
         Device::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactor::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn).await?;
+        WebAuthnCredential::delete_all_by_user(&self.uuid, conn).await?;
         Invitation::take(&self.email, conn).await; // Delete invitation if any
 
-        conn.run(move |conn| {
-            diesel::delete(users::table.filter(users::uuid.eq(self.uuid))).execute(conn).map_res("Error deleting user")
-        })
-        .await
+        let delete_result: EmptyResult = conn
+            .run(move |conn| {
+                diesel::delete(users::table.filter(users::uuid.eq(self.uuid)))
+                    .execute(conn)
+                    .map_res("Error deleting user")
+            })
+            .await;
+        delete_result?;
+
+        Ok(())
     }
 
     pub async fn update_uuid_revision(uuid: &UserId, conn: &DbConn) {
@@ -390,8 +398,26 @@ impl User {
         conn.run(move |conn| users::table.filter(users::email.eq(lower_mail)).first::<Self>(conn).ok()).await
     }
 
+    /// Convenience wrapper around [`Self::try_find_by_uuid`] for the many
+    /// callers that don't need to distinguish a DB transient from a missing
+    /// row. Keeps a single source of truth for the underlying Diesel query.
     pub async fn find_by_uuid(uuid: &UserId, conn: &DbConn) -> Option<Self> {
-        conn.run(move |conn| users::table.filter(users::uuid.eq(uuid)).first::<Self>(conn).ok()).await
+        Self::try_find_by_uuid(uuid, conn).await.ok().flatten()
+    }
+
+    /// Result-returning counterpart of `find_by_uuid` for callers that need
+    /// to distinguish a DB transient (deadlock-victim, conn drop, lock
+    /// timeout) from a genuinely missing row. The unauthenticated
+    /// `webauthn_login` grant requires this distinction so a transient
+    /// during user lookup doesn't fall through to the indistinguishable
+    /// "No user matches passkey user handle" branch — masking the cause
+    /// from operators and breaking the function-wide AUTH_FAILED-uniformity
+    /// contract for transient vs. missing.
+    pub async fn try_find_by_uuid(uuid: &UserId, conn: &DbConn) -> Result<Option<Self>, Error> {
+        conn.run(move |conn| {
+            users::table.filter(users::uuid.eq(uuid)).first::<Self>(conn).optional().map_res("Error loading user")
+        })
+        .await
     }
 
     pub async fn find_by_device_for_email2fa(device_uuid: &DeviceId, conn: &DbConn) -> Option<Self> {
