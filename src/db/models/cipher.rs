@@ -94,6 +94,20 @@ impl Cipher {
         }
     }
 
+    fn ssh_key_data_has_mandatory_fields(type_data_json: &Value) -> bool {
+        type_data_json["keyFingerprint"].as_str().is_some_and(|s| !s.is_empty())
+            && type_data_json["privateKey"].as_str().is_some_and(|s| !s.is_empty())
+            && type_data_json["publicKey"].as_str().is_some_and(|s| !s.is_empty())
+    }
+
+    fn invalid_ssh_key_data_placeholder(encrypted_fallback: &str) -> Value {
+        json!({
+            "keyFingerprint": encrypted_fallback,
+            "privateKey": encrypted_fallback,
+            "publicKey": encrypted_fallback,
+        })
+    }
+
     pub fn validate_cipher_data(cipher_data: &[CipherData]) -> EmptyResult {
         let mut validation_errors = serde_json::Map::new();
         let max_note_size = CONFIG._max_note_size();
@@ -293,17 +307,12 @@ impl Cipher {
             }
         }
 
-        // Fix invalid SSH Entries
-        // This breaks at least the native mobile client if invalid
-        // The only way to fix this is by setting type_data_json to `null`
-        // Opening this ssh-key in the mobile client will probably crash the client, but you can edit, save and afterwards delete it
-        if self.atype == 5
-            && (type_data_json["keyFingerprint"].as_str().is_none_or(str::is_empty)
-                || type_data_json["privateKey"].as_str().is_none_or(str::is_empty)
-                || type_data_json["publicKey"].as_str().is_none_or(str::is_empty))
-        {
+        // Fix invalid SSH entries. Bitwarden SDK-backed clients expect all SSH key
+        // fields to be strings when type == 5; returning null makes WASM
+        // deserialization fail before the user can edit or delete the bad item.
+        if self.atype == 5 && !Self::ssh_key_data_has_mandatory_fields(&type_data_json) {
             warn!("Error parsing ssh-key, mandatory fields are invalid for {}", self.uuid);
-            type_data_json = Value::Null;
+            type_data_json = Self::invalid_ssh_key_data_placeholder(&self.name);
         }
 
         // Clone the type_data and add some default value.
@@ -1185,3 +1194,46 @@ impl Cipher {
     UuidFromParam,
 )]
 pub struct CipherId(String);
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::Cipher;
+
+    #[test]
+    fn ssh_key_data_has_mandatory_fields_accepts_non_empty_strings() {
+        let data = json!({
+            "keyFingerprint": "2.fingerprint",
+            "privateKey": "2.private",
+            "publicKey": "2.public",
+        });
+
+        assert!(Cipher::ssh_key_data_has_mandatory_fields(&data));
+    }
+
+    #[test]
+    fn ssh_key_data_has_mandatory_fields_rejects_missing_or_empty_values() {
+        let missing = json!({
+            "keyFingerprint": "2.fingerprint",
+            "publicKey": "2.public",
+        });
+        let empty = json!({
+            "keyFingerprint": "2.fingerprint",
+            "privateKey": "",
+            "publicKey": "2.public",
+        });
+
+        assert!(!Cipher::ssh_key_data_has_mandatory_fields(&missing));
+        assert!(!Cipher::ssh_key_data_has_mandatory_fields(&empty));
+    }
+
+    #[test]
+    fn invalid_ssh_key_data_placeholder_uses_encrypted_fallback_for_required_fields() {
+        let placeholder = Cipher::invalid_ssh_key_data_placeholder("2.encrypted-name");
+
+        assert_eq!(placeholder["keyFingerprint"], "2.encrypted-name");
+        assert_eq!(placeholder["privateKey"], "2.encrypted-name");
+        assert_eq!(placeholder["publicKey"], "2.encrypted-name");
+    }
+}
