@@ -956,7 +956,7 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     }
 
     if cfg.database_min_conns > cfg.database_max_conns {
-        err!(format!("`DATABASE_MIN_CONNS` must be smaller than or equal to `DATABASE_MAX_CONNS`.",));
+        err!("`DATABASE_MIN_CONNS` must be smaller than or equal to `DATABASE_MAX_CONNS`.");
     }
 
     if let Some(log_file) = &cfg.log_file
