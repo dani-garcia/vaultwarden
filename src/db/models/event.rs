@@ -191,6 +191,26 @@ impl Event {
             // "installationId": null, // Not supported
         })
     }
+
+    // Upstream: https://github.com/bitwarden/server/blob/main/src/Api/AdminConsole/Public/Models/Response/EventResponseModel.cs
+    pub fn to_json_public(&self) -> Value {
+        use crate::util::format_date;
+
+        json!({
+            "object": "event",
+            "type": self.event_type,
+            "itemId": self.cipher_uuid,
+            "collectionId": self.collection_uuid,
+            "groupId": self.group_uuid,
+            "policyId": self.policy_uuid,
+            "memberId": self.org_user_uuid,
+            "actingUserId": self.act_user_uuid,
+            "installationId": null, // Not supported
+            "date": format_date(&self.event_date),
+            "deviceType": self.device_type,
+            "ipAddress": self.ip_address,
+        })
+    }
 }
 
 /// Database methods
@@ -350,3 +370,35 @@ impl Event {
 
 #[derive(Clone, Debug, DieselNewType, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventId(String);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_json_public_uses_public_api_field_names() {
+        // OrganizationUserUpdated event with a member + cipher reference
+        let mut event = Event::new(EventType::OrganizationUserUpdated as i32, None);
+        event.org_uuid = Some("11111111-1111-1111-1111-111111111111".to_string().into());
+        event.org_user_uuid = Some("22222222-2222-2222-2222-222222222222".to_string().into());
+        event.cipher_uuid = Some("33333333-3333-3333-3333-333333333333".to_string().into());
+        event.act_user_uuid = Some("44444444-4444-4444-4444-444444444444".to_string().into());
+
+        let json = event.to_json_public();
+
+        // Public API field names
+        assert_eq!(json["object"], "event");
+        assert_eq!(json["type"], EventType::OrganizationUserUpdated as i32);
+        assert_eq!(json["itemId"], "33333333-3333-3333-3333-333333333333");
+        assert_eq!(json["memberId"], "22222222-2222-2222-2222-222222222222");
+        assert_eq!(json["actingUserId"], "44444444-4444-4444-4444-444444444444");
+        assert!(json["installationId"].is_null());
+
+        // Internal-only keys MUST NOT be present in the public model
+        assert!(json.get("cipherId").is_none());
+        assert!(json.get("organizationUserId").is_none());
+        assert!(json.get("organizationId").is_none());
+        assert!(json.get("userId").is_none());
+        assert!(json.get("providerId").is_none());
+    }
+}
