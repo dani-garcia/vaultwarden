@@ -2020,18 +2020,27 @@ struct PolicyData {
     data: Option<Value>,
 }
 
+#[derive(Deserialize)]
+struct PutPolicy {
+    policy: PolicyData,
+    // Ignore metadata for now as we do not yet support this
+    // "metadata": {
+    //     "defaultUserCollectionName": "2.xx|xx==|xx="
+    // }
+}
+
 #[put("/organizations/<org_id>/policies/<pol_type>", data = "<data>")]
 async fn put_policy(
     org_id: OrganizationId,
     pol_type: i32,
-    data: Json<PolicyData>,
+    data: Json<PutPolicy>,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let data: PolicyData = data.into_inner();
+    let data: PolicyData = data.into_inner().policy;
 
     let Some(pol_type_enum) = OrgPolicyType::from_i32(pol_type) else {
         err!("Invalid or unsupported policy type")
@@ -2139,26 +2148,16 @@ async fn put_policy(
     Ok(Json(policy.to_json()))
 }
 
-#[derive(Deserialize)]
-struct PolicyDataVnext {
-    policy: PolicyData,
-    // Ignore metadata for now as we do not yet support this
-    // "metadata": {
-    //     "defaultUserCollectionName": "2.xx|xx==|xx="
-    // }
-}
-
+// Deprecated with client v2026.5.0
 #[put("/organizations/<org_id>/policies/<pol_type>/vnext", data = "<data>")]
 async fn put_policy_vnext(
     org_id: OrganizationId,
     pol_type: i32,
-    data: Json<PolicyDataVnext>,
+    data: Json<PutPolicy>,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {
-    let data: PolicyDataVnext = data.into_inner();
-    let policy: PolicyData = data.policy;
-    put_policy(org_id, pol_type, Json(policy), headers, conn).await
+    put_policy(org_id, pol_type, data, headers, conn).await
 }
 
 #[get("/plans")]
