@@ -96,6 +96,7 @@ pub fn routes() -> Vec<Route> {
         put_reset_password_enrollment,
         get_reset_password_details,
         put_reset_password,
+        put_recover_account,
         get_org_export,
         post_api_key,
         rotate_api_key,
@@ -2875,9 +2876,11 @@ struct OrganizationUserResetPasswordEnrollmentRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct OrganizationUserResetPasswordRequest {
+struct OrganizationUserRecoverAccountRequest {
     new_master_password_hash: String,
     key: String,
+    reset_master_password: bool,
+    reset_two_factor: bool,
 }
 
 // Upstream reports this is the renamed endpoint instead of `/keys`
@@ -2905,12 +2908,43 @@ async fn get_organization_keys(org_id: OrganizationId, headers: OrgMemberHeaders
     get_organization_public_key(org_id, headers, conn).await
 }
 
+// Will allow to reset 2FA too
+// https://github.com/bitwarden/clients/blob/web-v2026.4.2/libs/admin-console/src/common/organization-user/models/requests/organization-user-reset-password.request.ts
+#[put("/organizations/<org_id>/users/<member_id>/recover-account", data = "<data>")]
+async fn put_recover_account(
+    org_id: OrganizationId,
+    member_id: MembershipId,
+    headers: AdminHeaders,
+    data: Json<OrganizationUserRecoverAccountRequest>,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    let req = data.into_inner();
+    if req.reset_master_password && !req.reset_two_factor {
+        recover_account(org_id, member_id, headers, req, conn, nt).await
+    } else {
+        err!("Unsupported operation")
+    }
+}
+
+// Deprecated since `v2026.4.2`
 #[put("/organizations/<org_id>/users/<member_id>/reset-password", data = "<data>")]
 async fn put_reset_password(
     org_id: OrganizationId,
     member_id: MembershipId,
     headers: AdminHeaders,
-    data: Json<OrganizationUserResetPasswordRequest>,
+    data: Json<OrganizationUserRecoverAccountRequest>,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    recover_account(org_id, member_id, headers, data.into_inner(), conn, nt).await
+}
+
+async fn recover_account(
+    org_id: OrganizationId,
+    member_id: MembershipId,
+    headers: AdminHeaders,
+    reset_request: OrganizationUserRecoverAccountRequest,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
@@ -2943,8 +2977,6 @@ async fn put_reset_password(
     if let Err(e) = mail::send_admin_reset_password(&user.email, user.display_name(), &org.name).await {
         err!(format!("Error sending user reset password email: {e:#?}"));
     }
-
-    let reset_request = data.into_inner();
 
     let mut user = user;
     user.set_password(reset_request.new_master_password_hash.as_str(), Some(reset_request.key), true, None, &conn)
