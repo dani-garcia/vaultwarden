@@ -97,14 +97,11 @@ pub struct RegisterData {
     email: String,
 
     #[serde(flatten)]
-    kdf: KDFData,
+    compat: RegisterDataCompat,
 
-    #[serde(alias = "userSymmetricKey")]
-    key: String,
     #[serde(alias = "userAsymmetricKeys")]
     keys: Option<KeysData>,
 
-    master_password_hash: String,
     master_password_hint: Option<String>,
 
     name: Option<String>,
@@ -119,6 +116,99 @@ pub struct RegisterData {
     org_invite_token: Option<String>,
 }
 
+impl RegisterData {
+    fn hash(&self) -> String {
+        self.compat.fold(|rdc| &rdc.master_password_hash, |rdcu| &rdcu.master_password_authentication.hash).to_owned()
+    }
+
+    fn kdf(&self) -> &KDFData {
+        self.compat.fold(|rdc| &rdc.kdf, |rdcu| &rdcu.master_password_authentication.kdf)
+    }
+
+    fn key(&self) -> String {
+        self.compat.fold(|rdc| &rdc.key, |rdcu| &rdcu.master_password_unlock.key).to_owned()
+    }
+
+    fn unprocessable(&self) -> bool {
+        let mut unprocessable = false;
+        *self.compat.fold(
+            |_| &false,
+            |rdcu| {
+                unprocessable = rdcu.master_password_authentication.kdf != rdcu.master_password_unlock.kdf
+                    || rdcu.master_password_authentication.salt != self.email
+                    || rdcu.master_password_unlock.salt != self.email;
+                &unprocessable
+            },
+        )
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct RegisterDataOld {
+    #[serde(flatten)]
+    kdf: KDFData,
+
+    #[serde(alias = "userSymmetricKey")]
+    key: String,
+
+    #[serde(alias = "masterPasswordHash")]
+    master_password_hash: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegisterDataCur {
+    master_password_authentication: MasterPasswordAuthentication,
+    master_password_unlock: MasterPasswordUnlock,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RegisterDataCompat {
+    RegisterDataOld(RegisterDataOld),
+    RegisterDataCur(RegisterDataCur),
+}
+
+impl RegisterDataCompat {
+    fn fold<'a, T>(
+        &'a self,
+        fct: impl FnOnce(&'a RegisterDataOld) -> &'a T,
+        fcu: impl FnOnce(&'a RegisterDataCur) -> &'a T,
+    ) -> &'a T {
+        match self {
+            RegisterDataCompat::RegisterDataOld(rdc) => fct(rdc),
+            RegisterDataCompat::RegisterDataCur(rdcu) => fcu(rdcu),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KeysData {
+    encrypted_private_key: String,
+    public_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MasterPasswordAuthentication {
+    kdf: KDFData,
+    salt: String,
+
+    #[serde(alias = "masterPasswordAuthenticationHash")]
+    hash: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MasterPasswordUnlock {
+    kdf: KDFData,
+    salt: String,
+
+    #[serde(alias = "masterKeyWrappedUserKey")]
+    key: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetPasswordData {
@@ -130,13 +220,6 @@ pub struct SetPasswordData {
     master_password_hash: String,
     master_password_hint: Option<String>,
     org_identifier: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KeysData {
-    encrypted_private_key: String,
-    public_key: String,
 }
 
 /// Trims whitespace from password hints, and converts blank password hints to `None`.
@@ -176,6 +259,10 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
     let mut email_verified = false;
 
     let mut pending_emergency_access = None;
+
+    if data.unprocessable() {
+        err_code!("Unexpected RegisterData format", Status::UnprocessableEntity.code);
+    }
 
     // First, validate the provided verification tokens
     if email_verification {
@@ -257,8 +344,8 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
                 err!("Registration not allowed or user already exists")
             }
 
-            if let Some(token) = data.org_invite_token {
-                let claims = decode_invite(&token)?;
+            if let Some(token) = data.org_invite_token.as_ref() {
+                let claims = decode_invite(token)?;
                 if claims.email == email {
                     // Verify the email address when signing up via a valid invite token
                     email_verified = true;
@@ -296,9 +383,9 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
     // Make sure we don't leave a lingering invitation.
     Invitation::take(&email, &conn).await;
 
-    set_kdf_data(&mut user, &data.kdf)?;
+    set_kdf_data(&mut user, data.kdf())?;
 
-    user.set_password(&data.master_password_hash, Some(data.key), true, None, &conn).await?;
+    user.set_password(&data.hash(), Some(data.key()), true, None, &conn).await?;
     user.password_hint = password_hint;
 
     // Add extra fields if present
