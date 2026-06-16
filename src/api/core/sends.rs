@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::{ApiResult, EmptyResult, JsonResult, Notify, UpdateType},
-    auth::{ClientIp, Headers, Host},
+    auth::{ClientIp, Headers, Host, SendHeaders},
     config::PathType,
     db::{
         DbConn, DbPool,
@@ -48,7 +48,9 @@ pub fn routes() -> Vec<rocket::Route> {
         post_send,
         post_send_file,
         post_access,
+        post_access_legacy,
         post_access_file,
+        post_access_file_legacy,
         put_send,
         delete_send,
         put_remove_password,
@@ -371,7 +373,7 @@ pub struct SendFileData {
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Tools/Controllers/SendsController.cs#L195
-#[post("/sends/<send_id>/file/<file_id>", format = "multipart/form-data", data = "<data>")]
+#[post("/sends/<send_id>/file/<file_id>", format = "multipart/form-data", data = "<data>", rank = 2)]
 async fn post_send_file_v2_data(
     send_id: SendId,
     file_id: SendFileId,
@@ -441,14 +443,23 @@ async fn post_send_file_v2_data(
     Ok(())
 }
 
+#[post("/sends/access")]
+async fn post_access(headers: SendHeaders, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    let Some(send) = Send::find_by_uuid(&headers.send_id, &conn).await else {
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
+    };
+    process_access(send, conn, nt).await
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendAccessData {
     pub password: Option<String>,
 }
 
+// Legacy since web-2026.6.0
 #[post("/sends/access/<access_id>", data = "<data>")]
-async fn post_access(
+async fn post_access_legacy(
     access_id: &str,
     data: Json<SendAccessData>,
     conn: DbConn,
@@ -479,6 +490,13 @@ async fn post_access(
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
+    // Files are incremented during the download
+    if send.atype == SendType::Text as i32 {
+        send.access_count += 1;
+    }
+
+    send.save(&conn).await?;
+
     if send.password_hash.is_some() {
         match data.into_inner().password {
             Some(ref p) if send.check_password(p) => { /* Nothing to do here */ }
@@ -487,13 +505,10 @@ async fn post_access(
         }
     }
 
-    // Files are incremented during the download
-    if send.atype == SendType::Text as i32 {
-        send.access_count += 1;
-    }
+    process_access(send, conn, nt).await
+}
 
-    send.save(&conn).await?;
-
+async fn process_access(send: Send, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     nt.send_send_update(
         UpdateType::SyncSendUpdate,
         &send,
@@ -506,8 +521,23 @@ async fn post_access(
     Ok(Json(send.to_json_access(&conn).await))
 }
 
-#[post("/sends/<send_id>/access/file/<file_id>", data = "<data>")]
+#[post("/sends/access/file/<file_id>", rank = 1)]
 async fn post_access_file(
+    file_id: SendFileId,
+    headers: SendHeaders,
+    host: Host,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    let Some(send) = Send::find_by_uuid(&headers.send_id, &conn).await else {
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
+    };
+    process_access_file(send, file_id, host, conn, nt).await
+}
+
+// Legacy since web-2026.6.0
+#[post("/sends/<send_id>/access/file/<file_id>", data = "<data>")]
+async fn post_access_file_legacy(
     send_id: SendId,
     file_id: SendFileId,
     data: Json<SendAccessData>,
@@ -551,6 +581,10 @@ async fn post_access_file(
 
     send.save(&conn).await?;
 
+    process_access_file(send, file_id, host, conn, nt).await
+}
+
+async fn process_access_file(send: Send, file_id: SendFileId, host: Host, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     nt.send_send_update(
         UpdateType::SyncSendUpdate,
         &send,
@@ -563,7 +597,7 @@ async fn post_access_file(
     Ok(Json(json!({
         "object": "send-fileDownload",
         "id": file_id,
-        "url": download_url(&host, &send_id, &file_id).await?,
+        "url": download_url(&host, &send.uuid, &file_id).await?,
     })))
 }
 

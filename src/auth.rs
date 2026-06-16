@@ -1,3 +1,8 @@
+#[path = "auth/send.rs"]
+pub mod send;
+pub type SendTokens = send::SendTokens;
+pub type SendHeaders = send::SendHeaders;
+
 use std::{
     env,
     net::IpAddr,
@@ -485,6 +490,16 @@ pub struct BasicJwtClaims {
     pub iss: String,
     // Subject
     pub sub: String,
+}
+
+impl BasicJwtClaims {
+    pub fn expires_in(&self) -> i64 {
+        self.exp - Utc::now().timestamp()
+    }
+
+    pub fn token(&self) -> String {
+        encode_jwt(&self)
+    }
 }
 
 pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
