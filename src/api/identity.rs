@@ -116,6 +116,8 @@ async fn login(
             let tokens = auth::SendTokens::generate_tokens(
                 data.send_id.as_ref().unwrap(),
                 data.password_hash_b64,
+                data.email.map(|e| e.to_lowercase()),
+                data.otp,
                 &client_header.ip,
                 &conn,
             )
@@ -1165,6 +1167,8 @@ struct ConnectData {
     // Needed for send access
     send_id: Option<SendId>,
     password_hash_b64: Option<String>,
+    email: Option<String>,
+    otp: Option<String>,
 }
 fn check_is_some<T>(value: Option<&T>, msg: &str) -> EmptyResult {
     if value.is_none() {
