@@ -80,6 +80,7 @@ pub struct SendData {
     deletion_date: DateTime<Utc>,
     disabled: bool,
     hide_email: Option<bool>,
+    emails: Option<String>,
 
     // Data field
     name: String,
@@ -148,6 +149,10 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
         err!(
             "You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again."
         );
+    }
+
+    if data.emails.is_some() {
+        err!("Sends with email verification is not supported");
     }
 
     let mut send = Send::new(data.r#type, data.name, data_str, data.key, data.deletion_date.naive_utc());
@@ -634,6 +639,10 @@ async fn put_send(send_id: SendId, data: Json<SendData>, headers: Headers, conn:
     let Some(mut send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await else {
         err!("Send not found", "Send send_id is invalid or does not belong to user")
     };
+
+    if data.emails.is_some() {
+        err!("Sends with email verification is not supported");
+    }
 
     update_send_from_data(&mut send, data, &headers, &conn, &nt, UpdateType::SyncSendUpdate).await?;
 
