@@ -114,7 +114,8 @@ impl Client {
             Ok(metadata) => metadata,
         };
 
-        let base_client = CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret));
+        let base_client = CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret))
+            .set_auth_type(openidconnect::AuthType::RequestBody);
 
         let token_uri = if let Some(uri) = base_client.token_uri() {
             uri.clone()
