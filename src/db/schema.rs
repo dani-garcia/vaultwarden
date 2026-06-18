@@ -144,12 +144,24 @@ table! {
         password_iter -> Nullable<Integer>,
         max_access_count -> Nullable<Integer>,
         access_count -> Integer,
+        emails -> Nullable<Text>,
         creation_date -> Timestamp,
         revision_date -> Timestamp,
         expiration_date -> Nullable<Timestamp>,
         deletion_date -> Timestamp,
         disabled -> Bool,
         hide_email -> Nullable<Bool>,
+    }
+}
+
+table! {
+    sends_otp (send_uuid, email) {
+        send_uuid -> Text,
+        email -> Text,
+        code -> Text,
+        creation_date -> Timestamp,
+        revision_date -> Timestamp,
+        expiration_date -> Timestamp,
     }
 }
 
@@ -366,6 +378,7 @@ joinable!(folders_ciphers -> folders (folder_uuid));
 joinable!(org_policies -> organizations (org_uuid));
 joinable!(sends -> organizations (organization_uuid));
 joinable!(sends -> users (user_uuid));
+joinable!(sends_otp -> sends (send_uuid));
 joinable!(twofactor -> users (user_uuid));
 joinable!(users_collections -> collections (collection_uuid));
 joinable!(users_collections -> users (user_uuid));
@@ -396,6 +409,7 @@ allow_tables_to_appear_in_same_query!(
     org_policies,
     organizations,
     sends,
+    sends_otp,
     sso_users,
     twofactor,
     users,
