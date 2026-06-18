@@ -72,15 +72,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # Debian Trixie uses libpq v17
     PQ_LIB_DIR="/usr/local/musl/pq17/lib"
 {%- endif %}
+
 {% if base == "debian" %}
 
-# Force the install of an older MariaDB client library to prevent Diesel from
-# misreading result sets with affected MariaDB Connector/C releases.
+# Pin MariaDB Connector/C to the latest known-working Trixie build before
+# 11.8.7 started breaking Diesel migration metadata/result handling.
 # See https://github.com/dani-garcia/vaultwarden/issues/6416
 # See https://github.com/dani-garcia/vaultwarden/issues/7268
-RUN echo "deb http://snapshot.debian.org/archive/debian/20250707T084701Z/ trixie main" > /etc/apt/sources.list.d/mariadb-snapshot.list && \
+RUN echo "deb http://snapshot.debian.org/archive/debian/20260617T000000Z/ trixie main" > /etc/apt/sources.list.d/mariadb-snapshot.list && \
     echo "Acquire::Check-Valid-Until false;" > /etc/apt/apt.conf.d/allow-snapshot && \
-    echo 'Package: libmariadb* mariadb*' > /etc/apt/preferences.d/mariadb-snapshot && \
+    echo 'Package: libmariadb* mariadb-common' > /etc/apt/preferences.d/mariadb-snapshot && \
     echo 'Pin: origin "snapshot.debian.org"' >> /etc/apt/preferences.d/mariadb-snapshot && \
     echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mariadb-snapshot
 
@@ -203,13 +204,13 @@ ENV ROCKET_PROFILE="release" \
 # Create data folder and Install needed libraries
 RUN mkdir /data && \
 {% if base == "debian" %}
-    # Force the install of an older MariaDB client library to prevent Diesel from
-    # misreading result sets with affected MariaDB Connector/C releases.
+    # Pin MariaDB Connector/C to the latest known-working Trixie build before
+    # 11.8.7 started breaking Diesel migration metadata/result handling.
     # See https://github.com/dani-garcia/vaultwarden/issues/6416
     # See https://github.com/dani-garcia/vaultwarden/issues/7268
-    echo "deb http://snapshot.debian.org/archive/debian/20250707T084701Z/ trixie main" > /etc/apt/sources.list.d/mariadb-snapshot.list && \
+    echo "deb http://snapshot.debian.org/archive/debian/20260617T000000Z/ trixie main" > /etc/apt/sources.list.d/mariadb-snapshot.list && \
     echo "Acquire::Check-Valid-Until false;" > /etc/apt/apt.conf.d/allow-snapshot && \
-    echo 'Package: libmariadb* mariadb*' > /etc/apt/preferences.d/mariadb-snapshot && \
+    echo 'Package: libmariadb* mariadb-common' > /etc/apt/preferences.d/mariadb-snapshot && \
     echo 'Pin: origin "snapshot.debian.org"' >> /etc/apt/preferences.d/mariadb-snapshot && \
     echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mariadb-snapshot && \
     apt-get update && apt-get install -y \
