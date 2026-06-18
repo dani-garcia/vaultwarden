@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrono::{NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, TimeDelta, Utc};
 use data_encoding::BASE64URL_NOPAD;
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
@@ -12,14 +12,17 @@ use crate::{
     CONFIG,
     api::EmptyResult,
     config::PathType,
-    db::{DbConn, schema::sends},
+    db::{
+        DbConn, DbPool,
+        schema::{sends, sends_otp},
+    },
     error::MapResult,
     util::{LowerCase, NumberOrString, format_date},
 };
 
 use super::{OrganizationId, User, UserId};
 
-#[derive(Identifiable, Queryable, Insertable, AsChangeset)]
+#[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
 #[diesel(table_name = sends)]
 #[diesel(treat_none_as_null = true)]
 #[diesel(primary_key(uuid))]
@@ -41,6 +44,7 @@ pub struct Send {
 
     pub max_access_count: Option<i32>,
     pub access_count: i32,
+    pub emails: Option<String>,
 
     pub creation_date: NaiveDateTime,
     pub revision_date: NaiveDateTime,
@@ -60,7 +64,7 @@ pub enum SendType {
 enum SendAuthType {
     #[allow(dead_code)]
     // Send requires email OTP verification
-    Email = 0, // Not yet supported by Vaultwarden
+    Email = 0,
     // Send requires a password
     Password = 1,
     // Send requires no auth
@@ -68,17 +72,29 @@ enum SendAuthType {
 }
 
 impl Send {
-    pub fn new(atype: i32, name: String, data: String, akey: String, deletion_date: NaiveDateTime) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        atype: i32,
+        user_uuid: UserId,
+        name: String,
+        notes: Option<String>,
+        data: String,
+        akey: String,
+        max_access_count: Option<i32>,
+        emails: Option<String>,
+        expiration_date: Option<NaiveDateTime>,
+        deletion_date: NaiveDateTime,
+        disabled: bool,
+        hide_email: Option<bool>,
+    ) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
             uuid: SendId::from(crate::util::get_uuid()),
-            user_uuid: None,
+            user_uuid: Some(user_uuid),
             organization_uuid: None,
-
             name,
-            notes: None,
-
+            notes,
             atype,
             data,
             akey,
@@ -86,16 +102,17 @@ impl Send {
             password_salt: None,
             password_iter: None,
 
-            max_access_count: None,
+            max_access_count,
             access_count: 0,
+            emails: emails.map(|e| e.to_lowercase()),
 
             creation_date: now,
             revision_date: now,
-            expiration_date: None,
+            expiration_date,
             deletion_date,
 
-            disabled: false,
-            hide_email: None,
+            disabled,
+            hide_email,
         }
     }
 
@@ -162,9 +179,10 @@ impl Send {
             "maxAccessCount": self.max_access_count,
             "accessCount": self.access_count,
             "password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
-            "authType": if self.password_hash.is_some() { SendAuthType::Password as i32 } else { SendAuthType::None as i32 },
+            "authType": if self.password_hash.is_some() { SendAuthType::Password } else if self.emails.is_some() { SendAuthType::Email } else { SendAuthType::None } as i32,
             "disabled": self.disabled,
             "hideEmail": self.hide_email.unwrap_or(false),
+            "emails": self.emails,
 
             "revisionDate": format_date(&self.revision_date),
             "expirationDate": self.expiration_date.as_ref().map(format_date),
@@ -202,24 +220,16 @@ impl Send {
         self.revision_date = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(sends::table)
+            mysql {
+                diesel::insert_into(sends::table)
                     .values(&*self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(&*self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(sends::table)
-                            .filter(sends::uuid.eq(&self.uuid))
-                            .set(&*self)
-                            .execute(conn)
-                            .map_res("Error saving send")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving send")
+                    .map_res("Error saving send")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(sends::table)
                     .values(&*self)
                     .on_conflict(sends::uuid)
@@ -419,5 +429,96 @@ impl AsRef<Path> for SendFileId {
     #[inline]
     fn as_ref(&self) -> &Path {
         Path::new(&self.0)
+    }
+}
+
+#[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
+#[diesel(table_name = sends_otp)]
+#[diesel(treat_none_as_null = true)]
+#[diesel(primary_key(send_uuid, email))]
+pub struct SendOTP {
+    pub send_uuid: SendId,
+    pub email: String,
+
+    pub code: String,
+
+    pub creation_date: NaiveDateTime,
+    pub revision_date: NaiveDateTime,
+    pub expiration_date: NaiveDateTime,
+}
+
+impl SendOTP {
+    pub fn new(send_id: SendId, email: &str, code: String) -> Self {
+        let now = Utc::now().naive_utc();
+
+        Self {
+            send_uuid: send_id,
+            email: email.to_lowercase(),
+            code,
+            creation_date: now,
+            revision_date: now,
+            expiration_date: now + TimeDelta::try_minutes(5).unwrap(),
+        }
+    }
+
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
+        db_run! { conn:
+            mysql {
+                diesel::insert_into(sends_otp::table)
+                    .values(&*self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set((
+                        sends_otp::code.eq(&self.code),
+                        sends_otp::expiration_date.eq(self.expiration_date),
+                        sends_otp::revision_date.eq(Utc::now().naive_utc()),
+                    ))
+                    .execute(conn)
+                    .map_res("Error saving send_otp")
+            }
+            postgresql, sqlite {
+                diesel::insert_into(sends_otp::table)
+                    .values(&*self)
+                    .on_conflict((sends_otp::send_uuid, sends_otp::email))
+                    .do_update()
+                    .set((
+                        sends_otp::code.eq(&self.code),
+                        sends_otp::expiration_date.eq(self.expiration_date),
+                        sends_otp::revision_date.eq(Utc::now().naive_utc()),
+                    ))
+                    .execute(conn)
+                    .map_res("Error saving send_otp")
+            }
+        }
+    }
+
+    pub async fn find_with_send(uuid: &SendId, email: Option<&String>, conn: &DbConn) -> Option<(Send, Option<Self>)> {
+        if let Some(mail) = email.map(|e| e.to_lowercase()) {
+            conn.run(move |conn| {
+                sends::table
+                    .left_join(sends_otp::table.on(sends::uuid.eq(sends_otp::send_uuid).and(sends_otp::email.eq(mail))))
+                    .select(<(Send, Option<Self>)>::as_select())
+                    .filter(sends::uuid.eq(uuid))
+                    .first::<(Send, Option<Self>)>(conn)
+                    .ok()
+            })
+            .await
+        } else {
+            Send::find_by_uuid(uuid, conn).await.map(|s| (s, None))
+        }
+    }
+
+    pub async fn delete_expired(pool: DbPool) -> EmptyResult {
+        debug!("Purging expired sends_otp");
+        if let Ok(conn) = pool.get().await {
+            conn.run(move |conn| {
+                diesel::delete(sends_otp::table.filter(sends_otp::expiration_date.lt(Utc::now().naive_utc())))
+                    .execute(conn)
+                    .map_res("Error deleting expired Sends OTP")
+            })
+            .await
+        } else {
+            err!("Failed to get DB connection while purging expired sends_otp")
+        }
     }
 }
