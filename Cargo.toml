@@ -79,7 +79,7 @@ num-derive = "0.4.2"
 bigdecimal = "0.4.10"
 
 # Web framework
-rocket = { version = "0.5.1", default-features = false, features = ["json", "tls"] }
+rocket = { version = "0.5.1", default-features = false, features = ["json", "tls", "mtls"] }
 rocket_ws = { version = "0.1.1" }
 
 # WebSockets libraries
