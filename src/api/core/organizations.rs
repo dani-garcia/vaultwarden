@@ -2879,7 +2879,10 @@ struct OrganizationUserResetPasswordEnrollmentRequest {
 struct OrganizationUserRecoverAccountRequest {
     new_master_password_hash: String,
     key: String,
+
+    #[serde(default)]
     reset_master_password: bool,
+    #[serde(default)]
     reset_two_factor: bool,
 }
 
