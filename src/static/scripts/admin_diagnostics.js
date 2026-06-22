@@ -109,6 +109,9 @@ async function generateSupportString(event, dj) {
         supportString += "* Websocket Check: disabled\n";
     }
     supportString += `* HTTP Response Checks: ${httpResponseCheck}\n`;
+    if (dj.invalid_feature_flags != "") {
+        supportString += `* Invalid feature flags: true\n`;
+    }
 
     const jsonResponse = await fetch(`${BASE_URL}/admin/diagnostics/config`, {
         "headers": { "Accept": "application/json" }
@@ -126,6 +129,10 @@ async function generateSupportString(event, dj) {
     // Add overrides if they exists
     if (dj.overrides != "") {
         supportString += `\n**Environment settings which are overridden:** ${dj.overrides}\n`;
+    }
+
+    if (dj.invalid_feature_flags != "") {
+        supportString += `\n**Invalid feature flags:** ${dj.invalid_feature_flags}\n`;
     }
 
     // Add http response check messages if they exists

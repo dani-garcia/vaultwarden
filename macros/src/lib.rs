@@ -1,14 +1,15 @@
 use proc_macro::TokenStream;
 use quote::quote;
+use syn::{DeriveInput, parse_macro_input};
 
 #[proc_macro_derive(UuidFromParam)]
 pub fn derive_uuid_from_param(input: TokenStream) -> TokenStream {
-    let ast = syn::parse(input).unwrap();
+    let ast = parse_macro_input!(input as DeriveInput);
 
     impl_derive_uuid_macro(&ast)
 }
 
-fn impl_derive_uuid_macro(ast: &syn::DeriveInput) -> TokenStream {
+fn impl_derive_uuid_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let gen_derive = quote! {
         #[automatically_derived]
@@ -30,12 +31,12 @@ fn impl_derive_uuid_macro(ast: &syn::DeriveInput) -> TokenStream {
 
 #[proc_macro_derive(IdFromParam)]
 pub fn derive_id_from_param(input: TokenStream) -> TokenStream {
-    let ast = syn::parse(input).unwrap();
+    let ast = parse_macro_input!(input as DeriveInput);
 
     impl_derive_safestring_macro(&ast)
 }
 
-fn impl_derive_safestring_macro(ast: &syn::DeriveInput) -> TokenStream {
+fn impl_derive_safestring_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let gen_derive = quote! {
         #[automatically_derived]

@@ -79,3 +79,4 @@ for name, domain_list in domain_lists.items():
 # Write out the global domains JSON file.
 with open(file=OUTPUT_FILE, mode='w', encoding='utf-8') as f:
     json.dump(global_domains, f, indent=2)
+    f.write("\n")

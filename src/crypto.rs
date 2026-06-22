@@ -113,3 +113,10 @@ pub fn ct_eq<T: AsRef<[u8]>, U: AsRef<[u8]>>(a: T, b: U) -> bool {
     use subtle::ConstantTimeEq;
     a.as_ref().ct_eq(b.as_ref()).into()
 }
+
+//
+// SHA256
+//
+pub fn sha256_hex(data: &[u8]) -> String {
+    HEXLOWER.encode(digest::digest(&digest::SHA256, data).as_ref())
+}

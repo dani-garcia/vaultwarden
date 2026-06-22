@@ -2,39 +2,40 @@ use std::{env, sync::LazyLock};
 
 use reqwest::Method;
 use rocket::{
+    Catcher, Route,
     form::Form,
     http::{Cookie, CookieJar, MediaType, SameSite, Status},
     request::{FromRequest, Outcome, Request},
-    response::{content::RawHtml as Html, Redirect},
+    response::{Redirect, content::RawHtml as Html},
     serde::json::Json,
-    Catcher, Route,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::{
+    CONFIG, VERSION,
     api::{
+        ApiResult, EmptyResult, JsonResult, Notify,
         core::{log_event, two_factor},
-        unregister_push_device, ApiResult, EmptyResult, JsonResult, Notify,
+        unregister_push_device,
     },
-    auth::{decode_admin, encode_jwt, generate_admin_claims, ClientIp, Secure},
+    auth::{ClientIp, Secure, decode_admin, encode_jwt, generate_admin_claims},
     config::ConfigBuilder,
     db::{
-        backup_sqlite, get_sql_server_version,
+        ACTIVE_DB_TYPE, DbConn, DbConnType, backup_sqlite, get_sql_server_version,
         models::{
             Attachment, Cipher, Collection, Device, Event, EventType, Group, Invitation, Membership, MembershipId,
             MembershipType, OrgPolicy, Organization, OrganizationId, SsoUser, TwoFactor, User, UserId,
         },
-        DbConn, DbConnType, ACTIVE_DB_TYPE,
     },
     error::{Error, MapResult},
     http_client::make_http_request,
     mail,
+    sso::FAKE_SSO_IDENTIFIER,
     util::{
-        container_base_image, format_naive_datetime_local, get_active_web_release, get_display_size,
-        is_running_in_container, NumberOrString,
+        FeatureFlagFilter, NumberOrString, container_base_image, format_naive_datetime_local, get_active_web_release,
+        get_display_size, is_running_in_container, parse_experimental_client_feature_flags,
     },
-    CONFIG, VERSION,
 };
 
 pub fn routes() -> Vec<Route> {
@@ -92,8 +93,7 @@ static DB_TYPE: LazyLock<&str> = LazyLock::new(|| match ACTIVE_DB_TYPE.get() {
 });
 
 #[cfg(sqlite)]
-static CAN_BACKUP: LazyLock<bool> =
-    LazyLock::new(|| ACTIVE_DB_TYPE.get().map(|t| *t == DbConnType::Sqlite).unwrap_or(false));
+static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| ACTIVE_DB_TYPE.get().is_some_and(|t| *t == DbConnType::Sqlite));
 #[cfg(not(sqlite))]
 static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| false);
 
@@ -199,13 +199,7 @@ fn post_admin_login(
     }
 
     // If the token is invalid, redirect to login page
-    if !_validate_token(&data.token) {
-        error!("Invalid admin token. IP: {}", ip.ip);
-        Err(AdminResponse::Unauthorized(render_admin_login(
-            Some("Invalid admin token, please try again."),
-            redirect.as_deref(),
-        )))
-    } else {
+    if validate_token(&data.token) {
         // If the token received is valid, generate JWT and save it as a cookie
         let claims = generate_admin_claims();
         let jwt = encode_jwt(&claims);
@@ -223,10 +217,16 @@ fn post_admin_login(
         } else {
             Err(AdminResponse::Ok(render_admin_page()))
         }
+    } else {
+        error!("Invalid admin token. IP: {}", ip.ip);
+        Err(AdminResponse::Unauthorized(render_admin_login(
+            Some("Invalid admin token, please try again."),
+            redirect.as_deref(),
+        )))
     }
 }
 
-fn _validate_token(token: &str) -> bool {
+fn validate_token(token: &str) -> bool {
     match CONFIG.admin_token().as_ref() {
         None => false,
         Some(t) if t.starts_with("$argon2") => {
@@ -306,17 +306,14 @@ async fn get_user_or_404(user_id: &UserId, conn: &DbConn) -> ApiResult<User> {
 
 #[post("/invite", format = "application/json", data = "<data>")]
 async fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -> JsonResult {
-    let data: InviteData = data.into_inner();
-    if User::find_by_mail(&data.email, &conn).await.is_some() {
-        err_code!("User already exists", Status::Conflict.code)
-    }
-
-    let mut user = User::new(&data.email, None);
-
-    async fn _generate_invite(user: &User, conn: &DbConn) -> EmptyResult {
+    async fn generate_invite(user: &User, conn: &DbConn) -> EmptyResult {
         if CONFIG.mail_enabled() {
-            let org_id: OrganizationId = FAKE_ADMIN_UUID.to_string().into();
-            let member_id: MembershipId = FAKE_ADMIN_UUID.to_string().into();
+            let org_id: OrganizationId = if CONFIG.sso_enabled() {
+                FAKE_SSO_IDENTIFIER.into()
+            } else {
+                FAKE_ADMIN_UUID.into()
+            };
+            let member_id: MembershipId = FAKE_ADMIN_UUID.to_owned().into();
             mail::send_invite(user, org_id, member_id, &CONFIG.invitation_org_name(), None).await
         } else {
             let invitation = Invitation::new(&user.email);
@@ -324,7 +321,14 @@ async fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -
         }
     }
 
-    _generate_invite(&user, &conn).await.map_err(|e| e.with_code(Status::InternalServerError.code))?;
+    let data: InviteData = data.into_inner();
+    if User::find_by_mail(&data.email, &conn).await.is_some() {
+        err_code!("User already exists", Status::Conflict.code)
+    }
+
+    let mut user = User::new(&data.email, None);
+
+    generate_invite(&user, &conn).await.map_err(|e| e.with_code(Status::InternalServerError.code))?;
     user.save(&conn).await.map_err(|e| e.with_code(Status::InternalServerError.code))?;
 
     Ok(Json(user.to_json(&conn).await))
@@ -381,7 +385,7 @@ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<Stri
             None => json!("Never"),
         };
 
-        usr["sso_identifier"] = json!(sso_u.map(|u| u.identifier.to_string()).unwrap_or(String::new()));
+        usr["sso_identifier"] = json!(sso_u.map_or(String::new(), |u| u.identifier.to_string()));
 
         users_json.push(usr);
     }
@@ -464,15 +468,15 @@ async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Noti
 
     if CONFIG.push_enabled() {
         for device in Device::find_push_devices_by_user(&user.uuid, &conn).await {
-            match unregister_push_device(&device.push_uuid).await {
+            match unregister_push_device(device.push_uuid.as_ref()).await {
                 Ok(r) => r,
                 Err(e) => error!("Unable to unregister devices from Bitwarden server: {e}"),
-            };
+            }
         }
     }
 
     Device::delete_all_by_user(&user.uuid, &conn).await?;
-    user.reset_security_stamp();
+    user.reset_security_stamp(&conn).await?;
 
     user.save(&conn).await
 }
@@ -480,13 +484,14 @@ async fn deauth_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Noti
 #[post("/users/<user_id>/disable", format = "application/json")]
 async fn disable_user(user_id: UserId, _token: AdminToken, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &conn).await?;
-    Device::delete_all_by_user(&user.uuid, &conn).await?;
-    user.reset_security_stamp();
+    user.reset_security_stamp(&conn).await?;
     user.enabled = false;
 
     let save_result = user.save(&conn).await;
 
     nt.send_logout(&user, None, &conn).await;
+
+    Device::delete_all_by_user(&user.uuid, &conn).await?;
 
     save_result
 }
@@ -517,8 +522,12 @@ async fn resend_user_invite(user_id: UserId, _token: AdminToken, conn: DbConn) -
         }
 
         if CONFIG.mail_enabled() {
-            let org_id: OrganizationId = FAKE_ADMIN_UUID.to_string().into();
-            let member_id: MembershipId = FAKE_ADMIN_UUID.to_string().into();
+            let org_id: OrganizationId = if CONFIG.sso_enabled() {
+                FAKE_SSO_IDENTIFIER.into()
+            } else {
+                FAKE_ADMIN_UUID.into()
+            };
+            let member_id: MembershipId = FAKE_ADMIN_UUID.to_owned().into();
             mail::send_invite(&user, org_id, member_id, &CONFIG.invitation_org_name(), None).await
         } else {
             Ok(())
@@ -544,9 +553,10 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
         err!("The specified user isn't member of the organization")
     };
 
-    let new_type = match MembershipType::from_str(&data.user_type.into_string()) {
-        Some(new_type) => new_type as i32,
-        None => err!("Invalid type"),
+    let new_type = if let Some(new_type) = MembershipType::from_str(&data.user_type.into_string()) {
+        new_type as i32
+    } else {
+        err!("Invalid type")
     };
 
     if member_to_edit.atype == MembershipType::Owner && new_type != MembershipType::Owner {
@@ -633,12 +643,11 @@ async fn has_http_access() -> bool {
     }
 }
 
-use cached::proc_macro::cached;
+use cached::macros::cached;
 /// Cache this function to prevent API call rate limit. Github only allows 60 requests per hour, and we use 3 here already
 /// It will cache this function for 600 seconds (10 minutes) which should prevent the exhaustion of the rate limit
 /// Any cache will be lost if Vaultwarden is restarted
-use std::time::Duration; // Needed for cached
-#[cached(time = 600, sync_writes = "default")]
+#[cached(ttl = 600, sync_writes = "default")]
 async fn get_release_info(has_http_access: bool) -> (String, String, String) {
     // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
     if has_http_access {
@@ -647,42 +656,40 @@ async fn get_release_info(has_http_access: bool) -> (String, String, String) {
                 .await
             {
                 Ok(r) => r.tag_name,
-                _ => "-".to_string(),
+                _ => "-".to_owned(),
             },
             match get_json_api::<GitCommit>("https://api.github.com/repos/dani-garcia/vaultwarden/commits/main").await {
                 Ok(mut c) => {
                     c.sha.truncate(8);
                     c.sha
                 }
-                _ => "-".to_string(),
+                _ => "-".to_owned(),
             },
             // Do not fetch the web-vault version when running within a container
             // The web-vault version is embedded within the container it self, and should not be updated manually
             match get_json_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest")
                 .await
             {
-                Ok(r) => r.tag_name.trim_start_matches('v').to_string(),
-                _ => "-".to_string(),
+                Ok(r) => r.tag_name.trim_start_matches('v').to_owned(),
+                _ => "-".to_owned(),
             },
         )
     } else {
-        ("-".to_string(), "-".to_string(), "-".to_string())
+        ("-".to_owned(), "-".to_owned(), "-".to_owned())
     }
 }
 
 async fn get_ntp_time(has_http_access: bool) -> String {
-    if has_http_access {
-        if let Ok(cf_trace) = get_text_api("https://cloudflare.com/cdn-cgi/trace").await {
-            for line in cf_trace.lines() {
-                if let Some((key, value)) = line.split_once('=') {
-                    if key == "ts" {
-                        let ts = value.split_once('.').map_or(value, |(s, _)| s);
-                        if let Ok(dt) = chrono::DateTime::parse_from_str(ts, "%s") {
-                            return dt.format("%Y-%m-%d %H:%M:%S UTC").to_string();
-                        }
-                        break;
-                    }
+    if has_http_access && let Ok(cf_trace) = get_text_api("https://cloudflare.com/cdn-cgi/trace").await {
+        for line in cf_trace.lines() {
+            if let Some((key, value)) = line.split_once('=')
+                && key == "ts"
+            {
+                let ts = value.split_once('.').map_or(value, |(s, _)| s);
+                if let Ok(dt) = chrono::DateTime::parse_from_str(ts, "%s") {
+                    return dt.format("%Y-%m-%d %H:%M:%S UTC").to_string();
                 }
+                break;
             }
         }
     }
@@ -725,7 +732,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
     // Check if we are able to resolve DNS entries
     let dns_resolved = match ("github.com", 0).to_socket_addrs().map(|mut i| i.next()) {
         Ok(Some(a)) => a.ip().to_string(),
-        _ => "Unable to resolve domain name.".to_string(),
+        _ => "Unable to resolve domain name.".to_owned(),
     };
 
     let (latest_vw_release, latest_vw_commit, latest_web_release) = get_release_info(has_http_access).await;
@@ -733,6 +740,13 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
     let web_vault_compare = web_vault_compare(&active_web_release, &latest_web_release);
 
     let ip_header_name = &ip_header.0.unwrap_or_default();
+
+    let invalid_feature_flags: Vec<String> = parse_experimental_client_feature_flags(
+        &CONFIG.experimental_client_feature_flags(),
+        &FeatureFlagFilter::InvalidOnly,
+    )
+    .into_keys()
+    .collect();
 
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
@@ -756,6 +770,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
         "db_version": get_sql_server_version(&conn).await,
         "admin_url": format!("{}/diagnostics", admin_url()),
         "overrides": &CONFIG.get_overrides().join(", "),
+        "invalid_feature_flags": invalid_feature_flags,
         "host_arch": env::consts::ARCH,
         "host_os":  env::consts::OS,
         "tz_env": env::var("TZ").unwrap_or_default(),
@@ -817,33 +832,30 @@ impl<'r> FromRequest<'r> for AdminToken {
     type Error = &'static str;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let ip = match ClientIp::from_request(request).await {
-            Outcome::Success(ip) => ip,
-            _ => err_handler!("Error getting Client IP"),
+        let Outcome::Success(ip) = ClientIp::from_request(request).await else {
+            err_handler!("Error getting Client IP")
         };
 
         if !CONFIG.disable_admin_token() {
             let cookies = request.cookies();
 
-            let access_token = match cookies.get(COOKIE_NAME) {
-                Some(cookie) => cookie.value(),
-                None => {
-                    let requested_page =
-                        request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
-                    // When the requested page is empty, it is `/admin`, in that case, Forward, so it will render the login page
-                    // Else, return a 401 failure, which will be caught
-                    if requested_page.is_empty() {
-                        return Outcome::Forward(Status::Unauthorized);
-                    } else {
-                        return Outcome::Error((Status::Unauthorized, "Unauthorized"));
-                    }
+            let access_token = if let Some(cookie) = cookies.get(COOKIE_NAME) {
+                cookie.value()
+            } else {
+                let requested_page =
+                    request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
+                // When the requested page is empty, it is `/admin`, in that case, Forward, so it will render the login page
+                // Else, return a 401 failure, which will be caught
+                if requested_page.is_empty() {
+                    return Outcome::Forward(Status::Unauthorized);
                 }
+                return Outcome::Error((Status::Unauthorized, "Unauthorized"));
             };
 
             if decode_admin(access_token).is_err() {
                 // Remove admin cookie
                 cookies.remove(Cookie::build(COOKIE_NAME).path(admin_path()));
-                error!("Invalid or expired admin JWT. IP: {}.", &ip.ip);
+                error!("Invalid or expired admin JWT. IP: {}.", ip.ip);
                 return Outcome::Error((Status::Unauthorized, "Session expired"));
             }
         }

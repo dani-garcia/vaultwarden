@@ -1,17 +1,19 @@
 use chrono::{NaiveDateTime, Utc};
-
-use data_encoding::{BASE64, BASE64URL};
+use data_encoding::BASE64URL;
 use derive_more::{Display, From};
+use diesel::prelude::*;
 use serde_json::Value;
 
-use super::{AuthRequest, UserId};
-use crate::db::schema::devices;
 use crate::{
+    api::EmptyResult,
     crypto,
+    db::{DbConn, schema::devices},
+    error::MapResult,
     util::{format_date, get_uuid},
 };
-use diesel::prelude::*;
 use macros::{IdFromParam, UuidFromParam};
+
+use super::{AuthRequest, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = devices)]
@@ -25,7 +27,7 @@ pub struct Device {
     pub user_uuid: UserId,
 
     pub name: String,
-    pub atype: i32, // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/Enums/DeviceType.cs
+    pub atype: i32, // https://github.com/bitwarden/server/blob/8d547dcc280babab70dd4a3c94ced6a34b12dfbf/src/Core/Enums/DeviceType.cs
     pub push_uuid: Option<PushId>,
     pub push_token: Option<String>,
 
@@ -49,9 +51,14 @@ impl Device {
 
             push_uuid: Some(PushId(get_uuid())),
             push_token: None,
-            refresh_token: crypto::encode_random_bytes::<64>(&BASE64URL),
+            refresh_token: Device::generate_refresh_token(),
             twofactor_remember: None,
         }
+    }
+
+    #[inline(always)]
+    pub fn generate_refresh_token() -> String {
+        crypto::encode_random_bytes::<64>(&BASE64URL)
     }
 
     pub fn to_json(&self) -> Value {
@@ -67,10 +74,13 @@ impl Device {
     }
 
     pub fn refresh_twofactor_remember(&mut self) -> String {
-        let twofactor_remember = crypto::encode_random_bytes::<180>(&BASE64);
-        self.twofactor_remember = Some(twofactor_remember.clone());
+        use crate::auth::{encode_jwt, generate_2fa_remember_claims};
 
-        twofactor_remember
+        let two_factor_remember_claim = generate_2fa_remember_claims(self.uuid.clone(), self.user_uuid.clone());
+        let two_factor_remember_string = encode_jwt(&two_factor_remember_claim);
+        self.twofactor_remember = Some(two_factor_remember_string.clone());
+
+        two_factor_remember_string
     }
 
     pub fn delete_twofactor_remember(&mut self) {
@@ -127,10 +137,6 @@ impl DeviceWithAuthRequest {
         }
     }
 }
-use crate::db::DbConn;
-
-use crate::api::EmptyResult;
-use crate::error::MapResult;
 
 /// Database methods
 impl Device {
@@ -163,21 +169,23 @@ impl Device {
     }
 
     pub async fn delete_all_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::delete(devices::table.filter(devices::user_uuid.eq(user_uuid)))
                 .execute(conn)
                 .map_res("Error removing devices for user")
-        }}
+        })
+        .await
     }
 
     pub async fn find_by_uuid_and_user(uuid: &DeviceId, user_uuid: &UserId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             devices::table
                 .filter(devices::uuid.eq(uuid))
                 .filter(devices::user_uuid.eq(user_uuid))
                 .first::<Self>(conn)
                 .ok()
-        }}
+        })
+        .await
     }
 
     pub async fn find_with_auth_request_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<DeviceWithAuthRequest> {
@@ -191,71 +199,76 @@ impl Device {
     }
 
     pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::user_uuid.eq(user_uuid))
-                .load::<Self>(conn)
-                .expect("Error loading devices")
-        }}
+        conn.run(move |conn| {
+            devices::table.filter(devices::user_uuid.eq(user_uuid)).load::<Self>(conn).expect("Error loading devices")
+        })
+        .await
     }
 
     pub async fn find_by_uuid(uuid: &DeviceId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::uuid.eq(uuid))
-                .first::<Self>(conn)
-                .ok()
-        }}
+        conn.run(move |conn| devices::table.filter(devices::uuid.eq(uuid)).first::<Self>(conn).ok()).await
     }
 
     pub async fn clear_push_token_by_uuid(uuid: &DeviceId, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::update(devices::table)
                 .filter(devices::uuid.eq(uuid))
                 .set(devices::push_token.eq::<Option<String>>(None))
                 .execute(conn)
                 .map_res("Error removing push token")
-        }}
+        })
+        .await
     }
     pub async fn find_by_refresh_token(refresh_token: &str, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
-            devices::table
-                .filter(devices::refresh_token.eq(refresh_token))
-                .first::<Self>(conn)
-                .ok()
-        }}
+        conn.run(move |conn| devices::table.filter(devices::refresh_token.eq(refresh_token)).first::<Self>(conn).ok())
+            .await
     }
 
     pub async fn find_latest_active_by_user(user_uuid: &UserId, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
                 .order(devices::updated_at.desc())
                 .first::<Self>(conn)
                 .ok()
-        }}
+        })
+        .await
     }
 
     pub async fn find_push_devices_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             devices::table
                 .filter(devices::user_uuid.eq(user_uuid))
                 .filter(devices::push_token.is_not_null())
                 .load::<Self>(conn)
                 .expect("Error loading push devices")
-        }}
+        })
+        .await
     }
 
     pub async fn check_user_has_push_device(user_uuid: &UserId, conn: &DbConn) -> bool {
-        db_run! { conn: {
+        conn.run(move |conn| {
             devices::table
-            .filter(devices::user_uuid.eq(user_uuid))
-            .filter(devices::push_token.is_not_null())
-            .count()
-            .first::<i64>(conn)
-            .ok()
-            .unwrap_or(0) != 0
-        }}
+                .filter(devices::user_uuid.eq(user_uuid))
+                .filter(devices::push_token.is_not_null())
+                .count()
+                .first::<i64>(conn)
+                .ok()
+                .unwrap_or(0)
+                != 0
+        })
+        .await
+    }
+
+    pub async fn rotate_refresh_tokens_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+        // Generate a new token per device.
+        // We cannot do a single UPDATE with one value because each device needs a unique token.
+        let devices = Self::find_by_user(user_uuid, conn).await;
+        for mut device in devices {
+            device.refresh_token = Device::generate_refresh_token();
+            device.save(false, conn).await?;
+        }
+        Ok(())
     }
 }
 
@@ -313,9 +326,12 @@ pub enum DeviceType {
     MacOsCLI = 24,
     #[display("Linux CLI")]
     LinuxCLI = 25,
+    #[display("DuckDuckGo")]
+    DuckDuckGoBrowser = 26,
 }
 
 impl DeviceType {
+    #[expect(clippy::match_same_arms, reason = "Specifically define 14 and have a fallback for new types")]
     pub fn from_i32(value: i32) -> DeviceType {
         match value {
             0 => DeviceType::Android,
@@ -344,6 +360,7 @@ impl DeviceType {
             23 => DeviceType::WindowsCLI,
             24 => DeviceType::MacOsCLI,
             25 => DeviceType::LinuxCLI,
+            26 => DeviceType::DuckDuckGoBrowser,
             _ => DeviceType::UnknownBrowser,
         }
     }

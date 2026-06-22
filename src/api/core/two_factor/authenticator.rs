@@ -1,14 +1,13 @@
 use data_encoding::BASE32;
-use rocket::serde::json::Json;
-use rocket::Route;
+use rocket::{Route, serde::json::Json};
 
 use crate::{
-    api::{core::log_user_event, core::two_factor::_generate_recover_code, EmptyResult, JsonResult, PasswordOrOtpData},
+    api::{EmptyResult, JsonResult, PasswordOrOtpData, core::log_user_event, core::two_factor::generate_recover_code},
     auth::{ClientIp, Headers},
     crypto,
     db::{
-        models::{EventType, TwoFactor, TwoFactorType, UserId},
         DbConn,
+        models::{EventType, TwoFactor, TwoFactorType, UserId},
     },
     util::NumberOrString,
 };
@@ -70,9 +69,10 @@ async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: He
     .await?;
 
     // Validate key as base32 and 20 bytes length
-    let decoded_key: Vec<u8> = match BASE32.decode(key.as_bytes()) {
-        Ok(decoded) => decoded,
-        _ => err!("Invalid totp secret"),
+    let decoded_key: Vec<u8> = if let Ok(decoded) = BASE32.decode(key.as_bytes()) {
+        decoded
+    } else {
+        err!("Invalid totp secret")
     };
 
     if decoded_key.len() != 20 {
@@ -82,7 +82,7 @@ async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: He
     // Validate the token provided with the key, and save new twofactor
     validate_totp_code(&user.uuid, &token, &key.to_uppercase(), &headers.ip, &conn).await?;
 
-    _generate_recover_code(&mut user, &conn).await;
+    generate_recover_code(&mut user, &conn).await;
 
     log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
@@ -119,7 +119,7 @@ pub async fn validate_totp_code(
     ip: &ClientIp,
     conn: &DbConn,
 ) -> EmptyResult {
-    use totp_lite::{totp_custom, Sha1};
+    use totp_lite::{Sha1, totp_custom};
 
     let Ok(decoded_secret) = BASE32.decode(secret.as_bytes()) else {
         err!("Invalid TOTP secret")
@@ -128,7 +128,7 @@ pub async fn validate_totp_code(
     let mut twofactor = match TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Authenticator as i32, conn).await
     {
         Some(tf) => tf,
-        _ => TwoFactor::new(user_id.clone(), TwoFactorType::Authenticator, secret.to_string()),
+        _ => TwoFactor::new(user_id.clone(), TwoFactorType::Authenticator, secret.to_owned()),
     };
 
     // The amount of steps back and forward in time
@@ -145,7 +145,7 @@ pub async fn validate_totp_code(
 
         // We need to calculate the time offsite and cast it as an u64.
         // Since we only have times into the future and the totp generator needs an u64 instead of the default i64.
-        let time = (current_timestamp + step * 30i64) as u64;
+        let time: u64 = (current_timestamp + step * 30i64).cast_unsigned();
         let generated = totp_custom::<Sha1>(30, 6, &decoded_secret, time);
 
         // Check the given code equals the generated and if the time_step is larger then the one last used.

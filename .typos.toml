@@ -23,4 +23,6 @@ extend-ignore-re = [
     # https://github.com/bitwarden/server/blob/dff9f1cf538198819911cf2c20f8cda3307701c5/src/Notifications/HubHelpers.cs#L86
     # https://github.com/bitwarden/clients/blob/9612a4ac45063e372a6fbe87eb253c7cb3c588fb/libs/common/src/auth/services/anonymous-hub.service.ts#L45
     "AuthRequestResponseRecieved",
+    # Ignore Punycode/IDN tests
+    "xn--.+"
 ]

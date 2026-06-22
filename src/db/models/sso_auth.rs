@@ -1,31 +1,29 @@
-use chrono::{NaiveDateTime, Utc};
 use std::time::Duration;
 
-use crate::api::EmptyResult;
-use crate::db::schema::sso_auth;
-use crate::db::{DbConn, DbPool};
-use crate::error::MapResult;
-use crate::sso::{OIDCCode, OIDCCodeChallenge, OIDCIdentifier, OIDCState, SSO_AUTH_EXPIRATION};
+use chrono::{NaiveDateTime, Utc};
+use diesel::{
+    deserialize::FromSql,
+    expression::AsExpression,
+    prelude::*,
+    serialize::{Output, ToSql},
+    sql_types::Text,
+};
 
-use diesel::deserialize::FromSql;
-use diesel::expression::AsExpression;
-use diesel::prelude::*;
-use diesel::serialize::{Output, ToSql};
-use diesel::sql_types::Text;
+use crate::{
+    api::EmptyResult,
+    db::{DbConn, DbPool, schema::sso_auth},
+    error::MapResult,
+    sso::{OIDCCode, OIDCCodeChallenge, OIDCIdentifier, OIDCState, SSO_AUTH_EXPIRATION},
+};
 
 #[derive(AsExpression, Clone, Debug, Serialize, Deserialize, FromSqlRow)]
 #[diesel(sql_type = Text)]
-pub enum OIDCCodeWrapper {
-    Ok {
-        code: OIDCCode,
-    },
-    Error {
-        error: String,
-        error_description: Option<String>,
-    },
+pub struct OIDCCodeResponseError {
+    pub error: String,
+    pub error_description: Option<String>,
 }
 
-impl_FromToSqlText!(OIDCCodeWrapper);
+impl_FromToSqlText!(OIDCCodeResponseError);
 
 #[derive(AsExpression, Clone, Debug, Serialize, Deserialize, FromSqlRow)]
 #[diesel(sql_type = Text)]
@@ -50,15 +48,23 @@ pub struct SsoAuth {
     pub client_challenge: OIDCCodeChallenge,
     pub nonce: String,
     pub redirect_uri: String,
-    pub code_response: Option<OIDCCodeWrapper>,
+    pub code_response: Option<OIDCCode>,
+    pub code_response_error: Option<OIDCCodeResponseError>,
     pub auth_response: Option<OIDCAuthenticatedUser>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub binding_hash: Option<String>,
 }
 
 /// Local methods
 impl SsoAuth {
-    pub fn new(state: OIDCState, client_challenge: OIDCCodeChallenge, nonce: String, redirect_uri: String) -> Self {
+    pub fn new(
+        state: OIDCState,
+        client_challenge: OIDCCodeChallenge,
+        nonce: String,
+        redirect_uri: String,
+        binding_hash: Option<String>,
+    ) -> Self {
         let now = Utc::now().naive_utc();
 
         SsoAuth {
@@ -69,7 +75,9 @@ impl SsoAuth {
             created_at: now,
             updated_at: now,
             code_response: None,
+            code_response_error: None,
             auth_response: None,
+            binding_hash,
         }
     }
 }
@@ -101,9 +109,21 @@ impl SsoAuth {
 
     pub async fn find(state: &OIDCState, conn: &DbConn) -> Option<Self> {
         let oldest = Utc::now().naive_utc() - *SSO_AUTH_EXPIRATION;
-        db_run! { conn: {
+        conn.run(move |conn| {
             sso_auth::table
                 .filter(sso_auth::state.eq(state))
+                .filter(sso_auth::created_at.ge(oldest))
+                .first::<Self>(conn)
+                .ok()
+        })
+        .await
+    }
+
+    pub async fn find_by_code(code: &OIDCCode, conn: &DbConn) -> Option<Self> {
+        let oldest = Utc::now().naive_utc() - *SSO_AUTH_EXPIRATION;
+        db_run! { conn: {
+            sso_auth::table
+                .filter(sso_auth::code_response.eq(code))
                 .filter(sso_auth::created_at.ge(oldest))
                 .first::<Self>(conn)
                 .ok()
@@ -111,22 +131,24 @@ impl SsoAuth {
     }
 
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
-        db_run! {conn: {
+        conn.run(move |conn| {
             diesel::delete(sso_auth::table.filter(sso_auth::state.eq(self.state)))
                 .execute(conn)
                 .map_res("Error deleting sso_auth")
-        }}
+        })
+        .await
     }
 
     pub async fn delete_expired(pool: DbPool) -> EmptyResult {
         debug!("Purging expired sso_auth");
         if let Ok(conn) = pool.get().await {
             let oldest = Utc::now().naive_utc() - *SSO_AUTH_EXPIRATION;
-            db_run! { conn: {
+            conn.run(move |conn| {
                 diesel::delete(sso_auth::table.filter(sso_auth::created_at.lt(oldest)))
                     .execute(conn)
                     .map_res("Error deleting expired SSO nonce")
-            }}
+            })
+            .await
         } else {
             err!("Failed to get DB connection while purging expired sso_auth")
         }
