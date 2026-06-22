@@ -394,7 +394,6 @@ async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> 
             .await
             .into_iter()
             .next()
-            .clone()
             .ok_or(Error::new("Could not build user JSON", "").with_code(Status::InternalServerError.code))?;
         Ok(Json(user_json))
     } else {
@@ -410,7 +409,6 @@ async fn get_user_json(user_id: UserId, _token: AdminToken, conn: DbConn) -> Jso
         .await
         .into_iter()
         .next()
-        .clone()
         .ok_or(Error::new("Could not build user JSON", "").with_code(Status::InternalServerError.code))?;
 
     Ok(Json(user_json))
