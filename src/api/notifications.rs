@@ -488,12 +488,11 @@ impl WebSocketUsers {
         if *NOTIFICATIONS_DISABLED {
             return;
         }
-        let user_id = convert_option(send.user_uuid.as_deref());
 
         let data = create_update(
             vec![
                 ("Id".into(), send.uuid.to_string().into()),
-                ("UserId".into(), user_id),
+                ("UserId".into(), send.user_uuid.to_string().into()),
                 ("RevisionDate".into(), serialize_date(send.revision_date)),
             ],
             ut,
