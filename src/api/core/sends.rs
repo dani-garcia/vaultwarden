@@ -172,7 +172,7 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
         data.expiration_date.map(|d| d.naive_utc()),
         data.deletion_date.naive_utc(),
         data.disabled,
-        data.hide_email,
+        data.hide_email.unwrap_or(false),
     );
 
     send.set_password(data.password.as_deref());
@@ -658,7 +658,7 @@ pub async fn update_send_from_data(
     nt: &Notify<'_>,
     ut: UpdateType,
 ) -> EmptyResult {
-    if send.user_uuid.as_ref() != Some(&headers.user.uuid) {
+    if send.user_uuid != headers.user.uuid {
         err!("Send is not owned by user")
     }
 
@@ -693,7 +693,7 @@ pub async fn update_send_from_data(
         _ => None,
     };
     send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
-    send.hide_email = data.hide_email;
+    send.hide_email = data.hide_email.unwrap_or(false);
     send.disabled = data.disabled;
     send.emails = data.emails.map(|e| e.to_lowercase());
 

@@ -20,7 +20,7 @@ use crate::{
     util::{LowerCase, NumberOrString, format_date},
 };
 
-use super::{OrganizationId, User, UserId};
+use super::{User, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
 #[diesel(table_name = sends)]
@@ -29,8 +29,7 @@ use super::{OrganizationId, User, UserId};
 pub struct Send {
     pub uuid: SendId,
 
-    pub user_uuid: Option<UserId>,
-    pub organization_uuid: Option<OrganizationId>,
+    pub user_uuid: UserId,
 
     pub name: String,
     pub notes: Option<String>,
@@ -52,7 +51,7 @@ pub struct Send {
     pub deletion_date: NaiveDateTime,
 
     pub disabled: bool,
-    pub hide_email: Option<bool>,
+    pub hide_email: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, num_derive::FromPrimitive)]
@@ -85,14 +84,13 @@ impl Send {
         expiration_date: Option<NaiveDateTime>,
         deletion_date: NaiveDateTime,
         disabled: bool,
-        hide_email: Option<bool>,
+        hide_email: bool,
     ) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
             uuid: SendId::from(crate::util::get_uuid()),
-            user_uuid: Some(user_uuid),
-            organization_uuid: None,
+            user_uuid,
             name,
             notes,
             atype,
@@ -142,19 +140,13 @@ impl Send {
     }
 
     pub async fn creator_identifier(&self, conn: &DbConn) -> Option<String> {
-        if let Some(hide_email) = self.hide_email
-            && hide_email
+        if !self.hide_email
+            && let Some(user) = User::find_by_uuid(&self.user_uuid, conn).await
         {
-            return None;
+            Some(user.email)
+        } else {
+            None
         }
-
-        if let Some(user_uuid) = &self.user_uuid
-            && let Some(user) = User::find_by_uuid(user_uuid, conn).await
-        {
-            return Some(user.email);
-        }
-
-        None
     }
 
     pub fn to_json(&self) -> Value {
@@ -181,7 +173,7 @@ impl Send {
             "password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
             "authType": if self.password_hash.is_some() { SendAuthType::Password } else if self.emails.is_some() { SendAuthType::Email } else { SendAuthType::None } as i32,
             "disabled": self.disabled,
-            "hideEmail": self.hide_email.unwrap_or(false),
+            "hideEmail": self.hide_email,
             "emails": self.emails,
 
             "revisionDate": format_date(&self.revision_date),
@@ -310,14 +302,8 @@ impl Send {
     }
 
     pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<UserId> {
-        let mut user_uuids = Vec::new();
-        if let Some(user_uuid) = &self.user_uuid {
-            User::update_uuid_revision(user_uuid, conn).await;
-            user_uuids.push(user_uuid.clone());
-        } else {
-            // Belongs to Organization, not implemented
-        }
-        user_uuids
+        User::update_uuid_revision(&self.user_uuid, conn).await;
+        vec![self.user_uuid.clone()]
     }
 
     pub async fn delete_all_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
@@ -377,13 +363,6 @@ impl Send {
         }
 
         Some(total)
-    }
-
-    pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
-        conn.run(move |conn| {
-            sends::table.filter(sends::organization_uuid.eq(org_uuid)).load::<Self>(conn).expect("Error loading sends")
-        })
-        .await
     }
 
     pub async fn find_by_past_deletion_date(conn: &DbConn) -> Vec<Self> {
