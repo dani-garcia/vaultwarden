@@ -109,6 +109,41 @@ services:
     ports:
       - 127.0.0.1:8000:80
 ```
+Afterwards run `docker compose up -d` from within the folder that contains the `compose.yaml`
+
+### Podman Quadlet
+
+If you are using Podman, you can use Quadlets to automatically generate systemd services for your containers. You will need to create a `vaultwarden.container` file.
+
+**Choose your setup:**
+* **Rootless (Recommended):** Place the file in `~/.config/containers/systemd/`
+* **Rooted (System-wide):** Place the file in `/etc/containers/systemd/`
+
+Create the file with the following configuration:
+
+```ini
+[Unit]
+Description=Vaultwarden Server
+After=network-online.target
+
+[Container]
+Image=docker.io/vaultwarden/server:latest
+ContainerName=vaultwarden
+Environment=DOMAIN="https://vw.domain.tld"
+# %h resolves to the user's home directory in rootless mode
+Volume=%h/vw-data:/data:Z,U
+PublishPort=127.0.0.1:8000:80
+
+[Install]
+WantedBy=default.target
+```
+
+Once the file is saved, reload systemd to generate the service, and start it. The following commands are for the **recommended rootless** setup:
+
+```shell
+systemctl --user daemon-reload
+systemctl --user start vaultwarden
+```
 
 <br>
 
