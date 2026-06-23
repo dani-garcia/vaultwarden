@@ -1,7 +1,7 @@
 use rocket::{http::Status, serde::json::Json};
 use serde_json::Value;
 use webauthn_rs::prelude::{Passkey, PasskeyRegistration};
-use webauthn_rs_proto::UserVerificationPolicy;
+use webauthn_rs_proto::{COSEAlgorithm, UserVerificationPolicy, options::PubKeyCredParams};
 
 use crate::{
     api::{
@@ -70,8 +70,7 @@ async fn post_webauthn_attestation_options(
     let (mut challenge, state) =
         WEBAUTHN.start_passkey_registration(user_uuid, &user.email, user.display_name(), Some(existing_cred_ids))?;
 
-    // For passkey login, we need discoverable credentials (resident keys)
-    // and require user verification.
+    // For passkey login, we need discoverable credentials (resident keys).
     // start_passkey_registration() defaults to require_resident_key=false, but passkey login
     // requires the credential to be discoverable (resident) so the authenticator can find it
     // without the server providing allowCredentials.
@@ -80,6 +79,59 @@ async fn post_webauthn_attestation_options(
         asc.require_resident_key = true;
         asc.resident_key = Some(webauthn_rs_proto::ResidentKeyRequirement::Required);
     }
+
+    // Safely clear the extensions field to match Bitwarden behavior
+    if let Some(exts) = challenge.public_key.extensions.as_mut() {
+        exts.cred_props = None;
+        exts.uvm = None;
+        exts.cred_protect = None;
+        exts.hmac_create_secret = None;
+        exts.min_pin_length = None;
+    }
+
+    // Set algorithms list to {ES,RS,PS}{256,384,512},EDDSA to match Bitwarden behavior
+    challenge.public_key.pub_key_cred_params = vec![
+        PubKeyCredParams {
+            alg: COSEAlgorithm::ES256 as i64,
+            type_: "public-key".to_string(),
+        },
+        PubKeyCredParams {
+            alg: COSEAlgorithm::ES384 as i64,
+            type_: "public-key".to_string(),
+        },
+        PubKeyCredParams {
+            alg: COSEAlgorithm::ES512 as i64,
+            type_: "public-key".to_string(),
+        },
+        PubKeyCredParams {
+            alg: COSEAlgorithm::RS256 as i64,
+            type_: "public-key".to_string(),
+        },
+        PubKeyCredParams {
+            alg: COSEAlgorithm::RS384 as i64,
+            type_: "public-key".to_string(),
+        },
+        PubKeyCredParams {
+            alg: COSEAlgorithm::RS512 as i64,
+            type_: "public-key".to_string(),
+        },
+        PubKeyCredParams {
+            alg: COSEAlgorithm::PS256 as i64,
+            type_: "public-key".to_string(),
+        },
+        PubKeyCredParams {
+            alg: COSEAlgorithm::PS384 as i64,
+            type_: "public-key".to_string(),
+        },
+        PubKeyCredParams {
+            alg: COSEAlgorithm::PS512 as i64,
+            type_: "public-key".to_string(),
+        },
+        PubKeyCredParams {
+            alg: COSEAlgorithm::EDDSA as i64,
+            type_: "public-key".to_string(),
+        },
+    ];
 
     // Persist the registration state in the database (same pattern as 2FA webauthn)
     TwoFactor::new(user.uuid, TwoFactorType::WebauthnPasskeyRegisterChallenge, serde_json::to_string(&state)?)
