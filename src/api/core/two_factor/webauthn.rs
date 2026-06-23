@@ -1,8 +1,6 @@
-use std::{str::FromStr, sync::LazyLock, time::Duration};
-
 use rocket::{Route, serde::json::Json};
 use serde_json::Value;
-use url::Url;
+use std::{str::FromStr, sync::LazyLock};
 use uuid::Uuid;
 use webauthn_rs::{
     Webauthn, WebauthnBuilder,
@@ -13,6 +11,20 @@ use webauthn_rs_proto::{
     PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs,
     RequestAuthenticationExtensions, UserVerificationPolicy,
 };
+
+pub static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
+    let domain = CONFIG.domain();
+    let domain_origin = CONFIG.domain_origin();
+    let rp_id = url::Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
+    let rp_origin = url::Url::parse(&domain_origin).unwrap();
+
+    let webauthn = WebauthnBuilder::new(&rp_id, &rp_origin)
+        .expect("Creating WebauthnBuilder failed")
+        .rp_name(&domain)
+        .timeout(tokio::time::Duration::from_mins(1));
+
+    webauthn.build().expect("Building Webauthn failed")
+});
 
 use crate::{
     CONFIG,
@@ -29,20 +41,6 @@ use crate::{
     error::Error,
     util::NumberOrString,
 };
-
-static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
-    let domain = CONFIG.domain();
-    let domain_origin = CONFIG.domain_origin();
-    let rp_id = Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
-    let rp_origin = Url::parse(&domain_origin).unwrap();
-
-    let webauthn = WebauthnBuilder::new(&rp_id, &rp_origin)
-        .expect("Creating WebauthnBuilder failed")
-        .rp_name(&domain)
-        .timeout(Duration::from_mins(1));
-
-    webauthn.build().expect("Building Webauthn failed")
-});
 
 pub fn routes() -> Vec<Route> {
     routes![get_webauthn, generate_webauthn_challenge, activate_webauthn, activate_webauthn_put, delete_webauthn,]
@@ -181,7 +179,7 @@ struct EnableWebauthnData {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RegisterPublicKeyCredentialCopy {
+pub struct RegisterPublicKeyCredentialCopy {
     pub id: String,
     pub raw_id: Base64UrlSafeData,
     pub response: AuthenticatorAttestationResponseRawCopy,

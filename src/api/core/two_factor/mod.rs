@@ -64,7 +64,8 @@ pub fn is_twofactor_provider_usable(provider_type: &TwoFactorType, provider_data
         | TwoFactorType::EmailVerificationChallenge
         | TwoFactorType::WebauthnRegisterChallenge
         | TwoFactorType::WebauthnLoginChallenge
-        | TwoFactorType::ProtectedActions => false,
+        | TwoFactorType::ProtectedActions
+        | TwoFactorType::WebauthnPasskeyRegisterChallenge => false,
     }
 }
 

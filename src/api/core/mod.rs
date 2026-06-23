@@ -8,6 +8,7 @@ mod folders;
 mod organizations;
 mod public;
 mod sends;
+mod webauthn;
 
 pub use accounts::purge_auth_requests;
 pub use ciphers::{CipherData, CipherSyncData, CipherSyncType, purge_trashed_ciphers};
@@ -35,7 +36,7 @@ use crate::{
 pub fn routes() -> Vec<Route> {
     let mut eq_domains_routes = routes![get_settings_domains, post_settings_domains, put_settings_domains];
     let mut hibp_routes = routes![hibp_breach];
-    let mut meta_routes = routes![alive, now, version, config, get_api_webauthn];
+    let mut meta_routes = routes![alive, now, version, config];
 
     let mut routes = Vec::new();
     routes.append(&mut accounts::routes());
@@ -47,6 +48,7 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut two_factor::routes());
     routes.append(&mut sends::routes());
     routes.append(&mut public::routes());
+    routes.append(&mut webauthn::routes());
     routes.append(&mut eq_domains_routes);
     routes.append(&mut hibp_routes);
     routes.append(&mut meta_routes);
@@ -193,18 +195,6 @@ pub fn now() -> Json<String> {
 #[get("/version")]
 fn version() -> Json<&'static str> {
     Json(crate::VERSION.unwrap_or_default())
-}
-
-#[get("/webauthn")]
-fn get_api_webauthn(_headers: Headers) -> Json<Value> {
-    // Prevent a 404 error, which also causes key-rotation issues
-    // It looks like this is used when login with passkeys is enabled, which Vaultwarden does not (yet) support
-    // An empty list/data also works fine
-    Json(json!({
-        "object": "list",
-        "data": [],
-        "continuationToken": null
-    }))
 }
 
 #[get("/config")]
