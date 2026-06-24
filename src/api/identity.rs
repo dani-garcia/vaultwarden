@@ -114,7 +114,7 @@ async fn login(
             sso_login(data, &mut user_id, &conn, &client_header.ip, client_version.as_ref()).await
         }
         "authorization_code" => err!("SSO sign-in is not available"),
-        "webauthn" => {
+        "webauthn" if CONFIG.passkey_login_allowed() => {
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
             check_is_some(data.scope.as_ref(), "scope cannot be blank")?;
 
@@ -127,6 +127,7 @@ async fn login(
 
             webauthn_login(data, &mut user_id, &conn, &client_header.ip).await
         }
+        "webauthn" => err!("Passkey login is not allowed"),
         t => err!("Invalid type", t),
     };
 
@@ -1490,6 +1491,10 @@ async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure,
 
 #[get("/accounts/webauthn/assertion-options")]
 fn get_webauthn_assertion_options() -> JsonResult {
+    if !CONFIG.passkey_login_allowed() {
+        err!("Passkey login is not allowed")
+    }
+
     let (mut response, state) = WEBAUTHN.start_passkey_authentication(&[])?;
 
     // Allow any credential (discoverable) and require user verification

@@ -4,6 +4,7 @@ use webauthn_rs::prelude::{Passkey, PasskeyRegistration};
 use webauthn_rs_proto::{COSEAlgorithm, UserVerificationPolicy, options::PubKeyCredParams};
 
 use crate::{
+    CONFIG,
     api::{
         ApiResult, JsonResult, PasswordOrOtpData,
         core::two_factor::webauthn::{RegisterPublicKeyCredentialCopy, WEBAUTHN},
@@ -20,7 +21,16 @@ pub fn routes() -> Vec<rocket::Route> {
 }
 
 #[get("/webauthn")]
-async fn get_webauthn(headers: Headers, conn: DbConn) -> Json<Value> {
+async fn get_webauthn(headers: Headers, conn: DbConn) -> JsonResult {
+    if !CONFIG.passkey_login_allowed() {
+        // The web vault will query this endpoint weather passkey login is allowed, so we should return an empty list instead of an error.
+        return Ok(Json(json!({
+            "object": "list",
+            "data": [],
+            "continuationToken": null
+        })))
+    }
+
     let user = headers.user;
 
     let data: Vec<WebauthnCredential> = WebauthnCredential::find_all_by_user(&user.uuid, &conn).await;
@@ -38,11 +48,11 @@ async fn get_webauthn(headers: Headers, conn: DbConn) -> Json<Value> {
         })
         .collect::<Value>();
 
-    Json(json!({
+    Ok(Json(json!({
         "object": "list",
         "data": data,
         "continuationToken": null
-    }))
+    })))
 }
 
 #[post("/webauthn/attestation-options", data = "<data>")]
@@ -51,6 +61,10 @@ async fn post_webauthn_attestation_options(
     headers: Headers,
     conn: DbConn,
 ) -> JsonResult {
+    if !CONFIG.passkey_login_allowed() {
+        err!("Passkey login is not allowed")
+    }
+
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
@@ -165,6 +179,10 @@ async fn post_webauthn(
     headers: Headers,
     conn: DbConn,
 ) -> ApiResult<Status> {
+    if !CONFIG.passkey_login_allowed() {
+        err!("Passkey login is not allowed")
+    }
+
     let data: WebAuthnLoginCredentialCreateRequest = data.into_inner();
     let user = headers.user;
 
@@ -201,6 +219,10 @@ async fn post_webauthn_delete(
     headers: Headers,
     conn: DbConn,
 ) -> ApiResult<Status> {
+    if !CONFIG.passkey_login_allowed() {
+        err!("Passkey login is not allowed")
+    }
+
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
