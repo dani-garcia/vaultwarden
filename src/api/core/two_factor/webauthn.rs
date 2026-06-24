@@ -1,3 +1,18 @@
+use crate::{
+    CONFIG,
+    api::{
+        EmptyResult, JsonResult, PasswordOrOtpData,
+        core::{log_user_event, two_factor::generate_recover_code},
+    },
+    auth::Headers,
+    crypto::ct_eq,
+    db::{
+        DbConn,
+        models::{EventType, TwoFactor, TwoFactorType, UserId},
+    },
+    error::Error,
+    util::NumberOrString,
+};
 use rocket::{Route, serde::json::Json};
 use serde_json::Value;
 use std::{str::FromStr, sync::LazyLock};
@@ -25,22 +40,6 @@ pub static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
 
     webauthn.build().expect("Building Webauthn failed")
 });
-
-use crate::{
-    CONFIG,
-    api::{
-        EmptyResult, JsonResult, PasswordOrOtpData,
-        core::{log_user_event, two_factor::generate_recover_code},
-    },
-    auth::Headers,
-    crypto::ct_eq,
-    db::{
-        DbConn,
-        models::{EventType, TwoFactor, TwoFactorType, UserId},
-    },
-    error::Error,
-    util::NumberOrString,
-};
 
 pub fn routes() -> Vec<Route> {
     routes![get_webauthn, generate_webauthn_challenge, activate_webauthn, activate_webauthn_put, delete_webauthn,]

@@ -23,12 +23,12 @@ pub fn routes() -> Vec<rocket::Route> {
 #[get("/webauthn")]
 async fn get_webauthn(headers: Headers, conn: DbConn) -> JsonResult {
     if !CONFIG.passkey_login_allowed() {
-        // The web vault will query this endpoint weather passkey login is allowed, so we should return an empty list instead of an error.
+        // The web vault will query this endpoint whether passkey login is allowed or not, so we should return an empty list instead of an error.
         return Ok(Json(json!({
             "object": "list",
             "data": [],
             "continuationToken": null
-        })))
+        })));
     }
 
     let user = headers.user;
