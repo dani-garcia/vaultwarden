@@ -581,12 +581,12 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
             raw_state.get_mut("ast").and_then(|v| v.get_mut("credentials")).and_then(|v| v.as_array_mut())
         {
             credentials.clear();
-            for (_, passkey) in user_webauthn_credentials.iter() {
+            for (_, passkey) in &user_webauthn_credentials {
                 let passkey_owned: Passkey = passkey.clone();
                 let cred = <webauthn_rs::prelude::Credential>::from(passkey_owned);
                 credentials.push(serde_json::to_value(&cred)?);
             }
-        };
+        }
         serde_json::from_value(raw_state)?
     } else {
         err!(

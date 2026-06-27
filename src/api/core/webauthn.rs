@@ -135,43 +135,43 @@ async fn post_webauthn_attestation_options(
     challenge.public_key.pub_key_cred_params = vec![
         PubKeyCredParams {
             alg: COSEAlgorithm::ES256 as i64,
-            type_: "public-key".to_string(),
+            type_: "public-key".to_owned(),
         },
         PubKeyCredParams {
             alg: COSEAlgorithm::ES384 as i64,
-            type_: "public-key".to_string(),
+            type_: "public-key".to_owned(),
         },
         PubKeyCredParams {
             alg: COSEAlgorithm::ES512 as i64,
-            type_: "public-key".to_string(),
+            type_: "public-key".to_owned(),
         },
         PubKeyCredParams {
             alg: COSEAlgorithm::RS256 as i64,
-            type_: "public-key".to_string(),
+            type_: "public-key".to_owned(),
         },
         PubKeyCredParams {
             alg: COSEAlgorithm::RS384 as i64,
-            type_: "public-key".to_string(),
+            type_: "public-key".to_owned(),
         },
         PubKeyCredParams {
             alg: COSEAlgorithm::RS512 as i64,
-            type_: "public-key".to_string(),
+            type_: "public-key".to_owned(),
         },
         PubKeyCredParams {
             alg: COSEAlgorithm::PS256 as i64,
-            type_: "public-key".to_string(),
+            type_: "public-key".to_owned(),
         },
         PubKeyCredParams {
             alg: COSEAlgorithm::PS384 as i64,
-            type_: "public-key".to_string(),
+            type_: "public-key".to_owned(),
         },
         PubKeyCredParams {
             alg: COSEAlgorithm::PS512 as i64,
-            type_: "public-key".to_string(),
+            type_: "public-key".to_owned(),
         },
         PubKeyCredParams {
             alg: COSEAlgorithm::EDDSA as i64,
-            type_: "public-key".to_string(),
+            type_: "public-key".to_owned(),
         },
     ];
 
@@ -216,13 +216,12 @@ async fn post_webauthn(
 
     // Retrieve and delete the saved challenge state from the database
     let type_ = TwoFactorType::WebauthnPasskeyRegisterChallenge as i32;
-    let credential = match TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
-        Some(tf) => {
-            let state: PasskeyRegistration = serde_json::from_str(&tf.data)?;
-            tf.delete(&conn).await?;
-            WEBAUTHN_PASSWORDLESS.finish_passkey_registration(&data.device_response.into(), &state)?
-        }
-        None => err!("No registration challenge found. Please try again."),
+    let credential = if let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
+        let state: PasskeyRegistration = serde_json::from_str(&tf.data)?;
+        tf.delete(&conn).await?;
+        WEBAUTHN_PASSWORDLESS.finish_passkey_registration(&data.device_response.into(), &state)?
+    } else {
+        err!("No registration challenge found. Please try again.")
     };
 
     WebauthnCredential::new(
@@ -256,7 +255,7 @@ async fn post_webauthn_delete(
 
     data.validate(&user, false, &conn).await?;
 
-    WebauthnCredential::delete_by_uuid_and_user(&WebauthnCredentialId::from(uuid.to_string()), &user.uuid, &conn)
+    WebauthnCredential::delete_by_uuid_and_user(&WebauthnCredentialId::from(uuid.to_owned()), &user.uuid, &conn)
         .await?;
 
     Ok(Status::Ok)
