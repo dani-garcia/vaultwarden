@@ -15,6 +15,7 @@ pub use ciphers::{CipherData, CipherSyncData, CipherSyncType, purge_trashed_ciph
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use events::{event_cleanup_job, log_event, log_user_event};
 pub use sends::purge_sends;
+pub use webauthn::WEBAUTHN_PASSWORDLESS;
 
 use reqwest::Method;
 use rocket::{Catcher, Route, serde::json::Json, serde::json::Value};

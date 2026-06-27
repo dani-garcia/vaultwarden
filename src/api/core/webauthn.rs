@@ -1,20 +1,44 @@
+use std::sync::LazyLock;
+
 use rocket::{http::Status, serde::json::Json};
 use serde_json::Value;
-use webauthn_rs::prelude::{Passkey, PasskeyRegistration};
+use webauthn_rs::{
+    Webauthn, WebauthnBuilder,
+    prelude::{Passkey, PasskeyRegistration},
+};
 use webauthn_rs_proto::{COSEAlgorithm, UserVerificationPolicy, options::PubKeyCredParams};
 
 use crate::{
     CONFIG,
-    api::{
-        ApiResult, JsonResult, PasswordOrOtpData,
-        core::two_factor::webauthn::{RegisterPublicKeyCredentialCopy, WEBAUTHN},
-    },
+    api::{ApiResult, JsonResult, PasswordOrOtpData, core::two_factor::webauthn::RegisterPublicKeyCredentialCopy},
     auth::Headers,
     db::{
         DbConn,
         models::{TwoFactor, TwoFactorType, WebauthnCredential, WebauthnCredentialId},
     },
 };
+
+pub static WEBAUTHN_PASSWORDLESS: LazyLock<Webauthn> = LazyLock::new(|| {
+    let domain = CONFIG.domain();
+    let domain_origin = CONFIG.domain_origin();
+    let rp_id = url::Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
+    let rp_origin = url::Url::parse(&domain_origin).unwrap();
+
+    let mut webauthn = WebauthnBuilder::new(&rp_id, &rp_origin)
+        .expect("Creating WebauthnBuilder failed")
+        .rp_name(&domain)
+        .timeout(tokio::time::Duration::from_mins(1));
+
+    for origin in [
+        "chrome-extension://nngceckbapebfimnlniiiahkandclblb", // Chrome Web Store
+        "chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh", // Edge Add-ons
+    ] {
+        let origin = url::Url::parse(origin).expect("origin should parse");
+        webauthn = webauthn.append_allowed_origin(&origin);
+    }
+
+    webauthn.build().expect("Building Webauthn failed")
+});
 
 pub fn routes() -> Vec<rocket::Route> {
     routes![get_webauthn, post_webauthn, post_webauthn_attestation_options, post_webauthn_delete]
@@ -81,8 +105,12 @@ async fn post_webauthn_attestation_options(
 
     let user_uuid = uuid::Uuid::parse_str(&user.uuid).expect("Failed to parse user UUID");
 
-    let (mut challenge, state) =
-        WEBAUTHN.start_passkey_registration(user_uuid, &user.email, user.display_name(), Some(existing_cred_ids))?;
+    let (mut challenge, state) = WEBAUTHN_PASSWORDLESS.start_passkey_registration(
+        user_uuid,
+        &user.email,
+        user.display_name(),
+        Some(existing_cred_ids),
+    )?;
 
     // For passkey login, we need discoverable credentials (resident keys).
     // start_passkey_registration() defaults to require_resident_key=false, but passkey login
@@ -192,7 +220,7 @@ async fn post_webauthn(
         Some(tf) => {
             let state: PasskeyRegistration = serde_json::from_str(&tf.data)?;
             tf.delete(&conn).await?;
-            WEBAUTHN.finish_passkey_registration(&data.device_response.into(), &state)?
+            WEBAUTHN_PASSWORDLESS.finish_passkey_registration(&data.device_response.into(), &state)?
         }
         None => err!("No registration challenge found. Please try again."),
     };

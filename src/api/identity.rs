@@ -16,11 +16,11 @@ use crate::{
     api::{
         ApiResult, EmptyResult, JsonResult,
         core::{
+            WEBAUTHN_PASSWORDLESS,
             accounts::{PreloginData, RegisterData, kdf_upgrade, prelogin, register},
             log_user_event,
             two_factor::{
-                authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable,
-                webauthn::{self, WEBAUTHN},
+                authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn,
                 yubikey,
             },
         },
@@ -599,7 +599,7 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
     };
 
     // Perform passkey authentication
-    let authentication_result = match WEBAUTHN.finish_passkey_authentication(&device_response, &state) {
+    let authentication_result = match WEBAUTHN_PASSWORDLESS.finish_passkey_authentication(&device_response, &state) {
         Ok(result) => result,
         Err(e) => {
             err!(
@@ -1495,7 +1495,7 @@ fn get_webauthn_assertion_options() -> JsonResult {
         err!("Passkey login is not allowed")
     }
 
-    let (mut response, state) = WEBAUTHN.start_passkey_authentication(&[])?;
+    let (mut response, state) = WEBAUTHN_PASSWORDLESS.start_passkey_authentication(&[])?;
 
     // Allow any credential (discoverable) and require user verification
     response.public_key.allow_credentials = vec![];
