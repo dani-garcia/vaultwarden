@@ -1,14 +1,11 @@
 use chrono::{TimeDelta, Utc};
 
-use rocket::{
-    outcome::try_outcome,
-    request::{FromRequest, Outcome, Request},
-};
+use rocket::request::{FromRequest, Outcome, Request};
 
 use crate::{
     api::ApiResult,
     auth,
-    auth::{BasicJwtClaims, ClientIp, Host},
+    auth::{BasicJwtClaims, ClientIp},
     db::{
         DbConn,
         models::{Send, SendId},
@@ -126,12 +123,6 @@ impl SendTokens {
 }
 
 pub struct SendHeaders {
-    #[expect(dead_code)]
-    pub host: String,
-
-    #[expect(dead_code)]
-    pub ip: ClientIp,
-
     pub send_id: SendId,
 }
 
@@ -141,11 +132,6 @@ impl<'r> FromRequest<'r> for SendHeaders {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = request.headers();
-
-        let host = try_outcome!(Host::from_request(request).await).host;
-        let Outcome::Success(ip) = ClientIp::from_request(request).await else {
-            err_handler!("Error getting Client IP")
-        };
 
         // Get access_token
         let access_token: &str = if let Some(a) = headers.get_one("Authorization") {
@@ -164,8 +150,6 @@ impl<'r> FromRequest<'r> for SendHeaders {
         };
 
         Outcome::Success(SendHeaders {
-            host,
-            ip,
             send_id: claims.sub.into(),
         })
     }

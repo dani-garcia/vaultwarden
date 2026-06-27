@@ -495,13 +495,6 @@ async fn post_access_legacy(
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
-    // Files are incremented during the download
-    if send.atype == SendType::Text as i32 {
-        send.access_count += 1;
-    }
-
-    send.save(&conn).await?;
-
     if send.password_hash.is_some() {
         match data.into_inner().password {
             Some(ref p) if send.check_password(p) => { /* Nothing to do here */ }
@@ -509,6 +502,13 @@ async fn post_access_legacy(
             None => err_code!("Password not provided", format!("IP: {}.", ip.ip), 401),
         }
     }
+
+    // Files are incremented during the download
+    if send.atype == SendType::Text as i32 {
+        send.access_count += 1;
+    }
+
+    send.save(&conn).await?;
 
     process_access(send, conn, nt).await
 }
