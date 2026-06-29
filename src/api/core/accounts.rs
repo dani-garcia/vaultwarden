@@ -129,14 +129,17 @@ impl RegisterData {
         self.compat.fold(|rdc| &rdc.key, |rdcu| &rdcu.master_password_unlock.key).to_owned()
     }
 
+    // When comparing with salt, email need to be normalized:
+    //  - https://github.com/bitwarden/clients/blob/web-v2026.5.0/libs/common/src/key-management/master-password/services/master-password.service.ts#L171
     fn unprocessable(&self) -> bool {
         let mut unprocessable = false;
         *self.compat.fold(
             |_| &false,
             |rdcu| {
+                let email = self.email.trim().to_lowercase();
                 unprocessable = rdcu.master_password_authentication.kdf != rdcu.master_password_unlock.kdf
-                    || rdcu.master_password_authentication.salt != self.email
-                    || rdcu.master_password_unlock.salt != self.email;
+                    || rdcu.master_password_authentication.salt != email
+                    || rdcu.master_password_unlock.salt != email;
                 &unprocessable
             },
         )
