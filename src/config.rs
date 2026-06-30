@@ -1406,6 +1406,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "ssh-agent-v2",
     // Key Management Team
     "ssh-key-vault-item",
+    "pm-2035-passkey-unlock",
     "pm-25373-windows-biometrics-v2",
     // Mobile Team
     "anon-addy-self-host-alias",

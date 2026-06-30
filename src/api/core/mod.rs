@@ -15,7 +15,7 @@ pub use ciphers::{CipherData, CipherSyncData, CipherSyncType, purge_trashed_ciph
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use events::{event_cleanup_job, log_event, log_user_event};
 pub use sends::purge_sends;
-pub use webauthn::WEBAUTHN_PASSWORDLESS;
+pub use webauthn::{WEBAUTHN_PASSWORDLESS, webauthn_prf_option};
 
 use reqwest::Method;
 use rocket::{Catcher, Route, serde::json::Json, serde::json::Value};
@@ -211,6 +211,11 @@ fn config() -> Json<Value> {
         &FeatureFlagFilter::ValidOnly,
     );
     feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
+    if CONFIG.passkey_login_allowed() {
+        feature_states.insert("pm-2035-passkey-unlock".to_owned(), true);
+    } else {
+        feature_states.remove("pm-2035-passkey-unlock");
+    }
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns

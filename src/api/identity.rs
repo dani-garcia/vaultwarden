@@ -23,6 +23,7 @@ use crate::{
                 authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn,
                 yubikey,
             },
+            webauthn_prf_option,
         },
         master_password_policy,
         push::register_push_device,
@@ -633,13 +634,10 @@ async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
 
     let mut result = authenticated_response(&user, &mut device, auth_tokens, None, conn, ip).await?;
 
-    // Add WebAuthnPrfOption if the credential has encrypted keys (PRF-based decryption)
-    if matched_wac.encrypted_private_key.is_some() && matched_wac.encrypted_user_key.is_some() {
+    // Add WebAuthnPrfOption if the credential has enabled PRF-based decryption.
+    if let Some(prf_option) = webauthn_prf_option(matched_wac, true) {
         let Json(ref mut val) = result;
-        val["UserDecryptionOptions"]["WebAuthnPrfOption"] = json!({
-            "EncryptedPrivateKey": matched_wac.encrypted_private_key,
-            "EncryptedUserKey": matched_wac.encrypted_user_key,
-        });
+        val["UserDecryptionOptions"]["WebAuthnPrfOption"] = prf_option;
     }
 
     Ok(result)

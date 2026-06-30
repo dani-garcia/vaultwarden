@@ -14,7 +14,7 @@ use crate::{
     auth::Headers,
     db::{
         DbConn,
-        models::{TwoFactor, TwoFactorType, WebauthnCredential, WebauthnCredentialId},
+        models::{TwoFactor, TwoFactorType, WebauthnCredential, WebauthnCredentialId, WebauthnCredentialPrfStatus},
     },
 };
 
@@ -42,6 +42,30 @@ pub static WEBAUTHN_PASSWORDLESS: LazyLock<Webauthn> = LazyLock::new(|| {
 
 pub fn routes() -> Vec<rocket::Route> {
     routes![get_webauthn, post_webauthn, post_webauthn_attestation_options, post_webauthn_delete]
+}
+
+pub fn webauthn_prf_option(wac: &WebauthnCredential, pascal_case: bool) -> Option<Value> {
+    if !matches!(wac.get_prf_status(), WebauthnCredentialPrfStatus::Enabled) {
+        return None;
+    }
+
+    let passkey: Passkey = serde_json::from_str(&wac.credential).ok()?;
+
+    if pascal_case {
+        Some(json!({
+            "CredentialId": passkey.cred_id().to_owned(),
+            "Transports": [],
+            "EncryptedPrivateKey": wac.encrypted_private_key.as_ref()?,
+            "EncryptedUserKey": wac.encrypted_user_key.as_ref()?,
+        }))
+    } else {
+        Some(json!({
+            "credentialId": passkey.cred_id().to_owned(),
+            "transports": [],
+            "encryptedPrivateKey": wac.encrypted_private_key.as_ref()?,
+            "encryptedUserKey": wac.encrypted_user_key.as_ref()?,
+        }))
+    }
 }
 
 #[get("/webauthn")]
