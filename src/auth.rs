@@ -693,6 +693,7 @@ pub struct OrgHeaders {
     pub host: String,
     pub device: Device,
     pub user: User,
+    #[allow(dead_code)]
     pub membership_type: MembershipType,
     pub membership_status: MembershipStatus,
     pub membership: Membership,
@@ -713,6 +714,24 @@ impl OrgHeaders {
     }
     fn is_confirmed_and_owner(&self) -> bool {
         self.membership_status == MembershipStatus::Confirmed && self.membership_type == MembershipType::Owner
+    }
+    fn is_confirmed(&self) -> bool {
+        self.membership_status == MembershipStatus::Confirmed
+    }
+    // Custom-role permission checks. Admins and Owners implicitly hold every
+    // permission; a Custom member holds a permission only if the matching flag
+    // is set on their Membership.
+    fn can_manage_users(&self) -> bool {
+        self.is_confirmed()
+            && (self.membership_type >= MembershipType::Admin || self.membership.manage_users)
+    }
+    fn can_manage_groups(&self) -> bool {
+        self.is_confirmed()
+            && (self.membership_type >= MembershipType::Admin || self.membership.manage_groups)
+    }
+    fn can_manage_policies(&self) -> bool {
+        self.is_confirmed()
+            && (self.membership_type >= MembershipType::Admin || self.membership.manage_policies)
     }
 }
 
@@ -826,6 +845,71 @@ impl<'r> FromRequest<'r> for AdminHeaders {
         }
     }
 }
+
+// Macro to generate a request guard that permits a confirmed Admin/Owner, or a
+// confirmed Custom member holding the given permission. The generated struct
+// mirrors AdminHeaders so it can be used as a drop-in replacement on endpoints.
+macro_rules! generate_manage_headers {
+    ($name:ident, $check:ident, $err:literal) => {
+        #[allow(dead_code)]
+        pub struct $name {
+            pub host: String,
+            pub device: Device,
+            pub user: User,
+            pub membership_type: MembershipType,
+            pub ip: ClientIp,
+            pub org_id: OrganizationId,
+        }
+
+        #[rocket::async_trait]
+        impl<'r> FromRequest<'r> for $name {
+            type Error = &'static str;
+
+            async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+                let headers = try_outcome!(OrgHeaders::from_request(request).await);
+                if headers.$check() {
+                    Outcome::Success(Self {
+                        host: headers.host,
+                        device: headers.device,
+                        user: headers.user,
+                        membership_type: headers.membership_type,
+                        ip: headers.ip,
+                        org_id: headers.membership.org_uuid,
+                    })
+                } else {
+                    err_handler!($err)
+                }
+            }
+        }
+
+        impl From<$name> for Headers {
+            fn from(h: $name) -> Headers {
+                Headers {
+                    host: h.host,
+                    device: h.device,
+                    user: h.user,
+                    ip: h.ip,
+                }
+            }
+        }
+    };
+}
+
+generate_manage_headers!(
+    ManageUsersHeaders,
+    can_manage_users,
+    "You need the 'Manage Users' permission, or to be an Admin or Owner, to call this endpoint"
+);
+generate_manage_headers!(
+    ManageGroupsHeaders,
+    can_manage_groups,
+    "You need the 'Manage Groups' permission, or to be an Admin or Owner, to call this endpoint"
+);
+generate_manage_headers!(
+    ManagePoliciesHeaders,
+    can_manage_policies,
+    "You need the 'Manage Policies' permission, or to be an Admin or Owner, to call this endpoint"
+);
 
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),
 // but there could be cases where it is a query value.

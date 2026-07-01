@@ -1,0 +1,3 @@
+ALTER TABLE users_organizations ADD COLUMN manage_users BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users_organizations ADD COLUMN manage_groups BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users_organizations ADD COLUMN manage_policies BOOLEAN NOT NULL DEFAULT FALSE;

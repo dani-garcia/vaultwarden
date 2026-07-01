@@ -57,6 +57,9 @@ pub struct Membership {
     pub atype: i32,
     pub reset_password_key: Option<String>,
     pub external_id: Option<String>,
+    pub manage_users: bool,
+    pub manage_groups: bool,
+    pub manage_policies: bool,
 }
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -98,21 +101,17 @@ pub enum MembershipType {
     Admin = 1,
     User = 2,
     Manager = 3,
+    Custom = 4,
 }
 
 impl MembershipType {
     pub fn from_str(s: &str) -> Option<Self> {
-        #[expect(
-            clippy::match_same_arms,
-            reason = "Specifically define `4|Custom` since this is a hack, not a default"
-        )]
         match s {
             "0" | "Owner" => Some(MembershipType::Owner),
             "1" | "Admin" => Some(MembershipType::Admin),
             "2" | "User" => Some(MembershipType::User),
             "3" | "Manager" => Some(MembershipType::Manager),
-            // HACK: We convert the custom role to a manager role
-            "4" | "Custom" => Some(MembershipType::Manager),
+            "4" | "Custom" => Some(MembershipType::Custom),
             _ => None,
         }
     }
@@ -121,11 +120,15 @@ impl MembershipType {
 impl Ord for MembershipType {
     fn cmp(&self, other: &MembershipType) -> Ordering {
         // For easy comparison, map each variant to an access level (where 0 is lowest).
-        const ACCESS_LEVEL: [i32; 4] = [
+        // Custom is treated as a low-privilege base role (same level as Manager for
+        // ordering purposes); its elevated capabilities are governed by the explicit
+        // manage_* permission flags on the Membership, not by this ordering.
+        const ACCESS_LEVEL: [i32; 5] = [
             3, // Owner
             2, // Admin
             0, // User
-            1, // Manager && Custom
+            1, // Manager
+            1, // Custom
         ];
         ACCESS_LEVEL[*self as usize].cmp(&ACCESS_LEVEL[*other as usize])
     }
@@ -267,6 +270,9 @@ impl Membership {
             atype: MembershipType::User as i32,
             reset_password_key: None,
             external_id: None,
+            manage_users: false,
+            manage_groups: false,
+            manage_policies: false,
         }
     }
 
@@ -305,15 +311,6 @@ impl Membership {
             return true;
         }
         false
-    }
-
-    /// HACK: Convert the manager type to a custom type
-    /// It will be converted back on other locations
-    pub fn type_manager_as_custom(&self) -> i32 {
-        match self.atype {
-            3 => 4,
-            _ => self.atype,
-        }
     }
 }
 
@@ -443,14 +440,10 @@ impl Membership {
     pub async fn to_json(&self, conn: &DbConn) -> Value {
         let org = Organization::find_by_uuid(&self.org_uuid, conn).await.unwrap();
 
-        // HACK: Convert the manager type to a custom type
-        // It will be converted back on other locations
-        let membership_type = self.type_manager_as_custom();
+        let membership_type = self.atype;
 
         let permissions = json!({
-                // TODO: Add full support for Custom User Roles
-                // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
-                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
+                // The 3 Collection roles below are linked to the access_all permission
                 "accessEventLogs": false,
                 "accessImportExport": false,
                 "accessReports": false,
@@ -458,10 +451,10 @@ impl Membership {
                 "createNewCollections": membership_type == 4 && self.access_all,
                 "editAnyCollection": membership_type == 4 && self.access_all,
                 "deleteAnyCollection": membership_type == 4 && self.access_all,
-                "manageGroups": false,
-                "managePolicies": false,
+                "manageGroups": self.manage_groups,
+                "managePolicies": self.manage_policies,
                 "manageSso": false, // Not supported
-                "manageUsers": false,
+                "manageUsers": self.manage_users,
                 "manageResetPassword": false,
                 "manageScim": false // Not supported (Not AGPLv3 Licensed)
         });
@@ -607,28 +600,24 @@ impl Membership {
             Vec::with_capacity(0)
         };
 
-        // HACK: Convert the manager type to a custom type
-        // It will be converted back on other locations
-        let membership_type = self.type_manager_as_custom();
+        let membership_type = self.atype;
 
-        // HACK: Only return permissions if the user is of type custom and has access_all
-        // Else Bitwarden will assume the defaults of all false
-        let permissions = if membership_type == 4 && self.access_all {
+        // Only return a permissions object for custom-type members. A custom member
+        // may have access_all (the 3 collection roles) and/or any of the explicit
+        // manage_* flags; otherwise Bitwarden assumes all-false defaults.
+        let permissions = if membership_type == MembershipType::Custom as i32 {
             json!({
-                // TODO: Add full support for Custom User Roles
-                // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
-                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
                 "accessEventLogs": false,
                 "accessImportExport": false,
                 "accessReports": false,
                 // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": true,
-                "editAnyCollection": true,
-                "deleteAnyCollection": true,
-                "manageGroups": false,
-                "managePolicies": false,
+                "createNewCollections": self.access_all,
+                "editAnyCollection": self.access_all,
+                "deleteAnyCollection": self.access_all,
+                "manageGroups": self.manage_groups,
+                "managePolicies": self.manage_policies,
                 "manageSso": false, // Not supported
-                "manageUsers": false,
+                "manageUsers": self.manage_users,
                 "manageResetPassword": false,
                 "manageScim": false // Not supported (Not AGPLv3 Licensed)
             })
@@ -728,7 +717,7 @@ impl Membership {
         json!({
             "id": self.uuid,
             "userId": self.user_uuid,
-            "type": self.type_manager_as_custom(), // HACK: Convert the manager type to a custom type
+            "type": self.atype,
             "status": status,
             "name": user.name,
             "email": user.email,

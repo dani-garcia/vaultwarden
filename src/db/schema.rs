@@ -242,6 +242,9 @@ table! {
         atype -> Integer,
         reset_password_key -> Nullable<Text>,
         external_id -> Nullable<Text>,
+        manage_users -> Bool,
+        manage_groups -> Bool,
+        manage_policies -> Bool,
     }
 }
 

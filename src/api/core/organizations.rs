@@ -11,7 +11,10 @@ use crate::{
         EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
-    auth::{AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite},
+    auth::{
+        AdminHeaders, Headers, ManageGroupsHeaders, ManagePoliciesHeaders, ManageUsersHeaders, ManagerHeaders,
+        ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite,
+    },
     db::{
         DbConn,
         models::{
@@ -389,7 +392,13 @@ async fn get_org_collections(org_id: OrganizationId, headers: ManagerHeadersLoos
         err!("Organization not found", "Organization id's do not match");
     }
 
-    if !headers.membership.has_full_access() {
+    // Custom users with a manage permission need to read the collection list (metadata only)
+    // to be able to assign collections to groups/members. This does NOT expose cipher contents.
+    let can_read_collection_list = headers.membership.has_full_access()
+        || headers.membership.manage_users
+        || headers.membership.manage_groups
+        || headers.membership.manage_policies;
+    if !can_read_collection_list {
         err_code!("Resource not found.", "User does not have full access", rocket::http::Status::NotFound.code);
     }
 
@@ -1030,7 +1039,7 @@ impl InviteData {
 async fn send_invite(
     org_id: OrganizationId,
     data: Json<InviteData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
@@ -1174,7 +1183,7 @@ async fn send_invite(
 async fn bulk_reinvite_members(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -1209,7 +1218,7 @@ async fn bulk_reinvite_members(
 async fn reinvite_member(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
@@ -1340,7 +1349,7 @@ struct BulkConfirmData {
 async fn bulk_confirm_invite(
     org_id: OrganizationId,
     data: Json<BulkConfirmData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
@@ -1384,7 +1393,7 @@ async fn confirm_invite(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: Json<ConfirmData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
@@ -1397,7 +1406,7 @@ async fn confirm_invite_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
     key: &str,
-    headers: &AdminHeaders,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
@@ -1482,7 +1491,7 @@ async fn get_user(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: GetOrgUserData,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -1513,7 +1522,7 @@ async fn put_member(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: Json<EditUserData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     edit_member(org_id, member_id, data, headers, conn).await
@@ -1524,7 +1533,7 @@ async fn edit_member(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: Json<EditUserData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
@@ -1532,22 +1541,29 @@ async fn edit_member(
     }
     let data: EditUserData = data.into_inner();
 
-    // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
-    // The from_str() will convert the custom role type into a manager role type
     let raw_type = &data.r#type.into_string();
-    // MembershipType::from_str will convert custom (4) to manager (3)
     let Some(new_type) = MembershipType::from_str(raw_type) else {
         err!("Invalid type")
     };
 
-    // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
-    // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
-    // If the box is not checked, the user will still be a manager, but not with the access_all permission
+    // For a Custom role, the "Manage all collections" parent checkbox is not sent to
+    // the server; we derive access_all from its three child checkboxes. Admins/Owners
+    // implicitly have access to all collections.
     let access_all = new_type >= MembershipType::Admin
-        || (raw_type.eq("4")
+        || (new_type == MembershipType::Custom
             && data.permissions.get("editAnyCollection") == Some(&json!(true))
             && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
             && data.permissions.get("createNewCollections") == Some(&json!(true)));
+
+    // Read the explicit Custom-role management permissions. These only apply to the
+    // Custom type; for every other type they are forced to false so that changing a
+    // member away from Custom clears any previously granted flags.
+    let perm = |key: &str| {
+        new_type == MembershipType::Custom && data.permissions.get(key) == Some(&json!(true))
+    };
+    let manage_users = perm("manageUsers");
+    let manage_groups = perm("manageGroups");
+    let manage_policies = perm("managePolicies");
 
     let Some(mut member_to_edit) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
         err!("The specified user isn't member of the organization")
@@ -1574,7 +1590,18 @@ async fn edit_member(
         }
     }
 
+    // Security: only Admins and Owners may grant the granular custom-role management
+    // permissions. A custom user with manage_users must not be able to grant these
+    // permissions (to themselves or others), which would be a privilege escalation.
+    if headers.membership_type < MembershipType::Admin
+        && (manage_users || manage_groups || manage_policies)
+    {
+        err!("Only Admins or Owners can grant custom management permissions")
+    }
     member_to_edit.access_all = access_all;
+    member_to_edit.manage_users = manage_users;
+    member_to_edit.manage_groups = manage_groups;
+    member_to_edit.manage_policies = manage_policies;
     member_to_edit.atype = new_type as i32;
 
     // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
@@ -1631,7 +1658,7 @@ async fn edit_member(
 async fn bulk_delete_member(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
@@ -1667,7 +1694,7 @@ async fn bulk_delete_member(
 async fn delete_member(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
@@ -1677,7 +1704,7 @@ async fn delete_member(
 async fn delete_member_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    headers: &AdminHeaders,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
@@ -1722,7 +1749,7 @@ async fn delete_member_impl(
 async fn bulk_public_keys(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -1931,8 +1958,8 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
 }
 
 #[get("/organizations/<org_id>/policies")]
-async fn list_policies(org_id: OrganizationId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
-    if org_id != headers.org_id {
+async fn list_policies(org_id: OrganizationId, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
+    if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
     let policies = OrgPolicy::find_by_org(&org_id, &conn).await;
@@ -1997,7 +2024,7 @@ async fn get_master_password_policy(org_id: OrganizationId, _headers: OrgMemberH
 }
 
 #[get("/organizations/<org_id>/policies/<pol_type>", rank = 3)]
-async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: ManagePoliciesHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -2025,7 +2052,7 @@ async fn put_policy(
     org_id: OrganizationId,
     pol_type: i32,
     data: Json<PolicyData>,
-    headers: AdminHeaders,
+    headers: ManagePoliciesHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2153,7 +2180,7 @@ async fn put_policy_vnext(
     org_id: OrganizationId,
     pol_type: i32,
     data: Json<PolicyDataVnext>,
-    headers: AdminHeaders,
+    headers: ManagePoliciesHeaders,
     conn: DbConn,
 ) -> JsonResult {
     let data: PolicyDataVnext = data.into_inner();
@@ -2232,7 +2259,7 @@ struct BulkRevokeMembershipIds {
 async fn revoke_member(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     revoke_member_impl(&org_id, &member_id, &headers, &conn).await
@@ -2242,7 +2269,7 @@ async fn revoke_member(
 async fn bulk_revoke_members(
     org_id: OrganizationId,
     data: Json<BulkRevokeMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2281,7 +2308,7 @@ async fn bulk_revoke_members(
 async fn revoke_member_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    headers: &AdminHeaders,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
     if org_id != &headers.org_id {
@@ -2325,7 +2352,7 @@ async fn revoke_member_impl(
 async fn restore_member_vnext(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     // Vaultwarden does not (yet) support the per User Collection linked to the `Enforce organization data ownership` policy.
@@ -2337,7 +2364,7 @@ async fn restore_member_vnext(
 async fn restore_member(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     restore_member_impl(&org_id, &member_id, &headers, &conn).await
@@ -2347,7 +2374,7 @@ async fn restore_member(
 async fn bulk_restore_members(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2381,7 +2408,7 @@ async fn bulk_restore_members(
 async fn restore_member_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    headers: &AdminHeaders,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
     if org_id != &headers.org_id {
@@ -2528,7 +2555,7 @@ async fn post_group(
     org_id: OrganizationId,
     group_id: GroupId,
     data: Json<GroupRequest>,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> JsonResult {
     put_group(org_id, group_id, data, headers, conn).await
@@ -2537,7 +2564,7 @@ async fn post_group(
 #[post("/organizations/<org_id>/groups", data = "<data>")]
 async fn post_groups(
     org_id: OrganizationId,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     data: Json<GroupRequest>,
     conn: DbConn,
 ) -> JsonResult {
@@ -2572,7 +2599,7 @@ async fn put_group(
     org_id: OrganizationId,
     group_id: GroupId,
     data: Json<GroupRequest>,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2613,7 +2640,7 @@ async fn add_update_group(
     collections: Vec<CollectionData>,
     members: Vec<MembershipId>,
     org_id: OrganizationId,
-    headers: &AdminHeaders,
+    headers: &ManageGroupsHeaders,
     conn: &DbConn,
 ) -> JsonResult {
     group.save(conn).await?;
@@ -2653,7 +2680,7 @@ async fn add_update_group(
 async fn get_group_details(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2674,21 +2701,21 @@ async fn get_group_details(
 async fn post_delete_group(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     delete_group_impl(&org_id, &group_id, &headers, &conn).await
 }
 
 #[delete("/organizations/<org_id>/groups/<group_id>")]
-async fn delete_group(org_id: OrganizationId, group_id: GroupId, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+async fn delete_group(org_id: OrganizationId, group_id: GroupId, headers: ManageGroupsHeaders, conn: DbConn) -> EmptyResult {
     delete_group_impl(&org_id, &group_id, &headers, &conn).await
 }
 
 async fn delete_group_impl(
     org_id: &OrganizationId,
     group_id: &GroupId,
-    headers: &AdminHeaders,
+    headers: &ManageGroupsHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
     if org_id != &headers.org_id {
@@ -2720,7 +2747,7 @@ async fn delete_group_impl(
 async fn bulk_delete_groups(
     org_id: OrganizationId,
     data: Json<BulkGroupIds>,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
@@ -2739,7 +2766,7 @@ async fn bulk_delete_groups(
 }
 
 #[get("/organizations/<org_id>/groups/<group_id>", rank = 2)]
-async fn get_group(org_id: OrganizationId, group_id: GroupId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn get_group(org_id: OrganizationId, group_id: GroupId, headers: ManageGroupsHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -2758,7 +2785,7 @@ async fn get_group(org_id: OrganizationId, group_id: GroupId, headers: AdminHead
 async fn get_group_members(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2785,7 +2812,7 @@ async fn get_group_members(
 async fn put_group_members(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     data: Json<Vec<MembershipId>>,
     conn: DbConn,
 ) -> EmptyResult {
@@ -2833,7 +2860,7 @@ async fn post_delete_group_member(
     org_id: OrganizationId,
     group_id: GroupId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {

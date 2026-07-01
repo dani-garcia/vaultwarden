@@ -116,8 +116,12 @@ app-security > app-two-factor-setup > form {
 }
 
 /* Hide unsupported Custom Role options */
+/* Note: manageUsers and managePolicies are supported by Vaultwarden
+   and are intentionally NOT hidden here. */
 bit-dialog div.tw-ml-4:has(bit-form-control input),
-bit-dialog div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcontrolname*="manage"]) {
+bit-dialog div.tw-col-span-4:has(input[formcontrolname*="access"]),
+bit-dialog bit-form-control:has(input[formcontrolname="manageSso"]),
+bit-dialog bit-form-control:has(input[formcontrolname="manageResetPassword"]) {
   @extend %vw-hide;
 }
 
