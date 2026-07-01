@@ -44,6 +44,7 @@ pub struct Organization {
 #[diesel(table_name = users_organizations)]
 #[diesel(treat_none_as_null = true)]
 #[diesel(primary_key(uuid))]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Membership {
     pub uuid: MembershipId,
     pub user_uuid: UserId,
