@@ -430,6 +430,12 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
     let has_full_access_to_org = member.has_full_access()
         || (CONFIG.org_groups_enabled() && GroupUser::has_full_access_by_member(&org_id, &member.uuid, &conn).await);
 
+    // Custom users with a manage permission need the full collection list (metadata only)
+    // so the web client can render member/group collection assignments without crashing on
+    // collections it can't otherwise see. This exposes names/ids only, never cipher contents.
+    let can_read_collection_list =
+        member.manage_users || member.manage_groups || member.manage_policies;
+
     // Get all admins, owners and managers who can manage/access all
     // Those are currently not listed in the col_users but need to be listed too.
     let manage_all_members: Vec<Value> = Membership::find_confirmed_and_manage_all_by_org(&org_id, &conn)
@@ -453,8 +459,20 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
             || (CONFIG.org_groups_enabled()
                 && GroupUser::has_access_to_collection_by_member(&col.uuid, &member.uuid, &conn).await);
 
-        // If the user is a manager, and is not assigned to this collection, skip this and continue with the next collection
+        // If the user is a manager and is not assigned to this collection, normally skip it.
+        // Exception: custom users with a manage permission get a metadata-only entry (no user
+        // or group access details) so the web client can resolve assignment references without
+        // crashing. This never exposes cipher contents.
         if !assigned {
+            if can_read_collection_list {
+                let mut json_object = col.to_json_details(&headers.user.uuid, None, &conn).await;
+                json_object["assigned"] = json!(false);
+                json_object["users"] = json!(Vec::<Value>::new());
+                json_object["groups"] = json!(Vec::<Value>::new());
+                json_object["object"] = json!("collectionAccessDetails");
+                json_object["unmanaged"] = json!(false);
+                data.push(json_object);
+            }
             continue;
         }
 
@@ -514,7 +532,10 @@ async fn post_organization_collections(
     let data: FullCollectionData = data.into_inner();
     data.validate(&org_id, &conn).await?;
 
-    if headers.membership.atype == MembershipType::Manager && !headers.membership.access_all {
+    // Managers and custom users may only create collections if they have full access.
+    // (A custom user with manage_users/manage_groups/manage_policies but no collection
+    // access must not be able to create collections.)
+    if !headers.membership.has_full_access() && headers.membership.atype < MembershipType::Admin {
         err!("You don't have permission to create collections")
     }
 
@@ -583,6 +604,13 @@ async fn post_bulk_access_collections(
 
     if Organization::find_by_uuid(&org_id, &conn).await.is_none() {
         err!("Can't find organization details")
+    }
+
+    // Security: only callers who can actually manage collections (Admins/Owners, or users with
+    // full access) may change collection access in bulk. A custom user with only manage_users /
+    // manage_groups / manage_policies must not be able to modify collection assignments here.
+    if !headers.membership.has_full_access() {
+        err!("You don't have permission to modify collection access")
     }
 
     for col_id in data.collection_ids {
@@ -1150,8 +1178,17 @@ async fn send_invite(
         )
         .await;
 
+        // Security: only callers who can manage collections (Admins/Owners, or users with full
+        // access) may assign collection access when inviting. A custom user with only manage_users
+        // can invite members, but cannot grant them collection access.
+        let caller_can_manage_collections = headers.membership_type >= MembershipType::Admin
+            || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
+                Some(m) => m.has_full_access(),
+                None => false,
+            };
+
         // If no accessAll, add the collections received
-        if !access_all {
+        if !access_all && caller_can_manage_collections {
             for col in data.collections.iter().flatten() {
                 match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn).await {
                     None => err!("Collection not found in Organization"),
@@ -1170,9 +1207,20 @@ async fn send_invite(
             }
         }
 
-        for group_id in &data.groups {
-            let mut group_entry = GroupUser::new(group_id.clone(), new_member.uuid.clone());
-            group_entry.save(&conn).await?;
+        // Security: assigning groups can indirectly grant collection access via the groups'
+        // collections. Only callers who may manage groups (Admins/Owners or users with
+        // manage_groups) are allowed to assign groups when inviting.
+        let caller_can_manage_groups = headers.membership_type >= MembershipType::Admin
+            || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
+                Some(m) => m.manage_groups,
+                None => false,
+            };
+
+        if caller_can_manage_groups {
+            for group_id in &data.groups {
+                let mut group_entry = GroupUser::new(group_id.clone(), new_member.uuid.clone());
+                group_entry.save(&conn).await?;
+            }
         }
     }
 
@@ -1598,6 +1646,7 @@ async fn edit_member(
     {
         err!("Only Admins or Owners can grant custom management permissions")
     }
+
     member_to_edit.access_all = access_all;
     member_to_edit.manage_users = manage_users;
     member_to_edit.manage_groups = manage_groups;
@@ -1608,36 +1657,59 @@ async fn edit_member(
     // We need to perform the check after changing the type since `admin` is exempt.
     OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
-    // Delete all the odd collections
-    for c in CollectionUser::find_by_organization_and_user_uuid(&org_id, &member_to_edit.user_uuid, &conn).await {
-        c.delete(&conn).await?;
-    }
+    // Security: only callers who can actually manage collections (Admins/Owners, or users
+    // with full access) may change a member's collection assignments. A custom user with only
+    // manage_users must not be able to add/remove collection access, so we leave the existing
+    // assignments untouched for them.
+    let caller_can_manage_collections = headers.membership_type >= MembershipType::Admin
+        || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
+            Some(m) => m.has_full_access(),
+            None => false,
+        };
 
-    // If no accessAll, add the collections received
-    if !access_all {
-        for col in data.collections.iter().flatten() {
-            match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn).await {
-                None => err!("Collection not found in Organization"),
-                Some(collection) => {
-                    CollectionUser::save(
-                        &member_to_edit.user_uuid,
-                        &collection.uuid,
-                        col.read_only,
-                        col.hide_passwords,
-                        col.manage,
-                        &conn,
-                    )
-                    .await?;
+    if caller_can_manage_collections {
+        // Delete all the odd collections
+        for c in CollectionUser::find_by_organization_and_user_uuid(&org_id, &member_to_edit.user_uuid, &conn).await {
+            c.delete(&conn).await?;
+        }
+
+        // If no accessAll, add the collections received
+        if !access_all {
+            for col in data.collections.iter().flatten() {
+                match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn).await {
+                    None => err!("Collection not found in Organization"),
+                    Some(collection) => {
+                        CollectionUser::save(
+                            &member_to_edit.user_uuid,
+                            &collection.uuid,
+                            col.read_only,
+                            col.hide_passwords,
+                            col.manage,
+                            &conn,
+                        )
+                        .await?;
+                    }
                 }
             }
         }
     }
 
-    GroupUser::delete_all_by_member(&member_to_edit.uuid, &conn).await?;
+    // Security: changing a member's group membership can indirectly grant collection access
+    // (via the groups' collections). Only callers who may manage groups (Admins/Owners or users
+    // with manage_groups) are allowed to change it. For others we leave group membership untouched.
+    let caller_can_manage_groups = headers.membership_type >= MembershipType::Admin
+        || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
+            Some(m) => m.manage_groups,
+            None => false,
+        };
 
-    for group_id in data.groups.iter().flatten() {
-        let mut group_entry = GroupUser::new(group_id.clone(), member_to_edit.uuid.clone());
-        group_entry.save(&conn).await?;
+    if caller_can_manage_groups {
+        GroupUser::delete_all_by_member(&member_to_edit.uuid, &conn).await?;
+
+        for group_id in data.groups.iter().flatten() {
+            let mut group_entry = GroupUser::new(group_id.clone(), member_to_edit.uuid.clone());
+            group_entry.save(&conn).await?;
+        }
     }
 
     log_event(
@@ -2591,7 +2663,17 @@ async fn post_groups(
     )
     .await;
 
-    add_update_group(group, group_request.collections, group_request.users, org_id, &headers, &conn).await
+    // Security: only callers who can manage collections may assign collections to a new group.
+    // A custom user with only manage_groups can create the group, but without collection access.
+    let caller_can_manage_collections = headers.membership_type >= MembershipType::Admin
+        || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
+            Some(m) => m.has_full_access(),
+            None => false,
+        };
+    let collections_to_apply =
+        if caller_can_manage_collections { group_request.collections } else { Vec::new() };
+
+    add_update_group(group, collections_to_apply, group_request.users, org_id, &headers, &conn).await
 }
 
 #[put("/organizations/<org_id>/groups/<group_id>", data = "<data>")]
@@ -2618,7 +2700,19 @@ async fn put_group(
 
     let updated_group = group_request.update_group(group);
 
-    CollectionGroup::delete_all_by_group(&group_id, &org_id, &conn).await?;
+    // Security: only callers who can actually manage collections (Admins/Owners, or users with
+    // full access) may change a group's collection assignments. A custom user with only
+    // manage_groups must not be able to add/remove collection access. For them we keep the
+    // group's existing collection assignments untouched (neither cleared nor overwritten).
+    let caller_can_manage_collections = headers.membership_type >= MembershipType::Admin
+        || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
+            Some(m) => m.has_full_access(),
+            None => false,
+        };
+
+    if caller_can_manage_collections {
+        CollectionGroup::delete_all_by_group(&group_id, &org_id, &conn).await?;
+    }
     GroupUser::delete_all_by_group(&group_id, &org_id, &conn).await?;
 
     log_event(
@@ -2632,7 +2726,10 @@ async fn put_group(
     )
     .await;
 
-    add_update_group(updated_group, group_request.collections, group_request.users, org_id, &headers, &conn).await
+    // Only pass collection changes through if the caller is allowed to manage collections.
+    let collections_to_apply =
+        if caller_can_manage_collections { group_request.collections } else { Vec::new() };
+    add_update_group(updated_group, collections_to_apply, group_request.users, org_id, &headers, &conn).await
 }
 
 async fn add_update_group(
@@ -2680,10 +2777,10 @@ async fn add_update_group(
 async fn get_group_details(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: ManageGroupsHeaders,
+    headers: ManagerHeadersLoose,
     conn: DbConn,
 ) -> JsonResult {
-    if org_id != headers.org_id {
+    if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
     if !CONFIG.org_groups_enabled() {
@@ -2766,8 +2863,8 @@ async fn bulk_delete_groups(
 }
 
 #[get("/organizations/<org_id>/groups/<group_id>", rank = 2)]
-async fn get_group(org_id: OrganizationId, group_id: GroupId, headers: ManageGroupsHeaders, conn: DbConn) -> JsonResult {
-    if org_id != headers.org_id {
+async fn get_group(org_id: OrganizationId, group_id: GroupId, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
+    if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
     if !CONFIG.org_groups_enabled() {
@@ -2785,10 +2882,10 @@ async fn get_group(org_id: OrganizationId, group_id: GroupId, headers: ManageGro
 async fn get_group_members(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: ManageGroupsHeaders,
+    headers: ManagerHeadersLoose,
     conn: DbConn,
 ) -> JsonResult {
-    if org_id != headers.org_id {
+    if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
     if !CONFIG.org_groups_enabled() {
