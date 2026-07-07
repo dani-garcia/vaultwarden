@@ -433,8 +433,7 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
     // Custom users with a manage permission need the full collection list (metadata only)
     // so the web client can render member/group collection assignments without crashing on
     // collections it can't otherwise see. This exposes names/ids only, never cipher contents.
-    let can_read_collection_list =
-        member.manage_users || member.manage_groups || member.manage_policies;
+    let can_read_collection_list = member.manage_users || member.manage_groups || member.manage_policies;
 
     // Get all admins, owners and managers who can manage/access all
     // Those are currently not listed in the col_users but need to be listed too.
@@ -1606,9 +1605,7 @@ async fn edit_member(
     // Read the explicit Custom-role management permissions. These only apply to the
     // Custom type; for every other type they are forced to false so that changing a
     // member away from Custom clears any previously granted flags.
-    let perm = |key: &str| {
-        new_type == MembershipType::Custom && data.permissions.get(key) == Some(&json!(true))
-    };
+    let perm = |key: &str| new_type == MembershipType::Custom && data.permissions.get(key) == Some(&json!(true));
     let manage_users = perm("manageUsers");
     let manage_groups = perm("manageGroups");
     let manage_policies = perm("managePolicies");
@@ -1641,9 +1638,7 @@ async fn edit_member(
     // Security: only Admins and Owners may grant the granular custom-role management
     // permissions. A custom user with manage_users must not be able to grant these
     // permissions (to themselves or others), which would be a privilege escalation.
-    if headers.membership_type < MembershipType::Admin
-        && (manage_users || manage_groups || manage_policies)
-    {
+    if headers.membership_type < MembershipType::Admin && (manage_users || manage_groups || manage_policies) {
         err!("Only Admins or Owners can grant custom management permissions")
     }
 
@@ -2391,6 +2386,12 @@ async fn revoke_member_impl(
             if member.user_uuid == headers.user.uuid {
                 err!("You cannot revoke yourself")
             }
+            // Security: a Custom user with manage_users must not be able to revoke Admins or
+            // Owners. Mirrors the restriction in delete_member_impl; the Owner-specific check
+            // below still guards Admin-vs-Owner actions.
+            if member.atype != MembershipType::User && headers.membership_type < MembershipType::Admin {
+                err!("You don't have permission to revoke this user")
+            }
             if member.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
                 err!("Only owners can revoke other owners")
             }
@@ -2490,6 +2491,12 @@ async fn restore_member_impl(
         Some(mut member) if member.status < MembershipStatus::Accepted as i32 => {
             if member.user_uuid == headers.user.uuid {
                 err!("You cannot restore yourself")
+            }
+            // Security: a Custom user with manage_users must not be able to restore Admins or
+            // Owners. Mirrors the restriction in delete_member_impl; the Owner-specific check
+            // below still guards Admin-vs-Owner actions.
+            if member.atype != MembershipType::User && headers.membership_type < MembershipType::Admin {
+                err!("You don't have permission to restore this user")
             }
             if member.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
                 err!("Only owners can restore other owners")
@@ -2650,7 +2657,21 @@ async fn post_groups(
     let group_request = data.into_inner();
     group_request.validate(&org_id, &conn).await?;
 
-    let group = group_request.to_group(&org_id);
+    // Security: only callers who can manage collections may assign collections to a new group.
+    // A custom user with only manage_groups can create the group, but without collection access.
+    let caller_can_manage_collections = headers.membership_type >= MembershipType::Admin
+        || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
+            Some(m) => m.has_full_access(),
+            None => false,
+        };
+
+    let mut group = group_request.to_group(&org_id);
+    // Security: `access_all` grants the group access to every collection, so it is a
+    // collection-access grant just like assigning collections. A custom user without
+    // collection-management rights must not be able to create an access_all group.
+    if !caller_can_manage_collections {
+        group.access_all = false;
+    }
 
     log_event(
         EventType::GroupCreated as i32,
@@ -2663,17 +2684,22 @@ async fn post_groups(
     )
     .await;
 
-    // Security: only callers who can manage collections may assign collections to a new group.
-    // A custom user with only manage_groups can create the group, but without collection access.
-    let caller_can_manage_collections = headers.membership_type >= MembershipType::Admin
-        || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
-            Some(m) => m.has_full_access(),
-            None => false,
-        };
-    let collections_to_apply =
-        if caller_can_manage_collections { group_request.collections } else { Vec::new() };
+    let collections_to_apply = if caller_can_manage_collections {
+        group_request.collections
+    } else {
+        Vec::new()
+    };
 
-    add_update_group(group, collections_to_apply, group_request.users, org_id, &headers, &conn).await
+    add_update_group(
+        group,
+        collections_to_apply,
+        group_request.users,
+        org_id,
+        &headers,
+        &conn,
+        caller_can_manage_collections,
+    )
+    .await
 }
 
 #[put("/organizations/<org_id>/groups/<group_id>", data = "<data>")]
@@ -2698,8 +2724,6 @@ async fn put_group(
     let group_request = data.into_inner();
     group_request.validate(&org_id, &conn).await?;
 
-    let updated_group = group_request.update_group(group);
-
     // Security: only callers who can actually manage collections (Admins/Owners, or users with
     // full access) may change a group's collection assignments. A custom user with only
     // manage_groups must not be able to add/remove collection access. For them we keep the
@@ -2710,10 +2734,18 @@ async fn put_group(
             None => false,
         };
 
+    // Preserve the current `access_all` grant for callers who can't manage collections, so a
+    // manage_groups-only user cannot turn a group into an access_all (all-collections) grant.
+    let previous_access_all = group.access_all;
+    let mut updated_group = group_request.update_group(group);
+    if !caller_can_manage_collections {
+        updated_group.access_all = previous_access_all;
+    }
+
     if caller_can_manage_collections {
         CollectionGroup::delete_all_by_group(&group_id, &org_id, &conn).await?;
     }
-    GroupUser::delete_all_by_group(&group_id, &org_id, &conn).await?;
+    // NOTE: group membership is replaced (and access-gated) inside add_update_group.
 
     log_event(
         EventType::GroupUpdated as i32,
@@ -2727,9 +2759,21 @@ async fn put_group(
     .await;
 
     // Only pass collection changes through if the caller is allowed to manage collections.
-    let collections_to_apply =
-        if caller_can_manage_collections { group_request.collections } else { Vec::new() };
-    add_update_group(updated_group, collections_to_apply, group_request.users, org_id, &headers, &conn).await
+    let collections_to_apply = if caller_can_manage_collections {
+        group_request.collections
+    } else {
+        Vec::new()
+    };
+    add_update_group(
+        updated_group,
+        collections_to_apply,
+        group_request.users,
+        org_id,
+        &headers,
+        &conn,
+        caller_can_manage_collections,
+    )
+    .await
 }
 
 async fn add_update_group(
@@ -2739,6 +2783,7 @@ async fn add_update_group(
     org_id: OrganizationId,
     headers: &ManageGroupsHeaders,
     conn: &DbConn,
+    caller_can_manage_collections: bool,
 ) -> JsonResult {
     group.save(conn).await?;
 
@@ -2747,20 +2792,31 @@ async fn add_update_group(
         collection_group.save(&org_id, conn).await?;
     }
 
-    for assigned_member in members {
-        let mut user_entry = GroupUser::new(group.uuid.clone(), assigned_member.clone());
-        user_entry.save(conn).await?;
+    // Security: assigning members to a group that grants collection access (via `access_all`
+    // or assigned collections) would indirectly grant those members access to the collections'
+    // contents. Only callers who can manage collections may change the membership of such a
+    // group; for others we leave the group's membership untouched.
+    let group_grants_collection_access =
+        group.access_all || !CollectionGroup::find_by_group(&group.uuid, &org_id, conn).await.is_empty();
 
-        log_event(
-            EventType::OrganizationUserUpdatedGroups as i32,
-            &assigned_member,
-            &org_id,
-            &headers.user.uuid,
-            headers.device.atype,
-            &headers.ip.ip,
-            conn,
-        )
-        .await;
+    if caller_can_manage_collections || !group_grants_collection_access {
+        GroupUser::delete_all_by_group(&group.uuid, &org_id, conn).await?;
+
+        for assigned_member in members {
+            let mut user_entry = GroupUser::new(group.uuid.clone(), assigned_member.clone());
+            user_entry.save(conn).await?;
+
+            log_event(
+                EventType::OrganizationUserUpdatedGroups as i32,
+                &assigned_member,
+                &org_id,
+                &headers.user.uuid,
+                headers.device.atype,
+                &headers.ip.ip,
+                conn,
+            )
+            .await;
+        }
     }
 
     Ok(Json(json!({
@@ -2805,7 +2861,12 @@ async fn post_delete_group(
 }
 
 #[delete("/organizations/<org_id>/groups/<group_id>")]
-async fn delete_group(org_id: OrganizationId, group_id: GroupId, headers: ManageGroupsHeaders, conn: DbConn) -> EmptyResult {
+async fn delete_group(
+    org_id: OrganizationId,
+    group_id: GroupId,
+    headers: ManageGroupsHeaders,
+    conn: DbConn,
+) -> EmptyResult {
     delete_group_impl(&org_id, &group_id, &headers, &conn).await
 }
 
@@ -2863,7 +2924,12 @@ async fn bulk_delete_groups(
 }
 
 #[get("/organizations/<org_id>/groups/<group_id>", rank = 2)]
-async fn get_group(org_id: OrganizationId, group_id: GroupId, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
+async fn get_group(
+    org_id: OrganizationId,
+    group_id: GroupId,
+    headers: ManagerHeadersLoose,
+    conn: DbConn,
+) -> JsonResult {
     if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -2920,8 +2986,24 @@ async fn put_group_members(
         err!("Group support is disabled");
     }
 
-    if Group::find_by_uuid_and_org(&group_id, &org_id, &conn).await.is_none() {
+    let Some(group) = Group::find_by_uuid_and_org(&group_id, &org_id, &conn).await else {
         err!("Group could not be found!", "Group uuid is invalid or does not belong to the organization")
+    };
+
+    // Security: changing the membership of a group that grants collection access (via
+    // `access_all` or assigned collections) indirectly grants those members access to the
+    // collections' contents. Only callers who can actually manage collections (Admins/Owners
+    // or users with full access) may do this. A custom user with only manage_groups may manage
+    // the membership of groups that grant no collection access, but not of collection-bearing ones.
+    let caller_can_manage_collections = headers.membership_type >= MembershipType::Admin
+        || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
+            Some(m) => m.has_full_access(),
+            None => false,
+        };
+    let group_grants_collection_access =
+        group.access_all || !CollectionGroup::find_by_group(&group_id, &org_id, &conn).await.is_empty();
+    if !caller_can_manage_collections && group_grants_collection_access {
+        err!("You don't have permission to change the membership of a group that grants collection access")
     }
 
     let assigned_members = data.into_inner();

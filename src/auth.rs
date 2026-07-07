@@ -722,16 +722,13 @@ impl OrgHeaders {
     // permission; a Custom member holds a permission only if the matching flag
     // is set on their Membership.
     fn can_manage_users(&self) -> bool {
-        self.is_confirmed()
-            && (self.membership_type >= MembershipType::Admin || self.membership.manage_users)
+        self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.manage_users)
     }
     fn can_manage_groups(&self) -> bool {
-        self.is_confirmed()
-            && (self.membership_type >= MembershipType::Admin || self.membership.manage_groups)
+        self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.manage_groups)
     }
     fn can_manage_policies(&self) -> bool {
-        self.is_confirmed()
-            && (self.membership_type >= MembershipType::Admin || self.membership.manage_policies)
+        self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.manage_policies)
     }
 }
 
