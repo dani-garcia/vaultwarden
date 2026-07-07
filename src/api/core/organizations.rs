@@ -1642,16 +1642,6 @@ async fn edit_member(
         err!("Only Admins or Owners can grant custom management permissions")
     }
 
-    member_to_edit.access_all = access_all;
-    member_to_edit.manage_users = manage_users;
-    member_to_edit.manage_groups = manage_groups;
-    member_to_edit.manage_policies = manage_policies;
-    member_to_edit.atype = new_type as i32;
-
-    // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
-    // We need to perform the check after changing the type since `admin` is exempt.
-    OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
-
     // Security: only callers who can actually manage collections (Admins/Owners, or users
     // with full access) may change a member's collection assignments. A custom user with only
     // manage_users must not be able to add/remove collection access, so we leave the existing
@@ -1661,6 +1651,23 @@ async fn edit_member(
             Some(m) => m.has_full_access(),
             None => false,
         };
+
+    // Security: `access_all` grants full access to every collection, so only callers who may
+    // manage collections are allowed to change it. Otherwise a custom user with only manage_users
+    // could set the Custom "manage all collections" child boxes on any member (including
+    // themselves) to grant full collection access — a privilege escalation. For everyone else we
+    // keep the member's existing access_all grant untouched (neither granted nor revoked).
+    if caller_can_manage_collections {
+        member_to_edit.access_all = access_all;
+    }
+    member_to_edit.manage_users = manage_users;
+    member_to_edit.manage_groups = manage_groups;
+    member_to_edit.manage_policies = manage_policies;
+    member_to_edit.atype = new_type as i32;
+
+    // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
+    // We need to perform the check after changing the type since `admin` is exempt.
+    OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
     if caller_can_manage_collections {
         // Delete all the odd collections
