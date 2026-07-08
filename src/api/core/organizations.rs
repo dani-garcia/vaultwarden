@@ -2039,21 +2039,18 @@ async fn list_policies(org_id: OrganizationId, headers: ManagerHeadersLoose, con
         err!("Organization not found", "Organization id's do not match");
     }
 
-    // Security: only Admins/Owners, or Custom members holding at least one management
-    // permission, may read the full policy list (the Admin Console needs it to load).
-    // Plain Managers and Custom members without any permission keep the pre-existing
-    // behaviour of having no access here.
-    let membership = &headers.membership;
-    if !(membership.atype >= MembershipType::Admin
-        || membership.has_manage_users()
-        || membership.has_manage_groups()
-        || membership.has_manage_policies())
-    {
-        err!("You don't have permission to view policies")
-    }
+    // Security: only Admins/Owners, or Custom members holding the manage_policies permission,
+    // may see the actual policy configuration. Other Managers/Custom members (e.g. manage_users
+    // or manage_groups only) are still allowed to call this endpoint so the Admin Console can
+    // load, but they receive an empty list instead of the policy contents.
+    let can_view_policies =
+        headers.membership.atype >= MembershipType::Admin || headers.membership.has_manage_policies();
 
-    let policies = OrgPolicy::find_by_org(&org_id, &conn).await;
-    let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
+    let policies_json: Vec<Value> = if can_view_policies {
+        OrgPolicy::find_by_org(&org_id, &conn).await.iter().map(OrgPolicy::to_json).collect()
+    } else {
+        Vec::new()
+    };
 
     Ok(Json(json!({
         "data": policies_json,
@@ -2856,10 +2853,10 @@ async fn add_update_group(
 async fn get_group_details(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: ManagerHeadersLoose,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> JsonResult {
-    if org_id != headers.membership.org_uuid {
+    if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
     if !CONFIG.org_groups_enabled() {
@@ -2950,10 +2947,10 @@ async fn bulk_delete_groups(
 async fn get_group(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: ManagerHeadersLoose,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> JsonResult {
-    if org_id != headers.membership.org_uuid {
+    if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
     if !CONFIG.org_groups_enabled() {
@@ -2971,10 +2968,10 @@ async fn get_group(
 async fn get_group_members(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: ManagerHeadersLoose,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> JsonResult {
-    if org_id != headers.membership.org_uuid {
+    if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
     if !CONFIG.org_groups_enabled() {
