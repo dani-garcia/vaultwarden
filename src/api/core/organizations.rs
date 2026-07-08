@@ -2989,6 +2989,23 @@ async fn delete_group_impl(
         err!("Group not found", "Group uuid is invalid or does not belong to the organization")
     };
 
+    // Security: deleting a group that grants collection access (via `access_all` or assigned
+    // collections) revokes that access for all its members. A custom user with only manage_groups
+    // must not be able to affect collection access, so only callers who can actually manage
+    // collections (Admins/Owners or users with full access) may delete such a group. Mirrors the
+    // restriction in put_group_members / post_delete_group_member. Also covers bulk_delete_groups,
+    // which funnels through this function.
+    let caller_can_manage_collections = headers.membership_type >= MembershipType::Admin
+        || match Membership::find_by_user_and_org(&headers.user.uuid, org_id, conn).await {
+            Some(m) => m.has_full_access(),
+            None => false,
+        };
+    if !caller_can_manage_collections
+        && (group.access_all || !CollectionGroup::find_by_group(group_id, org_id, conn).await.is_empty())
+    {
+        err!("You don't have permission to delete a group that grants collection access")
+    }
+
     log_event(
         EventType::GroupDeleted as i32,
         &group.uuid,
@@ -3157,6 +3174,20 @@ async fn post_delete_group_member(
 
     if Group::find_by_uuid_and_org(&group_id, &org_id, &conn).await.is_none() {
         err!("Group could not be found or does not belong to the organization.");
+    }
+
+    // Security: removing a member from a group that grants collection access (via `access_all`
+    // or assigned collections) revokes that member's collection access. A custom user with only
+    // manage_groups must not be able to affect collection access, so only callers who can actually
+    // manage collections (Admins/Owners or users with full access) may do this. Mirrors the
+    // restriction enforced in put_group_members.
+    let caller_can_manage_collections = headers.membership_type >= MembershipType::Admin
+        || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
+            Some(m) => m.has_full_access(),
+            None => false,
+        };
+    if !caller_can_manage_collections && group_confers_collection_access(&group_id, &org_id, &conn).await {
+        err!("You don't have permission to change the membership of a group that grants collection access")
     }
 
     log_event(
