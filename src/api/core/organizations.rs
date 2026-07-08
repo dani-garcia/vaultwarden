@@ -1095,6 +1095,14 @@ async fn send_invite(
             && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
             && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
+    // Read the explicit Custom-role management permissions. These only apply to the
+    // Custom type; for every other type they are forced to false. Only Owners can invite
+    // Custom members (checked above), so the caller is always authorized to grant these.
+    let perm = |key: &str| new_type == MembershipType::Custom && data.permissions.get(key) == Some(&json!(true));
+    let manage_users = perm("manageUsers");
+    let manage_groups = perm("manageGroups");
+    let manage_policies = perm("managePolicies");
+
     let mut user_created: bool = false;
     for email in &data.emails {
         let mut member_status = MembershipStatus::Invited as i32;
@@ -1137,6 +1145,9 @@ async fn send_invite(
         let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), Some(headers.user.email.clone()));
         new_member.access_all = access_all;
         new_member.atype = new_type as i32;
+        new_member.manage_users = manage_users;
+        new_member.manage_groups = manage_groups;
+        new_member.manage_policies = manage_policies;
         new_member.status = member_status;
         new_member.save(&conn).await?;
 
