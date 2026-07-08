@@ -1218,6 +1218,14 @@ async fn send_invite(
 
         if caller_can_manage_groups {
             for group_id in &data.groups {
+                // Security: a caller who cannot manage collections must not grant collection
+                // access to the invitee by placing them into a collection-bearing group.
+                if !may_change_group_membership(
+                    caller_can_manage_collections,
+                    group_confers_collection_access(group_id, &org_id, &conn).await,
+                ) {
+                    continue;
+                }
                 let mut group_entry = GroupUser::new(group_id.clone(), new_member.uuid.clone());
                 group_entry.save(&conn).await?;
             }
@@ -1713,11 +1721,42 @@ async fn edit_member(
         };
 
     if caller_can_manage_groups {
-        GroupUser::delete_all_by_member(&member_to_edit.uuid, &conn).await?;
+        if caller_can_manage_collections {
+            // Caller may grant/revoke collection access via groups: full replace.
+            GroupUser::delete_all_by_member(&member_to_edit.uuid, &conn).await?;
 
-        for group_id in data.groups.iter().flatten() {
-            let mut group_entry = GroupUser::new(group_id.clone(), member_to_edit.uuid.clone());
-            group_entry.save(&conn).await?;
+            for group_id in data.groups.iter().flatten() {
+                let mut group_entry = GroupUser::new(group_id.clone(), member_to_edit.uuid.clone());
+                group_entry.save(&conn).await?;
+            }
+        } else {
+            // Security: the caller may manage groups but NOT collections. They may only change the
+            // member's membership in groups that confer no collection access; collection-bearing
+            // memberships are preserved untouched (neither granted nor revoked), mirroring the
+            // restriction enforced in put_group_members and add_update_group.
+
+            // Remove the member only from non-collection-bearing groups; keep collection-bearing
+            // memberships so this caller cannot revoke collection access either.
+            for gu in GroupUser::find_by_member(&member_to_edit.uuid, &conn).await {
+                if may_change_group_membership(
+                    caller_can_manage_collections,
+                    group_confers_collection_access(&gu.groups_uuid, &org_id, &conn).await,
+                ) {
+                    GroupUser::delete_by_group_and_member(&gu.groups_uuid, &member_to_edit.uuid, &conn).await?;
+                }
+            }
+
+            // Add the requested groups, skipping any that would grant collection access.
+            for group_id in data.groups.iter().flatten() {
+                if !may_change_group_membership(
+                    caller_can_manage_collections,
+                    group_confers_collection_access(group_id, &org_id, &conn).await,
+                ) {
+                    continue;
+                }
+                let mut group_entry = GroupUser::new(group_id.clone(), member_to_edit.uuid.clone());
+                group_entry.save(&conn).await?;
+            }
         }
     }
 
@@ -2809,6 +2848,25 @@ async fn put_group(
     .await
 }
 
+/// Whether a caller may change (add OR remove) a member's membership in a group.
+///
+/// A caller who cannot manage collections must never touch a *collection-bearing* group's
+/// membership: adding would indirectly grant collection access, removing would revoke it.
+/// Callers who can manage collections may change any group's membership. This mirrors the
+/// restriction already enforced inline in `put_group_members` and `add_update_group`.
+fn may_change_group_membership(caller_can_manage_collections: bool, group_confers_collection_access: bool) -> bool {
+    caller_can_manage_collections || !group_confers_collection_access
+}
+
+/// Returns true if being a member of `group_id` confers collection access — either because the
+/// group has `access_all` set, or because it has collections assigned.
+async fn group_confers_collection_access(group_id: &GroupId, org_id: &OrganizationId, conn: &DbConn) -> bool {
+    match Group::find_by_uuid_and_org(group_id, org_id, conn).await {
+        Some(group) => group.access_all || !CollectionGroup::find_by_group(group_id, org_id, conn).await.is_empty(),
+        None => false,
+    }
+}
+
 async fn add_update_group(
     mut group: Group,
     collections: Vec<CollectionData>,
@@ -3438,4 +3496,27 @@ async fn rotate_api_key(
     conn: DbConn,
 ) -> JsonResult {
     api_key(&org_id, data, true, headers, conn).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::may_change_group_membership;
+
+    #[test]
+    fn manage_groups_caller_cannot_grant_collection_access_via_groups() {
+        // A caller who can manage collections may change membership of any group.
+        assert!(may_change_group_membership(true, true));
+        assert!(may_change_group_membership(true, false));
+
+        // A caller who cannot manage collections may change membership of groups that confer no
+        // collection access (plain groups).
+        assert!(may_change_group_membership(false, false));
+
+        // REGRESSION (privilege escalation, PR #7397): a caller who cannot manage collections must
+        // NOT be able to change membership of a collection-bearing / access_all group. This is the
+        // vector that let a Custom user with manage_users + manage_groups add themselves to an
+        // access_all group and read all collection contents via edit_member / send_invite. Adding
+        // AND removing such memberships must be denied.
+        assert!(!may_change_group_membership(false, true));
+    }
 }
