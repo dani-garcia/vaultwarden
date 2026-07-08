@@ -550,7 +550,7 @@ impl Membership {
         } else {
             // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
             // so just act as if there are no groups.
-            Vec::with_capacity(0)
+            Vec::new()
         };
 
         // Check if a user is in a group which has access to all collections
@@ -604,7 +604,7 @@ impl Membership {
                 })
                 .collect()
         } else {
-            Vec::with_capacity(0)
+            Vec::new()
         };
 
         // HACK: Convert the manager type to a custom type
