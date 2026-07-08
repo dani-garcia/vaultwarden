@@ -15,14 +15,14 @@ macro_rules! make_error {
 
         #[derive(Debug)]
         pub struct ErrorEvent { pub event: EventType }
-        pub struct Error { message: String, kind: ErrorKind, code: u16, event: Option<ErrorEvent> }
+        pub struct Error { message: String, kind: ErrorKind, code: u16, event: Option<ErrorEvent>, silent: bool }
 
         $(impl From<$ty> for Error {
             fn from(err: $ty) -> Self { Error::from((stringify!($name), err)) }
         })+
         $(impl<S: Into<String>> From<(S, $ty)> for Error {
             fn from(val: (S, $ty)) -> Self {
-                Error { message: val.0.into(), kind: ErrorKind::$name(val.1), code: BAD_REQUEST, event: None }
+                Error { message: val.0.into(), kind: ErrorKind::$name(val.1), code: BAD_REQUEST, event: None, silent: false }
             }
         })+
         impl StdError for Error {
@@ -172,6 +172,18 @@ impl Error {
     pub fn message(&self) -> &str {
         &self.message
     }
+
+    #[must_use]
+    pub fn silent(mut self) -> Self {
+        self.silent = true;
+        self
+    }
+
+    #[must_use]
+    pub fn with_silent(mut self, silent: bool) -> Self {
+        self.silent = silent;
+        self
+    }
 }
 
 pub trait MapResult<S> {
@@ -309,9 +321,11 @@ use rocket::{
 
 impl Responder<'_, 'static> for Error {
     fn respond_to(self, _: &Request<'_>) -> response::Result<'static> {
-        match self.kind {
-            ErrorKind::Empty(_) | ErrorKind::Simple(_) | ErrorKind::Compact(_) => {} // Don't print the error in this situation
-            _ => error!(target: "error", "{self:#?}"),
+        if !self.silent {
+            match self.kind {
+                ErrorKind::Empty(_) | ErrorKind::Simple(_) | ErrorKind::Compact(_) => {} // Don't print the error in this situation
+                _ => error!(target: "error", "{self:#?}"),
+            }
         }
 
         let code = Status::from_code(self.code).unwrap_or(Status::BadRequest);
