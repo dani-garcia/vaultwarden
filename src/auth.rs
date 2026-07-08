@@ -720,15 +720,17 @@ impl OrgHeaders {
     }
     // Custom-role permission checks. Admins and Owners implicitly hold every
     // permission; a Custom member holds a permission only if the matching flag
-    // is set on their Membership.
+    // is set on their Membership. The has_manage_* helpers gate the flags on the
+    // Custom type, so stale flags on other types can never grant anything.
     fn can_manage_users(&self) -> bool {
-        self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.manage_users)
+        self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.has_manage_users())
     }
     fn can_manage_groups(&self) -> bool {
-        self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.manage_groups)
+        self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.has_manage_groups())
     }
     fn can_manage_policies(&self) -> bool {
-        self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.manage_policies)
+        self.is_confirmed()
+            && (self.membership_type >= MembershipType::Admin || self.membership.has_manage_policies())
     }
 }
 

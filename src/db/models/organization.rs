@@ -124,6 +124,11 @@ impl Ord for MembershipType {
         // Custom is treated as a low-privilege base role (same level as Manager for
         // ordering purposes); its elevated capabilities are governed by the explicit
         // manage_* permission flags on the Membership, not by this ordering.
+        //
+        // NOTE: Manager and Custom therefore share an access level while being distinct
+        // variants: the derived `PartialEq` compares the role itself (Manager != Custom),
+        // while this ordering compares access levels (neither is greater than the other).
+        // Keep that in mind before relying on `cmp() == Equal` implying equality.
         const ACCESS_LEVEL: [i32; 5] = [
             3, // Owner
             2, // Admin
@@ -809,6 +814,21 @@ impl Membership {
         (self.access_all || self.atype >= MembershipType::Admin) && self.has_status(MembershipStatus::Confirmed)
     }
 
+    // The granular manage_* permission flags are only meaningful while the membership is of
+    // the Custom type. Gating them on the type here ensures that a stale flag left over from
+    // a type change (e.g. via the admin panel) can never grant anything.
+    pub fn has_manage_users(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.manage_users
+    }
+
+    pub fn has_manage_groups(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.manage_groups
+    }
+
+    pub fn has_manage_policies(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.manage_policies
+    }
+
     pub async fn find_by_uuid(uuid: &MembershipId, conn: &DbConn) -> Option<Self> {
         conn.run(move |conn| {
             users_organizations::table.filter(users_organizations::uuid.eq(uuid)).first::<Self>(conn).ok()
@@ -915,7 +935,7 @@ impl Membership {
         .await
     }
 
-    // Get all users which are either owner or admin, or a manager which can manage/access all
+    // Get all users which are either owner or admin, or a manager/custom member which can manage/access all
     pub async fn find_confirmed_and_manage_all_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             users_organizations::table
@@ -925,7 +945,7 @@ impl Membership {
                     users_organizations::atype
                         .eq_any(vec![MembershipType::Owner as i32, MembershipType::Admin as i32])
                         .or(users_organizations::atype
-                            .eq(MembershipType::Manager as i32)
+                            .eq_any(vec![MembershipType::Manager as i32, MembershipType::Custom as i32])
                             .and(users_organizations::access_all.eq(true))),
                 )
                 .load::<Self>(conn)
@@ -1260,6 +1280,12 @@ mod tests {
         assert!(MembershipType::Owner > MembershipType::Admin);
         assert!(MembershipType::Admin > MembershipType::Manager);
         assert!(MembershipType::Manager > MembershipType::User);
-        assert!(MembershipType::Manager == MembershipType::from_str("4").unwrap());
+        assert!(MembershipType::Custom == MembershipType::from_str("4").unwrap());
+        // Manager and Custom share the same access level, but are distinct roles
+        assert!(MembershipType::Manager != MembershipType::Custom);
+        assert!(MembershipType::Manager >= MembershipType::Custom);
+        assert!(MembershipType::Custom >= MembershipType::Manager);
+        assert!(MembershipType::Custom > MembershipType::User);
+        assert!(MembershipType::Admin > MembershipType::Custom);
     }
 }

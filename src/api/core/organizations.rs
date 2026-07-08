@@ -392,12 +392,12 @@ async fn get_org_collections(org_id: OrganizationId, headers: ManagerHeadersLoos
         err!("Organization not found", "Organization id's do not match");
     }
 
-    // Custom users with a manage permission need to read the collection list (metadata only)
-    // to be able to assign collections to groups/members. This does NOT expose cipher contents.
+    // Custom users with a user/group manage permission need to read the collection list
+    // (metadata only) to be able to assign collections to groups/members. This does NOT
+    // expose cipher contents. manage_policies does not need the collection list.
     let can_read_collection_list = headers.membership.has_full_access()
-        || headers.membership.manage_users
-        || headers.membership.manage_groups
-        || headers.membership.manage_policies;
+        || headers.membership.has_manage_users()
+        || headers.membership.has_manage_groups();
     if !can_read_collection_list {
         err_code!("Resource not found.", "User does not have full access", rocket::http::Status::NotFound.code);
     }
@@ -430,10 +430,11 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
     let has_full_access_to_org = member.has_full_access()
         || (CONFIG.org_groups_enabled() && GroupUser::has_full_access_by_member(&org_id, &member.uuid, &conn).await);
 
-    // Custom users with a manage permission need the full collection list (metadata only)
-    // so the web client can render member/group collection assignments without crashing on
-    // collections it can't otherwise see. This exposes names/ids only, never cipher contents.
-    let can_read_collection_list = member.manage_users || member.manage_groups || member.manage_policies;
+    // Custom users with a user/group manage permission need the full collection list
+    // (metadata only) so the web client can render member/group collection assignments
+    // without crashing on collections it can't otherwise see. This exposes names/ids
+    // only, never cipher contents. manage_policies does not need the collection list.
+    let can_read_collection_list = member.has_manage_users() || member.has_manage_groups();
 
     // Get all admins, owners and managers who can manage/access all
     // Those are currently not listed in the col_users but need to be listed too.
@@ -1075,13 +1076,8 @@ async fn send_invite(
     let data: InviteData = data.into_inner();
     data.validate(&org_id, &conn).await?;
 
-    // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
-    // The from_str() will convert the custom role type into a manager role type
     let raw_type = &data.r#type.into_string();
-    // Membership::from_str will convert custom (4) to manager (3)
-    let new_type = if let Some(new_type) = MembershipType::from_str(raw_type) {
-        new_type as i32
-    } else {
+    let Some(new_type) = MembershipType::from_str(raw_type) else {
         err!("Invalid type")
     };
 
@@ -1089,11 +1085,11 @@ async fn send_invite(
         err!("Only Owners can invite Managers, Admins or Owners")
     }
 
-    // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
-    // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
-    // If the box is not checked, the user will still be a manager, but not with the access_all permission
+    // For a Custom role, the "Manage all collections" parent checkbox is not sent to
+    // the server; we derive access_all from its three child checkboxes. Admins/Owners
+    // implicitly have access to all collections.
     let access_all = new_type >= MembershipType::Admin
-        || (raw_type.eq("4")
+        || (new_type == MembershipType::Custom
             && data.permissions.get("editAnyCollection") == Some(&json!(true))
             && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
             && data.permissions.get("createNewCollections") == Some(&json!(true)));
@@ -1135,7 +1131,7 @@ async fn send_invite(
 
         let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), Some(headers.user.email.clone()));
         new_member.access_all = access_all;
-        new_member.atype = new_type;
+        new_member.atype = new_type as i32;
         new_member.status = member_status;
         new_member.save(&conn).await?;
 
@@ -1211,7 +1207,7 @@ async fn send_invite(
         // manage_groups) are allowed to assign groups when inviting.
         let caller_can_manage_groups = headers.membership_type >= MembershipType::Admin
             || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
-                Some(m) => m.manage_groups,
+                Some(m) => m.has_manage_groups(),
                 None => false,
             };
 
@@ -1635,11 +1631,17 @@ async fn edit_member(
         }
     }
 
-    // Security: only Admins and Owners may grant the granular custom-role management
-    // permissions. A custom user with manage_users must not be able to grant these
-    // permissions (to themselves or others), which would be a privilege escalation.
-    if headers.membership_type < MembershipType::Admin && (manage_users || manage_groups || manage_policies) {
-        err!("Only Admins or Owners can grant custom management permissions")
+    // Security: only Admins and Owners may change the granular custom-role management
+    // permissions. A Custom member with manage_users must not be able to grant them (to
+    // themselves or others — a privilege escalation) nor strip flags an Admin/Owner has
+    // granted to fellow Custom members. Requests that leave the flags unchanged are
+    // allowed, so such members can still use the regular edit dialog.
+    if headers.membership_type < MembershipType::Admin
+        && (manage_users != member_to_edit.manage_users
+            || manage_groups != member_to_edit.manage_groups
+            || manage_policies != member_to_edit.manage_policies)
+    {
+        err!("Only Admins or Owners can change custom management permissions")
     }
 
     // Security: only callers who can actually manage collections (Admins/Owners, or users
@@ -1701,7 +1703,7 @@ async fn edit_member(
     // with manage_groups) are allowed to change it. For others we leave group membership untouched.
     let caller_can_manage_groups = headers.membership_type >= MembershipType::Admin
         || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
-            Some(m) => m.manage_groups,
+            Some(m) => m.has_manage_groups(),
             None => false,
         };
 
@@ -2036,6 +2038,20 @@ async fn list_policies(org_id: OrganizationId, headers: ManagerHeadersLoose, con
     if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
+
+    // Security: only Admins/Owners, or Custom members holding at least one management
+    // permission, may read the full policy list (the Admin Console needs it to load).
+    // Plain Managers and Custom members without any permission keep the pre-existing
+    // behaviour of having no access here.
+    let membership = &headers.membership;
+    if !(membership.atype >= MembershipType::Admin
+        || membership.has_manage_users()
+        || membership.has_manage_groups()
+        || membership.has_manage_policies())
+    {
+        err!("You don't have permission to view policies")
+    }
+
     let policies = OrgPolicy::find_by_org(&org_id, &conn).await;
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 

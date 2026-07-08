@@ -567,6 +567,13 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
     }
 
     member_to_edit.atype = new_type;
+    // The manage_* permission flags only apply to the Custom role; clear them on any other
+    // type so a member changed away from Custom does not retain stale management permissions.
+    if new_type != MembershipType::Custom {
+        member_to_edit.manage_users = false;
+        member_to_edit.manage_groups = false;
+        member_to_edit.manage_policies = false;
+    }
     // This check is also done at api::organizations::{accept_invite, _confirm_invite, _activate_member, edit_member}, update_membership_type
     OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
