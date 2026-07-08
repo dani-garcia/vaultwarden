@@ -161,7 +161,7 @@ impl Send {
             "password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
             "authType": if self.password_hash.is_some() { SendAuthType::Password as i32 } else { SendAuthType::None as i32 },
             "disabled": self.disabled,
-            "hideEmail": self.hide_email,
+            "hideEmail": self.hide_email.unwrap_or(false),
 
             "revisionDate": format_date(&self.revision_date),
             "expirationDate": self.expiration_date.as_ref().map(format_date),

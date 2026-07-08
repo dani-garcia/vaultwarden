@@ -37,8 +37,8 @@ use crate::{
         DbConn,
         models::{
             AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeResponseError,
-            OrganizationApiKey, OrganizationId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete, TwoFactorType, User,
-            UserId, WebauthnCredential,
+            OrganizationApiKey, OrganizationId, SendId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete,
+            TwoFactorType, User, UserId, WebauthnCredential,
         },
     },
     error::MapResult,
@@ -129,6 +129,19 @@ async fn login(
             webauthn_login(data, &mut user_id, &conn, &client_header.ip).await
         }
         "webauthn" => err!("Passkey login is not allowed"),
+        "send_access" => {
+            check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
+            check_is_some(data.send_id.as_ref(), "send_id cannot be blank")?;
+
+            let tokens = auth::SendTokens::generate_tokens(
+                data.send_id.as_ref().unwrap(),
+                data.password_hash_b64,
+                &client_header.ip,
+                &conn,
+            )
+            .await?;
+            Ok(Json(tokens.to_json()))
+        }
         t => err!("Invalid type", t),
     };
 
@@ -1327,6 +1340,10 @@ struct ConnectData {
     device_response: Option<String>,
     #[field(name = uncased("token"))]
     token: Option<String>,
+
+    // Needed for send access
+    send_id: Option<SendId>,
+    password_hash_b64: Option<String>,
 }
 fn check_is_some<T>(value: Option<&T>, msg: &str) -> EmptyResult {
     if value.is_none() {
