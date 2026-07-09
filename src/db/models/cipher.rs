@@ -320,7 +320,7 @@ impl Cipher {
             if let Some(cipher_collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
                 Cow::from(cipher_collections)
             } else {
-                Cow::from(Vec::with_capacity(0))
+                Cow::from(Vec::new())
             }
         } else {
             Cow::from(self.get_admin_collections(user_uuid.clone(), conn).await)

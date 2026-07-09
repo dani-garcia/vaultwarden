@@ -20,7 +20,7 @@ jobs:
     steps:
       # Start Docker Buildx
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
         # https://github.com/moby/buildkit/issues/3969
         # Also set max parallelism to 2, the default of 4 breaks GitHub Actions and causes OOMKills
         with:
@@ -30,24 +30,25 @@ jobs:
           driver-opts: |
             network=host
 
-      # Download hadolint - https://github.com/hadolint/hadolint/releases
-      - name: Download hadolint
-        run: |
-          sudo curl -L https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-$(uname -s)-$(uname -m) -o /usr/local/bin/hadolint && \
-          sudo chmod +x /usr/local/bin/hadolint
-        env:
-          HADOLINT_VERSION: 2.14.0
-      # End Download hadolint
       # Checkout the repo
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       # End Checkout the repo
 
       # Test Dockerfiles with hadolint
-      - name: Run hadolint
-        run: hadolint docker/Dockerfile.{debian,alpine}
+      # Uses the Docker-based action (hadolint pre-bundled in ghcr.io/hadolint/hadolint:v2.14.0-debian)
+      # so no binary is downloaded at runtime. Pinned by commit SHA for supply-chain safety.
+      - name: Run hadolint on Dockerfile.debian
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
+        with:
+          dockerfile: docker/Dockerfile.debian
+
+      - name: Run hadolint on Dockerfile.alpine
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
+        with:
+          dockerfile: docker/Dockerfile.alpine
       # End Test Dockerfiles with hadolint
 
       # Test Dockerfiles with docker build checks

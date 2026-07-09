@@ -52,7 +52,7 @@ async fn get_org_events(org_id: OrganizationId, data: EventRange, headers: Admin
             .map(Event::to_json)
             .collect()
     } else {
-        Vec::with_capacity(0)
+        Vec::new()
     };
 
     Ok(Json(json!({
@@ -78,7 +78,7 @@ async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Heade
 
         Event::find_by_cipher_uuid(&cipher_id, &start_date, &end_date, &conn).await.iter().map(Event::to_json).collect()
     } else {
-        Vec::with_capacity(0)
+        Vec::new()
     };
 
     Ok(Json(json!({
@@ -115,7 +115,7 @@ async fn get_user_events(
             .map(Event::to_json)
             .collect()
     } else {
-        Vec::with_capacity(0)
+        Vec::new()
     };
 
     Ok(Json(json!({

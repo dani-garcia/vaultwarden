@@ -2135,9 +2135,9 @@ impl CipherSyncData {
             // Organization Sync does not support Folders, Favorites, or Archives.
             // If these are set, it will cause issues in the web-vault.
             CipherSyncType::Organization => {
-                cipher_folders = HashMap::with_capacity(0);
-                cipher_favorites = HashSet::with_capacity(0);
-                cipher_archives = HashMap::with_capacity(0);
+                cipher_folders = HashMap::new();
+                cipher_favorites = HashSet::new();
+                cipher_archives = HashMap::new();
             }
         }
 
