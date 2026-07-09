@@ -584,7 +584,7 @@ impl Membership {
                         (
                             cu.read_only,
                             cu.hide_passwords,
-                            cu.manage || (self.atype == MembershipType::Manager && !cu.read_only && !cu.hide_passwords),
+                            cu.manage || (self.atype >= MembershipType::Manager && !cu.read_only && !cu.hide_passwords),
                         )
                     // If previous checks failed it might be that this user has access via a group, but we should not return those elements here
                     // Those are returned via a special group endpoint
