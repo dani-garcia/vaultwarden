@@ -174,9 +174,13 @@ const ORG_TYPES = {
         "name": "User",
         "bg": "blue"
     },
-    "4": {
+    "3": {
         "name": "Manager",
         "bg": "green"
+    },
+    "4": {
+        "name": "Custom",
+        "bg": "teal"
     },
 };
 
