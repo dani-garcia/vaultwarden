@@ -1641,6 +1641,18 @@ async fn edit_member(
         err!("Only Owners can grant and remove Admin or Owner privileges")
     }
 
+    // Security: only Admins and Owners may change a member's role type at all. A Custom member
+    // with manage_users must not change roles: raising a member to Manager/Custom grants
+    // collection-"manage" on every collection they can already write (see the `atype >= Manager`
+    // branch in `Collection`/`Membership` json), and lowering it revokes that access — both are
+    // collection-access changes this caller is not entitled to make, even though the manage_*
+    // flags and access_all are already gated below. Requests that leave the role unchanged are
+    // allowed, so such members can still use the regular edit dialog. The Admin/Owner guard above
+    // still governs Admin/Owner transitions for Owners.
+    if !may_change_member_type(headers.membership_type, member_to_edit.atype, new_type) {
+        err!("Only Admins or Owners can change a member's role")
+    }
+
     if member_to_edit.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
         err!("Only Owners can edit Owner users")
     }
@@ -2869,6 +2881,20 @@ fn may_change_group_membership(caller_can_manage_collections: bool, group_confer
     caller_can_manage_collections || !group_confers_collection_access
 }
 
+/// Whether a caller of `edit_member` may change a member's role type.
+///
+/// Only Admins and Owners may change a member's role at all. A Custom member with `manage_users`
+/// must not, because the role type has collection-access side effects: a member of type
+/// `Manager`/`Custom` gains collection-"manage" on every collection they can write (the
+/// `atype >= Manager` branches in `Collection`/`Membership`), so promoting grants that access and
+/// demoting revokes it. `manage_users` covers the user lifecycle, not the data plane, so role
+/// changes are reserved for Admins/Owners. Leaving the role unchanged is always allowed so
+/// `manage_users` members can still use the regular edit dialog. Admin/Owner transitions are
+/// additionally governed by the dedicated Owner-only guard in `edit_member`.
+fn may_change_member_type(caller_type: MembershipType, current_atype: i32, new_type: MembershipType) -> bool {
+    caller_type >= MembershipType::Admin || new_type == current_atype
+}
+
 /// Returns true if being a member of `group_id` confers collection access — either because the
 /// group has `access_all` set, or because it has collections assigned.
 async fn group_confers_collection_access(group_id: &GroupId, org_id: &OrganizationId, conn: &DbConn) -> bool {
@@ -3542,7 +3568,34 @@ async fn rotate_api_key(
 
 #[cfg(test)]
 mod tests {
-    use super::may_change_group_membership;
+    use super::{may_change_group_membership, may_change_member_type};
+    use crate::db::models::MembershipType;
+
+    #[test]
+    fn manage_users_caller_cannot_change_member_role() {
+        let user = MembershipType::User as i32;
+        let manager = MembershipType::Manager as i32;
+        let custom = MembershipType::Custom as i32;
+
+        // Admins and Owners may change a member's role.
+        assert!(may_change_member_type(MembershipType::Owner, user, MembershipType::Manager));
+        assert!(may_change_member_type(MembershipType::Admin, user, MembershipType::Custom));
+
+        // A below-Admin caller (Manager / Custom-with-manage_users) may only submit an unchanged
+        // role, so the regular edit dialog keeps working.
+        assert!(may_change_member_type(MembershipType::Custom, user, MembershipType::User));
+        assert!(may_change_member_type(MembershipType::Custom, custom, MembershipType::Custom));
+        assert!(may_change_member_type(MembershipType::Manager, manager, MembershipType::Manager));
+
+        // REGRESSION (privilege escalation, PR #7397 / finding F1): a caller below Admin must NOT
+        // be able to change a member's role. Promoting User -> Manager/Custom grants that member
+        // collection-"manage" on their writable collections (atype >= Manager), and demoting
+        // revokes it — collection-access changes a manage_users caller is not entitled to make.
+        assert!(!may_change_member_type(MembershipType::Custom, user, MembershipType::Manager));
+        assert!(!may_change_member_type(MembershipType::Custom, user, MembershipType::Custom));
+        assert!(!may_change_member_type(MembershipType::Custom, manager, MembershipType::User));
+        assert!(!may_change_member_type(MembershipType::Manager, custom, MembershipType::User));
+    }
 
     #[test]
     fn manage_groups_caller_cannot_grant_collection_access_via_groups() {
