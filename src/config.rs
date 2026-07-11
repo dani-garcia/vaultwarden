@@ -1209,7 +1209,9 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     let icon_service_fallback = cfg.icon_service_fallback.as_str();
     if !icon_service_fallback.is_empty() {
         if icon_service != "internal" {
-            err!(format!("Fallback Icon service can only be used for \"internal\" Icon service, you are currently using \"{icon_service}\""))
+            err!(format!(
+                "Fallback Icon service can only be used for \"internal\" Icon service, you are currently using \"{icon_service}\""
+            ))
         }
         match icon_service_fallback {
             "bitwarden" | "duckduckgo" | "google" => (),
@@ -1223,7 +1225,9 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                         err!(format!("Fallback Icon service URL `{icon_service_fallback}` has no placeholder \"{{}}\""))
                     }
                     _ => {
-                        err!(format!("Fallback Icon service URL `{icon_service_fallback}` has more than one placeholder \"{{}}\""))
+                        err!(format!(
+                            "Fallback Icon service URL `{icon_service_fallback}` has more than one placeholder \"{{}}\""
+                        ))
                     }
                 }
             }

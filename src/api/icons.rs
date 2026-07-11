@@ -495,8 +495,6 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
     let mut buffer = Bytes::new();
     let mut icon_type: Option<&str> = None;
 
-    use data_url::DataUrl;
-
     let fallback_icon = if CONFIG.icon_service_fallback().is_empty() {
         None
     } else {
