@@ -23,7 +23,7 @@ pub use self::attachment::{Attachment, AttachmentId};
 pub use self::auth_request::{AuthRequest, AuthRequestId};
 pub use self::cipher::{Cipher, CipherId, RepromptType};
 pub use self::collection::{Collection, CollectionCipher, CollectionId, CollectionUser};
-pub use self::device::{Device, DeviceId, DeviceType, PushId};
+pub use self::device::{Device, DeviceId, DeviceType, DeviceWithAuthRequest, PushId};
 pub use self::emergency_access::{EmergencyAccess, EmergencyAccessId, EmergencyAccessStatus, EmergencyAccessType};
 pub use self::event::{Event, EventType};
 pub use self::favorite::Favorite;
@@ -34,11 +34,8 @@ pub use self::organization::{
     Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, Organization, OrganizationApiKey,
     OrganizationId,
 };
-pub use self::send::{
-    id::{SendFileId, SendId},
-    Send, SendType,
-};
-pub use self::sso_auth::{OIDCAuthenticatedUser, OIDCCodeWrapper, SsoAuth};
+pub use self::send::{Send, SendFileId, SendId, SendType};
+pub use self::sso_auth::{OIDCAuthenticatedUser, OIDCCodeResponseError, SsoAuth};
 pub use self::two_factor::{TwoFactor, TwoFactorType};
 pub use self::two_factor_duo_context::TwoFactorDuoContext;
 pub use self::two_factor_incomplete::TwoFactorIncomplete;
