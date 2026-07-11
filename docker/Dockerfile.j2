@@ -58,8 +58,6 @@ ARG TARGETARCH
 ARG TARGETVARIANT
 ARG TARGETPLATFORM
 
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -111,7 +109,7 @@ RUN echo "export CARGO_TARGET=${RUST_MUSL_CROSS_TARGET}" >> /env-cargo && \
     cat /env-cargo
 
 {% endif %}
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
 # Copies over *only* your manifests and build files
@@ -132,7 +130,7 @@ ARG FEATURES=s3,enable_mimalloc
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN source /env-cargo && \
+RUN . /env-cargo && \
 {% if base == "debian" %}
     {{ xx_cargo_config() }} && \
 {% elif base == "alpine" %}
@@ -147,7 +145,7 @@ COPY . .
 ARG VW_VERSION
 
 # Builds again, this time it will be the actual source files being build
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     # Make sure that we actually build the project by updating the src/main.rs timestamp
     # Also do this for build.rs to ensure the version is rechecked
     touch build.rs src/main.rs && \
@@ -157,7 +155,7 @@ RUN source /env-cargo && \
 {% elif base == "alpine" %}
     cargo build --features "${DB}" --features "${FEATURES}" --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
 {% endif %}
-    if [[ "${CARGO_PROFILE}" == "dev" ]] ; then \
+    if test "${CARGO_PROFILE}" = "dev"; then \
         ln -vfsr "/app/target/${CARGO_TARGET}/debug" /app/target/final ; \
     else \
         ln -vfsr "/app/target/${CARGO_TARGET}/${CARGO_PROFILE}" /app/target/final ; \
