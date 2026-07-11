@@ -128,11 +128,19 @@ impl Fairing for AppHeaders {
                     https://app.addy.io/api/ \
                     https://api.fastmail.com/ \
                     https://api.forwardemail.net \
+                    {key_connector_src} \
                     {allowed_connect_src};\
                     ",
                     icon_service_csp = CONFIG._icon_service_csp(),
                     allowed_iframe_ancestors = CONFIG.allowed_iframe_ancestors(),
                     allowed_connect_src = CONFIG.allowed_connect_src(),
+                    // The web vault fetches the master key from the key connector, so it
+                    // has to be allowed to connect to it.
+                    key_connector_src = if CONFIG.key_connector_enabled() {
+                        CONFIG.key_connector_url()
+                    } else {
+                        String::new()
+                    },
                 )
             };
 
