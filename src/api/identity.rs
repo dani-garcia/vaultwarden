@@ -541,7 +541,9 @@ async fn authenticated_response(
 
     let master_password_policy = master_password_policy(user, conn).await;
 
-    let has_master_password = !user.password_hash.is_empty();
+    // Key connector users have no master password, the master key is stored on the connector
+    let uses_key_connector = CONFIG.key_connector_enabled() && user.uses_key_connector;
+    let has_master_password = !user.password_hash.is_empty() && !uses_key_connector;
     let master_password_unlock = if has_master_password {
         json!({
             "Kdf": {
@@ -597,6 +599,11 @@ async fn authenticated_response(
 
     if !user.akey.is_empty() {
         result["Key"] = Value::String(user.akey.clone());
+    }
+
+    if uses_key_connector {
+        result["UserDecryptionOptions"]["KeyConnectorOption"] =
+            crate::api::core::key_connector::key_connector_user_decryption_option();
     }
 
     if let Some(token) = twofactor_token {
