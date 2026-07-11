@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod key_connector;
 pub mod two_factor;
 
 mod ciphers;
@@ -39,6 +40,7 @@ pub fn routes() -> Vec<Route> {
 
     let mut routes = Vec::new();
     routes.append(&mut accounts::routes());
+    routes.append(&mut key_connector::routes());
     routes.append(&mut ciphers::routes());
     routes.append(&mut emergency_access::routes());
     routes.append(&mut events::routes());

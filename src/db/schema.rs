@@ -219,6 +219,7 @@ table! {
         avatar_color -> Nullable<Text>,
         external_id -> Nullable<Text>,
         key_id -> Nullable<Text>,
+        uses_key_connector -> Bool,
     }
 }
 
