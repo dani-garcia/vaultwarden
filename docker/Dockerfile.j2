@@ -30,7 +30,7 @@
 {% macro xx_cargo_config() -%}
 # Workaround for xx related build issues
     # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
-    PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}"
+    PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features "${DB}" --features "${FEATURES}" --profile "${CARGO_PROFILE}"
 {%- endmacro %}
 FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@{{ vault_image_digest }} AS vault
 
@@ -120,12 +120,13 @@ COPY ./macros ./macros
 
 ARG CARGO_PROFILE=release
 
-# Configure the DB ARG as late as possible to not invalidate the cached layers above
-{% if base == "debian" %}
+# Configure the DB and FEATURES ARGs as late as possible to not invalidate the cached layers above
 ARG DB=sqlite,mysql,postgresql
+{% if base == "debian" %}
+ARG FEATURES=s3
 {% elif base == "alpine" %}
 # Enable MiMalloc to improve performance on Alpine builds
-ARG DB=sqlite,mysql,postgresql,enable_mimalloc
+ARG FEATURES=s3,enable_mimalloc
 {% endif %}
 
 # Builds your dependencies and removes the
@@ -135,7 +136,7 @@ RUN source /env-cargo && \
 {% if base == "debian" %}
     {{ xx_cargo_config() }} && \
 {% elif base == "alpine" %}
-    cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
+    cargo build --features "${DB}" --features "${FEATURES}" --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
 {% endif %}
     find . -not -path "./target*" -delete
 
@@ -154,7 +155,7 @@ RUN source /env-cargo && \
 {% if base == "debian" %}
     {{ xx_cargo_config() }} && \
 {% elif base == "alpine" %}
-    cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
+    cargo build --features "${DB}" --features "${FEATURES}" --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
 {% endif %}
     if [[ "${CARGO_PROFILE}" == "dev" ]] ; then \
         ln -vfsr "/app/target/${CARGO_TARGET}/debug" /app/target/final ; \

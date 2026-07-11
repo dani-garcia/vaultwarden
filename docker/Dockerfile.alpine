@@ -79,15 +79,16 @@ COPY ./macros ./macros
 
 ARG CARGO_PROFILE=release
 
-# Configure the DB ARG as late as possible to not invalidate the cached layers above
+# Configure the DB and FEATURES ARGs as late as possible to not invalidate the cached layers above
+ARG DB=sqlite,mysql,postgresql
 # Enable MiMalloc to improve performance on Alpine builds
-ARG DB=sqlite,mysql,postgresql,enable_mimalloc
+ARG FEATURES=s3,enable_mimalloc
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
 RUN source /env-cargo && \
-    cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
+    cargo build --features "${DB}" --features "${FEATURES}" --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
     find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -102,7 +103,7 @@ RUN source /env-cargo && \
     # Also do this for build.rs to ensure the version is rechecked
     touch build.rs src/main.rs && \
     # Create a symlink to the binary target folder to easy copy the binary in the final stage
-    cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
+    cargo build --features "${DB}" --features "${FEATURES}" --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
     if [[ "${CARGO_PROFILE}" == "dev" ]] ; then \
         ln -vfsr "/app/target/${CARGO_TARGET}/debug" /app/target/final ; \
     else \
