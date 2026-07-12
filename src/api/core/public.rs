@@ -6,23 +6,35 @@ use rocket::{
     request::{FromRequest, Outcome},
     serde::json::Json,
 };
+use serde_json::Value;
 
 use crate::{
     CONFIG,
-    api::EmptyResult,
+    api::{EmptyResult, JsonResult},
     auth,
     db::{
         DbConn,
         models::{
-            Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, OrgPolicy, Organization,
-            OrganizationApiKey, OrganizationId, User,
+            Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, Invitation,
+            Membership, MembershipId, MembershipStatus, MembershipType, OrgPolicy, Organization, OrganizationApiKey,
+            OrganizationId, User,
         },
     },
     mail,
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![ldap_import]
+    routes![
+        ldap_import,
+        get_members,
+        get_member,
+        get_member_group_ids,
+        get_groups,
+        get_group,
+        get_group_member_ids,
+        get_collections,
+        get_collection,
+    ]
 }
 
 #[derive(Deserialize)]
@@ -194,6 +206,213 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
     }
 
     Ok(())
+}
+
+// These endpoints implement the read side of the organization Public API so an
+// organization-scoped API client can read back the members, groups, and
+// collections (and their associations) that the existing
+// "/public/organization/import" endpoint writes. They all reuse the PublicToken
+// guard, so they are authorized by the same organization API key.
+
+// Base member object. The list endpoint returns this as-is; the single-member
+// endpoint extends it with "collections".
+async fn member_to_json(member: &Membership, conn: &DbConn) -> Value {
+    let (name, email) = match User::find_by_uuid(&member.user_uuid, conn).await {
+        Some(user) => {
+            let name = if user.name.is_empty() {
+                Value::Null
+            } else {
+                Value::String(user.name)
+            };
+            (name, Value::String(user.email))
+        }
+        None => (Value::Null, Value::Null),
+    };
+
+    json!({
+        "object": "member",
+        "id": member.uuid,
+        "userId": member.user_uuid,
+        "name": name,
+        "email": email,
+        "type": member.atype,
+        "externalId": member.external_id,
+        "resetPasswordEnrolled": member.reset_password_key.is_some(),
+        "status": member.status,
+    })
+}
+
+// Base group object. The list endpoint returns this as-is; the single-group
+// endpoint extends it with "collections".
+fn group_to_json(group: &Group) -> Value {
+    json!({
+        "object": "group",
+        "id": group.uuid,
+        "name": group.name,
+        "accessAll": group.access_all,
+        "externalId": group.external_id,
+    })
+}
+
+// Base collection object. The Bitwarden Public API keys collections by id and
+// externalId only; the name is deliberately omitted because it is end-to-end
+// encrypted ciphertext. The single-collection endpoint extends it with "groups".
+fn collection_to_json(collection: &Collection) -> Value {
+    json!({
+        "object": "collection",
+        "id": collection.uuid,
+        "externalId": collection.external_id,
+    })
+}
+
+#[get("/public/members")]
+async fn get_members(token: PublicToken, conn: DbConn) -> JsonResult {
+    let org_id = token.0;
+    let mut members_json = Vec::new();
+    for member in Membership::find_by_org(&org_id, &conn).await {
+        members_json.push(member_to_json(&member, &conn).await);
+    }
+
+    Ok(Json(json!({
+        "object": "list",
+        "data": members_json,
+        "continuationToken": null,
+    })))
+}
+
+#[get("/public/members/<member_id>")]
+async fn get_member(member_id: MembershipId, token: PublicToken, conn: DbConn) -> JsonResult {
+    let org_id = token.0;
+    let Some(member) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
+        err_code!(format!("Member {member_id} not found in organization"), 404);
+    };
+
+    let collections: Vec<Value> = CollectionUser::find_by_organization_and_user_uuid(&org_id, &member.user_uuid, &conn)
+        .await
+        .iter()
+        .map(|c| {
+            json!({
+                "id": c.collection_uuid,
+                "readOnly": c.read_only,
+                "hidePasswords": c.hide_passwords,
+                "manage": c.manage,
+            })
+        })
+        .collect();
+
+    let mut member_json = member_to_json(&member, &conn).await;
+    member_json["collections"] = json!(collections);
+
+    Ok(Json(member_json))
+}
+
+#[get("/public/members/<member_id>/group-ids")]
+async fn get_member_group_ids(member_id: MembershipId, token: PublicToken, conn: DbConn) -> JsonResult {
+    let org_id = token.0;
+    if Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await.is_none() {
+        err_code!(format!("Member {member_id} not found in organization"), 404);
+    }
+
+    // GroupUser links a group to a membership, so a member's group ids are the
+    // group uuids of the GroupUser rows referencing this membership.
+    let group_ids: Vec<GroupId> =
+        GroupUser::find_by_member(&member_id, &conn).await.into_iter().map(|gu| gu.groups_uuid).collect();
+
+    Ok(Json(json!(group_ids)))
+}
+
+#[get("/public/groups")]
+async fn get_groups(token: PublicToken, conn: DbConn) -> JsonResult {
+    let org_id = token.0;
+    let groups_json: Vec<Value> = Group::find_by_organization(&org_id, &conn).await.iter().map(group_to_json).collect();
+
+    Ok(Json(json!({
+        "object": "list",
+        "data": groups_json,
+        "continuationToken": null,
+    })))
+}
+
+#[get("/public/groups/<group_id>")]
+async fn get_group(group_id: GroupId, token: PublicToken, conn: DbConn) -> JsonResult {
+    let org_id = token.0;
+    let Some(group) = Group::find_by_uuid_and_org(&group_id, &org_id, &conn).await else {
+        err_code!(format!("Group {group_id} not found in organization"), 404);
+    };
+
+    let collections: Vec<Value> = CollectionGroup::find_by_group(&group_id, &org_id, &conn)
+        .await
+        .iter()
+        .map(|c| {
+            json!({
+                "id": c.collections_uuid,
+                "readOnly": c.read_only,
+                "hidePasswords": c.hide_passwords,
+                "manage": c.manage,
+            })
+        })
+        .collect();
+
+    let mut group_json = group_to_json(&group);
+    group_json["collections"] = json!(collections);
+
+    Ok(Json(group_json))
+}
+
+#[get("/public/groups/<group_id>/member-ids")]
+async fn get_group_member_ids(group_id: GroupId, token: PublicToken, conn: DbConn) -> JsonResult {
+    let org_id = token.0;
+    if Group::find_by_uuid_and_org(&group_id, &org_id, &conn).await.is_none() {
+        err_code!(format!("Group {group_id} not found in organization"), 404);
+    }
+
+    // A group's member ids are the membership uuids of its GroupUser rows.
+    let member_ids: Vec<MembershipId> = GroupUser::find_by_group(&group_id, &org_id, &conn)
+        .await
+        .into_iter()
+        .map(|gu| gu.users_organizations_uuid)
+        .collect();
+
+    Ok(Json(json!(member_ids)))
+}
+
+#[get("/public/collections")]
+async fn get_collections(token: PublicToken, conn: DbConn) -> JsonResult {
+    let org_id = token.0;
+    let collections_json: Vec<Value> =
+        Collection::find_by_organization(&org_id, &conn).await.iter().map(collection_to_json).collect();
+
+    Ok(Json(json!({
+        "object": "list",
+        "data": collections_json,
+        "continuationToken": null,
+    })))
+}
+
+#[get("/public/collections/<collection_id>")]
+async fn get_collection(collection_id: CollectionId, token: PublicToken, conn: DbConn) -> JsonResult {
+    let org_id = token.0;
+    let Some(collection) = Collection::find_by_uuid_and_org(&collection_id, &org_id, &conn).await else {
+        err_code!(format!("Collection {collection_id} not found in organization"), 404);
+    };
+
+    let groups: Vec<Value> = CollectionGroup::find_by_collection(&collection_id, &conn)
+        .await
+        .iter()
+        .map(|c| {
+            json!({
+                "id": c.groups_uuid,
+                "readOnly": c.read_only,
+                "hidePasswords": c.hide_passwords,
+                "manage": c.manage,
+            })
+        })
+        .collect();
+
+    let mut collection_json = collection_to_json(&collection);
+    collection_json["groups"] = json!(groups);
+
+    Ok(Json(collection_json))
 }
 
 pub struct PublicToken(OrganizationId);
