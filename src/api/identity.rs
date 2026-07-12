@@ -52,8 +52,25 @@ pub fn routes() -> Vec<Route> {
         prevalidate,
         authorize,
         oidcsignin,
-        oidcsignin_error
+        oidcsignin_error,
+        openid_configuration,
+        jwks
     ]
+}
+
+// Issuer and signing key of our own login tokens, for services that verify
+// them (e.g. a key connector). The issuer is the `iss` claim, not a URL.
+#[get("/.well-known/openid-configuration")]
+fn openid_configuration() -> Json<Value> {
+    Json(json!({
+        "issuer": *auth::JWT_LOGIN_ISSUER,
+        "jwks_uri": format!("{}/identity/.well-known/jwks", CONFIG.domain()),
+    }))
+}
+
+#[get("/.well-known/jwks")]
+fn jwks() -> Json<Value> {
+    Json(auth::login_jwks().clone())
 }
 
 #[post("/connect/token", data = "<data>")]
