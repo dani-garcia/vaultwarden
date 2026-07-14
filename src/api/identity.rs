@@ -542,7 +542,10 @@ async fn authenticated_response(
     let master_password_policy = master_password_policy(user, conn).await;
 
     // Key connector users have no master password, the master key is stored on the connector
-    let uses_key_connector = CONFIG.key_connector_enabled() && user.uses_key_connector;
+    let uses_key_connector = user.uses_key_connector;
+    if uses_key_connector && !CONFIG.key_connector_enabled() {
+        err!("This user's master key is stored on a key connector, but Key Connector support is disabled")
+    }
     let has_master_password = !user.password_hash.is_empty() && !uses_key_connector;
     let master_password_unlock = if has_master_password {
         json!({
