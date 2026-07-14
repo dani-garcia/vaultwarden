@@ -363,7 +363,7 @@ async fn enroll_user_in_default_organization(user: &User, conn: &DbConn) -> ApiR
     let Some(org_uuid) = CONFIG.sso_default_organization_uuid() else {
         return Ok(());
     };
-    let org_id = OrganizationId::from(org_uuid);
+    let org_id = normalize_organization_uuid(&org_uuid)?;
 
     if Membership::find_by_user_and_org(&user.uuid, &org_id, conn).await.is_some() {
         return Ok(());
@@ -378,6 +378,15 @@ async fn enroll_user_in_default_organization(user: &User, conn: &DbConn) -> ApiR
 
     info!("Added SSO user {} to default organization {} pending confirmation", user.uuid, org_id);
     Ok(())
+}
+
+// `Uuid::parse_str` also accepts non-canonical forms (uppercase, braced, without hyphens),
+// while stored organization uuids are always lowercase hyphenated and compared as strings.
+fn normalize_organization_uuid(org_uuid: &str) -> ApiResult<OrganizationId> {
+    let Ok(parsed) = uuid::Uuid::parse_str(org_uuid) else {
+        err!("`SSO_DEFAULT_ORGANIZATION_UUID` must be a valid UUID")
+    };
+    Ok(OrganizationId::from(parsed.to_string()))
 }
 
 fn new_default_sso_membership(user_uuid: UserId, org_id: OrganizationId) -> Membership {
@@ -404,6 +413,23 @@ mod default_organization_tests {
         assert_eq!(membership.status, MembershipStatus::Accepted as i32);
         assert_eq!(membership.atype, MembershipType::User as i32);
         assert!(membership.invited_by_email.is_none());
+    }
+
+    #[test]
+    fn normalizes_organization_uuid_to_canonical_form() {
+        for input in [
+            "1B2C3D4E-5F60-7182-93A4-B5C6D7E8F901",
+            "{1b2c3d4e-5f60-7182-93a4-b5c6d7e8f901}",
+            "1b2c3d4e5f60718293a4b5c6d7e8f901",
+        ] {
+            let org_id = normalize_organization_uuid(input).expect("valid UUID form should be accepted");
+            assert_eq!(org_id.to_string(), "1b2c3d4e-5f60-7182-93a4-b5c6d7e8f901");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_organization_uuid() {
+        assert!(normalize_organization_uuid("not-a-uuid").is_err());
     }
 }
 
