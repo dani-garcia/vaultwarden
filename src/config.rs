@@ -705,6 +705,8 @@ make_config! {
         /// Disable Two-Factor remember |> Enabling this would force the users to use a second factor to login every time.
         /// Note that the checkbox would still be present, but ignored.
         disable_2fa_remember:   bool,   true,   def,    false;
+        /// Two-Factor remember duration |> Number of days before a remembered Two-Factor login expires (min: 1, max: 3650).
+        two_factor_remember_days: i64,  true,   def,    30;
 
         /// Disable authenticator time drifted codes to be valid |> Enabling this only allows the current TOTP code to be valid
         /// TOTP codes of the previous and next 30 seconds will be invalid.
@@ -1207,6 +1209,10 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
 
     if cfg.invitation_expiration_hours < 1 {
         err!("`INVITATION_EXPIRATION_HOURS` has a minimum duration of 1 hour")
+    }
+
+    if !(1..=3650).contains(&cfg.two_factor_remember_days) {
+        err!("`TWO_FACTOR_REMEMBER_DAYS` must be between 1 and 3650 days")
     }
 
     // Validate schedule crontab format
