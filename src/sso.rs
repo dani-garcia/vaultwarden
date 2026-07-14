@@ -12,7 +12,10 @@ use crate::{
     auth::{AuthMethod, AuthTokens, BW_EXPIRATION, DEFAULT_REFRESH_VALIDITY, TokenWrapper},
     db::{
         DbConn,
-        models::{Device, OIDCAuthenticatedUser, SsoAuth, SsoUser, User},
+        models::{
+            Device, Membership, MembershipStatus, MembershipType, OIDCAuthenticatedUser, Organization, OrganizationId,
+            SsoAuth, SsoUser, User, UserId,
+        },
     },
     sso_client::Client,
 };
@@ -328,6 +331,8 @@ pub async fn redeem(
     sso_auth.delete(conn).await?;
 
     if sso_user.is_none() {
+        enroll_user_in_default_organization(user, conn).await?;
+
         let user_sso = SsoUser {
             user_uuid: user.uuid.clone(),
             identifier: auth_user.identifier.clone(),
@@ -351,6 +356,54 @@ pub async fn redeem(
             auth::LoginJwtClaims::new(device, user, ap_nbf, ap_exp, AuthMethod::Sso.scope_vec(), client_id, now);
 
         create_auth_tokens_impl(device, auth_user.refresh_token, access_claims, auth_user.access_token)
+    }
+}
+
+async fn enroll_user_in_default_organization(user: &User, conn: &DbConn) -> ApiResult<()> {
+    let Some(org_uuid) = CONFIG.sso_default_organization_uuid() else {
+        return Ok(());
+    };
+    let org_id = OrganizationId::from(org_uuid);
+
+    if Membership::find_by_user_and_org(&user.uuid, &org_id, conn).await.is_some() {
+        return Ok(());
+    }
+
+    if Organization::find_by_uuid(&org_id, conn).await.is_none() {
+        err!("The organization configured in `SSO_DEFAULT_ORGANIZATION_UUID` does not exist")
+    }
+
+    let membership = new_default_sso_membership(user.uuid.clone(), org_id.clone());
+    membership.save(conn).await?;
+
+    info!("Added SSO user {} to default organization {} pending confirmation", user.uuid, org_id);
+    Ok(())
+}
+
+fn new_default_sso_membership(user_uuid: UserId, org_id: OrganizationId) -> Membership {
+    let mut membership = Membership::new(user_uuid, org_id, None);
+    membership.status = MembershipStatus::Accepted as i32;
+    membership.atype = MembershipType::User as i32;
+    membership
+}
+
+#[cfg(test)]
+mod default_organization_tests {
+    use crate::db::models::{MembershipStatus, MembershipType, OrganizationId, UserId};
+
+    use super::*;
+
+    #[test]
+    fn default_sso_membership_is_accepted_user_without_full_access() {
+        let membership = new_default_sso_membership(
+            UserId::from("00000000-0000-0000-0000-000000000001"),
+            OrganizationId::from("00000000-0000-0000-0000-000000000002"),
+        );
+
+        assert!(!membership.access_all);
+        assert_eq!(membership.status, MembershipStatus::Accepted as i32);
+        assert_eq!(membership.atype, MembershipType::User as i32);
+        assert!(membership.invited_by_email.is_none());
     }
 }
 
