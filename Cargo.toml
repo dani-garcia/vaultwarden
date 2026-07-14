@@ -166,6 +166,7 @@ lettre = { version = "0.11.22", default-features = false, features = [
     "tracing",
     "serde",
     "builder",
+    "dkim",
     "hostname",
     # TLS/Security
     "ring",
