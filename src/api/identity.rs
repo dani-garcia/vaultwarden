@@ -604,7 +604,9 @@ async fn authenticated_response(
         result["Key"] = Value::String(user.akey.clone());
     }
 
-    if uses_key_connector {
+    // Also advertised to users without a master password, that is how the client
+    // knows to enroll a new SSO user with the connector
+    if CONFIG.key_connector_enabled() && !has_master_password {
         result["UserDecryptionOptions"]["KeyConnectorOption"] =
             crate::api::core::key_connector::key_connector_user_decryption_option();
     }
