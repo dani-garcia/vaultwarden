@@ -44,6 +44,10 @@ async fn post_set_key_connector_key(data: Json<SetKeyConnectorKeyData>, headers:
     let data = data.into_inner();
     let mut user = headers.user;
 
+    if user.private_key.is_some() {
+        err!("Account already initialized, cannot set Key Connector key");
+    }
+
     user.client_kdf_type = data.kdf;
     user.client_kdf_iter = data.kdf_iterations;
     user.client_kdf_memory = data.kdf_memory;
@@ -69,6 +73,11 @@ async fn post_convert_to_key_connector(headers: Headers, conn: DbConn) -> EmptyR
     }
 
     let mut user = headers.user;
+
+    if user.private_key.is_none() {
+        err!("Account is not initialized, cannot convert to Key Connector");
+    }
+
     user.password_hash = Vec::new();
     user.password_hint = None;
     user.uses_key_connector = true;
