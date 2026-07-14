@@ -1134,8 +1134,9 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         if cfg.key_connector_url.is_empty() {
             err!("`KEY_CONNECTOR_URL` must be set when Key Connector is enabled")
         }
-        if Url::parse(&cfg.key_connector_url).is_err() {
-            err!("Invalid URL format for `KEY_CONNECTOR_URL`.");
+        let kc_url = cfg.key_connector_url.to_lowercase();
+        if !kc_url.starts_with("http://") && !kc_url.starts_with("https://") || Url::parse(&kc_url).is_err() {
+            err!("`KEY_CONNECTOR_URL` must be a valid URL containing the protocol (http, https)")
         }
     }
 

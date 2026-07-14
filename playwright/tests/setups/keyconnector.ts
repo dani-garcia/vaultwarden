@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http';
+import { createServer } from 'node:http';
 
 /**
  * Barebone in-memory key connector, just enough for the clients to enroll and unlock.
