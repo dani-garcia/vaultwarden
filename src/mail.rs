@@ -2,15 +2,12 @@ use std::{env::consts::EXE_SUFFIX, str::FromStr};
 
 use chrono::NaiveDateTime;
 use lettre::{
-<<<<<<< HEAD
     Address, AsyncSendmailTransport, AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
     message::{Attachment, Body, Mailbox, Message, MultiPart, SinglePart},
-=======
     message::{
         dkim::{DkimConfig, DkimSigningAlgorithm, DkimSigningKey},
-        dkim_sign, Attachment, Body, Mailbox, Message, MultiPart, SinglePart,
+        dkim_sign,
     },
->>>>>>> daa9e075 (corrections on config parsing)
     transport::smtp::authentication::{Credentials, Mechanism as SmtpAuthMechanism},
     transport::smtp::client::{Tls, TlsParameters},
     transport::smtp::extension::ClientId,
@@ -26,7 +23,7 @@ use crate::{
     },
     db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId},
     error::Error,
-    util::upcase_first,
+    util::{get_env_str_value, upcase_first},
 };
 
 fn sendmail_transport() -> AsyncSendmailTransport<Tokio1Executor> {
@@ -707,38 +704,32 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
     }
 }
 pub fn check_dkim() -> Result<Option<DkimConfig>, String> {
-    match (CONFIG.dkim_signature(), CONFIG.dkim_infos()) {
-        (Some(sig), Some(infos)) => {
+    match (
+        CONFIG.dkim_signing_key().and_then(|a| get_env_str_value(&a)),
+        CONFIG.dkim_domain().and_then(|a| get_env_str_value(&a)),
+        CONFIG.dkim_selector().and_then(|a| get_env_str_value(&a)), //get_env_str should return None only if variables are not set, which is already checked
+    ) {
+        (Some(sig), Some(domain), Some(selector)) => {
             let config = {
-                let algo = if CONFIG.dkim_use_rsa() {DkimSigningAlgorithm::Rsa } else { DkimSigningAlgorithm::Ed25519 };
-                let sig = match std::fs::read_to_string(sig) {
-                    Err(e) => {
-                        return Err(format!("Cannot read DKIM key. Err is {:?}", e));
-                    }
-                    Ok(key) => match DkimSigningKey::new(&key, algo) {
-                        Ok(d) => d,
-                        Err(e) => {
-                            return Err(format!("DKIM key is invalid. Err is {:?}", e));
-                        }
-                    },
+                let algo = if CONFIG.dkim_use_rsa() {
+                    DkimSigningAlgorithm::Rsa
+                } else {
+                    DkimSigningAlgorithm::Ed25519
                 };
-                match (sig, infos.split(':').collect::<Vec<&str>>()) {
-                    (sig, split2) if split2.len() == 2 => {
-                        let (selector, domain, sig) =
-                            (String::from(*split2.first().unwrap()), String::from(*split2.last().unwrap()), sig);
-                        (selector, domain, sig)
+                let sig = match DkimSigningKey::new(&sig, algo) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        return Err(format!("DKIM key is invalid. Err is {e:?}"));
                     }
-                    _ => {
-                        return Err("DKIM issue, invalid domain, selector.".to_string());
-                    }
-                }
+                };
+                (selector, domain, sig)
             };
             Ok(Some(DkimConfig::default_config(config.0, config.1, config.2)))
         }
-        (None, None) => Ok(None),
-        _ => {
-            Err("DKIM setting is badly implemented. One config is missing (DKIM signature or DKIM infos).".to_string())
-        }
+        (None, None, None) => Ok(None),
+        _ => Err(
+            "DKIM setting is badly implemented. One config is missing or invalid (DKIM signature or DKIM infos or DKIM signing key).".to_owned(),
+        ),
     }
 }
 async fn send_email(address: &str, subject: &str, body_html: String, body_text: String) -> EmptyResult {

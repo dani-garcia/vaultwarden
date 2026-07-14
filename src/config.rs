@@ -15,6 +15,7 @@ use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 use crate::{
     error::Error,
     mail::check_dkim,
+    storage,
     util::{
         FeatureFlagFilter, get_active_web_release, get_env, get_env_bool, is_valid_email,
         parse_experimental_client_feature_flags,
@@ -885,12 +886,14 @@ make_config! {
         smtp_username:                 String, true,   option;
         /// Password
         smtp_password:                 Pass,   true,   option;
-        /// Dkim signature (type:privatekey). Private must be base64-encoded ed key or PKCS#1 format RSA key.
-        dkim_signature:                String, true,   option;
-        /// Dkim algo (true if RSA else ed25519)
+        /// Dkim signature (private key). |> Private must be base64-encoded ed key or PKCS#1 format RSA key. If set, dkim_selector and dkim_domain must be set as well.
+        dkim_signing_key:              String, true,   option;
+        /// Dkim algorithm (true if RSA else ed25519)
         dkim_use_rsa:                  bool,   true,   def,   false;
-        /// Dkim infos (selector:domain)
-        dkim_infos:                    String, true,   option;
+        /// Dkim selector
+        dkim_selector:                 String, true,   option;
+        /// Dkim domain
+        dkim_domain:                   String, true,   option;
         /// SMTP Auth mechanism |> Defaults for SSL is "Plain" and "Login" and nothing for Non-SSL connections. Possible values: ["Plain", "Login", "Xoauth2"]. Multiple options need to be separated by a comma ','.
         smtp_auth_mechanism:           String, true,   option;
         /// SMTP connection timeout |> Number of seconds when to stop trying to connect to the SMTP server
