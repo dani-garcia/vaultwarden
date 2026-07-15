@@ -705,9 +705,9 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
 }
 pub fn check_dkim() -> Result<Option<DkimConfig>, String> {
     match (
-        CONFIG.dkim_signing_key().and_then(|a| get_env_str_value(&a)),
-        CONFIG.dkim_domain().and_then(|a| get_env_str_value(&a)),
-        CONFIG.dkim_selector().and_then(|a| get_env_str_value(&a)), //get_env_str should return None only if variables are not set, which is already checked
+        CONFIG.dkim_signing_key().or_else(|| get_env_str_value("dkim_signing_key")),
+        CONFIG.dkim_domain().or_else(|| get_env_str_value("dkim_domain")),
+        CONFIG.dkim_selector().or_else(|| get_env_str_value("dkim_selector")),
     ) {
         (Some(sig), Some(domain), Some(selector)) => {
             let config = {
