@@ -14,7 +14,7 @@ use crate::{
         DbConn,
         models::{
             Device, Membership, MembershipStatus, MembershipType, OIDCAuthenticatedUser, Organization, OrganizationId,
-            SsoAuth, SsoUser, User, UserId,
+            SsoAuth, SsoUser, User,
         },
     },
     sso_client::Client,
@@ -373,7 +373,9 @@ async fn enroll_user_in_default_organization(user: &User, conn: &DbConn) -> ApiR
         err!("The organization configured in `SSO_DEFAULT_ORGANIZATION_UUID` does not exist")
     }
 
-    let membership = new_default_sso_membership(user.uuid.clone(), org_id.clone());
+    let mut membership = Membership::new(user.uuid.clone(), org_id.clone(), None);
+    membership.status = MembershipStatus::Accepted as i32;
+    membership.atype = MembershipType::User as i32;
     membership.save(conn).await?;
 
     info!("Added SSO user {} to default organization {} pending confirmation", user.uuid, org_id);
@@ -382,55 +384,11 @@ async fn enroll_user_in_default_organization(user: &User, conn: &DbConn) -> ApiR
 
 // `Uuid::parse_str` also accepts non-canonical forms (uppercase, braced, without hyphens),
 // while stored organization uuids are always lowercase hyphenated and compared as strings.
-fn normalize_organization_uuid(org_uuid: &str) -> ApiResult<OrganizationId> {
+pub(crate) fn normalize_organization_uuid(org_uuid: &str) -> ApiResult<OrganizationId> {
     let Ok(parsed) = uuid::Uuid::parse_str(org_uuid) else {
         err!("`SSO_DEFAULT_ORGANIZATION_UUID` must be a valid UUID")
     };
     Ok(OrganizationId::from(parsed.to_string()))
-}
-
-fn new_default_sso_membership(user_uuid: UserId, org_id: OrganizationId) -> Membership {
-    let mut membership = Membership::new(user_uuid, org_id, None);
-    membership.status = MembershipStatus::Accepted as i32;
-    membership.atype = MembershipType::User as i32;
-    membership
-}
-
-#[cfg(test)]
-mod default_organization_tests {
-    use crate::db::models::{MembershipStatus, MembershipType, OrganizationId, UserId};
-
-    use super::*;
-
-    #[test]
-    fn default_sso_membership_is_accepted_user_without_full_access() {
-        let membership = new_default_sso_membership(
-            UserId::from("00000000-0000-0000-0000-000000000001"),
-            OrganizationId::from("00000000-0000-0000-0000-000000000002"),
-        );
-
-        assert!(!membership.access_all);
-        assert_eq!(membership.status, MembershipStatus::Accepted as i32);
-        assert_eq!(membership.atype, MembershipType::User as i32);
-        assert!(membership.invited_by_email.is_none());
-    }
-
-    #[test]
-    fn normalizes_organization_uuid_to_canonical_form() {
-        for input in [
-            "1B2C3D4E-5F60-7182-93A4-B5C6D7E8F901",
-            "{1b2c3d4e-5f60-7182-93a4-b5c6d7e8f901}",
-            "1b2c3d4e5f60718293a4b5c6d7e8f901",
-        ] {
-            let org_id = normalize_organization_uuid(input).expect("valid UUID form should be accepted");
-            assert_eq!(org_id.to_string(), "1b2c3d4e-5f60-7182-93a4-b5c6d7e8f901");
-        }
-    }
-
-    #[test]
-    fn rejects_invalid_organization_uuid() {
-        assert!(normalize_organization_uuid("not-a-uuid").is_err());
-    }
 }
 
 // We always return a refresh_token (with no refresh_token some secrets are not displayed in the web front).
@@ -548,5 +506,27 @@ pub async fn exchange_refresh_token(
             create_auth_tokens_impl(device, None, access_claims, access_token)
         }
         None => err!("No token present while in SSO"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_organization_uuid_to_canonical_form() {
+        for input in [
+            "1B2C3D4E-5F60-7182-93A4-B5C6D7E8F901",
+            "{1b2c3d4e-5f60-7182-93a4-b5c6d7e8f901}",
+            "1b2c3d4e5f60718293a4b5c6d7e8f901",
+        ] {
+            let org_id = normalize_organization_uuid(input).expect("valid UUID form should be accepted");
+            assert_eq!(org_id.to_string(), "1b2c3d4e-5f60-7182-93a4-b5c6d7e8f901");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_organization_uuid() {
+        assert!(normalize_organization_uuid("not-a-uuid").is_err());
     }
 }
