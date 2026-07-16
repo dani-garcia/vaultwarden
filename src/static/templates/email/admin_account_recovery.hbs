@@ -1,0 +1,12 @@
+Admin account recovery from {{org_name}} organization
+<!---------------->
+{{#if reset_password}}
+The master password for {{user_name}} has been changed.
+{{/if}}
+{{#if reset_2fa}}
+Your two steps providers have been reset. {{#if fallback_2fa_email}} Email two factor has been activated as a fallback.{{/if}}
+{{/if}}
+
+If you did not initiate this request, please reach out to your administrator immediately.
+
+{{> email/email_footer_text }}
