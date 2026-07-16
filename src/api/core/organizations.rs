@@ -51,6 +51,7 @@ pub fn routes() -> Vec<Route> {
         post_organization_collection_delete,
         bulk_delete_organization_collections,
         post_bulk_collections,
+        get_assigned_org_details,
         get_org_details,
         get_org_domain_sso_verified,
         get_members,
@@ -915,6 +916,49 @@ async fn get_collection_users(
 struct OrgIdData {
     #[field(name = "organizationId")]
     organization_id: OrganizationId,
+}
+
+fn filter_ciphers_for_organization(ciphers: Vec<Cipher>, org_id: &OrganizationId) -> Vec<Cipher> {
+    ciphers.into_iter().filter(|cipher| cipher.organization_uuid.as_ref() == Some(org_id)).collect()
+}
+
+// The Admin Console uses this endpoint when the acting member is not allowed to read every
+// cipher in the organization. In particular, a Custom member with only DeleteAnyCollection
+// needs an empty successful response so the collection list can finish loading and expose its
+// collection-only delete controls.
+//
+// Security: start from the regular user-visible cipher query and then constrain the result to
+// the requested organization. DeleteAnyCollection itself must never make cipher contents visible.
+#[get("/ciphers/organization-details/assigned?<data..>")]
+async fn get_assigned_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> JsonResult {
+    if Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &data.organization_id, &conn).await.is_none() {
+        err_code!(
+            "Resource not found.",
+            "User is not a confirmed member of the organization",
+            rocket::http::Status::NotFound.code
+        );
+    }
+
+    let ciphers = filter_ciphers_for_organization(
+        Cipher::find_by_user_visible(&headers.user.uuid, &conn).await,
+        &data.organization_id,
+    );
+    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, CipherSyncType::User, &conn).await;
+
+    let mut ciphers_json = Vec::with_capacity(ciphers.len());
+    for cipher in ciphers {
+        ciphers_json.push(
+            cipher
+                .to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &conn)
+                .await?,
+        );
+    }
+
+    Ok(Json(json!({
+        "data": ciphers_json,
+        "object": "list",
+        "continuationToken": null,
+    })))
 }
 
 #[get("/ciphers/organization-details?<data..>")]
@@ -3604,8 +3648,32 @@ mod tests {
 
     use serde_json::{Value, json};
 
-    use super::{CustomRolePermissions, may_change_group_membership, may_change_member_type};
-    use crate::db::models::{Membership, MembershipStatus, MembershipType};
+    use super::{
+        CustomRolePermissions, filter_ciphers_for_organization, may_change_group_membership, may_change_member_type,
+    };
+    use crate::db::models::{Cipher, Membership, MembershipStatus, MembershipType, OrganizationId};
+
+    #[test]
+    fn assigned_cipher_response_is_scoped_to_requested_organization() {
+        let requested_org: OrganizationId = "requested-org".to_owned().into();
+        let other_org: OrganizationId = "other-org".to_owned().into();
+
+        let mut requested_cipher = Cipher::new(1, "requested".to_owned());
+        requested_cipher.organization_uuid = Some(requested_org.clone());
+        let requested_cipher_id = requested_cipher.uuid.clone();
+
+        let mut other_cipher = Cipher::new(1, "other".to_owned());
+        other_cipher.organization_uuid = Some(other_org);
+
+        let personal_cipher = Cipher::new(1, "personal".to_owned());
+
+        let filtered =
+            filter_ciphers_for_organization(vec![other_cipher, personal_cipher, requested_cipher], &requested_org);
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].uuid, requested_cipher_id);
+        assert_eq!(filtered[0].organization_uuid.as_ref(), Some(&requested_org));
+    }
 
     #[test]
     fn manage_users_caller_cannot_change_member_role() {
