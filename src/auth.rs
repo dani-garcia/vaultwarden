@@ -746,6 +746,15 @@ impl OrgHeaders {
     fn can_manage_policies(&self) -> bool {
         self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.has_manage_policies())
     }
+    // Reading the full member/group *details* (PII, 2FA status, permission flags, access mappings)
+    // requires the ability to manage users or groups, matching Bitwarden's `ReadAll`/`ReadAllWithAccess`
+    // authorization. Basic member mini-details and the plain group list remain member-readable.
+    fn can_manage_users_or_groups(&self) -> bool {
+        self.is_confirmed()
+            && (self.membership_type >= MembershipType::Admin
+                || self.membership.has_manage_users()
+                || self.membership.has_manage_groups())
+    }
 }
 
 // org_id is usually the second path param ("/organizations/<org_id>"),
@@ -922,6 +931,11 @@ generate_manage_headers!(
     ManagePoliciesHeaders,
     can_manage_policies,
     "You need the 'Manage Policies' permission, or to be an Admin or Owner, to call this endpoint"
+);
+generate_manage_headers!(
+    ManageUsersOrGroupsHeaders,
+    can_manage_users_or_groups,
+    "You need the 'Manage Users' or 'Manage Groups' permission, or to be an Admin or Owner, to call this endpoint"
 );
 
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),

@@ -13,8 +13,8 @@ use crate::{
     },
     auth::{
         AdminHeaders, CollectionDeleteHeaders, CollectionReadHeaders, Headers, ManageGroupsHeaders,
-        ManagePoliciesHeaders, ManageUsersHeaders, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders,
-        decode_invite,
+        ManagePoliciesHeaders, ManageUsersHeaders, ManageUsersOrGroupsHeaders, ManagerHeaders, ManagerHeadersLoose,
+        OrgMemberHeaders, OwnerHeaders, decode_invite,
     },
     db::{
         DbConn,
@@ -548,6 +548,20 @@ async fn post_organization_collections(
     let data: FullCollectionData = data.into_inner();
     data.validate(&org_id, &conn).await?;
 
+    // Security (audit H-3): validate every referenced group and user against this organization
+    // *before* creating the collection or any assignment, so a foreign-tenant group can't be
+    // attached to the new collection and no partial state is left behind on rejection.
+    for group in &data.groups {
+        if Group::find_by_uuid_and_org(&group.id, &org_id, &conn).await.is_none() {
+            err!("Group not found in this organization")
+        }
+    }
+    for user in &data.users {
+        if Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await.is_none() {
+            err!("User is not part of organization")
+        }
+    }
+
     let collection = Collection::new(org_id.clone(), data.name, data.external_id);
     collection.save(&conn).await?;
 
@@ -622,14 +636,37 @@ async fn post_bulk_access_collections(
         err!("You don't have permission to modify collection access")
     }
 
-    for col_id in data.collection_ids {
-        let Some(collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &conn).await else {
+    // Security (audit H-3) and atomicity (audit M-2): validate the whole request against this
+    // organization *before* mutating anything. Every collection must exist in the org and be
+    // manageable by the caller, and every referenced group and user must belong to the org. Only
+    // once the entire request is known-valid do we begin the destructive delete/replace of
+    // assignments, so a foreign-tenant group can never be linked and a later invalid element can no
+    // longer leave earlier collections with their assignments already wiped.
+    for group in &data.groups {
+        if Group::find_by_uuid_and_org(&group.id, &org_id, &conn).await.is_none() {
+            err!("Group not found in this organization")
+        }
+    }
+    for user in &data.users {
+        if Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await.is_none() {
+            err!("User is not part of organization")
+        }
+    }
+    let mut collections = Vec::with_capacity(data.collection_ids.len());
+    for col_id in &data.collection_ids {
+        let Some(collection) = Collection::find_by_uuid_and_org(col_id, &org_id, &conn).await else {
             err!("Collection not found")
         };
 
         if !collection.is_manageable_by_user(&headers.membership.user_uuid, &conn).await {
             err!("Collection not found", "The current user isn't a manager for this collection")
         }
+
+        collections.push(collection);
+    }
+
+    for collection in collections {
+        let col_id = &collection.uuid;
 
         // update collection modification date
         collection.save(&conn).await?;
@@ -645,14 +682,14 @@ async fn post_bulk_access_collections(
         )
         .await;
 
-        CollectionGroup::delete_all_by_collection(&col_id, &org_id, &conn).await?;
+        CollectionGroup::delete_all_by_collection(col_id, &org_id, &conn).await?;
         for group in &data.groups {
             CollectionGroup::new(col_id.clone(), group.id.clone(), group.read_only, group.hide_passwords, group.manage)
                 .save(&org_id, &conn)
                 .await?;
         }
 
-        CollectionUser::delete_all_by_collection(&col_id, &conn).await?;
+        CollectionUser::delete_all_by_collection(col_id, &conn).await?;
         for user in &data.users {
             let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await else {
                 err!("User is not part of organization")
@@ -662,7 +699,7 @@ async fn post_bulk_access_collections(
                 continue;
             }
 
-            CollectionUser::save(&member.user_uuid, &col_id, user.read_only, user.hide_passwords, user.manage, &conn)
+            CollectionUser::save(&member.user_uuid, col_id, user.read_only, user.hide_passwords, user.manage, &conn)
                 .await?;
         }
     }
@@ -1024,10 +1061,14 @@ struct GetOrgUserData {
 async fn get_members(
     data: GetOrgUserData,
     org_id: OrganizationId,
-    headers: ManagerHeadersLoose,
+    // Security (audit M-1): the full member list exposes each member's PII, 2FA/enrollment status,
+    // permission flags and (optionally) collection/group assignments. Reading it requires the
+    // 'Manage Users' permission (or Admin/Owner), matching Bitwarden. Members who only need to
+    // reference other users (e.g. the collection dialog) use the member-readable mini-details.
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
-    if org_id != headers.membership.org_uuid {
+    if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
     let mut users_json = Vec::new();
@@ -1812,6 +1853,16 @@ async fn edit_member(
         };
 
     if caller_can_manage_groups {
+        // Security (audit H-2): validate that every requested group belongs to this organization
+        // *before* mutating any group membership. Otherwise a caller could link the member to a
+        // group of a foreign tenant (e.g. an access-all group), which the direct cipher-access
+        // checks would then honor. Fail closed on the whole request if any group is foreign.
+        for group_id in data.groups.iter().flatten() {
+            if Group::find_by_uuid_and_org(group_id, &org_id, &conn).await.is_none() {
+                err!("Group not found in this organization")
+            }
+        }
+
         if caller_can_manage_collections {
             // Caller may grant/revoke collection access via groups: full replace.
             GroupUser::delete_all_by_member(&member_to_edit.uuid, &conn).await?;
@@ -2046,6 +2097,22 @@ async fn post_org_import(
     // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
     Cipher::validate_cipher_data(&data.ciphers)?;
 
+    // Robustness/DoS (audit M-3): validate every collection<->cipher relationship index against the
+    // import payload *before* creating any collection or cipher. `key` indexes into `ciphers` and
+    // `value` into `collections`; an out-of-range index would otherwise cause an out-of-bounds panic
+    // when the relations are applied below — a 500 (or a process abort under panic="abort") that
+    // happens after rows have already been written, leaving partial state behind.
+    let import_cipher_count = data.ciphers.len();
+    let import_collection_count = data.collections.len();
+    for relation in &data.collection_relationships {
+        if relation.key >= import_cipher_count || relation.value >= import_collection_count {
+            err!(
+                "Invalid collection relationship",
+                "A collection relationship references a non-existent cipher or collection"
+            )
+        }
+    }
+
     let existing_collections: HashSet<Option<CollectionId>> =
         Collection::find_by_organization(&org_id, &conn).await.into_iter().map(|c| Some(c.uuid)).collect();
     let mut collections: Vec<CollectionId> = Vec::with_capacity(data.collections.len());
@@ -2095,6 +2162,9 @@ async fn post_org_import(
         // Always clear folder_id's via an organization import
         cipher_data.folder_id = None;
         let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
+        // Propagate cipher-save failures instead of silently discarding them (audit M-3): a
+        // discarded error would still push the cipher id and let a relationship reference a cipher
+        // that was never persisted. This matches Bitwarden's all-or-nothing import semantics.
         update_cipher_from_data(
             &mut cipher,
             cipher_data,
@@ -2104,15 +2174,16 @@ async fn post_org_import(
             &nt,
             UpdateType::None,
         )
-        .await
-        .ok();
+        .await?;
         ciphers.push(cipher.uuid);
     }
 
-    // Assign the collections
+    // Assign the collections. Indices were bounds-validated above, but use `.get()` here as well so
+    // any future drift fails closed with an error instead of panicking.
     for (cipher_index, col_index) in relations {
-        let cipher_id = &ciphers[cipher_index];
-        let col_id = &collections[col_index];
+        let (Some(cipher_id), Some(col_id)) = (ciphers.get(cipher_index), collections.get(col_index)) else {
+            err!("Invalid collection relationship", "A collection relationship references a non-existent cipher or collection")
+        };
         CollectionCipher::save(cipher_id, col_id, &conn).await?;
     }
 
@@ -2696,15 +2767,7 @@ async fn restore_member_impl(
     Ok(())
 }
 
-async fn get_groups_data(
-    details: bool,
-    org_id: OrganizationId,
-    headers: ManagerHeadersLoose,
-    conn: DbConn,
-) -> JsonResult {
-    if org_id != headers.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
-    }
+async fn get_groups_data(details: bool, org_id: OrganizationId, conn: DbConn) -> JsonResult {
     let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
         let groups = Group::find_by_organization(&org_id, &conn).await;
         let mut groups_json = Vec::with_capacity(groups.len());
@@ -2732,14 +2795,25 @@ async fn get_groups_data(
     })))
 }
 
+// The plain group list (id, name, externalId) stays member-readable: the web vault needs it to
+// render group names, and it exposes no access mappings.
 #[get("/organizations/<org_id>/groups")]
 async fn get_groups(org_id: OrganizationId, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
-    get_groups_data(false, org_id, headers, conn).await
+    if org_id != headers.membership.org_uuid {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    get_groups_data(false, org_id, conn).await
 }
 
+// Security (audit M-1): group *details* expose accessAll, external IDs and collection mappings, so
+// reading them requires the 'Manage Users' or 'Manage Groups' permission (or Admin/Owner), matching
+// Bitwarden's ReadAll/ReadAllWithAccess authorization.
 #[get("/organizations/<org_id>/groups/details", rank = 1)]
-async fn get_groups_details(org_id: OrganizationId, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
-    get_groups_data(true, org_id, headers, conn).await
+async fn get_groups_details(org_id: OrganizationId, headers: ManageUsersOrGroupsHeaders, conn: DbConn) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    get_groups_data(true, org_id, conn).await
 }
 
 #[derive(Deserialize)]
