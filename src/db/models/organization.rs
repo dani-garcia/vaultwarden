@@ -61,6 +61,9 @@ pub struct Membership {
     pub manage_users: bool,
     pub manage_groups: bool,
     pub manage_policies: bool,
+    pub create_new_collections: bool,
+    pub edit_any_collection: bool,
+    pub delete_any_collection: bool,
 }
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -123,7 +126,7 @@ impl Ord for MembershipType {
         // For easy comparison, map each variant to an access level (where 0 is lowest).
         // Custom is treated as a low-privilege base role (same level as Manager for
         // ordering purposes); its elevated capabilities are governed by the explicit
-        // manage_* permission flags on the Membership, not by this ordering.
+        // custom permission flags on the Membership, not by this ordering.
         //
         // NOTE: Manager and Custom therefore share an access level while being distinct
         // variants: the derived `PartialEq` compares the role itself (Manager != Custom),
@@ -279,6 +282,9 @@ impl Membership {
             manage_users: false,
             manage_groups: false,
             manage_policies: false,
+            create_new_collections: false,
+            edit_any_collection: false,
+            delete_any_collection: false,
         }
     }
 
@@ -449,21 +455,25 @@ impl Membership {
         let membership_type = self.atype;
 
         let permissions = json!({
-                // The 3 Collection roles below are linked to the access_all permission
                 "accessEventLogs": false,
                 "accessImportExport": false,
                 "accessReports": false,
-                // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": membership_type == 4 && self.access_all,
-                "editAnyCollection": membership_type == 4 && self.access_all,
-                "deleteAnyCollection": membership_type == 4 && self.access_all,
-                "manageGroups": self.manage_groups,
-                "managePolicies": self.manage_policies,
+                "createNewCollections": membership_type == MembershipType::Custom as i32 && self.create_new_collections,
+                "editAnyCollection": membership_type == MembershipType::Custom as i32 && self.edit_any_collection,
+                "deleteAnyCollection": membership_type == MembershipType::Custom as i32 && self.delete_any_collection,
+                "manageGroups": membership_type == MembershipType::Custom as i32 && self.manage_groups,
+                "managePolicies": membership_type == MembershipType::Custom as i32 && self.manage_policies,
                 "manageSso": false, // Not supported
-                "manageUsers": self.manage_users,
+                "manageUsers": membership_type == MembershipType::Custom as i32 && self.manage_users,
                 "manageResetPassword": false,
                 "manageScim": false // Not supported (Not AGPLv3 Licensed)
         });
+
+        // edit_any_collection is internally mirrored to access_all to provide Bitwarden-compatible
+        // cipher access, but it must not accidentally grant collection creation. The client treats
+        // limitCollectionCreation=false as an independent create grant, so compute it from the
+        // actual role/permission rather than access_all for Custom members.
+        let limit_collection_creation = self.limit_collection_creation();
 
         // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/ProfileOrganizationResponseModel.cs
         json!({
@@ -508,8 +518,7 @@ impl Membership {
             "familySponsorshipValidUntil": null,
             "familySponsorshipToDelete": null,
             "accessSecretsManager": false,
-            // limit collection creation to managers with access_all permission to prevent issues
-            "limitCollectionCreation": self.atype < MembershipType::Manager || !self.access_all,
+            "limitCollectionCreation": limit_collection_creation,
             "limitCollectionDeletion": true,
             "limitItemDeletion": false,
             "allowAdminAccessToAllCollectionItems": true,
@@ -608,18 +617,16 @@ impl Membership {
 
         let membership_type = self.atype;
 
-        // Only return a permissions object for custom-type members. A custom member
-        // may have access_all (the 3 collection roles) and/or any of the explicit
-        // manage_* flags; otherwise Bitwarden assumes all-false defaults.
+        // Only return a permissions object for custom-type members. Otherwise Bitwarden assumes
+        // all-false defaults and the role itself supplies any elevated capabilities.
         let permissions = if membership_type == MembershipType::Custom as i32 {
             json!({
                 "accessEventLogs": false,
                 "accessImportExport": false,
                 "accessReports": false,
-                // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": self.access_all,
-                "editAnyCollection": self.access_all,
-                "deleteAnyCollection": self.access_all,
+                "createNewCollections": self.create_new_collections,
+                "editAnyCollection": self.edit_any_collection,
+                "deleteAnyCollection": self.delete_any_collection,
                 "manageGroups": self.manage_groups,
                 "managePolicies": self.manage_policies,
                 "manageSso": false, // Not supported
@@ -811,10 +818,11 @@ impl Membership {
     }
 
     pub fn has_full_access(&self) -> bool {
-        (self.access_all || self.atype >= MembershipType::Admin) && self.has_status(MembershipStatus::Confirmed)
+        (self.access_all || self.has_edit_any_collection() || self.atype >= MembershipType::Admin)
+            && self.has_status(MembershipStatus::Confirmed)
     }
 
-    // The granular manage_* permission flags are only meaningful while the membership is of
+    // The granular custom permission flags are only meaningful while the membership is of
     // the Custom type. Gating them on the type here ensures that a stale flag left over from
     // a type change (e.g. via the admin panel) can never grant anything.
     pub fn has_manage_users(&self) -> bool {
@@ -827,6 +835,63 @@ impl Membership {
 
     pub fn has_manage_policies(&self) -> bool {
         self.has_type(MembershipType::Custom) && self.manage_policies
+    }
+
+    pub fn has_create_new_collections(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.create_new_collections
+    }
+
+    pub fn has_edit_any_collection(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.edit_any_collection
+    }
+
+    pub fn has_delete_any_collection(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.delete_any_collection
+    }
+
+    /// `manageAllCollections` is a client-side aggregate checkbox, not a separately persisted
+    /// Bitwarden permission. It is selected exactly when all three child permissions are selected.
+    pub fn has_manage_all_collections(&self) -> bool {
+        self.has_create_new_collections() && self.has_edit_any_collection() && self.has_delete_any_collection()
+    }
+
+    /// Match Vaultwarden's existing collection-creation policy while keeping the new Custom
+    /// permission independent from edit/delete. Legacy Manager memberships retain their former
+    /// access_all-based behavior.
+    pub fn can_create_new_collections(&self) -> bool {
+        if !self.has_status(MembershipStatus::Confirmed) {
+            return false;
+        }
+
+        match MembershipType::from_i32(self.atype) {
+            Some(MembershipType::Owner | MembershipType::Admin) => true,
+            Some(MembershipType::Manager) => self.access_all,
+            Some(MembershipType::Custom) => self.create_new_collections,
+            Some(MembershipType::User) | None => false,
+        }
+    }
+
+    pub fn limit_collection_creation(&self) -> bool {
+        match MembershipType::from_i32(self.atype) {
+            Some(MembershipType::Owner | MembershipType::Admin) => false,
+            Some(MembershipType::Manager) => !self.access_all,
+            Some(MembershipType::Custom) => !self.create_new_collections,
+            Some(MembershipType::User) | None => true,
+        }
+    }
+
+    pub fn can_delete_any_collection(&self) -> bool {
+        self.has_status(MembershipStatus::Confirmed)
+            && (self.atype >= MembershipType::Admin || self.has_delete_any_collection())
+    }
+
+    pub fn clear_custom_permissions(&mut self) {
+        self.manage_users = false;
+        self.manage_groups = false;
+        self.manage_policies = false;
+        self.create_new_collections = false;
+        self.edit_any_collection = false;
+        self.delete_any_collection = false;
     }
 
     pub async fn find_by_uuid(uuid: &MembershipId, conn: &DbConn) -> Option<Self> {
@@ -1274,6 +1339,13 @@ pub struct OrgApiKeyId(String);
 mod tests {
     use super::*;
 
+    fn membership(member_type: MembershipType) -> Membership {
+        let mut membership = Membership::new("test-user".to_owned().into(), "test-org".to_owned().into(), None);
+        membership.atype = member_type as i32;
+        membership.status = MembershipStatus::Confirmed as i32;
+        membership
+    }
+
     #[test]
     #[allow(non_snake_case)]
     fn partial_cmp_MembershipType() {
@@ -1287,5 +1359,94 @@ mod tests {
         assert!(MembershipType::Custom >= MembershipType::Manager);
         assert!(MembershipType::Custom > MembershipType::User);
         assert!(MembershipType::Admin > MembershipType::Custom);
+    }
+
+    #[test]
+    fn custom_collection_permissions_are_independent_and_type_gated() {
+        let mut member = membership(MembershipType::Custom);
+        member.create_new_collections = true;
+
+        assert!(member.has_create_new_collections());
+        assert!(member.can_create_new_collections());
+        assert!(!member.limit_collection_creation());
+        assert!(!member.has_full_access());
+        assert!(!member.can_delete_any_collection());
+        assert!(!member.has_manage_all_collections());
+
+        member.delete_any_collection = true;
+        assert!(member.has_delete_any_collection());
+        assert!(member.can_delete_any_collection());
+        assert!(!member.has_full_access());
+        assert!(!member.has_manage_all_collections());
+
+        member.edit_any_collection = true;
+        assert!(member.has_edit_any_collection());
+        assert!(member.has_full_access());
+        assert!(member.has_manage_all_collections());
+
+        // Stale flags on a non-Custom role are inert.
+        member.atype = MembershipType::User as i32;
+        assert!(!member.has_create_new_collections());
+        assert!(!member.has_edit_any_collection());
+        assert!(!member.has_delete_any_collection());
+        assert!(!member.can_create_new_collections());
+        assert!(!member.can_delete_any_collection());
+        assert!(!member.has_full_access());
+    }
+
+    #[test]
+    fn edit_any_collection_does_not_imply_create_or_delete() {
+        let mut custom = membership(MembershipType::Custom);
+        custom.edit_any_collection = true;
+        // The persisted access_all mirror is intentionally tested too: client-facing create and
+        // delete decisions must still use their dedicated permissions.
+        custom.access_all = true;
+
+        assert!(custom.has_full_access());
+        assert!(!custom.can_create_new_collections());
+        assert!(custom.limit_collection_creation());
+        assert!(!custom.can_delete_any_collection());
+
+        let mut manager = membership(MembershipType::Manager);
+        manager.access_all = true;
+        assert!(manager.can_create_new_collections());
+
+        let admin = membership(MembershipType::Admin);
+        assert!(admin.can_create_new_collections());
+        assert!(!admin.limit_collection_creation());
+        assert!(admin.can_delete_any_collection());
+    }
+
+    #[test]
+    fn custom_collection_permissions_require_confirmed_membership() {
+        let mut member = membership(MembershipType::Custom);
+        member.create_new_collections = true;
+        member.edit_any_collection = true;
+        member.delete_any_collection = true;
+        member.status = MembershipStatus::Accepted as i32;
+
+        assert!(!member.can_create_new_collections());
+        assert!(!member.can_delete_any_collection());
+        assert!(!member.has_full_access());
+    }
+
+    #[test]
+    fn clearing_custom_permissions_clears_every_flag() {
+        let mut member = membership(MembershipType::Custom);
+        member.manage_users = true;
+        member.manage_groups = true;
+        member.manage_policies = true;
+        member.create_new_collections = true;
+        member.edit_any_collection = true;
+        member.delete_any_collection = true;
+
+        member.clear_custom_permissions();
+
+        assert!(!member.manage_users);
+        assert!(!member.manage_groups);
+        assert!(!member.manage_policies);
+        assert!(!member.create_new_collections);
+        assert!(!member.edit_any_collection);
+        assert!(!member.delete_any_collection);
     }
 }

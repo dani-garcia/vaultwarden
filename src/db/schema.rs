@@ -245,6 +245,9 @@ table! {
         manage_users -> Bool,
         manage_groups -> Bool,
         manage_policies -> Bool,
+        create_new_collections -> Bool,
+        edit_any_collection -> Bool,
+        delete_any_collection -> Bool,
     }
 }
 

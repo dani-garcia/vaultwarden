@@ -544,6 +544,31 @@ struct MembershipTypeData {
     org_uuid: OrganizationId,
 }
 
+fn apply_membership_type_change(membership: &mut Membership, new_type: MembershipType) {
+    let was_custom = membership.atype == MembershipType::Custom;
+
+    // Entering Custom through the Vaultwarden admin panel is deliberately fail-closed because
+    // that UI cannot select granular permissions; they can be granted later through the regular
+    // organization member dialog.
+    if new_type == MembershipType::Custom && !was_custom {
+        membership.clear_custom_permissions();
+        membership.access_all = false;
+    }
+    if new_type != MembershipType::Custom {
+        membership.clear_custom_permissions();
+    }
+
+    // Prevent stale access_all from surviving a demotion to User. Admins/Owners have implicit
+    // full access, while legacy Manager access_all is intentionally preserved for compatibility.
+    match new_type {
+        MembershipType::Owner | MembershipType::Admin => membership.access_all = true,
+        MembershipType::User => membership.access_all = false,
+        MembershipType::Manager | MembershipType::Custom => {}
+    }
+
+    membership.atype = new_type as i32;
+}
+
 #[post("/users/org_type", format = "application/json", data = "<data>")]
 async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToken, conn: DbConn) -> EmptyResult {
     let data: MembershipTypeData = data.into_inner();
@@ -553,9 +578,7 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
         err!("The specified user isn't member of the organization")
     };
 
-    let new_type = if let Some(new_type) = MembershipType::from_str(&data.user_type.into_string()) {
-        new_type as i32
-    } else {
+    let Some(new_type) = MembershipType::from_str(&data.user_type.into_string()) else {
         err!("Invalid type")
     };
 
@@ -566,14 +589,7 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
         }
     }
 
-    member_to_edit.atype = new_type;
-    // The manage_* permission flags only apply to the Custom role; clear them on any other
-    // type so a member changed away from Custom does not retain stale management permissions.
-    if new_type != MembershipType::Custom {
-        member_to_edit.manage_users = false;
-        member_to_edit.manage_groups = false;
-        member_to_edit.manage_policies = false;
-    }
+    apply_membership_type_change(&mut member_to_edit, new_type);
     // This check is also done at api::organizations::{accept_invite, _confirm_invite, _activate_member, edit_member}, update_membership_type
     OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
@@ -876,6 +892,14 @@ impl<'r> FromRequest<'r> for AdminToken {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::models::MembershipStatus;
+
+    fn membership(member_type: MembershipType) -> Membership {
+        let mut membership = Membership::new("test-user".to_owned().into(), "test-org".to_owned().into(), None);
+        membership.atype = member_type as i32;
+        membership.status = MembershipStatus::Confirmed as i32;
+        membership
+    }
 
     #[test]
     fn validate_web_vault_compare() {
@@ -899,5 +923,45 @@ mod tests {
         assert!(web_vault_compare("2025.12.2", "2025.12.1+build.1") == 1);
         assert!(web_vault_compare("2025.12.2+build.1", "2025.12.1+build.1") == 1);
         assert!(web_vault_compare("2025.12.1+build.3", "2025.12.1+build.2") == 1);
+    }
+
+    #[test]
+    fn admin_type_changes_clear_custom_permissions_and_stale_access() {
+        let mut custom = membership(MembershipType::Custom);
+        custom.access_all = true;
+        custom.manage_users = true;
+        custom.create_new_collections = true;
+        custom.edit_any_collection = true;
+        custom.delete_any_collection = true;
+
+        apply_membership_type_change(&mut custom, MembershipType::User);
+        assert_eq!(custom.atype, MembershipType::User as i32);
+        assert!(!custom.access_all);
+        assert!(!custom.manage_users);
+        assert!(!custom.create_new_collections);
+        assert!(!custom.edit_any_collection);
+        assert!(!custom.delete_any_collection);
+
+        let mut admin = membership(MembershipType::Admin);
+        admin.access_all = true;
+        apply_membership_type_change(&mut admin, MembershipType::Custom);
+        assert_eq!(admin.atype, MembershipType::Custom as i32);
+        assert!(!admin.access_all, "entering Custom through this UI must be fail-closed");
+        assert!(!admin.has_manage_all_collections());
+    }
+
+    #[test]
+    fn admin_and_legacy_manager_access_all_behavior_is_preserved() {
+        let mut user = membership(MembershipType::User);
+        apply_membership_type_change(&mut user, MembershipType::Admin);
+        assert!(user.access_all);
+
+        let mut custom = membership(MembershipType::Custom);
+        custom.access_all = true;
+        custom.edit_any_collection = true;
+        apply_membership_type_change(&mut custom, MembershipType::Manager);
+        assert_eq!(custom.atype, MembershipType::Manager as i32);
+        assert!(custom.access_all);
+        assert!(!custom.edit_any_collection);
     }
 }

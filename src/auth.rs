@@ -735,7 +735,7 @@ impl OrgHeaders {
     }
     // Custom-role permission checks. Admins and Owners implicitly hold every
     // permission; a Custom member holds a permission only if the matching flag
-    // is set on their Membership. The has_manage_* helpers gate the flags on the
+    // is set on their Membership. The has_* helpers gate the flags on the
     // Custom type, so stale flags on other types can never grant anything.
     fn can_manage_users(&self) -> bool {
         self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.has_manage_users())
@@ -744,8 +744,7 @@ impl OrgHeaders {
         self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.has_manage_groups())
     }
     fn can_manage_policies(&self) -> bool {
-        self.is_confirmed()
-            && (self.membership_type >= MembershipType::Admin || self.membership.has_manage_policies())
+        self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.has_manage_policies())
     }
 }
 
@@ -944,9 +943,28 @@ fn get_col_id(request: &Request<'_>) -> Option<CollectionId> {
     None
 }
 
-/// The ManagerHeaders are used to check if you are at least a Manager
-/// and have access to the specific collection provided via the <col_id>/collections/collectionId.
-/// This does strict checking on the collection_id, ManagerHeadersLoose does not.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CollectionDeleteAccess {
+    Any,
+    ManagedOnly,
+    Denied,
+}
+
+fn collection_delete_access(membership: &Membership) -> CollectionDeleteAccess {
+    if membership.can_delete_any_collection() {
+        CollectionDeleteAccess::Any
+    } else if membership.has_status(MembershipStatus::Confirmed) && membership.has_type(MembershipType::Manager) {
+        // Preserve the legacy Manager role's pre-existing per-collection deletion behavior.
+        CollectionDeleteAccess::ManagedOnly
+    } else {
+        CollectionDeleteAccess::Denied
+    }
+}
+
+/// ManagerHeaders authorizes collection updates. A Custom member with Edit any collection can
+/// update every collection; otherwise the caller must be at least a legacy Manager and have the
+/// per-collection Manage permission. Read and delete use separate guards so Edit cannot
+/// accidentally imply Delete.
 pub struct ManagerHeaders {
     pub host: String,
     pub device: Device,
@@ -967,7 +985,9 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
                     err_handler!("Error getting DB")
                 };
 
-                if !Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await {
+                if !headers.membership.has_edit_any_collection()
+                    && !Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await
+                {
                     err_handler!("The current user isn't a manager for this collection")
                 }
             } else {
@@ -983,6 +1003,131 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
             })
         } else {
             err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
+        }
+    }
+}
+
+/// Read access to collection metadata and assignment details. Delete any collection needs this
+/// visibility to render the standard collection view, but it does not grant edit or cipher access.
+pub struct CollectionReadHeaders {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+    pub membership: Membership,
+    pub ip: ClientIp,
+    pub org_id: OrganizationId,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for CollectionReadHeaders {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        if !headers.is_confirmed_and_manager() {
+            err_handler!("You need collection read permission to call this endpoint")
+        }
+
+        let Some(col_id) = get_col_id(request) else {
+            err_handler!("Error getting the collection id")
+        };
+
+        let can_read_any_collection = headers.is_confirmed_and_admin()
+            || headers.membership.has_edit_any_collection()
+            || headers.membership.has_delete_any_collection();
+
+        if !can_read_any_collection {
+            let Outcome::Success(conn) = DbConn::from_request(request).await else {
+                err_handler!("Error getting DB")
+            };
+
+            if !Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await {
+                err_handler!("The current user isn't a manager for this collection")
+            }
+        }
+
+        Outcome::Success(Self {
+            host: headers.host,
+            device: headers.device,
+            user: headers.user,
+            ip: headers.ip,
+            org_id: headers.membership.org_uuid.clone(),
+            membership: headers.membership,
+        })
+    }
+}
+
+impl From<CollectionReadHeaders> for Headers {
+    fn from(h: CollectionReadHeaders) -> Headers {
+        Headers {
+            host: h.host,
+            device: h.device,
+            user: h.user,
+            ip: h.ip,
+        }
+    }
+}
+
+/// Delete is intentionally independent from Edit any collection. Vaultwarden advertises
+/// limitCollectionDeletion=true, so Custom members require the explicit Delete any collection
+/// permission. The legacy Manager role retains its previous per-collection behavior.
+pub struct CollectionDeleteHeaders {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+    pub ip: ClientIp,
+    pub org_id: OrganizationId,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for CollectionDeleteHeaders {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        if !headers.is_confirmed_and_manager() {
+            err_handler!("You need collection delete permission to call this endpoint")
+        }
+
+        let Some(col_id) = get_col_id(request) else {
+            err_handler!("Error getting the collection id")
+        };
+
+        match collection_delete_access(&headers.membership) {
+            CollectionDeleteAccess::Any => {}
+            CollectionDeleteAccess::Denied => {
+                // Custom is a distinct, fail-closed role. In particular, Edit any collection and
+                // access_all must not satisfy a Delete request without the explicit delete flag.
+                err_handler!("You need the 'Delete any collection' permission to call this endpoint")
+            }
+            CollectionDeleteAccess::ManagedOnly => {
+                let Outcome::Success(conn) = DbConn::from_request(request).await else {
+                    err_handler!("Error getting DB")
+                };
+
+                if !Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await {
+                    err_handler!("The current user isn't a manager for this collection")
+                }
+            }
+        }
+
+        Outcome::Success(Self {
+            host: headers.host,
+            device: headers.device,
+            user: headers.user,
+            ip: headers.ip,
+            org_id: headers.membership.org_uuid,
+        })
+    }
+}
+
+impl From<CollectionDeleteHeaders> for Headers {
+    fn from(h: CollectionDeleteHeaders) -> Headers {
+        Headers {
+            host: h.host,
+            device: h.device,
+            user: h.user,
+            ip: h.ip,
         }
     }
 }
@@ -1039,22 +1184,32 @@ impl From<ManagerHeadersLoose> for Headers {
     }
 }
 
-impl ManagerHeaders {
+impl CollectionDeleteHeaders {
     pub async fn from_loose(
         h: ManagerHeadersLoose,
         collections: &Vec<CollectionId>,
         conn: &DbConn,
-    ) -> Result<ManagerHeaders, Error> {
+    ) -> Result<CollectionDeleteHeaders, Error> {
+        let delete_access = collection_delete_access(&h.membership);
+        if delete_access == CollectionDeleteAccess::Denied {
+            err!("You need the 'Delete any collection' permission to call this endpoint")
+        }
+
         for col_id in collections {
             if uuid::Uuid::parse_str(col_id.as_ref()).is_err() {
                 err!("Collection Id is malformed!");
             }
-            if !Collection::is_coll_manageable_by_user(col_id, &h.membership.user_uuid, conn).await {
+            if Collection::find_by_uuid_and_org(col_id, &h.membership.org_uuid, conn).await.is_none() {
+                err!("Collection not found", "Collection does not exist or does not belong to this organization")
+            }
+            if delete_access == CollectionDeleteAccess::ManagedOnly
+                && !Collection::is_coll_manageable_by_user(col_id, &h.membership.user_uuid, conn).await
+            {
                 err!("Collection not found", "The current user isn't a manager for this collection")
             }
         }
 
-        Ok(ManagerHeaders {
+        Ok(CollectionDeleteHeaders {
             host: h.host,
             device: h.device,
             user: h.user,
@@ -1395,4 +1550,43 @@ pub async fn refresh_tokens(
     };
 
     Ok((device, auth_tokens))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CollectionDeleteAccess, collection_delete_access};
+    use crate::db::models::{Membership, MembershipStatus, MembershipType};
+
+    fn membership(member_type: MembershipType) -> Membership {
+        let mut membership = Membership::new("test-user".to_owned().into(), "test-org".to_owned().into(), None);
+        membership.atype = member_type as i32;
+        membership.status = MembershipStatus::Confirmed as i32;
+        membership
+    }
+
+    #[test]
+    fn collection_delete_permission_is_independent_from_edit_and_access_all() {
+        let mut custom = membership(MembershipType::Custom);
+        custom.edit_any_collection = true;
+        custom.access_all = true;
+        assert_eq!(collection_delete_access(&custom), CollectionDeleteAccess::Denied);
+
+        custom.delete_any_collection = true;
+        assert_eq!(collection_delete_access(&custom), CollectionDeleteAccess::Any);
+
+        custom.status = MembershipStatus::Accepted as i32;
+        assert_eq!(collection_delete_access(&custom), CollectionDeleteAccess::Denied);
+    }
+
+    #[test]
+    fn collection_delete_permission_preserves_admin_and_legacy_manager_behavior() {
+        let admin = membership(MembershipType::Admin);
+        assert_eq!(collection_delete_access(&admin), CollectionDeleteAccess::Any);
+
+        let manager = membership(MembershipType::Manager);
+        assert_eq!(collection_delete_access(&manager), CollectionDeleteAccess::ManagedOnly);
+
+        let user = membership(MembershipType::User);
+        assert_eq!(collection_delete_access(&user), CollectionDeleteAccess::Denied);
+    }
 }
