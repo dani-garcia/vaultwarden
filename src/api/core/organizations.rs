@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use num_traits::FromPrimitive;
-use rocket::{Route, serde::json::Json};
+use rocket::{Route, http::Status, serde::json::Json};
 use serde_json::Value;
 
 use crate::{
@@ -17,7 +17,8 @@ use crate::{
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
             Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User, UserId,
+            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, TwoFactor, TwoFactorType, User,
+            UserId,
         },
     },
     mail,
@@ -391,7 +392,7 @@ async fn get_org_collections(org_id: OrganizationId, headers: ManagerHeadersLoos
     }
 
     if !headers.membership.has_full_access() {
-        err_code!("Resource not found.", "User does not have full access", rocket::http::Status::NotFound.code);
+        err_code!("Resource not found.", "User does not have full access", Status::NotFound.code);
     }
 
     Ok(Json(json!({
@@ -887,11 +888,11 @@ struct OrgIdData {
 #[get("/ciphers/organization-details?<data..>")]
 async fn get_org_details(data: OrgIdData, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
     if data.organization_id != headers.membership.org_uuid {
-        err_code!("Resource not found.", "Organization id's do not match", rocket::http::Status::NotFound.code);
+        err_code!("Resource not found.", "Organization id's do not match", Status::NotFound.code);
     }
 
     if !headers.membership.has_full_access() {
-        err_code!("Resource not found.", "User does not have full access", rocket::http::Status::NotFound.code);
+        err_code!("Resource not found.", "User does not have full access", Status::NotFound.code);
     }
 
     Ok(Json(json!({
@@ -955,7 +956,7 @@ async fn get_members(
     }
 
     if !headers.membership.has_full_access() {
-        err_code!("Resource not found.", "User does not have full access", rocket::http::Status::NotFound.code);
+        err_code!("Resource not found.", "User does not have full access", Status::NotFound.code);
     }
 
     let mut users_json = Vec::new();
@@ -2476,7 +2477,7 @@ async fn get_groups_data(
             || Collection::has_manageable_collection_by_user(&org_id, &headers.membership.user_uuid, &conn).await
     };
     if !allowed {
-        err_code!("Resource not found.", "User does not have access", rocket::http::Status::NotFound.code);
+        err_code!("Resource not found.", "User does not have access", Status::NotFound.code);
     }
 
     let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
@@ -2927,8 +2928,8 @@ struct OrganizationUserResetPasswordEnrollmentRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OrganizationUserRecoverAccountRequest {
-    new_master_password_hash: String,
-    key: String,
+    new_master_password_hash: Option<String>,
+    key: Option<String>,
 
     #[serde(default)]
     reset_master_password: bool,
@@ -2972,12 +2973,7 @@ async fn put_recover_account(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    let req = data.into_inner();
-    if req.reset_master_password && !req.reset_two_factor {
-        recover_account(org_id, member_id, headers, req, conn, nt).await
-    } else {
-        err!("Unsupported operation")
-    }
+    recover_account(org_id, member_id, headers, data.into_inner(), conn, nt).await
 }
 
 // Deprecated since `v2026.4.2`
@@ -2997,7 +2993,7 @@ async fn recover_account(
     org_id: OrganizationId,
     member_id: MembershipId,
     headers: AdminHeaders,
-    reset_request: OrganizationUserRecoverAccountRequest,
+    req: OrganizationUserRecoverAccountRequest,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
@@ -3012,7 +3008,7 @@ async fn recover_account(
         err!("User to reset isn't member of required organization")
     };
 
-    let Some(user) = User::find_by_uuid(&member.user_uuid, &conn).await else {
+    let Some(mut user) = User::find_by_uuid(&member.user_uuid, &conn).await else {
         err!("User not found")
     };
 
@@ -3025,29 +3021,56 @@ async fn recover_account(
         err!("Organization user must be confirmed for password reset functionality");
     }
 
-    // Sending email before resetting password to ensure working email configuration and the resulting
-    // user notification. Also this might add some protection against security flaws and misuse
-    if let Err(e) = mail::send_admin_reset_password(&user.email, user.display_name(), &org.name).await {
+    let fallback_2fa_email = if req.reset_two_factor && CONFIG.email_2fa_auto_fallback() {
+        TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &conn).await.is_none()
+    } else {
+        false
+    };
+
+    // Sending email first ensure working email configuration and the resulting user notification.
+    // Also this might add some protection against security flaws and misuse
+    if let Err(e) = mail::send_admin_account_recovery(
+        &user.email,
+        user.display_name(),
+        &org.name,
+        req.reset_master_password,
+        req.reset_two_factor,
+        fallback_2fa_email,
+    )
+    .await
+    {
         err!(format!("Error sending user reset password email: {e:#?}"));
     }
 
-    let mut user = user;
-    user.set_password(reset_request.new_master_password_hash.as_str(), Some(reset_request.key), true, None, &conn)
-        .await?;
+    if req.reset_master_password {
+        if let Some(key) = req.key
+            && let Some(hash) = req.new_master_password_hash
+        {
+            user.set_password(hash.as_str(), Some(key), true, None, &conn).await?;
+        } else {
+            err_code!("Unprocessable request", "Missing fields to reset password", Status::UnprocessableEntity.code);
+        }
+    }
+
+    if req.reset_two_factor {
+        TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
+        if !fallback_2fa_email || two_factor::email::find_and_activate_email_2fa(&user.uuid, &conn).await.is_err() {
+            two_factor::enforce_2fa_policy(&user, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
+                .await?;
+        }
+    }
+
     user.save(&conn).await?;
 
     nt.send_logout(&user, None, &conn).await;
 
-    log_event(
-        EventType::OrganizationUserAdminResetPassword as i32,
-        &member_id,
-        &org_id,
-        &headers.user.uuid,
-        headers.device.atype,
-        &headers.ip.ip,
-        &conn,
-    )
-    .await;
+    if req.reset_master_password {
+        headers.log_event(EventType::OrganizationUserAdminResetPassword, &member_id, &org_id, &conn).await;
+    }
+
+    if req.reset_two_factor {
+        headers.log_event(EventType::OrganizationUserAdminResetTwoFactor, &member_id, &org_id, &conn).await;
+    }
 
     Ok(())
 }

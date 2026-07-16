@@ -127,6 +127,9 @@ test('Organization is visible', async ({ page }) => {
 });
 
 test('Recover user password', async ({ page }) => {
+    await logUser(test, page, users.user2, { mailBuffer: mail2Buffer });
+    await activateTOTP(test, page, users.user2);
+
     await logUser(test, page, users.user1, { mailBuffer: mail1Buffer });
 
     let newPassword = "TotoNewPassword";
@@ -138,9 +141,10 @@ test('Recover user password', async ({ page }) => {
         await page.getByRole('menuitem', { name: 'Recover account' }).click();
         await page.getByRole('textbox', { name: 'New master password * (required)', exact: true }).fill(newPassword);
         await page.getByRole('textbox', { name: 'Confirm new master password * (' }).fill(newPassword);
+        await page.getByRole('checkbox', { name: 'Reset two-step login' }).check();
         await page.getByRole('button', { name: 'Save' }).click();
         await utils.checkNotification(page, 'Account recovery success');
-        await mail2Buffer.expect((m) => m.subject.includes('Master Password Has Been Changed'));
+        await mail2Buffer.expect((m) => m.subject.includes('Admin account recovery from Test organization'));
     });
 
     let user2 = {
@@ -150,6 +154,7 @@ test('Recover user password', async ({ page }) => {
     };
     await logUser(test, page, user2, {
         mailBuffer: mail2Buffer,
+        mail2fa: true,
         notNewDevice: true,
     });
 });
