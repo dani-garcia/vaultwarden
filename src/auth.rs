@@ -967,8 +967,24 @@ enum CollectionDeleteAccess {
 fn collection_delete_access(membership: &Membership) -> CollectionDeleteAccess {
     if membership.can_delete_any_collection() {
         CollectionDeleteAccess::Any
-    } else if membership.has_status(MembershipStatus::Confirmed) && membership.has_type(MembershipType::Manager) {
-        // Preserve the legacy Manager role's pre-existing per-collection deletion behavior.
+    } else if membership.has_status(MembershipStatus::Confirmed)
+        && (membership.has_type(MembershipType::Manager)
+            // A member holding the per-collection Manage grant may delete the collections they
+            // manage (Bitwarden's per-collection "Manage" includes deletion). This covers the
+            // legacy Manager role as well as legacy Managers that the custom-role migration
+            // converted into all-flags-false Custom members (audit finding F-1); without it those
+            // members would silently lose the ability to delete collections they still manage.
+            //
+            // The per-collection Manage decision is made downstream by `is_coll_manageable_by_user`,
+            // which also treats `access_all` as manage-everything. `edit_any_collection` is mirrored
+            // onto `access_all`, so a Custom member holding Edit any collection (or access_all) is
+            // deliberately excluded here: Delete must stay independent from Edit and must never
+            // become a blanket "delete any collection" without the explicit `delete_any_collection`
+            // permission handled by the `Any` branch above.
+            || (membership.has_type(MembershipType::Custom)
+                && !membership.has_edit_any_collection()
+                && !membership.access_all))
+    {
         CollectionDeleteAccess::ManagedOnly
     } else {
         CollectionDeleteAccess::Denied
@@ -1083,8 +1099,11 @@ impl From<CollectionReadHeaders> for Headers {
 }
 
 /// Delete is intentionally independent from Edit any collection. Vaultwarden advertises
-/// limitCollectionDeletion=true, so Custom members require the explicit Delete any collection
-/// permission. The legacy Manager role retains its previous per-collection behavior.
+/// limitCollectionDeletion=true, so deleting *any* collection requires the explicit Delete any
+/// collection permission (or Admin/Owner). Deleting an individual collection is additionally
+/// allowed for members holding the per-collection Manage grant on it — the legacy Manager role and
+/// the Custom members the migration produced from legacy Managers — but Edit any collection and
+/// access_all never satisfy a delete on their own.
 pub struct CollectionDeleteHeaders {
     pub host: String,
     pub device: Device,
@@ -1580,6 +1599,10 @@ mod tests {
 
     #[test]
     fn collection_delete_permission_is_independent_from_edit_and_access_all() {
+        // Edit any collection (which mirrors onto access_all) must never satisfy a delete on its
+        // own: it maps to `Denied` here, not `ManagedOnly`, so it can't ride the per-collection
+        // manage path into deleting collections. Only the explicit Delete any collection flag
+        // (handled by the `Any` branch) turns Edit-any members into collection deleters.
         let mut custom = membership(MembershipType::Custom);
         custom.edit_any_collection = true;
         custom.access_all = true;
@@ -1602,5 +1625,39 @@ mod tests {
 
         let user = membership(MembershipType::User);
         assert_eq!(collection_delete_access(&user), CollectionDeleteAccess::Denied);
+    }
+
+    #[test]
+    fn migrated_legacy_manager_retains_managed_collection_delete() {
+        // Regression (audit finding F-1): the custom-role migration turns every legacy Manager
+        // (including those with access_all=false and an explicit per-collection Manage grant) into a
+        // Custom member with all collection flags false. Such a member must still reach the
+        // per-collection Manage check (`ManagedOnly`) instead of being denied outright, otherwise it
+        // silently loses the ability to delete the collections it manages. `ManagedOnly` is not a
+        // blanket grant: the downstream `is_coll_manageable_by_user` check still requires an actual
+        // Manage assignment (users_collections.manage / collections_groups.manage), which a plain
+        // Custom member without any assignment does not have.
+        let confirmed_custom = membership(MembershipType::Custom);
+        assert!(!confirmed_custom.access_all);
+        assert!(!confirmed_custom.edit_any_collection);
+        assert!(!confirmed_custom.delete_any_collection);
+        assert_eq!(collection_delete_access(&confirmed_custom), CollectionDeleteAccess::ManagedOnly);
+
+        // create_new_collections alone must not change the delete decision either way.
+        let mut create_only = membership(MembershipType::Custom);
+        create_only.create_new_collections = true;
+        assert_eq!(collection_delete_access(&create_only), CollectionDeleteAccess::ManagedOnly);
+
+        // Edit any collection / access_all still map to Denied (see the independence test above),
+        // so a Custom member gains a blanket delete only through delete_any_collection.
+        let mut edit_any = membership(MembershipType::Custom);
+        edit_any.edit_any_collection = true;
+        edit_any.access_all = true;
+        assert_eq!(collection_delete_access(&edit_any), CollectionDeleteAccess::Denied);
+
+        // The membership must be confirmed; an invited/accepted member is always denied.
+        let mut unconfirmed = membership(MembershipType::Custom);
+        unconfirmed.status = MembershipStatus::Accepted as i32;
+        assert_eq!(collection_delete_access(&unconfirmed), CollectionDeleteAccess::Denied);
     }
 }
