@@ -3,7 +3,7 @@
 /* global BASE_URL:readable, _post:readable */
 
 function totpGenerate() {
-    fetch(`${BASE_URL}/totp/generate`, {
+    fetch(`${BASE_URL}/admin/totp/generate`, {
         method: "POST",
         mode: "same-origin",
         credentials: "same-origin",
@@ -33,7 +33,7 @@ function totpEnable() {
         alert("Please enter the 6-digit code from your authenticator app");
         return;
     }
-    _post(`${BASE_URL}/totp/enable`,
+    _post(`${BASE_URL}/admin/totp/enable`,
         "2FA for the admin page is now enabled",
         "Failed to enable 2FA",
         JSON.stringify({ secret, code })
@@ -49,7 +49,7 @@ function totpDisable() {
     if (!confirm("Really disable two-factor authentication for the admin page?")) {
         return;
     }
-    _post(`${BASE_URL}/totp/disable`,
+    _post(`${BASE_URL}/admin/totp/disable`,
         "2FA for the admin page is now disabled",
         "Failed to disable 2FA",
         JSON.stringify({ code })
