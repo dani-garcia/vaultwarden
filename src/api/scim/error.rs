@@ -40,6 +40,22 @@ impl ScimError {
         }
     }
 
+    pub fn conflict(scim_type: &'static str, detail: &str) -> Self {
+        Self {
+            status: Status::Conflict,
+            scim_type: Some(scim_type),
+            detail: String::from(detail),
+        }
+    }
+
+    pub fn payload_too_large() -> Self {
+        Self {
+            status: Status::PayloadTooLarge,
+            scim_type: None,
+            detail: String::from("Payload too large"),
+        }
+    }
+
     pub fn not_found() -> Self {
         Self {
             status: Status::NotFound,

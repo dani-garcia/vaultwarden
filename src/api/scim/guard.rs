@@ -34,9 +34,10 @@ use crate::{
 const DUMMY_DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 // Handlers must scope every query to token.org_uuid, never to a path or body
-// value.
+// value. The ip is carried for audit logging.
 pub struct ScimToken {
     pub org_uuid: OrganizationId,
+    pub ip: ClientIp,
 }
 
 impl ScimToken {
@@ -108,6 +109,7 @@ impl<'r> FromRequest<'r> for ScimToken {
 
         Outcome::Success(ScimToken {
             org_uuid,
+            ip,
         })
     }
 }
