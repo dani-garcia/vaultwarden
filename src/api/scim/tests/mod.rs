@@ -542,7 +542,7 @@ async fn patch_unsupported_path_is_invalid_path() {
 
     let payload = json!({
         "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
-        "Operations": [{"op": "replace", "path": "displayName", "value": "New Name"}],
+        "Operations": [{"op": "replace", "path": "wibble", "value": "New Name"}],
     });
     let (auth, ct, body) = scim_body(&token, &payload);
     let response =
@@ -555,4 +555,136 @@ async fn patch_unsupported_path_is_invalid_path() {
 fn url_escape(raw: &str) -> String {
     // Percent-encode just enough for filter values in test URLs.
     raw.replace('%', "%25").replace(' ', "%20").replace('"', "%22")
+}
+
+// ---------------------------------------------------------------------------
+// Full Users surface (Phase 2: PUT, attribute PATCH, pagination)
+// ---------------------------------------------------------------------------
+
+#[rocket::async_test]
+async fn patch_displayname_rename_is_accepted_noop() {
+    let _guard = TEST_LOCK.lock().await;
+    let (client, pool) = scim_client().await;
+    let conn = pool.get().await.expect("conn");
+    let org = seed_org(&conn, "scim-rename-org").await;
+    let token = seed_scim_key(&conn, &org).await;
+    let member = seed_member(&conn, &org, "renamed.user@example.com", 2, MembershipType::User).await;
+
+    // Entra sends this on every directory rename; it must not error and must
+    // not change membership state.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        "Operations": [{"op": "replace", "path": "displayName", "value": "New Display Name"}],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.patch(format!("/scim/v2/{org}/Users/{member}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["active"], json!(true));
+    assert_eq!(member_status(&conn, &member, &org).await, 2);
+}
+
+#[rocket::async_test]
+async fn patch_and_put_update_external_id_with_uniqueness() {
+    let _guard = TEST_LOCK.lock().await;
+    let (client, pool) = scim_client().await;
+    let conn = pool.get().await.expect("conn");
+    let org = seed_org(&conn, "scim-extid-org").await;
+    let token = seed_scim_key(&conn, &org).await;
+    let member_a = seed_member(&conn, &org, "extid.a@example.com", 1, MembershipType::User).await;
+    let member_b = seed_member(&conn, &org, "extid.b@example.com", 1, MembershipType::User).await;
+
+    // PATCH assigns an externalId.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        "Operations": [{"op": "replace", "path": "externalId", "value": "ext-a-1"}],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.patch(format!("/scim/v2/{org}/Users/{member_a}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
+    assert_eq!(parse_json(&body_of(response).await)["externalId"], json!("ext-a-1"));
+
+    // PUT replaces it and can toggle active in the same request.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+        "userName": "extid.a@example.com",
+        "externalId": "ext-a-2",
+        "active": false,
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.put(format!("/scim/v2/{org}/Users/{member_a}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["externalId"], json!("ext-a-2"));
+    assert_eq!(parsed["active"], json!(false));
+    assert_eq!(member_status(&conn, &member_a, &org).await, -127, "accepted (1) revoked to -127");
+
+    // Duplicate externalId on another member is a 409.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        "Operations": [{"op": "replace", "path": "externalId", "value": "ext-a-2"}],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.patch(format!("/scim/v2/{org}/Users/{member_b}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Conflict);
+}
+
+#[rocket::async_test]
+async fn put_does_not_change_email_or_role() {
+    let _guard = TEST_LOCK.lock().await;
+    let (client, pool) = scim_client().await;
+    let conn = pool.get().await.expect("conn");
+    let org = seed_org(&conn, "scim-put-immutable-org").await;
+    let token = seed_scim_key(&conn, &org).await;
+    let member = seed_member(&conn, &org, "immutable@example.com", 2, MembershipType::User).await;
+
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+        "userName": "changed@example.com",
+        "displayName": "Different Person",
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.put(format!("/scim/v2/{org}/Users/{member}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
+    let parsed = parse_json(&body_of(response).await);
+    // The response reflects the real state: the email did not change.
+    assert_eq!(parsed["userName"], json!("immutable@example.com"));
+    assert_eq!(member_status(&conn, &member, &org).await, 2);
+}
+
+#[rocket::async_test]
+async fn pagination_edges() {
+    let _guard = TEST_LOCK.lock().await;
+    let (client, pool) = scim_client().await;
+    let conn = pool.get().await.expect("conn");
+    let org = seed_org(&conn, "scim-page-org").await;
+    let token = seed_scim_key(&conn, &org).await;
+    for i in 1..=3 {
+        seed_member(&conn, &org, &format!("page{i}@example.com"), 1, MembershipType::User).await;
+    }
+
+    // Middle page.
+    let response =
+        client.get(format!("/scim/v2/{org}/Users?startIndex=2&count=1")).header(bearer(&token)).dispatch().await;
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["totalResults"], json!(3));
+    assert_eq!(parsed["itemsPerPage"], json!(1));
+    assert_eq!(parsed["startIndex"], json!(2));
+
+    // count=0 returns the total with no resources (RFC 7644 s3.4.2.4).
+    let response = client.get(format!("/scim/v2/{org}/Users?count=0")).header(bearer(&token)).dispatch().await;
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["totalResults"], json!(3));
+    assert_eq!(parsed["itemsPerPage"], json!(0));
+
+    // startIndex beyond the end is an empty page, not an error.
+    let response = client.get(format!("/scim/v2/{org}/Users?startIndex=10")).header(bearer(&token)).dispatch().await;
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["totalResults"], json!(3));
+    assert_eq!(parsed["itemsPerPage"], json!(0));
 }

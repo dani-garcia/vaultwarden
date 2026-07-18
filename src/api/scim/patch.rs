@@ -34,6 +34,29 @@ pub struct PatchOperation {
 #[derive(Debug, Default, PartialEq)]
 pub struct UserPatch {
     pub active: Option<bool>,
+    pub external_id: Option<String>,
+}
+
+// Attributes Entra maps by default but Vaultwarden does not sync after
+// creation. Accepted and ignored (RFC 7644 allows a service provider to
+// treat immutable-for-it attributes this way in practice), because a 400
+// here would surface as a sync error on every rename in the directory.
+// user.name is global to the person across organizations; an org-scoped
+// provisioning channel must not rewrite it.
+fn is_ignored_user_attribute(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower == "displayname"
+        || lower == "name"
+        || lower.starts_with("name.")
+        || lower == "emails"
+        || lower.starts_with("emails[")
+        || lower == "username"
+        || lower == "title"
+        || lower == "roles"
+        || lower == "preferredlanguage"
+        || lower.starts_with("addresses")
+        || lower.starts_with("phonenumbers")
+        || lower.starts_with("urn:ietf:params:scim:schemas:extension:enterprise:2.0:user")
 }
 
 pub fn parse_user_patch(patch: &PatchOp) -> Result<UserPatch, ScimError> {
@@ -60,6 +83,13 @@ pub fn parse_user_patch(patch: &PatchOp) -> Result<UserPatch, ScimError> {
                 let value = operation.value.clone().unwrap_or(Value::Null);
                 result.active = Some(coerce_bool(value)?);
             }
+            Some(op_path) if op_path.eq_ignore_ascii_case("externalid") => {
+                let Some(Value::String(external_id)) = operation.value.as_ref() else {
+                    return Err(ScimError::bad_request("invalidValue", "externalId must be a string"));
+                };
+                result.external_id = Some(external_id.clone());
+            }
+            Some(op_path) if is_ignored_user_attribute(op_path) => {}
             Some(_) => {
                 return Err(ScimError::bad_request("invalidPath", "Unsupported patch path"));
             }
@@ -74,6 +104,13 @@ pub fn parse_user_patch(patch: &PatchOp) -> Result<UserPatch, ScimError> {
                 for (attribute, value) in map {
                     if attribute.eq_ignore_ascii_case("active") {
                         result.active = Some(coerce_bool(value.clone())?);
+                    } else if attribute.eq_ignore_ascii_case("externalid") {
+                        let Value::String(external_id) = value else {
+                            return Err(ScimError::bad_request("invalidValue", "externalId must be a string"));
+                        };
+                        result.external_id = Some(external_id.clone());
+                    } else if is_ignored_user_attribute(attribute) {
+                        // Accepted, not synced; see is_ignored_user_attribute.
                     } else {
                         return Err(ScimError::bad_request("invalidPath", "Unsupported patch attribute"));
                     }
@@ -132,6 +169,38 @@ mod tests {
     }
 
     #[test]
+    fn entra_mapped_attributes_are_accepted_and_ignored() {
+        for path in ["displayName", "name.givenName", "emails[type eq \"work\"].value", "title", "roles"] {
+            let parsed = patch(json!({
+                "schemas": [PATCH_OP_URN],
+                "Operations": [
+                    {"op": "replace", "path": path, "value": "whatever"},
+                    {"op": "replace", "path": "active", "value": true},
+                ],
+            }))
+            .unwrap_or_else(|_| panic!("path {path} must be ignored, not rejected"));
+            assert_eq!(parsed.active, Some(true));
+        }
+    }
+
+    #[test]
+    fn externalid_patch_both_forms() {
+        let parsed = patch(json!({
+            "schemas": [PATCH_OP_URN],
+            "Operations": [{"op": "replace", "path": "externalId", "value": "new-ext-1"}],
+        }))
+        .expect("valid");
+        assert_eq!(parsed.external_id.as_deref(), Some("new-ext-1"));
+
+        let parsed = patch(json!({
+            "schemas": [PATCH_OP_URN],
+            "Operations": [{"op": "replace", "value": {"externalId": "new-ext-2", "displayName": "ignored"}}],
+        }))
+        .expect("valid");
+        assert_eq!(parsed.external_id.as_deref(), Some("new-ext-2"));
+    }
+
+    #[test]
     fn rejects_bad_patches() {
         for (payload, expected_type) in [
             (
@@ -141,7 +210,7 @@ mod tests {
             (json!({"schemas": [PATCH_OP_URN], "Operations": []}), "invalidValue"),
             (json!({"schemas": [PATCH_OP_URN], "Operations": [{"op": "remove", "path": "active"}]}), "invalidValue"),
             (
-                json!({"schemas": [PATCH_OP_URN], "Operations": [{"op": "replace", "path": "displayName", "value": "x"}]}),
+                json!({"schemas": [PATCH_OP_URN], "Operations": [{"op": "replace", "path": "wibble", "value": "x"}]}),
                 "invalidPath",
             ),
             (

@@ -42,7 +42,7 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![list_users, get_user, post_user, patch_user, delete_user]
+    routes![list_users, get_user, post_user, put_user, patch_user, delete_user]
 }
 
 // Synthetic acting user recorded in the org event log for SCIM-driven
@@ -267,20 +267,74 @@ async fn patch_user(
     };
 
     let patch = parse_user_patch(&data.0)?;
-    let Some(desired_active) = patch.active else {
-        return Err(ScimError::bad_request("invalidValue", "No supported attributes in patch (supported: active)"));
-    };
 
-    if desired_active {
-        restore_member(&mut member, &token, &conn).await?;
-    } else {
-        revoke_member(&mut member, &token, &conn).await?;
+    if let Some(external_id) = patch.external_id.as_deref() {
+        update_external_id(&mut member, external_id, &token, &conn).await?;
+    }
+
+    match patch.active {
+        Some(true) => restore_member(&mut member, &token, &conn).await?,
+        Some(false) => revoke_member(&mut member, &token, &conn).await?,
+        // Every operation was an accepted-but-ignored attribute (for example
+        // a displayName rename): succeed and return the current state.
+        None => {}
     }
 
     let Some(user) = User::find_by_uuid(&member.user_uuid, &conn).await else {
         return Err(ScimError::internal());
     };
     Ok(ScimResponse::ok(to_scim_user(&member, &user, &token)))
+}
+
+// PUT replaces the attributes SCIM owns: externalId and active. userName,
+// name, and role deliberately do not sync: email is the login identity and
+// user.name is global to the person, while roles cannot round-trip through
+// Vaultwarden's membership types. The response reflects the actual state.
+#[put("/v2/<_>/Users/<member_id>", data = "<data>")]
+async fn put_user(
+    member_id: MembershipId,
+    data: ScimJson<ScimUserRequest>,
+    token: ScimToken,
+    conn: DbConn,
+) -> Result<ScimResponse, ScimError> {
+    let Some(mut member) = Membership::find_by_uuid_and_org(&member_id, &token.org_uuid, &conn).await else {
+        return Err(ScimError::not_found());
+    };
+    let request = data.0;
+
+    if let Some(external_id) = request.external_id.as_deref() {
+        update_external_id(&mut member, external_id, &token, &conn).await?;
+    }
+
+    match request.active.map(|b| b.0) {
+        Some(true) => restore_member(&mut member, &token, &conn).await?,
+        Some(false) => revoke_member(&mut member, &token, &conn).await?,
+        None => {}
+    }
+
+    let Some(user) = User::find_by_uuid(&member.user_uuid, &conn).await else {
+        return Err(ScimError::internal());
+    };
+    Ok(ScimResponse::ok(to_scim_user(&member, &user, &token)))
+}
+
+async fn update_external_id(
+    member: &mut Membership,
+    external_id: &str,
+    token: &ScimToken,
+    conn: &DbConn,
+) -> Result<(), ScimError> {
+    if member.external_id.as_deref() == Some(external_id) {
+        return Ok(());
+    }
+    // The externalId is the correlation key: enforce uniqueness within the org.
+    if Membership::find_by_external_id_and_org(external_id, &token.org_uuid, conn).await.is_some() {
+        return Err(ScimError::conflict("uniqueness", "A member with this externalId already exists"));
+    }
+    member.set_external_id(Some(external_id.to_owned()));
+    member.save(conn).await.map_err(|_| ScimError::internal())?;
+    log_scim_event(EventType::OrganizationUserUpdated, member, token, conn).await;
+    Ok(())
 }
 
 // DELETE deprovisions by revoking, identically to PATCH active:false. The
