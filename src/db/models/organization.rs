@@ -15,8 +15,8 @@ use crate::{
     db::{
         DbConn,
         schema::{
-            ciphers, ciphers_collections, collections_groups, groups, groups_users, org_policies, organization_api_key,
-            organizations, users, users_collections, users_organizations,
+            ciphers, ciphers_collections, collections, collections_groups, groups, groups_users, org_policies,
+            organization_api_key, organizations, users, users_collections, users_organizations,
         },
     },
     error::MapResult,
@@ -119,27 +119,25 @@ impl MembershipType {
             _ => None,
         }
     }
+
+    const fn access_rank(self) -> u8 {
+        match self {
+            Self::User => 0,
+            Self::Manager | Self::Custom => 1,
+            Self::Admin => 2,
+            Self::Owner => 3,
+        }
+    }
 }
 
 impl Ord for MembershipType {
     fn cmp(&self, other: &MembershipType) -> Ordering {
-        // For easy comparison, map each variant to an access level (where 0 is lowest).
-        // Custom is treated as a low-privilege base role (same level as Manager for
-        // ordering purposes); its elevated capabilities are governed by the explicit
-        // custom permission flags on the Membership, not by this ordering.
-        //
-        // NOTE: Manager and Custom therefore share an access level while being distinct
-        // variants: the derived `PartialEq` compares the role itself (Manager != Custom),
-        // while this ordering compares access levels (neither is greater than the other).
-        // Keep that in mind before relying on `cmp() == Equal` implying equality.
-        const ACCESS_LEVEL: [i32; 5] = [
-            3, // Owner
-            2, // Admin
-            0, // User
-            1, // Manager
-            1, // Custom
-        ];
-        ACCESS_LEVEL[*self as usize].cmp(&ACCESS_LEVEL[*other as usize])
+        // Manager and Custom intentionally share the same authorization rank. A total ordering
+        // still has to distinguish unequal enum variants, otherwise `Ord` would disagree with
+        // `Eq` and ordered maps/sets could collapse one role into the other. The discriminant is a
+        // stable tie-breaker and places Custom after Manager, preserving `Custom >= Manager` while
+        // keeping both roles below Admin.
+        self.access_rank().cmp(&other.access_rank()).then_with(|| (*self as i32).cmp(&(*other as i32)))
     }
 }
 
@@ -849,6 +847,69 @@ impl Membership {
         self.has_type(MembershipType::Custom) && self.delete_any_collection
     }
 
+    /// Check for an explicit per-collection Manage grant without treating any `access_all` value
+    /// as such a grant. Custom-role collection guards use this instead of the legacy broad helper,
+    /// because membership/group `access_all` must not manufacture a per-collection Manage grant.
+    pub async fn has_explicit_collection_manage_access(&self, collection_uuid: &CollectionId, conn: &DbConn) -> bool {
+        let membership_uuid = self.uuid.clone();
+        let user_uuid = self.user_uuid.clone();
+        let org_uuid = self.org_uuid.clone();
+        let collection_uuid = collection_uuid.clone();
+
+        conn.run(move |conn| {
+            let has_direct_manage = users_organizations::table
+                .inner_join(
+                    users_collections::table.on(users_collections::user_uuid.eq(users_organizations::user_uuid)),
+                )
+                .inner_join(
+                    collections::table.on(collections::uuid
+                        .eq(users_collections::collection_uuid)
+                        .and(collections::org_uuid.eq(users_organizations::org_uuid))),
+                )
+                .filter(users_organizations::uuid.eq(membership_uuid.clone()))
+                .filter(users_organizations::user_uuid.eq(user_uuid.clone()))
+                .filter(users_organizations::org_uuid.eq(org_uuid.clone()))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .filter(collections::uuid.eq(collection_uuid.clone()))
+                .filter(users_collections::manage.eq(true))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0)
+                != 0;
+
+            if has_direct_manage {
+                return true;
+            }
+
+            users_organizations::table
+                .inner_join(
+                    groups_users::table.on(groups_users::users_organizations_uuid.eq(users_organizations::uuid)),
+                )
+                .inner_join(
+                    groups::table.on(groups::uuid
+                        .eq(groups_users::groups_uuid)
+                        .and(groups::organizations_uuid.eq(users_organizations::org_uuid))),
+                )
+                .inner_join(collections_groups::table.on(collections_groups::groups_uuid.eq(groups_users::groups_uuid)))
+                .inner_join(
+                    collections::table.on(collections::uuid
+                        .eq(collections_groups::collections_uuid)
+                        .and(collections::org_uuid.eq(users_organizations::org_uuid))),
+                )
+                .filter(users_organizations::uuid.eq(membership_uuid))
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::org_uuid.eq(org_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .filter(collections::uuid.eq(collection_uuid))
+                .filter(collections_groups::manage.eq(true))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0)
+                != 0
+        })
+        .await
+    }
+
     /// `manageAllCollections` is a client-side aggregate checkbox, not a separately persisted
     /// Bitwarden permission. It is selected exactly when all three child permissions are selected.
     pub fn has_manage_all_collections(&self) -> bool {
@@ -1347,18 +1408,32 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
-    fn partial_cmp_MembershipType() {
+    fn membership_type_order_preserves_access_rank_and_ord_contract() {
         assert!(MembershipType::Owner > MembershipType::Admin);
-        assert!(MembershipType::Admin > MembershipType::Manager);
+        assert!(MembershipType::Admin > MembershipType::Custom);
+        assert!(MembershipType::Custom > MembershipType::Manager);
         assert!(MembershipType::Manager > MembershipType::User);
         assert!(MembershipType::Custom == MembershipType::from_str("4").unwrap());
-        // Manager and Custom share the same access level, but are distinct roles
-        assert!(MembershipType::Manager != MembershipType::Custom);
-        assert!(MembershipType::Manager >= MembershipType::Custom);
+
+        // Permission comparisons continue to treat Custom as manager-level and below Admin.
         assert!(MembershipType::Custom >= MembershipType::Manager);
-        assert!(MembershipType::Custom > MembershipType::User);
-        assert!(MembershipType::Admin > MembershipType::Custom);
+        let custom = MembershipType::Custom as i32;
+        assert!(custom >= MembershipType::Manager);
+        assert!(custom < MembershipType::Admin);
+
+        let types = [
+            MembershipType::Owner,
+            MembershipType::Admin,
+            MembershipType::User,
+            MembershipType::Manager,
+            MembershipType::Custom,
+        ];
+        for lhs in types {
+            for rhs in types {
+                assert_eq!(lhs.cmp(&rhs) == Ordering::Equal, lhs == rhs);
+                assert_eq!(lhs.cmp(&rhs), rhs.cmp(&lhs).reverse());
+            }
+        }
     }
 
     #[test]

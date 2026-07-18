@@ -2182,7 +2182,10 @@ async fn post_org_import(
     // any future drift fails closed with an error instead of panicking.
     for (cipher_index, col_index) in relations {
         let (Some(cipher_id), Some(col_id)) = (ciphers.get(cipher_index), collections.get(col_index)) else {
-            err!("Invalid collection relationship", "A collection relationship references a non-existent cipher or collection")
+            err!(
+                "Invalid collection relationship",
+                "A collection relationship references a non-existent cipher or collection"
+            )
         };
         CollectionCipher::save(cipher_id, col_id, &conn).await?;
     }
