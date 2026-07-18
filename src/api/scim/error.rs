@@ -72,6 +72,14 @@ impl ScimError {
         }
     }
 
+    pub fn not_implemented(detail: &str) -> Self {
+        Self {
+            status: Status::NotImplemented,
+            scim_type: None,
+            detail: String::from(detail),
+        }
+    }
+
     pub fn internal() -> Self {
         Self {
             status: Status::InternalServerError,

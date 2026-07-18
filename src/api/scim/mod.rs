@@ -10,6 +10,7 @@ pub mod guard;
 mod discovery;
 mod error;
 mod filter;
+mod groups;
 mod manage;
 mod models;
 mod patch;
@@ -33,6 +34,7 @@ pub use manage::routes as manage_routes;
 pub fn routes() -> Vec<Route> {
     let mut routes = discovery::routes();
     routes.append(&mut users::routes());
+    routes.append(&mut groups::routes());
     routes
 }
 

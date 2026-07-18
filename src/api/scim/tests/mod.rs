@@ -688,3 +688,158 @@ async fn pagination_edges() {
     assert_eq!(parsed["totalResults"], json!(3));
     assert_eq!(parsed["itemsPerPage"], json!(0));
 }
+
+// ---------------------------------------------------------------------------
+// Groups (Phase 3)
+// ---------------------------------------------------------------------------
+
+#[rocket::async_test]
+async fn group_crud_and_member_diff_lifecycle() {
+    let _guard = TEST_LOCK.lock().await;
+    let (client, pool) = scim_client().await;
+    let conn = pool.get().await.expect("conn");
+    let org = seed_org(&conn, "scim-group-org").await;
+    let token = seed_scim_key(&conn, &org).await;
+    let member_a = seed_member(&conn, &org, "group.a@example.com", 1, MembershipType::User).await;
+    let member_b = seed_member(&conn, &org, "group.b@example.com", 2, MembershipType::User).await;
+
+    // POST with one initial member.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+        "displayName": "Engineering",
+        "externalId": "entra-group-1",
+        "members": [{"value": member_a}],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response = client.post(format!("/scim/v2/{org}/Groups")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Created);
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["displayName"], json!("Engineering"));
+    assert_eq!(parsed["members"].as_array().expect("members").len(), 1);
+    let group_id = parsed["id"].as_str().expect("group id").to_owned();
+
+    // PATCH add member_b via value list.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        "Operations": [{"op": "Add", "path": "members", "value": [{"value": member_b}]}],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.patch(format!("/scim/v2/{org}/Groups/{group_id}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["members"].as_array().expect("members").len(), 2);
+
+    // Adding the same member twice is idempotent.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        "Operations": [{"op": "add", "path": "members", "value": [{"value": member_b}]}],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.patch(format!("/scim/v2/{org}/Groups/{group_id}")).header(auth).header(ct).body(body).dispatch().await;
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["members"].as_array().expect("members").len(), 2, "duplicate add must not duplicate the link");
+
+    // Entra's filter-path removal form removes member_a only.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        "Operations": [{"op": "Remove", "path": format!("members[value eq \"{member_a}\"]")}],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.patch(format!("/scim/v2/{org}/Groups/{group_id}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
+    let parsed = parse_json(&body_of(response).await);
+    let members = parsed["members"].as_array().expect("members");
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0]["value"], json!(member_b.to_string()));
+
+    // excludedAttributes=members on list omits the member arrays.
+    let response =
+        client.get(format!("/scim/v2/{org}/Groups?excludedAttributes=members")).header(bearer(&token)).dispatch().await;
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["totalResults"], json!(1));
+    assert!(parsed["Resources"][0].get("members").is_none(), "members must be excluded");
+
+    // Filter by displayName.
+    let response = client
+        .get(format!("/scim/v2/{org}/Groups?filter={}", url_escape("displayName eq \"Engineering\"")))
+        .header(bearer(&token))
+        .dispatch()
+        .await;
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["totalResults"], json!(1));
+
+    // DELETE is a real delete for groups (no E2EE state involved).
+    let response = client.delete(format!("/scim/v2/{org}/Groups/{group_id}")).header(bearer(&token)).dispatch().await;
+    assert_eq!(response.status(), Status::NoContent);
+    let response = client.get(format!("/scim/v2/{org}/Groups/{group_id}")).header(bearer(&token)).dispatch().await;
+    assert_eq!(response.status(), Status::NotFound);
+}
+
+#[rocket::async_test]
+async fn group_member_must_be_provisioned_first() {
+    let _guard = TEST_LOCK.lock().await;
+    let (client, pool) = scim_client().await;
+    let conn = pool.get().await.expect("conn");
+    let org = seed_org(&conn, "scim-group-order-org").await;
+    let token = seed_scim_key(&conn, &org).await;
+    let org_other = seed_org(&conn, "scim-group-other-org").await;
+    let foreign_member = seed_member(&conn, &org_other, "other.org@example.com", 1, MembershipType::User).await;
+
+    // A member id from another org must be rejected, same as an unknown id:
+    // GroupUser keys on MembershipId, so cross-org references would otherwise
+    // link silently.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+        "displayName": "Bad Members",
+        "members": [{"value": foreign_member}],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response = client.post(format!("/scim/v2/{org}/Groups")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::BadRequest);
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["scimType"], json!("invalidValue"));
+
+    // And the failed create must not leave a group behind.
+    let response = client.get(format!("/scim/v2/{org}/Groups")).header(bearer(&token)).dispatch().await;
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["totalResults"], json!(0));
+}
+
+#[rocket::async_test]
+async fn group_put_replaces_member_set() {
+    let _guard = TEST_LOCK.lock().await;
+    let (client, pool) = scim_client().await;
+    let conn = pool.get().await.expect("conn");
+    let org = seed_org(&conn, "scim-group-put-org").await;
+    let token = seed_scim_key(&conn, &org).await;
+    let member_a = seed_member(&conn, &org, "put.a@example.com", 1, MembershipType::User).await;
+    let member_b = seed_member(&conn, &org, "put.b@example.com", 1, MembershipType::User).await;
+
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+        "displayName": "Replace Me",
+        "members": [{"value": member_a}],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response = client.post(format!("/scim/v2/{org}/Groups")).header(auth).header(ct).body(body).dispatch().await;
+    let group_id = parse_json(&body_of(response).await)["id"].as_str().expect("id").to_owned();
+
+    // PUT swaps the whole member set and renames.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+        "displayName": "Replaced",
+        "members": [{"value": member_b}],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.put(format!("/scim/v2/{org}/Groups/{group_id}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["displayName"], json!("Replaced"));
+    let members = parsed["members"].as_array().expect("members");
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0]["value"], json!(member_b.to_string()));
+}
