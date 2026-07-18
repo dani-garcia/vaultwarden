@@ -47,6 +47,7 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut two_factor::routes());
     routes.append(&mut sends::routes());
     routes.append(&mut public::routes());
+    routes.append(&mut crate::api::scim::manage_routes());
     routes.append(&mut eq_domains_routes);
     routes.append(&mut hibp_routes);
     routes.append(&mut meta_routes);

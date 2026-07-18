@@ -256,6 +256,17 @@ table! {
 }
 
 table! {
+    scim_api_key (uuid) {
+        uuid -> Text,
+        org_uuid -> Text,
+        key_hash -> Text,
+        enabled -> Bool,
+        created_at -> Timestamp,
+        revision_date -> Timestamp,
+    }
+}
+
+table! {
     sso_auth (state) {
         state -> Text,
         client_challenge -> Text,
@@ -373,6 +384,7 @@ joinable!(users_organizations -> organizations (org_uuid));
 joinable!(users_organizations -> users (user_uuid));
 joinable!(users_organizations -> ciphers (org_uuid));
 joinable!(organization_api_key -> organizations (org_uuid));
+joinable!(scim_api_key -> organizations (org_uuid));
 joinable!(emergency_access -> users (grantor_uuid));
 joinable!(groups -> organizations (organizations_uuid));
 joinable!(groups_users -> users_organizations (users_organizations_uuid));
@@ -402,6 +414,7 @@ allow_tables_to_appear_in_same_query!(
     users_collections,
     users_organizations,
     organization_api_key,
+    scim_api_key,
     emergency_access,
     groups,
     groups_users,

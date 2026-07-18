@@ -11,6 +11,7 @@ mod folder;
 mod group;
 mod org_policy;
 mod organization;
+mod scim_api_key;
 mod send;
 mod sso_auth;
 mod two_factor;
@@ -34,6 +35,7 @@ pub use self::organization::{
     Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, Organization, OrganizationApiKey,
     OrganizationId,
 };
+pub use self::scim_api_key::ScimApiKey;
 pub use self::send::{Send, SendFileId, SendId, SendType};
 pub use self::sso_auth::{OIDCAuthenticatedUser, OIDCCodeResponseError, SsoAuth};
 pub use self::two_factor::{TwoFactor, TwoFactorType};

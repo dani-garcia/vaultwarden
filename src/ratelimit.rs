@@ -18,6 +18,12 @@ static LIMITER_ADMIN: LazyLock<Limiter> = LazyLock::new(|| {
     RateLimiter::keyed(Quota::with_period(seconds).expect("Non-zero admin ratelimit seconds").allow_burst(burst))
 });
 
+static LIMITER_SCIM: LazyLock<Limiter> = LazyLock::new(|| {
+    let seconds = Duration::from_secs(CONFIG.scim_ratelimit_seconds());
+    let burst = NonZeroU32::new(CONFIG.scim_ratelimit_max_burst()).expect("Non-zero scim ratelimit burst");
+    RateLimiter::keyed(Quota::with_period(seconds).expect("Non-zero scim ratelimit seconds").allow_burst(burst))
+});
+
 pub fn check_limit_login(ip: &IpAddr) -> Result<(), Error> {
     match LIMITER_LOGIN.check_key(ip) {
         Ok(()) => Ok(()),
@@ -32,6 +38,15 @@ pub fn check_limit_admin(ip: &IpAddr) -> Result<(), Error> {
         Ok(()) => Ok(()),
         Err(_e) => {
             err_code!("Too many admin requests", 429);
+        }
+    }
+}
+
+pub fn check_limit_scim(ip: &IpAddr) -> Result<(), Error> {
+    match LIMITER_SCIM.check_key(ip) {
+        Ok(()) => Ok(()),
+        Err(_e) => {
+            err_code!("Too many SCIM requests", 429);
         }
     }
 }

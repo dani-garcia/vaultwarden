@@ -6,7 +6,7 @@ repository = "https://github.com/dani-garcia/vaultwarden"
 publish = false
 
 [workspace]
-members = ["macros"]
+members = ["macros", "test-support"]
 
 [package]
 name = "vaultwarden"
@@ -397,3 +397,6 @@ missing_panics_doc = "allow"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+test-support = { path = "test-support" }

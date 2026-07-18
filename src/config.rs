@@ -779,6 +779,13 @@ make_config! {
         /// Enable groups (BETA!) (Know the risks!) |> Enables groups support for organizations (Currently contains known issues!).
         org_groups_enabled:            bool, false, def, false;
 
+        /// Enable SCIM v2 provisioning (BETA!) |> Master switch for the /scim/v2 endpoints. An organization also needs a generated SCIM API key before its endpoints accept requests.
+        scim_enabled:                  bool, false, def, false;
+        /// Seconds between SCIM requests |> Number of seconds, on average, between SCIM requests from the same IP address before rate limiting kicks in
+        scim_ratelimit_seconds:        u64, false, def, 1;
+        /// Max burst size for SCIM requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `scim_ratelimit_seconds`. Entra ID sends bursts during sync cycles.
+        scim_ratelimit_max_burst:      u32, false, def, 60;
+
         /// Increase note size limit (Know the risks!) |> Sets the secure note size limit to 100_000 instead of the default 10_000.
         /// WARNING: This could cause issues with clients. Also exports will not work on Bitwarden servers!
         increase_note_size_limit:      bool,  true,  def, false;

@@ -577,7 +577,8 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
     config.limits = Limits::new()
         .limit("json", 20.megabytes()) // 20MB should be enough for very large imports, something like 5000+ vault entries
         .limit("data-form", 525.megabytes()) // This needs to match the maximum allowed file size for Send
-        .limit("file", 525.megabytes()); // This needs to match the maximum allowed file size for attachments
+        .limit("file", 525.megabytes()) // This needs to match the maximum allowed file size for attachments
+        .limit("scim", 512.kibibytes()); // SCIM bodies are small; a tight cap limits abuse of the machine-auth endpoint
 
     // If adding more paths here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
@@ -589,9 +590,11 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .mount([basepath, "/identity"].concat(), api::identity_routes())
         .mount([basepath, "/icons"].concat(), api::icons_routes())
         .mount([basepath, "/notifications"].concat(), api::notifications_routes())
+        .mount([basepath, "/scim"].concat(), api::scim_routes())
         .register([basepath, "/"].concat(), api::web_catchers())
         .register([basepath, "/api"].concat(), api::core_catchers())
         .register([basepath, "/admin"].concat(), api::admin_catchers())
+        .register([basepath, "/scim"].concat(), api::scim_catchers())
         .manage(pool)
         .manage(Arc::clone(&WS_USERS))
         .manage(Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS))

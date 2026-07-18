@@ -383,6 +383,7 @@ impl Organization {
         OrgPolicy::delete_all_by_organization(&self.uuid, conn).await?;
         Group::delete_all_by_organization(&self.uuid, conn).await?;
         OrganizationApiKey::delete_all_by_organization(&self.uuid, conn).await?;
+        super::ScimApiKey::delete_all_by_organization(&self.uuid, conn).await?;
 
         conn.run(move |conn| {
             diesel::delete(organizations::table.filter(organizations::uuid.eq(self.uuid)))

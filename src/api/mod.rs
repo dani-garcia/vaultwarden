@@ -4,6 +4,7 @@ mod icons;
 mod identity;
 mod notifications;
 mod push;
+pub mod scim;
 mod web;
 
 use rocket::serde::json::Json;
@@ -28,6 +29,8 @@ pub use crate::api::{
         push_cipher_update, push_folder_update, push_logout, push_send_update, push_user_update, register_push_device,
         unregister_push_device,
     },
+    scim::catchers as scim_catchers,
+    scim::routes as scim_routes,
     web::catchers as web_catchers,
     web::routes as web_routes,
     web::static_files,
