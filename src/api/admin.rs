@@ -1,4 +1,7 @@
-use std::{env, sync::LazyLock};
+use std::{
+    env,
+    sync::{LazyLock, Mutex},
+};
 
 use reqwest::Method;
 use rocket::{
@@ -167,6 +170,7 @@ fn render_admin_login(msg: Option<&str>, redirect: Option<&str>) -> ApiResult<Ht
         "page_content": "admin/login",
         "error": msg,
         "redirect": redirect,
+        "totp_enabled": CONFIG.admin_totp_secret().is_some(),
         "urlpath": CONFIG.domain_path()
     });
 
@@ -178,6 +182,7 @@ fn render_admin_login(msg: Option<&str>, redirect: Option<&str>) -> ApiResult<Ht
 #[derive(FromForm)]
 struct LoginForm {
     token: String,
+    totp: Option<String>,
     redirect: Option<String>,
 }
 
@@ -198,8 +203,8 @@ fn post_admin_login(
         )));
     }
 
-    // If the token is invalid, redirect to login page
-    if validate_token(&data.token) {
+    // If the token or the TOTP code is invalid, redirect to login page
+    if validate_token(&data.token) && validate_totp(data.totp.as_deref()) {
         // If the token received is valid, generate JWT and save it as a cookie
         let claims = generate_admin_claims();
         let jwt = encode_jwt(&claims);
@@ -218,9 +223,9 @@ fn post_admin_login(
             Err(AdminResponse::Ok(render_admin_page()))
         }
     } else {
-        error!("Invalid admin token. IP: {}", ip.ip);
+        error!("Invalid admin credentials. IP: {}", ip.ip);
         Err(AdminResponse::Unauthorized(render_admin_login(
-            Some("Invalid admin token, please try again."),
+            Some("Invalid credentials, please try again."),
             redirect.as_deref(),
         )))
     }
@@ -244,6 +249,49 @@ fn validate_token(token: &str) -> bool {
         }
         Some(t) => crate::crypto::ct_eq(t.trim(), token.trim()),
     }
+}
+
+// The last accepted TOTP time step, kept in memory since there is no database record for the admin.
+// Restarting Vaultwarden resets it, which at worst allows a code from the previous 30 seconds to be reused once.
+static ADMIN_TOTP_LAST_USED: Mutex<i64> = Mutex::new(0);
+
+fn validate_totp(code: Option<&str>) -> bool {
+    use totp_lite::{Sha1, totp_custom};
+
+    let Some(secret) = CONFIG.admin_totp_secret() else {
+        // No TOTP secret configured, the admin token alone is sufficient
+        return true;
+    };
+    let Some(code) = code.map(str::trim) else {
+        return false;
+    };
+    if code.len() != 6 || !code.chars().all(char::is_numeric) {
+        return false;
+    }
+    let Ok(decoded_secret) = data_encoding::BASE32.decode(secret.trim().to_uppercase().as_bytes()) else {
+        error!("The configured `ADMIN_TOTP_SECRET` is not a valid base32-encoded string");
+        return false;
+    };
+
+    let current_timestamp = chrono::Utc::now().timestamp();
+    let mut last_used = ADMIN_TOTP_LAST_USED.lock().expect("admin TOTP mutex poisoned");
+
+    // Allow one step of time drift in either direction, like the user 2FA in `two_factor::authenticator` does
+    for step in -1..=1i64 {
+        let time_step = current_timestamp / 30 + step;
+        let time = (current_timestamp + step * 30).cast_unsigned();
+        let generated = totp_custom::<Sha1>(30, 6, &decoded_secret, time);
+
+        if crate::crypto::ct_eq(&generated, code) {
+            if time_step <= *last_used {
+                warn!("This admin TOTP code has already been used");
+                return false;
+            }
+            *last_used = time_step;
+            return true;
+        }
+    }
+    false
 }
 
 #[derive(Serialize)]

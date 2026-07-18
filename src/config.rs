@@ -652,6 +652,9 @@ make_config! {
         /// Admin token/Argon2 PHC |> The plain text token or Argon2 PHC string used to authenticate in this very same page. Changing it here will not deauthorize the current session!
         admin_token:            Pass,   true,   option;
 
+        /// Admin TOTP secret |> Base32-encoded secret. When set, logging in to the admin page additionally requires a time-based one-time code. Has no effect when DISABLE_ADMIN_TOKEN is enabled!
+        admin_totp_secret:      Pass,   true,   option;
+
         /// Invitation organization name |> Name shown in the invitation emails that don't come from a specific organization
         invitation_org_name:    String, true,   def,    "Vaultwarden".to_owned();
 
@@ -1257,6 +1260,12 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                 );
             }
             _ => {}
+        }
+
+        if let Some(ref secret) = cfg.admin_totp_secret
+            && data_encoding::BASE32.decode(secret.trim().to_uppercase().as_bytes()).is_err()
+        {
+            err!("`ADMIN_TOTP_SECRET` is not a valid base32-encoded string")
         }
     }
 
