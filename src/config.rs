@@ -274,6 +274,15 @@ macro_rules! make_config {
                 )+)+
             }
 
+            /// Clears all editable values, leaving only the non-editable ones (inverse of `clear_non_editable`).
+            fn clear_editable(&mut self) {
+                $($(
+                    if $editable {
+                        self.$name = None;
+                    }
+                )+)+
+            }
+
             /// Merges the values of both builders into a new builder.
             /// If both have the same element, `other` wins.
             fn merge(&self, other: &Self, show_overrides: bool, overrides: &mut Vec<&str>) -> Self {
@@ -652,8 +661,8 @@ make_config! {
         /// Admin token/Argon2 PHC |> The plain text token or Argon2 PHC string used to authenticate in this very same page. Changing it here will not deauthorize the current session!
         admin_token:            Pass,   true,   option;
 
-        /// Admin TOTP secret |> Base32-encoded secret. When set, logging in to the admin page additionally requires a time-based one-time code. Has no effect when DISABLE_ADMIN_TOKEN is enabled!
-        admin_totp_secret:      Pass,   true,   option;
+        /// Admin TOTP secret |> Base32-encoded secret. When set, logging in to the admin page additionally requires a time-based one-time code. Manage it via the Admin 2FA page. Has no effect when DISABLE_ADMIN_TOKEN is enabled!
+        admin_totp_secret:      Pass,   false,  option;
 
         /// Invitation organization name |> Name shown in the invitation emails that don't come from a specific organization
         invitation_org_name:    String, true,   def,    "Vaultwarden".to_owned();
@@ -1459,9 +1468,15 @@ impl Config {
         // TODO: Remove values that are defaults, above only checks those set by env and not the defaults
         let mut builder = other;
 
-        // Remove values that are not editable
+        // Remove values that are not editable, but keep previously saved non-editable values
+        // (e.g. `_duo_akey` or an enrolled `admin_totp_secret`). Those are not part of the
+        // posted settings form and would otherwise be lost on every settings save.
         if ignore_non_editable {
             builder.clear_non_editable();
+            let mut preserved = self.inner.read().unwrap()._usr.clone();
+            preserved.clear_editable();
+            let mut ignored_overrides = Vec::new();
+            builder = preserved.merge(&builder, false, &mut ignored_overrides);
         }
 
         // Serialize now before we consume the builder
@@ -1594,6 +1609,27 @@ impl Config {
             self.update_config_partial(builder).await.ok();
 
             akey_s
+        }
+    }
+
+    /// Persists (or removes, on `None`) the admin page TOTP secret in the saved config file.
+    pub async fn set_admin_totp_secret(&self, secret: Option<String>) -> Result<(), Error> {
+        let mut builder = self.inner.read().unwrap()._usr.clone();
+        builder.admin_totp_secret = secret;
+        self.update_config(builder, false).await
+    }
+
+    /// Returns whether admin page TOTP is enabled, and whether the secret was enrolled
+    /// via the admin page ("enrolled") or comes from the environment ("environment").
+    pub fn admin_totp_status(&self) -> (bool, &'static str) {
+        let inner = self.inner.read().unwrap();
+        let is_set = |v: &Option<String>| v.as_deref().is_some_and(|s| !s.trim().is_empty());
+        if is_set(&inner._usr.admin_totp_secret) {
+            (true, "enrolled")
+        } else if is_set(&inner._env.admin_totp_secret) {
+            (true, "environment")
+        } else {
+            (false, "none")
         }
     }
 
@@ -1746,6 +1782,7 @@ where
     reg!("admin/users");
     reg!("admin/organizations");
     reg!("admin/diagnostics");
+    reg!("admin/totp");
 
     reg!("404");
 

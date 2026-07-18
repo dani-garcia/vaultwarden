@@ -74,6 +74,10 @@ pub fn routes() -> Vec<Route> {
         get_diagnostics_config,
         resend_user_invite,
         get_diagnostics_http,
+        totp_page,
+        totp_generate,
+        totp_enable,
+        totp_disable,
     ]
 }
 
@@ -256,8 +260,6 @@ fn validate_token(token: &str) -> bool {
 static ADMIN_TOTP_LAST_USED: Mutex<i64> = Mutex::new(0);
 
 fn validate_totp(code: Option<&str>) -> bool {
-    use totp_lite::{Sha1, totp_custom};
-
     let Some(secret) = CONFIG.admin_totp_secret() else {
         // No TOTP secret configured, the admin token alone is sufficient
         return true;
@@ -265,11 +267,17 @@ fn validate_totp(code: Option<&str>) -> bool {
     let Some(code) = code.map(str::trim) else {
         return false;
     };
+    check_totp_code(&secret, code)
+}
+
+fn check_totp_code(secret: &str, code: &str) -> bool {
+    use totp_lite::{Sha1, totp_custom};
+
     if code.len() != 6 || !code.chars().all(char::is_numeric) {
         return false;
     }
     let Ok(decoded_secret) = data_encoding::BASE32.decode(secret.trim().to_uppercase().as_bytes()) else {
-        error!("The configured `ADMIN_TOTP_SECRET` is not a valid base32-encoded string");
+        error!("The configured admin TOTP secret is not a valid base32-encoded string");
         return false;
     };
 
@@ -292,6 +300,87 @@ fn validate_totp(code: Option<&str>) -> bool {
         }
     }
     false
+}
+
+#[get("/totp")]
+fn totp_page(_token: AdminToken) -> ApiResult<Html<String>> {
+    let (enabled, source) = CONFIG.admin_totp_status();
+    let page_data = json!({
+        "enabled": enabled,
+        "via_env": source == "environment",
+    });
+    let text = AdminTemplateData::new("admin/totp", page_data).render()?;
+    Ok(Html(text))
+}
+
+#[post("/totp/generate", format = "application/json")]
+fn totp_generate(_token: AdminToken) -> JsonResult {
+    use qrcode::{QrCode, render::svg};
+
+    let secret = crate::crypto::encode_random_bytes::<20>(&data_encoding::BASE32);
+    let uri = format!("otpauth://totp/Vaultwarden%20Admin?secret={secret}&issuer=Vaultwarden%20Admin");
+    let Ok(qr) = QrCode::new(uri.as_bytes()) else {
+        err!("Failed to generate QR code")
+    };
+    let qr_svg = qr.render::<svg::Color<'_>>().min_dimensions(240, 240).build();
+
+    Ok(Json(json!({
+        "secret": secret,
+        "uri": uri,
+        "qr_svg": qr_svg,
+    })))
+}
+
+#[derive(Deserialize)]
+struct TotpEnableData {
+    secret: String,
+    code: String,
+}
+
+#[post("/totp/enable", format = "application/json", data = "<data>")]
+async fn totp_enable(data: Json<TotpEnableData>, _token: AdminToken) -> EmptyResult {
+    let data = data.into_inner();
+    if CONFIG.admin_totp_status().0 {
+        err!("Admin page TOTP is already enabled")
+    }
+    let secret = data.secret.trim().to_uppercase();
+    if secret.is_empty() || data_encoding::BASE32.decode(secret.as_bytes()).is_err() {
+        err!("Invalid TOTP secret")
+    }
+    if !check_totp_code(&secret, data.code.trim()) {
+        err!("Invalid TOTP code, please try again")
+    }
+    if let Err(e) = CONFIG.set_admin_totp_secret(Some(secret)).await {
+        err!(format!("Unable to save the TOTP secret: {e:?}"))
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct TotpDisableData {
+    code: String,
+}
+
+#[post("/totp/disable", format = "application/json", data = "<data>")]
+async fn totp_disable(data: Json<TotpDisableData>, _token: AdminToken) -> EmptyResult {
+    let data = data.into_inner();
+    let (enabled, source) = CONFIG.admin_totp_status();
+    if !enabled {
+        err!("Admin page TOTP is not enabled")
+    }
+    if source == "environment" {
+        err!("The TOTP secret is set via `ADMIN_TOTP_SECRET` and can only be removed from the environment")
+    }
+    let Some(secret) = CONFIG.admin_totp_secret() else {
+        err!("Admin page TOTP is not enabled")
+    };
+    if !check_totp_code(&secret, data.code.trim()) {
+        err!("Invalid TOTP code, please try again")
+    }
+    if let Err(e) = CONFIG.set_admin_totp_secret(None).await {
+        err!(format!("Unable to remove the TOTP secret: {e:?}"))
+    }
+    Ok(())
 }
 
 #[derive(Serialize)]

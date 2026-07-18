@@ -1,0 +1,59 @@
+<main class="container-xxl">
+    <div id="admin-totp" class="content col-lg-8">
+        <div class="card shadow mb-4">
+            <div class="card-header">Admin page two-factor authentication (TOTP)</div>
+            <div class="card-body">
+                {{#if page_data.enabled}}
+                {{#if page_data.via_env}}
+                <p>
+                    <span class="badge bg-success">Enabled</span>
+                    via the <code>ADMIN_TOTP_SECRET</code> environment variable.
+                </p>
+                <p class="mb-0">To disable or change it, update the environment variable and restart Vaultwarden.</p>
+                {{else}}
+                <p><span class="badge bg-success">Enabled</span></p>
+                <p>Logging in to this admin page requires a time-based one-time code from your authenticator app.</p>
+                <div class="row g-2">
+                    <div class="col-auto">
+                        <input type="text" id="totp-disable-code" class="form-control" inputmode="numeric"
+                            autocomplete="one-time-code" maxlength="6" placeholder="Current 2FA code">
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" id="totp-disable" class="btn btn-danger">Disable 2FA</button>
+                    </div>
+                </div>
+                {{/if}}
+                {{else}}
+                <p><span class="badge bg-danger">Disabled</span></p>
+                <p>
+                    Protect this admin page with a second factor: generate a secret, scan the QR code with your
+                    authenticator app and confirm with a code. It takes effect immediately, no restart needed.
+                </p>
+                <button type="button" id="totp-generate" class="btn btn-primary">Enable 2FA</button>
+                <div id="totp-enroll" class="d-none mt-4">
+                    <div class="row">
+                        <div class="col-auto mb-3">
+                            <div id="totp-qr" class="bg-white p-2 rounded border d-inline-block"></div>
+                        </div>
+                        <div class="col">
+                            <p>Scan the QR code with your authenticator app, or enter the secret manually:</p>
+                            <p><code id="totp-secret"></code></p>
+                            <p>Then enter the current code from the app to verify and activate:</p>
+                            <div class="row g-2">
+                                <div class="col-auto">
+                                    <input type="text" id="totp-enable-code" class="form-control" inputmode="numeric"
+                                        autocomplete="one-time-code" maxlength="6" placeholder="6-digit code">
+                                </div>
+                                <div class="col-auto">
+                                    <button type="button" id="totp-enable" class="btn btn-success">Verify &amp; activate</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {{/if}}
+            </div>
+        </div>
+    </div>
+</main>
+<script src="{{urlpath}}/vw_static/admin_totp.js"></script>
