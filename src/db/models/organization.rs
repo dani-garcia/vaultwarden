@@ -210,7 +210,7 @@ impl Organization {
             "useGroups": CONFIG.org_groups_enabled(),
             "useTotp": true,
             "usePolicies": true,
-            "useScim": false, // Not supported (Not AGPLv3 Licensed)
+            "useScim": CONFIG.scim_enabled(), // Implemented in this fork; see src/api/scim
             "useSso": false, // Not supported
             "useKeyConnector": false, // Not supported
             "usePasswordManager": true,
@@ -480,7 +480,7 @@ impl Membership {
             "useEvents": CONFIG.org_events_enabled(),
             "useGroups": CONFIG.org_groups_enabled(),
             "useTotp": true,
-            "useScim": false, // Not supported (Not AGPLv3 Licensed)
+            "useScim": CONFIG.scim_enabled(), // Implemented in this fork; see src/api/scim
             "usePolicies": true,
             "useApi": true,
             "selfHost": true,
