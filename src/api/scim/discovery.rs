@@ -19,7 +19,7 @@ pub fn routes() -> Vec<Route> {
     routes![service_provider_config, resource_types, schemas]
 }
 
-const LIST_RESPONSE_URN: &str = "urn:ietf:params:scim:api:messages:2.0:ListResponse";
+pub(crate) const LIST_RESPONSE_URN: &str = "urn:ietf:params:scim:api:messages:2.0:ListResponse";
 pub const USER_SCHEMA_URN: &str = "urn:ietf:params:scim:schemas:core:2.0:User";
 pub const GROUP_SCHEMA_URN: &str = "urn:ietf:params:scim:schemas:core:2.0:Group";
 
@@ -45,7 +45,7 @@ fn service_provider_config(token: ScimToken) -> ScimResponse {
         "documentationUri": "https://github.com/croftinator/vaultwarden-scim-v2",
         "patch": { "supported": true },
         "bulk": { "supported": false, "maxOperations": 0, "maxPayloadSize": 0 },
-        "filter": { "supported": true, "maxResults": 200 },
+        "filter": { "supported": true, "maxResults": crate::api::scim::SCIM_MAX_RESULTS },
         "changePassword": { "supported": false },
         "sort": { "supported": false },
         "etag": { "supported": false },
