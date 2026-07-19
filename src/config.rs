@@ -1008,6 +1008,11 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         println!("[WARNING] To enable the admin page without a token, use `DISABLE_ADMIN_TOKEN`.");
     }
 
+    if cfg.scim_enabled && !cfg.org_events_enabled {
+        println!("[WARNING] `SCIM_ENABLED` is set, but `ORG_EVENTS_ENABLED` is not.");
+        println!("[WARNING] SCIM provisioning changes will not appear in the organization event log.");
+    }
+
     if cfg.push_enabled && (cfg.push_installation_id == String::new() || cfg.push_installation_key == String::new()) {
         err!(
             "Misconfigured Push Notification service\n\
