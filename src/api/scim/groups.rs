@@ -20,7 +20,7 @@ use crate::{
     api::{
         core::log_event,
         scim::{
-            ScimJson, ScimResponse,
+            SCIM_ACTOR, SCIM_DEVICE_TYPE, ScimJson, ScimResponse,
             error::ScimError,
             filter::parse_eq_filter,
             guard::ScimToken,
@@ -36,9 +36,6 @@ use crate::{
 pub fn routes() -> Vec<Route> {
     routes![list_groups, get_group, post_group, put_group, patch_group, delete_group]
 }
-
-const SCIM_ACTOR: &str = "vaultwarden-scim-00000-000000000000";
-const SCIM_DEVICE_TYPE: i32 = 14;
 
 fn check_groups_enabled() -> Result<(), ScimError> {
     if !CONFIG.org_groups_enabled() {
@@ -58,12 +55,14 @@ struct ScimGroupMember {
 struct ScimGroupRequest {
     display_name: Option<String>,
     external_id: Option<String>,
+    // None (attribute omitted) and Some(vec![]) are different on PUT: an
+    // omitted member list leaves membership unchanged, an empty one clears it.
     #[serde(default)]
-    members: Vec<ScimGroupMember>,
+    members: Option<Vec<ScimGroupMember>>,
 }
 
 async fn to_scim_group(group: &Group, token: &ScimToken, include_members: bool, conn: &DbConn) -> Value {
-    let location = format!("{}/scim/v2/{}/Groups/{}", CONFIG.domain(), token.org_uuid, group.uuid);
+    let location = crate::api::scim::resource_location(&token.org_uuid, "Groups", &group.uuid);
     let mut body = json!({
         "schemas": [crate::api::scim::discovery::GROUP_SCHEMA_URN],
         "id": group.uuid,
@@ -85,17 +84,9 @@ async fn to_scim_group(group: &Group, token: &ScimToken, include_members: bool, 
     body
 }
 
-async fn log_group_event(event_type: EventType, group: &Group, token: &ScimToken, conn: &DbConn) {
-    log_event(
-        event_type as i32,
-        &group.uuid,
-        &token.org_uuid,
-        &SCIM_ACTOR.into(),
-        SCIM_DEVICE_TYPE,
-        &token.ip.ip,
-        conn,
-    )
-    .await;
+async fn log_group_event(event_type: EventType, group_uuid: &GroupId, token: &ScimToken, conn: &DbConn) {
+    log_event(event_type as i32, group_uuid, &token.org_uuid, &SCIM_ACTOR.into(), SCIM_DEVICE_TYPE, &token.ip.ip, conn)
+        .await;
 }
 
 // Resolves a SCIM member value to a membership of THIS org, or a 400: group
@@ -108,6 +99,23 @@ async fn resolve_member(value: &str, token: &ScimToken, conn: &DbConn) -> Result
             "invalidValue",
             "members must reference existing members of this organization (provision the user first)",
         )),
+    }
+}
+
+// The externalId is the correlation key: enforce uniqueness within the org on
+// every write path, mirroring the Users endpoints. Re-asserting the group's
+// own current externalId is allowed (Entra repeats it on PUT).
+async fn check_external_id_available(
+    group: &Group,
+    external_id: &str,
+    token: &ScimToken,
+    conn: &DbConn,
+) -> Result<(), ScimError> {
+    match Group::find_by_external_id_and_org(external_id, &token.org_uuid, conn).await {
+        Some(existing) if existing.uuid != group.uuid => {
+            Err(ScimError::conflict("uniqueness", "A group with this externalId already exists"))
+        }
+        _ => Ok(()),
     }
 }
 
@@ -166,21 +174,14 @@ async fn list_groups(params: GroupListParams, token: ScimToken, conn: DbConn) ->
     let include_members = !params.excluded_attributes.as_deref().is_some_and(|excluded| excluded.contains("members"));
 
     let total = groups.len();
-    let start_index = usize::try_from(params.start_index.unwrap_or(1)).unwrap_or(1).max(1);
-    let count = usize::try_from(params.count.unwrap_or(100)).unwrap_or(0).min(200);
+    let (start_index, count) = crate::api::scim::page_bounds(params.start_index, params.count);
 
     let mut resources = Vec::new();
     for group in groups.into_iter().skip(start_index - 1).take(count) {
         resources.push(to_scim_group(&group, &token, include_members, &conn).await);
     }
 
-    Ok(ScimResponse::ok(json!({
-        "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-        "totalResults": total,
-        "itemsPerPage": resources.len(),
-        "startIndex": start_index,
-        "Resources": resources,
-    })))
+    Ok(crate::api::scim::list_response(total, start_index, &resources))
 }
 
 #[get("/v2/<_>/Groups/<group_id>")]
@@ -212,9 +213,11 @@ async fn post_group(
     }
 
     // Resolve members before creating anything, so a bad member list cannot
-    // leave a half-created group behind.
-    let mut member_ids = Vec::with_capacity(request.members.len());
-    for member in &request.members {
+    // leave a half-created group behind. On create, omitted members and an
+    // empty list mean the same thing: a group with no members.
+    let request_members = request.members.as_deref().unwrap_or_default();
+    let mut member_ids = Vec::with_capacity(request_members.len());
+    for member in request_members {
         member_ids.push(resolve_member(&member.value, &token, &conn).await?);
     }
 
@@ -222,14 +225,17 @@ async fn post_group(
     group.save(&conn).await.map_err(|_| ScimError::internal())?;
     set_members(&group, member_ids, &token, &conn).await?;
 
-    log_group_event(EventType::GroupCreated, &group, &token, &conn).await;
+    log_group_event(EventType::GroupCreated, &group.uuid, &token, &conn).await;
 
-    let location = format!("{}/scim/v2/{}/Groups/{}", CONFIG.domain(), token.org_uuid, group.uuid);
+    let location = crate::api::scim::resource_location(&token.org_uuid, "Groups", &group.uuid);
     let body = to_scim_group(&group, &token, true, &conn).await;
     Ok(ScimResponse::created(location, body))
 }
 
-// PUT is a full replacement: displayName, externalId, and the member set.
+// PUT replaces the attributes it carries: displayName, externalId, and the
+// member set. members omitted (as opposed to explicitly empty) leaves the
+// member set unchanged, so a sparse non-Entra client cannot wipe a group by
+// accident; Entra always sends the full member list.
 #[put("/v2/<_>/Groups/<group_id>", data = "<data>")]
 async fn put_group(
     group_id: GroupId,
@@ -243,9 +249,20 @@ async fn put_group(
     };
     let request = data.0;
 
-    let mut member_ids = Vec::with_capacity(request.members.len());
-    for member in &request.members {
-        member_ids.push(resolve_member(&member.value, &token, &conn).await?);
+    // Resolve everything before writing anything, so a bad member list or a
+    // conflicting externalId cannot leave a half-applied replacement behind.
+    let member_ids = match request.members.as_deref() {
+        Some(members) => {
+            let mut ids = Vec::with_capacity(members.len());
+            for member in members {
+                ids.push(resolve_member(&member.value, &token, &conn).await?);
+            }
+            Some(ids)
+        }
+        None => None,
+    };
+    if let Some(external_id) = request.external_id.as_deref() {
+        check_external_id_available(&group, external_id, &token, &conn).await?;
     }
 
     if let Some(display_name) = request.display_name.as_deref().filter(|n| !n.trim().is_empty()) {
@@ -255,9 +272,11 @@ async fn put_group(
         group.set_external_id(request.external_id.clone());
     }
     group.save(&conn).await.map_err(|_| ScimError::internal())?;
-    set_members(&group, member_ids, &token, &conn).await?;
+    if let Some(member_ids) = member_ids {
+        set_members(&group, member_ids, &token, &conn).await?;
+    }
 
-    log_group_event(EventType::GroupUpdated, &group, &token, &conn).await;
+    log_group_event(EventType::GroupUpdated, &group.uuid, &token, &conn).await;
 
     Ok(ScimResponse::ok(to_scim_group(&group, &token, true, &conn).await))
 }
@@ -276,12 +295,19 @@ async fn patch_group(
 
     let patch = parse_group_patch(&data.0)?;
 
-    if let Some(display_name) = patch.display_name.as_deref().filter(|n| !n.trim().is_empty()) {
+    if let Some(external_id) = patch.external_id.as_deref() {
+        check_external_id_available(&group, external_id, &token, &conn).await?;
+    }
+
+    let new_name = patch.display_name.as_deref().filter(|n| !n.trim().is_empty());
+    if let Some(display_name) = new_name {
         group.name = display_name.to_owned();
-        group.save(&conn).await.map_err(|_| ScimError::internal())?;
     }
     if let Some(external_id) = patch.external_id.clone() {
         group.set_external_id(Some(external_id));
+    }
+    // One save covers both owned attributes; skip the write for member-only patches.
+    if new_name.is_some() || patch.external_id.is_some() {
         group.save(&conn).await.map_err(|_| ScimError::internal())?;
     }
 
@@ -309,7 +335,7 @@ async fn patch_group(
         }
     }
 
-    log_group_event(EventType::GroupUpdated, &group, &token, &conn).await;
+    log_group_event(EventType::GroupUpdated, &group.uuid, &token, &conn).await;
 
     Ok(ScimResponse::ok(to_scim_group(&group, &token, true, &conn).await))
 }
@@ -323,7 +349,10 @@ async fn delete_group(group_id: GroupId, token: ScimToken, conn: DbConn) -> Resu
     let Some(group) = Group::find_by_uuid_and_org(&group_id, &token.org_uuid, &conn).await else {
         return Err(ScimError::not_found());
     };
-    log_group_event(EventType::GroupDeleted, &group, &token, &conn).await;
+    let group_uuid = group.uuid.clone();
     group.delete(&token.org_uuid, &conn).await.map_err(|_| ScimError::internal())?;
+    // Log only after the delete succeeds, so the audit log never claims a
+    // deletion that failed.
+    log_group_event(EventType::GroupDeleted, &group_uuid, &token, &conn).await;
     Ok(ScimResponse::no_content())
 }
