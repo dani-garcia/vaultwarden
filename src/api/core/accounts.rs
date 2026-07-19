@@ -15,7 +15,7 @@ use crate::{
         core::{accept_org_invite, log_user_event, two_factor::email},
         master_password_policy, register_push_device, unregister_push_device,
     },
-    auth::{ClientHeaders, Headers, decode_delete, decode_invite, decode_verify_email},
+    auth::{ClientHeaders, ClientIp, Headers, decode_delete, decode_invite, decode_verify_email},
     crypto,
     db::{
         DbConn, DbPool,
@@ -1197,7 +1197,9 @@ struct DeleteRecoverData {
 }
 
 #[post("/accounts/delete-recover", data = "<data>")]
-async fn post_delete_recover(data: Json<DeleteRecoverData>, conn: DbConn) -> EmptyResult {
+async fn post_delete_recover(data: Json<DeleteRecoverData>, ip: ClientIp, conn: DbConn) -> EmptyResult {
+    crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
+
     let data: DeleteRecoverData = data.into_inner();
 
     if CONFIG.mail_enabled() {
@@ -1270,8 +1272,10 @@ struct PasswordHintData {
 }
 
 #[post("/accounts/password-hint", data = "<data>")]
-async fn password_hint(data: Json<PasswordHintData>, conn: DbConn) -> EmptyResult {
+async fn password_hint(data: Json<PasswordHintData>, ip: ClientIp, conn: DbConn) -> EmptyResult {
     const NO_HINT: &str = "Sorry, you have no password hint...";
+
+    crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
 
     if !CONFIG.password_hints_allowed() || (!CONFIG.mail_enabled() && !CONFIG.show_password_hint()) {
         err!("This server is not configured to provide password hints.");
@@ -1510,7 +1514,9 @@ async fn put_device_token(device_id: DeviceId, data: Json<PushToken>, headers: H
 }
 
 #[put("/devices/identifier/<device_id>/clear-token")]
-async fn put_clear_device_token(device_id: DeviceId, conn: DbConn) -> EmptyResult {
+async fn put_clear_device_token(device_id: DeviceId, ip: ClientIp, conn: DbConn) -> EmptyResult {
+    crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
+
     // This only clears push token
     // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Controllers/DevicesController.cs#L215
     // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/Services/Implementations/DeviceService.cs#L37
@@ -1532,8 +1538,8 @@ async fn put_clear_device_token(device_id: DeviceId, conn: DbConn) -> EmptyResul
 
 // On upstream server, both PUT and POST are declared. Implementing the POST method in case it would be useful somewhere
 #[post("/devices/identifier/<device_id>/clear-token")]
-async fn post_clear_device_token(device_id: DeviceId, conn: DbConn) -> EmptyResult {
-    put_clear_device_token(device_id, conn).await
+async fn post_clear_device_token(device_id: DeviceId, ip: ClientIp, conn: DbConn) -> EmptyResult {
+    put_clear_device_token(device_id, ip, conn).await
 }
 
 #[get("/tasks")]

@@ -5922,6 +5922,7 @@ dependencies = [
  "hickory-resolver",
  "html5gum",
  "http 1.4.2",
+ "ipnet",
  "job_scheduler_ng",
  "jsonwebtoken",
  "lettre",

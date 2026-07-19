@@ -629,7 +629,7 @@ async fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbC
 
     // Read and create the ciphers
     for (index, mut cipher_data) in data.ciphers.into_iter().enumerate() {
-        let folder_id = relations_map.get(&index).map(|i| folders[*i].clone());
+        let folder_id = relations_map.get(&index).and_then(|i| folders.get(*i).cloned());
         cipher_data.folder_id = folder_id;
 
         let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
@@ -1042,6 +1042,13 @@ async fn share_cipher_by_uuid(
     } else {
         err!("Cipher doesn't exist")
     };
+
+    // `update_cipher_from_data()` rejects this too, but only after the collections below were
+    // already linked. There are no transactions, so that would leave the cipher linked to a
+    // collection of another organization.
+    if cipher.organization_uuid.is_some() && cipher.organization_uuid != data.cipher.organization_id {
+        err!("Organization mismatch. Please resync the client before updating the cipher")
+    }
 
     let mut shared_to_collections = vec![];
 

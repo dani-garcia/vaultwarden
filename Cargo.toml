@@ -230,6 +230,9 @@ pico-args = "0.5.0"
 pastey = "0.2.3"
 governor = "0.10.4"
 
+# CIDR parsing for the trusted proxies of the client IP header
+ipnet = "2.12.0"
+
 # OIDC for SSO
 openidconnect = { version = "4.0.1", default-features = false }
 moka = { version = "0.12.15", features = ["future"] }
