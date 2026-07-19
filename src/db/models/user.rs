@@ -394,6 +394,12 @@ impl User {
         conn.run(move |conn| users::table.filter(users::uuid.eq(uuid)).first::<Self>(conn).ok()).await
     }
 
+    pub async fn find_by_uuids(uuids: &[UserId], conn: &DbConn) -> Vec<Self> {
+        let uuids = uuids.to_vec();
+        conn.run(move |conn| users::table.filter(users::uuid.eq_any(uuids)).load::<Self>(conn).unwrap_or_default())
+            .await
+    }
+
     pub async fn find_by_device_for_email2fa(device_uuid: &DeviceId, conn: &DbConn) -> Option<Self> {
         if let Some(user_uuid) = conn
             .run(move |conn| {

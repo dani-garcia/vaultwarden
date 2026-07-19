@@ -18,6 +18,9 @@ pub struct ScimApiKey {
     // sha256 hex digest of the token secret. The plaintext secret is shown once
     // at generation time and never stored or logged.
     pub key_hash: String,
+    // Reserved for a future disable-without-deleting management endpoint.
+    // Nothing sets this to false yet, but the guard already honors it via
+    // find_active_by_org (asserted in the uniform-401 authz matrix test).
     pub enabled: bool,
     pub created_at: NaiveDateTime,
     pub revision_date: NaiveDateTime,
@@ -47,8 +50,9 @@ impl ScimApiKey {
     }
 
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
-        // Rotation replaces the row wholesale (delete + insert), so a plain
-        // insert with an update fallback covers every backend identically.
+        // Standard Vaultwarden upsert idiom: replace_into with an update
+        // fallback on sqlite/mysql, ON CONFLICT upsert on postgresql.
+        // Rotation itself goes through delete_all_by_organization + save.
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(scim_api_key::table)
