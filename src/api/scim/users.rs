@@ -13,6 +13,8 @@
 // and the user already has credentials). Confirmed requires an admin client
 // to wrap the org key for the member; no server-side path can do that.
 //
+use std::collections::HashMap;
+
 use rocket::Route;
 use serde_json::Value;
 
@@ -22,7 +24,7 @@ use crate::{
         EmptyResult,
         core::log_event,
         scim::{
-            ScimJson, ScimResponse,
+            SCIM_ACTOR, SCIM_DEVICE_TYPE, ScimJson, ScimResponse,
             error::ScimError,
             filter::parse_eq_filter,
             guard::ScimToken,
@@ -34,7 +36,7 @@ use crate::{
         DbConn,
         models::{
             EventType, Invitation, Membership, MembershipId, MembershipStatus, MembershipType, OrgPolicy, Organization,
-            User,
+            User, UserId,
         },
     },
     mail,
@@ -45,12 +47,6 @@ pub fn routes() -> Vec<Route> {
     routes![list_users, get_user, post_user, put_user, patch_user, delete_user]
 }
 
-// Synthetic acting user recorded in the org event log for SCIM-driven
-// changes, following the ACTING_ADMIN_USER precedent in the admin panel.
-const SCIM_ACTOR: &str = "vaultwarden-scim-00000-000000000000";
-// Device type recorded for SCIM events: 14 = UnknownBrowser, same as admin.
-const SCIM_DEVICE_TYPE: i32 = 14;
-
 // The single place the revocation encoding is interpreted: revoked statuses
 // are stored as status - 128 (ACTIVATE_REVOKE_DIFF), so every stored revoked
 // value is <= Revoked (-1). Never compare equality against Revoked.
@@ -59,7 +55,7 @@ fn membership_active(member: &Membership) -> bool {
 }
 
 fn to_scim_user(member: &Membership, user: &User, token: &ScimToken) -> Value {
-    let location = format!("{}/scim/v2/{}/Users/{}", CONFIG.domain(), token.org_uuid, member.uuid);
+    let location = crate::api::scim::resource_location(&token.org_uuid, "Users", &member.uuid);
     json!({
         "schemas": [crate::api::scim::discovery::USER_SCHEMA_URN],
         "id": member.uuid,
@@ -86,16 +82,6 @@ async fn log_scim_event(event_type: EventType, member: &Membership, token: &Scim
         conn,
     )
     .await;
-}
-
-fn list_response(total: usize, start_index: usize, resources: &[Value]) -> ScimResponse {
-    ScimResponse::ok(json!({
-        "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-        "totalResults": total,
-        "itemsPerPage": resources.len(),
-        "startIndex": start_index,
-        "Resources": resources,
-    }))
 }
 
 #[derive(FromForm)]
@@ -135,20 +121,24 @@ async fn list_users(params: ListParams, token: ScimToken, conn: DbConn) -> Resul
     };
 
     let total = members.len();
-    let start_index = usize::try_from(params.start_index.unwrap_or(1)).unwrap_or(1).max(1);
-    let count = usize::try_from(params.count.unwrap_or(100)).unwrap_or(0).min(200);
+    let (start_index, count) = crate::api::scim::page_bounds(params.start_index, params.count);
 
-    let mut resources = Vec::new();
-    for member in members.into_iter().skip(start_index - 1).take(count) {
+    let page: Vec<Membership> = members.into_iter().skip(start_index - 1).take(count).collect();
+    let user_ids: Vec<UserId> = page.iter().map(|member| member.user_uuid.clone()).collect();
+    let users: HashMap<UserId, User> =
+        User::find_by_uuids(&user_ids, &conn).await.into_iter().map(|user| (user.uuid.clone(), user)).collect();
+
+    let mut resources = Vec::with_capacity(page.len());
+    for member in &page {
         // A membership always references a user; a missing row would be a
         // dangling foreign key, so surface it as a 500 rather than skip.
-        let Some(user) = User::find_by_uuid(&member.user_uuid, &conn).await else {
+        let Some(user) = users.get(&member.user_uuid) else {
             return Err(ScimError::internal());
         };
-        resources.push(to_scim_user(&member, &user, &token));
+        resources.push(to_scim_user(member, user, &token));
     }
 
-    Ok(list_response(total, start_index, &resources))
+    Ok(crate::api::scim::list_response(total, start_index, &resources))
 }
 
 #[get("/v2/<_>/Users/<member_id>")]
@@ -237,12 +227,7 @@ async fn post_user(data: ScimJson<ScimUserRequest>, token: ScimToken, conn: DbCo
         .await
     {
         error!("SCIM provisioning rollback, invite mail failed: {e:#?}");
-        let rollback: EmptyResult = if user_created {
-            user.delete(&conn).await
-        } else {
-            member.delete(&conn).await
-        };
-        drop(rollback);
+        rollback_provisioning(user, member, user_created, &conn).await;
         return Err(ScimError::internal());
     }
 
@@ -251,8 +236,28 @@ async fn post_user(data: ScimJson<ScimUserRequest>, token: ScimToken, conn: DbCo
         log_scim_event(EventType::OrganizationUserRevoked, &member, &token, &conn).await;
     }
 
-    let location = format!("{}/scim/v2/{}/Users/{}", CONFIG.domain(), token.org_uuid, member.uuid);
+    let location = crate::api::scim::resource_location(&token.org_uuid, "Users", &member.uuid);
     Ok(ScimResponse::created(location, to_scim_user(&member, &user, &token)))
+}
+
+// Rollback for a provisioning that failed after its rows were written. The
+// destructive decision lives here so it can be tested directly: a user this
+// request created is removed entirely (User::delete cascades the membership),
+// while a pre-existing account must survive and only the new membership goes.
+pub(super) async fn rollback_provisioning(user: User, member: Membership, user_created: bool, conn: &DbConn) {
+    let rollback: EmptyResult = if user_created {
+        user.delete(conn).await
+    } else {
+        member.delete(conn).await
+    };
+    if let Err(rollback_err) = rollback {
+        let orphan = if user_created {
+            "user"
+        } else {
+            "membership"
+        };
+        error!("SCIM provisioning rollback failed, orphaned {orphan} row remains: {rollback_err:#?}");
+    }
 }
 
 #[patch("/v2/<_>/Users/<member_id>", data = "<data>")]
@@ -379,6 +384,29 @@ async fn restore_member(member: &mut Membership, token: &ScimToken, conn: &DbCon
         return Err(ScimError::bad_request("invalidValue", "Restore is blocked by an organization policy"));
     }
     member.save(conn).await.map_err(|_| ScimError::internal())?;
+
+    // A member restored to Invited has never joined the org. The original
+    // invite may never have been sent (created active:false) or have expired,
+    // so re-send it; otherwise the person has a membership and shell account
+    // they were never told about and cannot register into.
+    if member.status == MembershipStatus::Invited as i32
+        && CONFIG.mail_enabled()
+        && let (Some(user), Some(org)) =
+            (User::find_by_uuid(&member.user_uuid, conn).await, Organization::find_by_uuid(&token.org_uuid, conn).await)
+        && let Err(e) = mail::send_invite(
+            &user,
+            token.org_uuid.clone(),
+            member.uuid.clone(),
+            &org.name,
+            Some(org.billing_email.clone()),
+        )
+        .await
+    {
+        // The membership is already restored and valid; a mail hiccup must not
+        // fail the deprovision-reprovision cycle. Surface it in the log.
+        error!("SCIM restore succeeded but re-sending the invite failed: {e:#?}");
+    }
+
     log_scim_event(EventType::OrganizationUserRestored, member, token, conn).await;
     Ok(())
 }
