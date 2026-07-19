@@ -23,10 +23,16 @@ Entra ID is the tested IdP. Design details and diagrams: [design.md](design.md).
 
    ```ini
    SCIM_ENABLED=true
+   # strongly recommended: without it, SCIM changes leave no audit trail
+   ORG_EVENTS_ENABLED=true
    # optional tuning
    SCIM_RATELIMIT_SECONDS=1
    SCIM_RATELIMIT_MAX_BURST=60
    ```
+
+   The server prints a startup warning if `SCIM_ENABLED` is set while
+   `ORG_EVENTS_ENABLED` is not, because every SCIM change would then be
+   invisible in the org event log.
 
 2. Generate the per-organization SCIM token (requires an org admin session;
    re-authenticates with your master password like API key rotation):
@@ -93,8 +99,24 @@ Entra ID is the tested IdP. Design details and diagrams: [design.md](design.md).
   rather than erroring the sync.
 - **SCIM user id** is the org membership id, not the account id. The same
   person in two orgs has two SCIM ids: SCIM is org-scoped by construction.
+- **externalId is unique per org** for both Users and Groups, on every write
+  path (create, PUT, PATCH). A write that would duplicate one is a 409
+  `uniqueness` conflict and changes nothing; re-asserting a resource's own
+  externalId succeeds.
+- **A Group PUT that omits `members` leaves the member set unchanged.** Only
+  an explicit `"members": []` clears the group, so a sparse non-Entra client
+  cannot wipe membership by accident (Entra always sends the full list).
+- **Deprovision from the IdP, not just the vault.** Because restore is lossless,
+  a member you revoke in the web vault is silently re-activated on the next sync
+  if the IdP still shows them active - `active: true` reinstates a previously
+  confirmed member to full access with no re-confirmation. To offboard someone,
+  unassign or disable them in Entra. Rotate the org's SCIM token if it may have
+  leaked: it can reinstate any member the org previously confirmed, not only
+  invite and deprovision.
 - Every SCIM change is written to the org event log (admin-visible) with the
-  synthetic actor `vaultwarden-scim-...` when `ORG_EVENTS_ENABLED=true`.
+  synthetic actor `vaultwarden-scim-...` when `ORG_EVENTS_ENABLED=true`. Token
+  generation, rotation, and deletion are logged too, under the acting admin's
+  own identity.
 
 ## Operational lifecycle
 

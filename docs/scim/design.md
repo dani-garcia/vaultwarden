@@ -23,7 +23,7 @@ sequenceDiagram
     Entra->>Guard: POST /Users {userName, externalId, active}
     Guard-->>H: ScimToken{org}
     H->>DB: create shell User (if new), Membership status=Invited(0)
-    H->>Mail: send invite (rollback membership on failure)
+    H->>Mail: send invite (on failure roll back: new user removed entirely, existing user keeps account, membership goes)
     H->>DB: log event (SCIM actor)
     H-->>Entra: 201 Created {id = membership uuid}
 
@@ -146,6 +146,7 @@ org's ids, so the surface does not confirm what exists.
 ```mermaid
 flowchart LR
     subgraph scim [src/api/scim]
+        modm[mod.rs\nScimJson body guard, pagination,\nlist/location helpers, SCIM actor consts]
         guard[guard.rs\nScimToken]
         errm[error.rs\nSCIM envelope + catchers]
         filter[filter.rs\neq filter parser]
@@ -167,6 +168,9 @@ flowchart LR
     guard --> ratelimit
     guard --> cryptom
     guard --> models
+    usersm --> modm
+    groupsm --> modm
+    disc --> modm
     usersm --> patchm
     usersm --> filter
     usersm --> modelsm
@@ -191,13 +195,34 @@ surface itself can never mint or rotate its own credential.
 
 | Topic | Choice | Reason |
 |---|---|---|
-| DELETE /Users | revoke, not delete | preserves `akey`; restore is lossless; compromised token cannot destroy state |
+| DELETE /Users | revoke, not delete | preserves `akey`; restore is lossless; compromised token cannot destroy state (but see the reinstatement note below) |
 | Roles | not synced (always User) | `Custom` collapses to Manager in `MembershipType::from_str`; no honest round-trip |
 | userName/displayName updates | accepted, ignored | email is login identity; `user.name` is global to the person; erroring would fail every directory rename sync |
 | Group DELETE | real delete | groups carry no E2EE state |
 | Group members | diff add/remove; replace only on PUT/replace | Entra PATCHes diffs, including `members[value eq "..."]` removal paths |
+| Group PUT without `members` | member set unchanged | RFC 7644 permits either reading; keeping membership means a sparse client cannot wipe a group by accident. Explicit `[]` still clears |
+| externalId | unique per org, on every write path | it is the IdP correlation key; a duplicate would make filter lookups and later syncs target an arbitrary group. Users and Groups both 409 on conflict, self re-assertion allowed |
 | Groups when disabled | loud 501 | `ldap_import` silently skips; silence hides misconfiguration in the IdP |
 | Filter misses | empty 200 list | Entra Test Connection probes a random user; distinguishable misses enable enumeration |
+
+### Revocation is IdP-authoritative, in both directions
+
+Because restore is lossless, `active: true` is not just an onboarding signal - it
+**reinstates a revoked member to exactly the state they were revoked from**,
+including `Confirmed` with the wrapped org key intact and no re-confirmation. That
+is the intended deprovision/reprovision behaviour, but it has a consequence worth
+stating plainly:
+
+- **A member revoked in the web vault will be silently re-activated on the next
+  sync if the IdP still shows them active.** SCIM cannot tell a security-motivated
+  admin revocation apart from an Entra-driven one; the IdP is the source of truth.
+  Offboarding must therefore be driven from the IdP (unassign or disable the user
+  there), not only by revoking in the vault.
+- The revoke-only DELETE means a leaked SCIM token cannot *destroy* memberships,
+  but the same token **can reinstate** any member the org previously confirmed and
+  later revoked, gated only by organization policy. Treat the per-org token as an
+  access-reinstatement credential, not merely an invite/deprovision one, when
+  scoping its exposure. Rotate it (management endpoint) if it may have leaked.
 
 ## Test strategy
 
@@ -212,6 +237,14 @@ never-dropped pool (sqlite WAL locking).
 
 Covered end to end: the full provision / deprovision / restore lifecycle at
 every status offset (`-126`, `-127`, `-128`), duplicate and last-owner
-conflicts, uniform-401 byte-equality, enumeration shape, Entra PATCH quirks
-(op casing, string booleans, path-less values, filter-path member removal),
-pagination edges, and the rate limiter.
+conflicts, uniform-401 byte-equality (including a disabled key row with the
+correct secret), enumeration shape, Entra PATCH quirks (op casing, string
+booleans, path-less values, filter-path member removal), pagination edges,
+the rate limiter, group externalId uniqueness on PUT and PATCH, and the
+omitted-versus-empty `members` distinction on group PUT. Token minting is
+exercised through the real management path: the tests mint via
+`manage::mint_scim_token` (the same function the endpoint calls), assert the
+round-trip through the guard, and assert rotation kills the previous token.
+The provisioning rollback rules are pinned directly: a pre-existing account
+survives a failed provision (only the new membership is removed), while a
+shell account created by the failed request is removed entirely.
