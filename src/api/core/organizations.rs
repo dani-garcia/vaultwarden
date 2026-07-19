@@ -629,12 +629,13 @@ async fn post_bulk_access_collections(
         err!("Can't find organization details")
     }
 
-    // Security: only callers who can actually manage collections (Admins/Owners, or users with
-    // full access) may change collection access in bulk. A custom user with only manage_users /
-    // manage_groups / manage_policies must not be able to modify collection assignments here.
-    if !headers.membership.has_full_access() {
-        err!("You don't have permission to modify collection access")
-    }
+    // Security: authorization is enforced per collection below via `is_manageable_by_user`, which
+    // requires a real manage grant on each requested collection (direct users_collections.manage,
+    // a manage group, membership/group access_all, or Admin/Owner). This matches the single
+    // collection edit endpoint and the pre-existing behavior of this endpoint. A custom user with
+    // only manage_users / manage_groups / manage_policies holds no such grant and is therefore
+    // rejected, while a Manager/Custom member who manages some collections keeps the ability to
+    // bulk-edit exactly those (a blanket full-access requirement would wrongly deny that here).
 
     // Security (audit H-3) and atomicity (audit M-2): validate the whole request against this
     // organization *before* mutating anything. Every collection must exist in the org and be
@@ -3110,11 +3111,16 @@ async fn add_update_group(
     })))
 }
 
+// Reads a single group's details (accessAll, externalId, collection mappings). This is the same
+// data the `/groups/details` list endpoint returns, so it uses the same guard: Manage Users OR
+// Manage Groups (or Admin/Owner). Requiring Manage Groups here while the list only requires Manage
+// Users-or-Groups would let a manage_users member read every group's details in bulk but be denied
+// the single-group view of the same data.
 #[get("/organizations/<org_id>/groups/<group_id>/details")]
 async fn get_group_details(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: ManageGroupsHeaders,
+    headers: ManageUsersOrGroupsHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {

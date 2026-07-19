@@ -547,6 +547,16 @@ struct MembershipTypeData {
 fn apply_membership_type_change(membership: &mut Membership, new_type: MembershipType) {
     let was_custom = membership.atype == MembershipType::Custom;
 
+    // Leaving Custom for the legacy Manager role: `access_all` is the internal mirror of
+    // Edit any collection, but a Manager's `access_all` means the broad "manage all collections"
+    // grant (Create + Edit + Delete). Carrying an Edit-only mirror over would silently escalate the
+    // member to Create/Edit/Delete. Only preserve `access_all` when the member actually held the
+    // full manage-all grant, mirroring the collection-permissions down-migration. Must be evaluated
+    // before the flags are cleared below (and while the type is still Custom).
+    if was_custom && new_type == MembershipType::Manager {
+        membership.access_all = membership.has_manage_all_collections();
+    }
+
     // Entering Custom through the Vaultwarden admin panel is deliberately fail-closed because
     // that UI cannot select granular permissions; they can be granted later through the regular
     // organization member dialog.
@@ -956,12 +966,30 @@ mod tests {
         apply_membership_type_change(&mut user, MembershipType::Admin);
         assert!(user.access_all);
 
-        let mut custom = membership(MembershipType::Custom);
-        custom.access_all = true;
-        custom.edit_any_collection = true;
-        apply_membership_type_change(&mut custom, MembershipType::Manager);
-        assert_eq!(custom.atype, MembershipType::Manager as i32);
-        assert!(custom.access_all);
-        assert!(!custom.edit_any_collection);
+        // REGRESSION (privilege escalation, PR #7397 / finding F2): a Custom member whose
+        // `access_all` is only the Edit-any-collection mirror must NOT be turned into a legacy
+        // Manager with the broad "manage all collections" `access_all` grant. That would escalate
+        // an Edit-only member into Create + Edit + Delete. Mirrors the collection down-migration.
+        let mut edit_only = membership(MembershipType::Custom);
+        edit_only.access_all = true;
+        edit_only.edit_any_collection = true;
+        apply_membership_type_change(&mut edit_only, MembershipType::Manager);
+        assert_eq!(edit_only.atype, MembershipType::Manager as i32);
+        assert!(!edit_only.access_all, "Edit-only Custom must not become an access_all Manager");
+        assert!(!edit_only.edit_any_collection);
+
+        // A Custom member who genuinely held the full manage-all grant (all three collection
+        // flags) keeps the equivalent legacy Manager `access_all`.
+        let mut manage_all = membership(MembershipType::Custom);
+        manage_all.access_all = true;
+        manage_all.create_new_collections = true;
+        manage_all.edit_any_collection = true;
+        manage_all.delete_any_collection = true;
+        apply_membership_type_change(&mut manage_all, MembershipType::Manager);
+        assert_eq!(manage_all.atype, MembershipType::Manager as i32);
+        assert!(manage_all.access_all, "full manage-all Custom keeps legacy Manager access_all");
+        assert!(!manage_all.create_new_collections);
+        assert!(!manage_all.edit_any_collection);
+        assert!(!manage_all.delete_any_collection);
     }
 }
