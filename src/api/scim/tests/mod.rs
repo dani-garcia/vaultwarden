@@ -67,12 +67,11 @@ async fn seed_org(conn: &DbConn, name: &str) -> OrganizationId {
     org.uuid
 }
 
-// Mirrors manage::generate_scim_key and returns the full bearer token.
+// Mints through the real management path (manage::mint_scim_token), so the
+// token format and the guard's verification cannot drift apart between
+// production and tests.
 async fn seed_scim_key(conn: &DbConn, org_uuid: &OrganizationId) -> String {
-    let secret = crypto::encode_random_bytes::<32>(&data_encoding::BASE64URL_NOPAD);
-    let key_hash = crypto::sha256_hex(secret.as_bytes());
-    ScimApiKey::new(org_uuid.clone(), key_hash).save(conn).await.expect("saving scim key");
-    format!("scim_v1.{org_uuid}.{secret}")
+    scim::manage::mint_scim_token(org_uuid, conn).await.expect("minting scim key").0
 }
 
 fn bearer(token: &str) -> Header<'static> {
@@ -148,6 +147,22 @@ async fn auth_failures_are_uniform_401s() {
             .dispatch()
             .await,
     ));
+    // A key row that exists but is disabled (the column is reserved for a
+    // future disable-without-deleting endpoint) must be rejected identically,
+    // even with the correct secret.
+    let org_d = seed_org(&conn, "scim-authz-d").await;
+    let secret_d = crypto::encode_random_bytes::<32>(&data_encoding::BASE64URL_NOPAD);
+    let mut key_d = ScimApiKey::new(org_d.clone(), crypto::sha256_hex(secret_d.as_bytes()));
+    key_d.enabled = false;
+    key_d.save(&conn).await.expect("saving disabled scim key");
+    failures.push((
+        "disabled key with correct secret",
+        client
+            .get(format!("/scim/v2/{org_d}/ServiceProviderConfig"))
+            .header(bearer(&format!("scim_v1.{org_d}.{secret_d}")))
+            .dispatch()
+            .await,
+    ));
 
     let mut bodies = Vec::new();
     for (case, response) in failures {
@@ -163,6 +178,28 @@ async fn auth_failures_are_uniform_401s() {
     }
     assert!(first.contains("urn:ietf:params:scim:api:messages:2.0:Error"));
     assert!(first.contains("\"status\":\"401\""));
+}
+
+#[rocket::async_test]
+async fn minted_token_round_trips_and_rotation_kills_the_old_one() {
+    let _guard = TEST_LOCK.lock().await;
+    let (client, pool) = scim_client().await;
+    let conn = pool.get().await.expect("conn");
+    let org = seed_org(&conn, "scim-mint-org").await;
+
+    // Mint through the real management path and authenticate with the result.
+    let (token, _) = scim::manage::mint_scim_token(&org, &conn).await.expect("minting");
+    let response = client.get(format!("/scim/v2/{org}/ServiceProviderConfig")).header(bearer(&token)).dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
+
+    // Rotation replaces the key row: the old token dies instantly, the new
+    // one works.
+    let (rotated, _) = scim::manage::mint_scim_token(&org, &conn).await.expect("rotating");
+    let response = client.get(format!("/scim/v2/{org}/ServiceProviderConfig")).header(bearer(&token)).dispatch().await;
+    assert_eq!(response.status(), Status::Unauthorized, "rotation must invalidate the previous token");
+    let response =
+        client.get(format!("/scim/v2/{org}/ServiceProviderConfig")).header(bearer(&rotated)).dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
 }
 
 #[rocket::async_test]
@@ -254,7 +291,7 @@ async fn post_creates_invited_user() {
         client.post(format!("/scim/v2/{org}/Users")).header(auth).header(content_type).body(body).dispatch().await;
 
     assert_eq!(response.status(), Status::Created);
-    let location = response.headers().get_one("Location").expect("Location header").to_string();
+    let location = response.headers().get_one("Location").expect("Location header").to_owned();
     let parsed = parse_json(&body_of(response).await);
 
     // Mail is disabled and the user is new (no password): Invited (0).
@@ -658,6 +695,41 @@ async fn put_does_not_change_email_or_role() {
 }
 
 #[rocket::async_test]
+async fn provisioning_rollback_spares_preexisting_users() {
+    let _guard = TEST_LOCK.lock().await;
+    let (_client, pool) = scim_client().await;
+    let conn = pool.get().await.expect("conn");
+    let org = seed_org(&conn, "scim-rollback-org").await;
+
+    // A pre-existing account: rollback removes only the new membership. This
+    // is the branch that must never delete someone's account on a transient
+    // invite-mail failure.
+    let user = seed_user(&conn, "rollback.existing@example.com", true).await;
+    let user_uuid = user.uuid.clone();
+    let mut member = Membership::new(user.uuid.clone(), org.clone(), None);
+    member.status = 0;
+    member.save(&conn).await.expect("saving membership");
+    let member_uuid = member.uuid.clone();
+
+    scim::users::rollback_provisioning(user, member, false, &conn).await;
+    assert!(User::find_by_uuid(&user_uuid, &conn).await.is_some(), "pre-existing user must survive rollback");
+    assert!(Membership::find_by_uuid_and_org(&member_uuid, &org, &conn).await.is_none(), "membership must be gone");
+
+    // A shell account created by this request: rollback removes the user,
+    // which cascades to the membership.
+    let user = seed_user(&conn, "rollback.shell@example.com", false).await;
+    let user_uuid = user.uuid.clone();
+    let mut member = Membership::new(user.uuid.clone(), org.clone(), None);
+    member.status = 0;
+    member.save(&conn).await.expect("saving membership");
+    let member_uuid = member.uuid.clone();
+
+    scim::users::rollback_provisioning(user, member, true, &conn).await;
+    assert!(User::find_by_uuid(&user_uuid, &conn).await.is_none(), "shell user must be removed");
+    assert!(Membership::find_by_uuid_and_org(&member_uuid, &org, &conn).await.is_none(), "membership must cascade");
+}
+
+#[rocket::async_test]
 async fn pagination_edges() {
     let _guard = TEST_LOCK.lock().await;
     let (client, pool) = scim_client().await;
@@ -842,4 +914,111 @@ async fn group_put_replaces_member_set() {
     let members = parsed["members"].as_array().expect("members");
     assert_eq!(members.len(), 1);
     assert_eq!(members[0]["value"], json!(member_b.to_string()));
+}
+
+#[rocket::async_test]
+async fn group_put_omitted_members_kept_but_empty_list_clears() {
+    let _guard = TEST_LOCK.lock().await;
+    let (client, pool) = scim_client().await;
+    let conn = pool.get().await.expect("conn");
+    let org = seed_org(&conn, "scim-group-sparse-put-org").await;
+    let token = seed_scim_key(&conn, &org).await;
+    let member_a = seed_member(&conn, &org, "sparse.a@example.com", 1, MembershipType::User).await;
+
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+        "displayName": "Sparse",
+        "members": [{"value": member_a}],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response = client.post(format!("/scim/v2/{org}/Groups")).header(auth).header(ct).body(body).dispatch().await;
+    let group_id = parse_json(&body_of(response).await)["id"].as_str().expect("id").to_owned();
+
+    // A PUT that omits the members attribute renames without touching the
+    // member set: a sparse client must not be able to wipe a group by accident.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+        "displayName": "Sparse Renamed",
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.put(format!("/scim/v2/{org}/Groups/{group_id}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["displayName"], json!("Sparse Renamed"));
+    assert_eq!(parsed["members"].as_array().expect("members").len(), 1, "omitted members must keep membership");
+
+    // An explicit empty list is a real replacement and clears the group.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+        "displayName": "Sparse Renamed",
+        "members": [],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.put(format!("/scim/v2/{org}/Groups/{group_id}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
+    let parsed = parse_json(&body_of(response).await);
+    assert_eq!(parsed["members"].as_array().expect("members").len(), 0, "empty members must clear membership");
+}
+
+#[rocket::async_test]
+async fn group_external_id_uniqueness_enforced_on_put_and_patch() {
+    let _guard = TEST_LOCK.lock().await;
+    let (client, pool) = scim_client().await;
+    let conn = pool.get().await.expect("conn");
+    let org = seed_org(&conn, "scim-group-extid-org").await;
+    let token = seed_scim_key(&conn, &org).await;
+
+    let mut group_ids = Vec::new();
+    for (name, ext) in [("Ext One", "ext-1"), ("Ext Two", "ext-2")] {
+        let payload = json!({
+            "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+            "displayName": name,
+            "externalId": ext,
+        });
+        let (auth, ct, body) = scim_body(&token, &payload);
+        let response =
+            client.post(format!("/scim/v2/{org}/Groups")).header(auth).header(ct).body(body).dispatch().await;
+        assert_eq!(response.status(), Status::Created);
+        group_ids.push(parse_json(&body_of(response).await)["id"].as_str().expect("id").to_owned());
+    }
+    let group_two = &group_ids[1];
+
+    // PATCH onto a taken externalId is a 409, and must not change the group.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        "Operations": [{"op": "replace", "path": "externalId", "value": "ext-1"}],
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.patch(format!("/scim/v2/{org}/Groups/{group_two}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Conflict);
+    assert_eq!(parse_json(&body_of(response).await)["scimType"], json!("uniqueness"));
+
+    // PUT onto a taken externalId is the same 409.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+        "displayName": "Ext Two",
+        "externalId": "ext-1",
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.put(format!("/scim/v2/{org}/Groups/{group_two}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Conflict);
+
+    let response = client.get(format!("/scim/v2/{org}/Groups/{group_two}")).header(bearer(&token)).dispatch().await;
+    assert_eq!(parse_json(&body_of(response).await)["externalId"], json!("ext-2"), "conflict must not partially apply");
+
+    // Re-asserting a group's own externalId stays a no-op success: Entra
+    // repeats it on every PUT.
+    let payload = json!({
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+        "displayName": "Ext Two",
+        "externalId": "ext-2",
+    });
+    let (auth, ct, body) = scim_body(&token, &payload);
+    let response =
+        client.put(format!("/scim/v2/{org}/Groups/{group_two}")).header(auth).header(ct).body(body).dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
 }
