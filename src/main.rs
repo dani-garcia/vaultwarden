@@ -578,7 +578,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .limit("json", 20.megabytes()) // 20MB should be enough for very large imports, something like 5000+ vault entries
         .limit("data-form", 525.megabytes()) // This needs to match the maximum allowed file size for Send
         .limit("file", 525.megabytes()) // This needs to match the maximum allowed file size for attachments
-        .limit("scim", 512.kibibytes()); // SCIM bodies are small; a tight cap limits abuse of the machine-auth endpoint
+        .limit("scim", api::scim::SCIM_BODY_LIMIT); // SCIM bodies are small; a tight cap limits abuse of the machine-auth endpoint
 
     // If adding more paths here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
