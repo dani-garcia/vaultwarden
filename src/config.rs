@@ -920,6 +920,28 @@ make_config! {
     },
 }
 
+#[cfg(unix)]
+fn mode_is_executable(mode: u32) -> bool {
+    mode & 0o111 != 0
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::mode_is_executable;
+
+    #[test]
+    fn executable_mode_accepts_any_execute_bit() {
+        assert!(mode_is_executable(0o100));
+        assert!(mode_is_executable(0o010));
+        assert!(mode_is_executable(0o001));
+        assert!(mode_is_executable(0o700));
+        assert!(mode_is_executable(0o750));
+        assert!(mode_is_executable(0o755));
+        assert!(!mode_is_executable(0o600));
+        assert!(!mode_is_executable(0o000));
+    }
+}
+
 fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     // Validate connection URL is valid and DB feature is enabled
     #[cfg(sqlite)]
@@ -1136,7 +1158,7 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                     #[cfg(unix)]
                     {
                         use std::os::unix::fs::PermissionsExt;
-                        if !metadata.permissions().mode() & 0o111 != 0 {
+                        if !mode_is_executable(metadata.permissions().mode()) {
                             err!(format!("sendmail command at `{path:?}` isn't executable"));
                         }
                     }
