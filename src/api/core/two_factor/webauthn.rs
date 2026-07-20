@@ -325,11 +325,13 @@ struct DeleteWebauthnData {
     user_verification_token: String,
 }
 
+#[suppress(dubious_payload)]
 #[delete("/two-factor/webauthn", data = "<data>")]
 async fn delete_webauthn(data: Json<DeleteWebauthnData>, headers: Headers, conn: DbConn) -> JsonResult {
     inner_delete_webauthns(&data.user_verification_token, |key| key.id != data.id, headers, &conn).await
 }
 
+#[suppress(dubious_payload)]
 #[delete("/two-factor/webauthn/all", data = "<data>")]
 async fn delete_webauthns(data: Json<VerificationTokenData>, headers: Headers, conn: DbConn) -> JsonResult {
     inner_delete_webauthns(&data.user_verification_token, |_| false, headers, &conn).await

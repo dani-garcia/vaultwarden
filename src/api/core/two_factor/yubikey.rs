@@ -202,6 +202,7 @@ async fn activate_yubikey_put(data: Json<EnableYubikeyData>, headers: Headers, c
     activate_yubikey(data, headers, conn).await
 }
 
+#[suppress(dubious_payload)]
 #[delete("/two-factor/yubikey", data = "<data>")]
 async fn delete_yubikeys(data: Json<VerificationTokenData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let user = headers.user;

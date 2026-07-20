@@ -299,72 +299,114 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for EtagC
 // Effectively ignores, any static file route, and the alive endpoint
 const LOGGED_ROUTES: [&str; 7] = ["/api", "/admin", "/identity", "/icons", "/attachments", "/events", "/notifications"];
 
+// Same format as the `Display` of a Rocket route, which Rkt does not have anymore
+struct RouteDisplay<'a>(&'a rocket::Route);
+impl fmt::Display for RouteDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let route = self.0;
+        if let Some(name) = &route.name {
+            write!(f, "({name}) ")?;
+        }
+        write!(f, "{} {}", route.method.map_or("ANY", |m| m.as_str()), route.uri)?;
+        if route.rank > 1 {
+            write!(f, " [{}]", route.rank)?;
+        }
+        if let Some(format) = &route.format {
+            write!(f, " {format}")?;
+        }
+        Ok(())
+    }
+}
+
 // Boolean is extra debug, when true, we ignore the whitelist above and also print the mounts
-pub struct BetterLogging(pub bool);
+pub struct BetterLogging {
+    extra: bool,
+    log_request: bool,
+    log_response: bool,
+    domain_path: String,
+}
+
+impl BetterLogging {
+    pub fn new(extra: bool, domain_path: String) -> Self {
+        Self {
+            extra,
+            log_request: log_enabled!(target: "request", log::Level::Info),
+            log_response: log_enabled!(target: "response", log::Level::Info),
+            domain_path,
+        }
+    }
+
+    fn should_log(&self, method: Method, path: &str) -> bool {
+        if self.extra {
+            return true;
+        }
+        if method == Method::Options {
+            return false;
+        }
+        let subpath = path.strip_prefix(&self.domain_path).unwrap_or(path);
+        LOGGED_ROUTES.iter().any(|r| subpath.starts_with(r))
+    }
+}
+
 #[rocket::async_trait]
 impl Fairing for BetterLogging {
     fn info(&self) -> Info {
+        let mut kind = Kind::Liftoff;
+        if self.log_request {
+            kind = kind | Kind::Request;
+        }
+        if self.log_response {
+            kind = kind | Kind::Response;
+        }
         Info {
             name: "Better Logging",
-            kind: Kind::Liftoff | Kind::Request | Kind::Response,
+            kind,
         }
     }
 
     async fn on_liftoff(&self, rocket: &Rocket<Orbit>) {
-        if self.0 {
+        if self.extra {
             info!(target: "routes", "Routes loaded:");
             let mut routes: Vec<_> = rocket.routes().collect();
-            routes.sort_by_key(|r| r.uri.path());
+            routes.sort_by(|a, b| a.uri.path().as_str().cmp(b.uri.path().as_str()));
             for route in routes {
+                let method = route.method.map_or("ANY", |m| m.as_str());
                 if route.rank < 0 {
-                    info!(target: "routes", "{:<6} {}", route.method, route.uri);
+                    info!(target: "routes", "{:<6} {}", method, route.uri);
                 } else {
-                    info!(target: "routes", "{:<6} {} [{}]", route.method, route.uri, route.rank);
+                    info!(target: "routes", "{:<6} {} [{}]", method, route.uri, route.rank);
                 }
             }
         }
 
-        let config = rocket.config();
-        let scheme = if config.tls_enabled() {
-            "https"
-        } else {
-            "http"
-        };
-        let addr = format!("{scheme}://{}:{}", config.address, config.port);
-        info!(target: "start", "Rocket has launched from {addr}");
+        for endpoint in rocket.endpoints() {
+            info!(target: "start", "Rocket has launched from {endpoint}");
+        }
     }
 
     async fn on_request(&self, request: &mut Request<'_>, _data: &mut Data<'_>) {
-        let method = request.method();
-        if !self.0 && method == Method::Options {
-            return;
-        }
         let uri = request.uri();
         let uri_path = uri.path();
-        let uri_path_str = uri_path.url_decode_lossy();
-        let uri_subpath = uri_path_str.strip_prefix(&CONFIG.domain_path()).unwrap_or(&uri_path_str);
-        if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
-            match uri.query() {
-                Some(q) => info!(target: "request", "{method} {uri_path_str}?{}", &q[..q.len().min(30)]),
-                None => info!(target: "request", "{method} {uri_path_str}"),
-            }
+        let method = request.method();
+        if !self.should_log(method, uri_path.as_str()) {
+            return;
+        }
+        let path = uri_path.url_decode_lossy();
+        match uri.query() {
+            Some(q) => info!(target: "request", "{method} {path}?{}", &q[..q.len().min(30)]),
+            None => info!(target: "request", "{method} {path}"),
         }
     }
 
     async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
-        if !self.0 && request.method() == Method::Options {
+        let uri = request.uri();
+        if !self.should_log(request.method(), uri.path().as_str()) {
             return;
         }
-        let uri_path = request.uri().path();
-        let uri_path_str = uri_path.url_decode_lossy();
-        let uri_subpath = uri_path_str.strip_prefix(&CONFIG.domain_path()).unwrap_or(&uri_path_str);
-        if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
-            let status = response.status();
-            if let Some(route) = request.route() {
-                info!(target: "response", "{route} => {status}");
-            } else {
-                info!(target: "response", "{status}");
-            }
+        let status = response.status();
+        match request.route() {
+            Some(r) => info!(target: "response", "{} => {status}", RouteDisplay(r)),
+            None => info!(target: "response", "{status}"),
         }
     }
 }

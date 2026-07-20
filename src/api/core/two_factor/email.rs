@@ -255,6 +255,7 @@ async fn email(data: Json<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
     Ok(Json(json!({})))
 }
 
+#[suppress(dubious_payload)]
 #[delete("/two-factor/email", data = "<data>")]
 async fn disable_email(data: Json<VerificationTokenData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let user = headers.user;
