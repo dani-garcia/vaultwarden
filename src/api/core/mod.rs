@@ -245,6 +245,9 @@ fn config() -> Json<Value> {
           "notifications": format!("{domain}/notifications"),
           "sso": "",
           "cloudRegion": null,
+          // fillAssistRules as returned by the Bitwarden server (https://github.com/bitwarden/server @ 045113a),
+          // and hardcoded in the Bitwarden clients (https://github.com/bitwarden/clients @ 2581be6)
+          "fillAssistRules": "https://github.com/bitwarden/map-the-web/releases/latest/download",
         },
         // Bitwarden uses this for the self-hosted servers to indicate the default push technology
         "push": {
