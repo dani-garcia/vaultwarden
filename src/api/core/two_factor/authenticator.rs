@@ -177,6 +177,7 @@ struct DisableAuthenticatorData {
     user_verification_token: String,
 }
 
+#[suppress(dubious_payload)]
 #[delete("/two-factor/authenticator", data = "<data>")]
 async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let user = headers.user;

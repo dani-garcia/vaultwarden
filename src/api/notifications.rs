@@ -4,6 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bytes::Bytes;
 use chrono::{NaiveDateTime, Utc};
 use rmpv::Value;
 use rocket::{Route, futures::StreamExt};
@@ -212,7 +213,7 @@ fn websockets_hub<'r>(
                         if last_received.elapsed() > WS_CLIENT_TIMEOUT {
                             break;
                         }
-                        yield Message::Ping(create_ping());
+                        yield Message::Ping(PING);
                     }
                 }
             }
@@ -295,7 +296,7 @@ fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> R
                         if last_received.elapsed() > WS_CLIENT_TIMEOUT {
                             break;
                         }
-                        yield Message::Ping(create_ping());
+                        yield Message::Ping(PING);
                     }
                 }
             }
@@ -307,7 +308,7 @@ fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> R
 // Websockets server
 //
 
-fn serialize(val: &Value) -> Vec<u8> {
+fn serialize(val: &Value) -> Bytes {
     use rmpv::encode::write_value;
 
     let mut buf = Vec::new();
@@ -335,7 +336,7 @@ fn serialize(val: &Value) -> Vec<u8> {
     }
 
     len_buf.append(&mut buf);
-    len_buf
+    len_buf.into()
 }
 
 fn serialize_date(date: NaiveDateTime) -> Value {
@@ -358,7 +359,9 @@ fn convert_option<T: Into<Value>>(option: Option<T>) -> Value {
 }
 
 const RECORD_SEPARATOR: u8 = 0x1e;
-const INITIAL_RESPONSE: [u8; 3] = [0x7b, 0x7d, RECORD_SEPARATOR]; // {, }, <RS>
+const INITIAL_RESPONSE: Bytes = Bytes::from_static(&[0x7b, 0x7d, RECORD_SEPARATOR]); // {, }, <RS>
+// Same result as `serialize(&Value::Array(vec![6.into()]))`
+const PING: Bytes = Bytes::from_static(&[0x02, 0x91, 0x06]);
 
 #[derive(Deserialize, Copy, Clone, Eq, PartialEq)]
 struct InitialMessage<'a> {
@@ -379,10 +382,10 @@ pub struct WebSocketUsers {
 }
 
 impl WebSocketUsers {
-    async fn send_update(&self, user_id: &UserId, data: &[u8]) {
+    async fn send_update(&self, user_id: &UserId, data: &Bytes) {
         if let Some(user) = self.map.get(user_id.as_ref()).map(|v| v.clone()) {
             for (_, sender) in &user {
-                if let Err(e) = sender.send(Message::binary(data)).await {
+                if let Err(e) = sender.send(Message::binary(data.clone())).await {
                     error!("Error sending WS update {e}");
                 }
             }
@@ -614,11 +617,11 @@ impl AnonymousWebSocketSubscriptions {
         }
     }
 
-    async fn send_update(&self, token: &str, data: &[u8]) {
+    async fn send_update(&self, token: &str, data: &Bytes) {
         // Clone the senders so the map isn't kept locked while sending.
         let senders = self.map.get(token).map(|v| v.clone()).unwrap_or_default();
         for (_, sender) in senders {
-            if let Err(e) = sender.send(Message::binary(data)).await {
+            if let Err(e) = sender.send(Message::binary(data.clone())).await {
                 error!("Error sending WS update {e}");
             }
         }
@@ -652,7 +655,7 @@ impl AnonymousWebSocketSubscriptions {
     ]
 ]
 */
-fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id: Option<DeviceId>) -> Vec<u8> {
+fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id: Option<DeviceId>) -> Bytes {
     use rmpv::Value as V;
 
     let value = V::Array(vec![
@@ -670,7 +673,7 @@ fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id:
     serialize(&value)
 }
 
-fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: &UserId) -> Vec<u8> {
+fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: &UserId) -> Bytes {
     use rmpv::Value as V;
 
     let value = V::Array(vec![
@@ -689,10 +692,6 @@ fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id
     ]);
 
     serialize(&value)
-}
-
-fn create_ping() -> Vec<u8> {
-    serialize(&Value::Array(vec![6.into()]))
 }
 
 // https://github.com/bitwarden/server/blob/375af7c43b10d9da03525d41452f95de3f921541/src/Core/Enums/PushType.cs

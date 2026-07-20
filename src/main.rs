@@ -13,6 +13,9 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 #[macro_use]
 extern crate rocket;
+// `rkt` codegen generates code using `rkt::` and not `rocket::`
+// This ensures both `rocket` and `rkt` point to the same crate
+extern crate rocket as rkt;
 #[macro_use]
 extern crate serde;
 #[macro_use]
@@ -273,9 +276,10 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         log::LevelFilter::Off
     };
 
-    // Only show Rocket underscore `_` logs when the level is Debug or higher
+    // Only show some Rocket/Rkt logs when the level is Debug or higher
+    // These replace the Rocket underscore `_` logs. Rkt logs some of them as Info.
     // Else this will bloat the log output with useless messages.
-    let rocket_underscore_level = if level >= log::LevelFilter::Debug {
+    let rkt_debug_level = if level >= log::LevelFilter::Debug {
         log::LevelFilter::Warn
     } else {
         log::LevelFilter::Off
@@ -296,24 +300,18 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         log::LevelFilter::Off
     };
 
+    // NOTE: Rocket has been replaced with Rkt, since the crate is called `rkt`, `rocket` does not work even though we use this throughout the code!
     let mut default_levels = HashMap::from([
         // Hide unknown certificate errors if using self-signed
         ("rustls::session", log::LevelFilter::Off),
         // Hide failed to close stream messages
         ("hyper::server", log::LevelFilter::Warn),
-        // Silence Rocket `_` logs
-        ("_", rocket_underscore_level),
-        ("rocket::response::responder::_", rocket_underscore_level),
-        ("rocket::server::_", rocket_underscore_level),
-        ("vaultwarden::api::admin::_", rocket_underscore_level),
-        ("vaultwarden::api::notifications::_", rocket_underscore_level),
-        // Silence Rocket logs
-        ("rocket::launch", log::LevelFilter::Error),
-        ("rocket::launch_", log::LevelFilter::Error),
-        ("rocket::rocket", log::LevelFilter::Warn),
-        ("rocket::server", log::LevelFilter::Warn),
-        ("rocket::fairing::fairings", log::LevelFilter::Warn),
-        ("rocket::shield::shield", log::LevelFilter::Warn),
+        // Silence Rkt logs, this covers all `rocket::*`/`rkt::*` targets
+        ("rkt", log::LevelFilter::Warn),
+        // Rkt request/data guard logs (previously the Rocket `_` logs)
+        ("rkt::codegen", rkt_debug_level),
+        // Rkt per-connection warnings, like client header read timeouts (15s) on idle keep-alive connections and connections cancelled during shutdown
+        ("rkt::error", log::LevelFilter::Error),
         ("hyper::proto", log::LevelFilter::Off),
         ("hyper::client", log::LevelFilter::Off),
         // Filter handlebars logs
@@ -563,19 +561,25 @@ async fn create_db_pool() -> db::DbPool {
 async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error> {
     let basepath = &CONFIG.domain_path();
 
-    let mut config = rocket::Config::from(rocket::Config::figment());
-
-    // We install our own signal handlers below; disable Rocket's built-in handlers
-    config.shutdown.ctrlc = false;
-    #[cfg(unix)]
-    config.shutdown.signals.clear();
-
-    config.temp_dir = canonicalize(CONFIG.tmp_folder()).unwrap().into();
-    config.cli_colors = false; // Make sure Rocket does not color any values for logging.
-    config.limits = Limits::new()
+    let limits = Limits::new()
         .limit("json", 20.megabytes()) // 20MB should be enough for very large imports, something like 5000+ vault entries
         .limit("data-form", 525.megabytes()) // This needs to match the maximum allowed file size for Send
         .limit("file", 525.megabytes()); // This needs to match the maximum allowed file size for attachments
+
+    let mut config = rocket::Config::figment()
+        .merge(("shutdown.ctrlc", false)) // We install our own signal handlers below; disable Rocket's built-in handlers
+        .merge(("temp_dir", canonicalize(CONFIG.tmp_folder()).unwrap()))
+        .merge(("cli_colors", rocket::config::CliColors::Never)) // Make sure Rocket does not color any values for logging
+        .merge(("limits", limits));
+
+    #[cfg(unix)]
+    {
+        config = config.merge(("shutdown.signals", Vec::<String>::new()));
+    }
+
+    if CONFIG._ip_header_enabled() {
+        config = config.merge(("ip_header", CONFIG.ip_header()));
+    }
 
     // If adding more paths here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
@@ -595,7 +599,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .manage(Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS))
         .attach(util::AppHeaders())
         .attach(util::Cors())
-        .attach(util::BetterLogging(extra_debug))
+        .attach(util::BetterLogging::new(extra_debug, basepath.clone()))
         .ignite()
         .await?;
 
