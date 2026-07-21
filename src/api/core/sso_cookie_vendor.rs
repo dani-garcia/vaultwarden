@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use rocket::{
-    http::{CookieJar, Status},
-    response::{content::RawHtml as Html, Redirect},
     Route,
+    http::{CookieJar, Status},
+    response::{Redirect, content::RawHtml as Html},
 };
 
 use crate::CONFIG;

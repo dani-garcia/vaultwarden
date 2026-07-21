@@ -5,17 +5,21 @@ use std::{
     time::Duration,
 };
 
-use hickory_resolver::{net::runtime::TokioRuntimeProvider, TokioResolver};
+use hickory_resolver::{TokioResolver, net::runtime::TokioRuntimeProvider};
 use regex::Regex;
 use reqwest::{
+    Client, ClientBuilder,
     dns::{Name, Resolve, Resolving},
-    header, Client, ClientBuilder,
+    header,
 };
 use url::Host;
 
-use crate::{util::is_global, CONFIG};
+use crate::{CONFIG, util::is_global};
 
 pub fn make_http_request(method: reqwest::Method, url: &str) -> Result<reqwest::RequestBuilder, crate::Error> {
+    static INSTANCE: LazyLock<Client> =
+        LazyLock::new(|| get_reqwest_client_builder(true).build().expect("Failed to build client"));
+
     let Ok(url) = url::Url::parse(url) else {
         err!("Invalid URL");
     };
@@ -25,13 +29,10 @@ pub fn make_http_request(method: reqwest::Method, url: &str) -> Result<reqwest::
 
     should_block_host(&host)?;
 
-    static INSTANCE: LazyLock<Client> =
-        LazyLock::new(|| get_reqwest_client_builder().build().expect("Failed to build client"));
-
     Ok(INSTANCE.request(method, url))
 }
 
-pub fn get_reqwest_client_builder() -> ClientBuilder {
+pub fn get_reqwest_client_builder(enforce_block: bool) -> ClientBuilder {
     let mut headers = header::HeaderMap::new();
     headers.insert(header::USER_AGENT, header::HeaderValue::from_static("Vaultwarden"));
 
@@ -54,7 +55,7 @@ pub fn get_reqwest_client_builder() -> ClientBuilder {
     Client::builder()
         .default_headers(headers)
         .redirect(redirect_policy)
-        .dns_resolver(CustomDnsResolver::instance())
+        .dns_resolver(CustomDns::instance(enforce_block))
         .timeout(Duration::from_secs(10))
 }
 
@@ -67,18 +68,19 @@ fn should_block_ip(ip: IpAddr) -> bool {
 }
 
 fn should_block_address_regex(domain_or_ip: &str) -> bool {
+    static COMPILED_REGEX: Mutex<Option<(String, Regex)>> = Mutex::new(None);
+
     let Some(block_regex) = CONFIG.http_request_block_regex() else {
         return false;
     };
 
-    static COMPILED_REGEX: Mutex<Option<(String, Regex)>> = Mutex::new(None);
     let mut guard = COMPILED_REGEX.lock().unwrap();
 
     // If the stored regex is up to date, use it
-    if let Some((value, regex)) = &*guard {
-        if value == &block_regex {
-            return regex.is_match(domain_or_ip);
-        }
+    if let Some((value, regex)) = &*guard
+        && value == &block_regex
+    {
+        return regex.is_match(domain_or_ip);
     }
 
     // If we don't have a regex stored, or it's not up to date, recreate it
@@ -92,7 +94,7 @@ fn should_block_address_regex(domain_or_ip: &str) -> bool {
 pub fn get_valid_host(host: &str) -> Result<Host, CustomHttpClientError> {
     let Ok(host) = Host::parse(host) else {
         return Err(CustomHttpClientError::Invalid {
-            domain: host.to_string(),
+            domain: host.to_owned(),
         });
     };
 
@@ -136,16 +138,16 @@ pub fn should_block_host<S: AsRef<str>>(host: &Host<S>) -> Result<(), CustomHttp
     let (ip, host_str): (Option<IpAddr>, String) = match host {
         Host::Ipv4(ip) => (Some(IpAddr::V4(*ip)), ip.to_string()),
         Host::Ipv6(ip) => (Some(IpAddr::V6(*ip)), ip.to_string()),
-        Host::Domain(d) => (None, d.as_ref().to_string()),
+        Host::Domain(d) => (None, d.as_ref().to_owned()),
     };
 
-    if let Some(ip) = ip {
-        if should_block_ip(ip) {
-            return Err(CustomHttpClientError::NonGlobalIp {
-                domain: None,
-                ip,
-            });
-        }
+    if let Some(ip) = ip
+        && should_block_ip(ip)
+    {
+        return Err(CustomHttpClientError::NonGlobalIp {
+            domain: None,
+            ip,
+        });
     }
 
     if should_block_address_regex(&host_str) {
@@ -208,6 +210,11 @@ impl fmt::Display for CustomHttpClientError {
 
 impl std::error::Error for CustomHttpClientError {}
 
+pub struct CustomDns {
+    enforce_block: bool,
+    resolver: Arc<CustomDnsResolver>,
+}
+
 #[derive(Debug, Clone)]
 enum CustomDnsResolver {
     Default(),
@@ -215,12 +222,18 @@ enum CustomDnsResolver {
 }
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-impl CustomDnsResolver {
-    fn instance() -> Arc<Self> {
+impl CustomDns {
+    fn instance(enforce_block: bool) -> Self {
         static INSTANCE: LazyLock<Arc<CustomDnsResolver>> = LazyLock::new(CustomDnsResolver::new);
-        Arc::clone(&*INSTANCE)
-    }
 
+        CustomDns {
+            enforce_block,
+            resolver: Arc::clone(&*INSTANCE),
+        }
+    }
+}
+
+impl CustomDnsResolver {
     fn new() -> Arc<Self> {
         TokioResolver::builder(TokioRuntimeProvider::default())
             .and_then(|mut builder| {
@@ -233,37 +246,38 @@ impl CustomDnsResolver {
                 builder.build()
             })
             .inspect_err(|e| warn!("Error creating Hickory resolver, falling back to default: {e:?}"))
-            .map(|resolver| Arc::new(Self::Hickory(Arc::new(resolver))))
-            .unwrap_or_else(|_| Arc::new(Self::Default()))
+            .map_or_else(|_| Arc::new(Self::Default()), |resolver| Arc::new(Self::Hickory(Arc::new(resolver))))
     }
 
     // Note that we get an iterator of addresses, but we only grab the first one for convenience
-    async fn resolve_domain(&self, name: &str) -> Result<Vec<SocketAddr>, BoxError> {
-        pre_resolve(name)?;
+    async fn resolve_domain(&self, name: &str, enforce_block: bool) -> Result<Vec<SocketAddr>, BoxError> {
+        pre_resolve(name, enforce_block)?;
 
         let results: Vec<SocketAddr> = match self {
             Self::Default() => tokio::net::lookup_host((name, 0)).await?.collect(),
             Self::Hickory(r) => r.lookup_ip(name).await?.iter().map(|i| SocketAddr::new(i, 0)).collect(),
         };
 
-        for addr in &results {
-            post_resolve(name, addr.ip())?;
+        if enforce_block {
+            for addr in &results {
+                post_resolve(name, addr.ip())?;
+            }
         }
 
         Ok(results)
     }
 }
 
-fn pre_resolve(name: &str) -> Result<(), CustomHttpClientError> {
+fn pre_resolve(name: &str, enforce_block: bool) -> Result<(), CustomHttpClientError> {
     let Ok(host) = get_valid_host(name) else {
         return Err(CustomHttpClientError::Invalid {
-            domain: name.to_string(),
+            domain: name.to_owned(),
         });
     };
 
-    if should_block_host(&host).is_err() {
+    if enforce_block && should_block_host(&host).is_err() {
         return Err(CustomHttpClientError::Blocked {
-            domain: name.to_string(),
+            domain: name.to_owned(),
         });
     }
 
@@ -273,7 +287,7 @@ fn pre_resolve(name: &str) -> Result<(), CustomHttpClientError> {
 fn post_resolve(name: &str, ip: IpAddr) -> Result<(), CustomHttpClientError> {
     if should_block_ip(ip) {
         Err(CustomHttpClientError::NonGlobalIp {
-            domain: Some(name.to_string()),
+            domain: Some(name.to_owned()),
             ip,
         })
     } else {
@@ -281,12 +295,13 @@ fn post_resolve(name: &str, ip: IpAddr) -> Result<(), CustomHttpClientError> {
     }
 }
 
-impl Resolve for CustomDnsResolver {
+impl Resolve for CustomDns {
     fn resolve(&self, name: Name) -> Resolving {
-        let this = self.clone();
+        let enforce_block = self.enforce_block;
+        let this = Arc::clone(&self.resolver);
         Box::pin(async move {
             let name = name.as_str();
-            let results = this.resolve_domain(name).await?;
+            let results = this.resolve_domain(name, enforce_block).await?;
             if results.is_empty() {
                 warn!("Unable to resolve {name} to any valid IP address");
             }
@@ -318,7 +333,7 @@ pub(crate) mod aws {
             let future = async move {
                 let method = reqwest::Method::from_bytes(request.method().as_bytes())
                     .map_err(|e| ConnectorError::user(Box::new(e)))?;
-                let mut req_builder = client.request(method, request.uri().to_string());
+                let mut req_builder = client.request(method, request.uri().to_owned());
 
                 for (name, value) in request.headers() {
                     req_builder = req_builder.header(name, value);

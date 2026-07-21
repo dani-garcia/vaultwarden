@@ -40,6 +40,16 @@ test('Invite users', async ({ page }) => {
     await createAccount(test, page, users.user1, mail1Buffer);
 
     await orgs.create(test, page, 'Test');
+
+    await test.step(`Set account recovery`, async () => {
+        await orgs.policies(test, page, 'Test');
+        await page.getByRole('button', { name: 'Account recovery' }).click();
+        await page.getByRole('checkbox', { name: 'Turn on' }).check();
+        await page.getByRole('checkbox', { name: 'Require new members' }).check();
+        await page.getByRole('button', { name: 'Save' }).click();
+        await utils.checkNotification(page, 'Edited policy Account recovery');
+    });
+
     await orgs.members(test, page, 'Test');
     await orgs.invite(test, page, 'Test', users.user2.email);
     await orgs.invite(test, page, 'Test', users.user3.email, {
@@ -116,4 +126,28 @@ test('Organization is visible', async ({ page }) => {
     await logUser(test, page, users.user2, mail2Buffer);
     await page.getByRole('button', { name: 'vault: Test', exact: true }).click();
     await expect(page.getByLabel('Filter: Default collection')).toBeVisible();
+});
+
+test('Recover user password', async ({ page }) => {
+    await logUser(test, page, users.user1, mail1Buffer);
+
+    let newPassword = "TotoNewPassword";
+
+    await orgs.members(test, page, 'Test');
+    await test.step(`Rrcover ${users.user2.email}`, async () => {
+        await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
+        await page.getByRole('row').filter({hasText: users.user2.email}).getByLabel('Options').click();
+        await page.getByRole('menuitem', { name: 'Recover account' }).click();
+        await page.getByRole('textbox', { name: 'New master password (required)', exact: true }).fill(newPassword);
+        await page.getByRole('textbox', { name: 'Confirm new master password (' }).fill(newPassword);
+         await page.getByRole('button', { name: 'Save' }).click();
+        await utils.checkNotification(page, 'Password reset success');
+    });
+
+    let user2 = {
+        email: users.user2.email,
+        name: users.user2.name,
+        password: newPassword,
+    };
+    await logUser(test, page, user2, mail2Buffer);
 });

@@ -33,6 +33,7 @@ use std::{
     path::Path,
     process::exit,
     str::FromStr,
+    sync::{Arc, atomic::Ordering},
     thread,
 };
 
@@ -43,6 +44,8 @@ use tokio::{
 
 #[cfg(unix)]
 use tokio::signal::unix::SignalKind;
+
+use rocket::data::{Limits, ToByteUnit};
 
 #[macro_use]
 mod error;
@@ -60,13 +63,11 @@ mod sso_client;
 mod storage;
 mod util;
 
-use crate::api::core::two_factor::duo_oidc::purge_duo_contexts;
-use crate::api::purge_auth_requests;
-use crate::api::{WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS};
-pub use config::{PathType, CONFIG};
+use crate::api::{
+    WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS, core::two_factor::duo_oidc::purge_duo_contexts, purge_auth_requests,
+};
+pub use config::{CONFIG, PathType};
 pub use error::{Error, MapResult};
-use rocket::data::{Limits, ToByteUnit};
-use std::sync::{atomic::Ordering, Arc};
 pub use util::is_running_in_container;
 
 #[rocket::main]
@@ -137,26 +138,23 @@ fn parse_args() {
     if let Some(command) = pargs.subcommand().unwrap_or_default() {
         if command == "hash" {
             use argon2::{
-                password_hash::SaltString, Algorithm::Argon2id, Argon2, ParamsBuilder, PasswordHasher, Version::V0x13,
+                Algorithm::Argon2id, Argon2, ParamsBuilder, PasswordHasher, Version::V0x13, password_hash::SaltString,
             };
 
             let mut argon2_params = ParamsBuilder::new();
             let preset: Option<String> = pargs.opt_value_from_str(["-p", "--preset"]).unwrap_or_default();
             let selected_preset;
-            match preset.as_deref() {
-                Some("owasp") => {
-                    selected_preset = "owasp";
-                    argon2_params.m_cost(19456);
-                    argon2_params.t_cost(2);
-                    argon2_params.p_cost(1);
-                }
-                _ => {
-                    // Bitwarden preset is the default
-                    selected_preset = "bitwarden";
-                    argon2_params.m_cost(65540);
-                    argon2_params.t_cost(3);
-                    argon2_params.p_cost(4);
-                }
+            if preset.as_deref() == Some("owasp") {
+                selected_preset = "owasp";
+                argon2_params.m_cost(19456);
+                argon2_params.t_cost(2);
+                argon2_params.p_cost(1);
+            } else {
+                // Bitwarden preset is the default
+                selected_preset = "bitwarden";
+                argon2_params.m_cost(65540);
+                argon2_params.t_cost(3);
+                argon2_params.p_cost(4);
             }
 
             println!("Generate an Argon2id PHC string using the '{selected_preset}' preset:\n");
@@ -247,7 +245,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         let level = caps
             .get(1)
             .and_then(|m| log::LevelFilter::from_str(m.as_str()).ok())
-            .ok_or(Error::new("Failed to parse global log level".to_string(), ""))?;
+            .ok_or(Error::new("Failed to parse global log level".to_owned(), ""))?;
 
         let levels_override: Vec<(&str, log::LevelFilter)> = caps
             .get(2)
@@ -256,13 +254,13 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
                     .split(',')
                     .collect::<Vec<&str>>()
                     .into_iter()
-                    .flat_map(|s| match s.split_once('=') {
+                    .filter_map(|s| match s.split_once('=') {
                         Some((log, lvl_str)) => log::LevelFilter::from_str(lvl_str).ok().map(|lvl| (log, lvl)),
                         _ => None,
                     })
                     .collect()
             })
-            .ok_or(Error::new("Failed to parse overrides".to_string(), ""))?;
+            .ok_or(Error::new("Failed to parse overrides".to_owned(), ""))?;
 
         (level, levels_override)
     } else {
@@ -338,7 +336,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         ("vaultwarden::db::query_logger", log::LevelFilter::Off),
     ]);
 
-    for (path, level) in levels_override.into_iter() {
+    for (path, level) in levels_override {
         let _ = default_levels.insert(path, level);
     }
 
@@ -352,7 +350,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
     let mut logger = fern::Dispatch::new().level(level).chain(std::io::stdout());
 
     for (path, level) in default_levels {
-        logger = logger.level_for(path.to_string(), level);
+        logger = logger.level_for(path.to_owned(), level);
     }
 
     if CONFIG.extended_logging() {
@@ -363,7 +361,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
                 record.target(),
                 record.level(),
                 message
-            ))
+            ));
         });
     } else {
         logger = logger.format(|out, message, _| out.finish(format_args!("{message}")));
@@ -609,9 +607,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
 
     #[cfg(all(unix, sqlite))]
     {
-        if db::ACTIVE_DB_TYPE.get() != Some(&db::DbConnType::Sqlite) {
-            debug!("PostgreSQL and MySQL/MariaDB do not support this backup feature, skip adding USR1 signal.");
-        } else {
+        if db::ACTIVE_DB_TYPE.get() == Some(&db::DbConnType::Sqlite) {
             tokio::spawn(async move {
                 let mut signal_user1 = tokio::signal::unix::signal(SignalKind::user_defined1()).unwrap();
                 loop {
@@ -624,6 +620,8 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
                     }
                 }
             });
+        } else {
+            debug!("PostgreSQL and MySQL/MariaDB do not support this backup feature, skip adding USR1 signal.");
         }
     }
 
@@ -671,7 +669,7 @@ fn schedule_jobs(pool: db::DbPool) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
     thread::Builder::new()
-        .name("job-scheduler".to_string())
+        .name("job-scheduler".to_owned())
         .spawn(move || {
             use job_scheduler_ng::{Job, JobScheduler};
             let _runtime_guard = runtime.enter();
