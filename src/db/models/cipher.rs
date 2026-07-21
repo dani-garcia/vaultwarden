@@ -306,16 +306,6 @@ impl Cipher {
             type_data_json = Value::Null;
         }
 
-        // Clone the type_data and add some default value.
-        let mut data_json = type_data_json.clone();
-
-        // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
-        // data_json should always contain the following keys with every atype
-        data_json["fields"] = json!(fields_json);
-        data_json["name"] = json!(self.name);
-        data_json["notes"] = json!(self.notes);
-        data_json["passwordHistory"] = Value::Array(password_history_json.clone());
-
         let collection_ids = if let Some(cipher_sync_data) = cipher_sync_data {
             if let Some(cipher_collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
                 Cow::from(cipher_collections)
@@ -354,8 +344,6 @@ impl Cipher {
             "name": self.name,
             "notes": self.notes,
             "fields": fields_json,
-
-            "data": data_json,
 
             "passwordHistory": password_history_json,
 
