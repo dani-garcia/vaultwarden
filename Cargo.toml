@@ -147,9 +147,6 @@ jsonwebtoken = { version = "10.4.0", default-features = false, features = ["rust
 # TOTP library
 totp-lite = "2.0.1"
 
-# QR code generation (admin page TOTP enrollment)
-qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
-
 # Yubico Library
 yubico = { package = "yubico_ng", version = "0.15.0", default-features = false, features = ["online-tokio"] }
 
