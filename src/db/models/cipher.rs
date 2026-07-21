@@ -25,7 +25,7 @@ use macros::UuidFromParam;
 
 use super::{
     Archive, Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership,
-    MembershipStatus, MembershipType, OrganizationId, User, UserId,
+    MembershipStatus, MembershipType, Organization, OrganizationId, User, UserId,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -719,6 +719,21 @@ impl Cipher {
     pub async fn is_write_accessible_to_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
         match self.get_access_restrictions(user_uuid, None, conn).await {
             Some((read_only, _hide_passwords, manage)) => !read_only || manage,
+            None => false,
+        }
+    }
+
+    pub async fn is_deletable_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
+        let manage_required = match self.organization_uuid {
+            Some(ref org_id) => match Organization::find_by_uuid(&org_id, &conn).await {
+                Some(org) => org.limit_item_deletion,
+                None => false,
+            },
+            None => false,
+        };
+
+        match self.get_access_restrictions(user_uuid, None, conn).await {
+            Some((read_only, _hide_passwords, manage)) => (!manage_required && !read_only) || manage,
             None => false,
         }
     }
