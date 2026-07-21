@@ -271,7 +271,7 @@ fn validate_totp(code: Option<&str>) -> bool {
 }
 
 fn check_totp_code(secret: &str, code: &str) -> bool {
-    use totp_lite::{Sha1, totp_custom};
+    use two_factor::authenticator::{TotpValidation, verify_totp};
 
     if code.len() != 6 || !code.chars().all(char::is_numeric) {
         return false;
@@ -284,22 +284,18 @@ fn check_totp_code(secret: &str, code: &str) -> bool {
     let current_timestamp = chrono::Utc::now().timestamp();
     let mut last_used = ADMIN_TOTP_LAST_USED.lock().expect("admin TOTP mutex poisoned");
 
-    // Allow one step of time drift in either direction, like the user 2FA in `two_factor::authenticator` does
-    for step in -1..=1i64 {
-        let time_step = current_timestamp / 30 + step;
-        let time = (current_timestamp + step * 30).cast_unsigned();
-        let generated = totp_custom::<Sha1>(30, 6, &decoded_secret, time);
-
-        if crate::crypto::ct_eq(&generated, code) {
-            if time_step <= *last_used {
-                warn!("This admin TOTP code has already been used");
-                return false;
-            }
+    // Reuse the shared verifier; allow one step of time drift in either direction, like the user 2FA does.
+    match verify_totp(&decoded_secret, code, current_timestamp, *last_used, 1) {
+        TotpValidation::Accepted(time_step) => {
             *last_used = time_step;
-            return true;
+            true
         }
+        TotpValidation::Reused => {
+            warn!("This admin TOTP code has already been used");
+            false
+        }
+        TotpValidation::Rejected => false,
     }
-    false
 }
 
 #[get("/totp")]
