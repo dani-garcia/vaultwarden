@@ -1,12 +1,16 @@
-use super::UserId;
-use crate::api::core::two_factor::webauthn::WebauthnRegistration;
-use crate::db::schema::twofactor;
-use crate::{api::EmptyResult, db::DbConn, error::MapResult};
 use diesel::prelude::*;
 use serde_json::Value;
 use webauthn_rs::prelude::{Credential, ParsedAttestation};
 use webauthn_rs_core::proto::CredentialV3;
 use webauthn_rs_proto::{AttestationFormat, RegisteredExtensions};
+
+use crate::{
+    api::{EmptyResult, core::two_factor::webauthn::WebauthnRegistration},
+    db::{DbConn, schema::twofactor},
+    error::MapResult,
+};
+
+use super::UserId;
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = twofactor)]
@@ -114,53 +118,58 @@ impl TwoFactor {
     }
 
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::delete(twofactor::table.filter(twofactor::uuid.eq(self.uuid)))
                 .execute(conn)
                 .map_res("Error deleting twofactor")
-        }}
+        })
+        .await
     }
 
     pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             twofactor::table
                 .filter(twofactor::user_uuid.eq(user_uuid))
                 .filter(twofactor::atype.lt(1000)) // Filter implementation types
                 .load::<Self>(conn)
                 .expect("Error loading twofactor")
-        }}
+        })
+        .await
     }
 
     pub async fn find_by_user_and_type(user_uuid: &UserId, atype: i32, conn: &DbConn) -> Option<Self> {
-        db_run! { conn: {
+        conn.run(move |conn| {
             twofactor::table
                 .filter(twofactor::user_uuid.eq(user_uuid))
                 .filter(twofactor::atype.eq(atype))
                 .first::<Self>(conn)
                 .ok()
-        }}
+        })
+        .await
     }
 
     pub async fn delete_all_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
-        db_run! { conn: {
+        conn.run(move |conn| {
             diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(user_uuid)))
                 .execute(conn)
                 .map_res("Error deleting twofactors")
-        }}
+        })
+        .await
     }
 
     pub async fn migrate_u2f_to_webauthn(conn: &DbConn) -> EmptyResult {
-        let u2f_factors = db_run! { conn: {
-            twofactor::table
-                .filter(twofactor::atype.eq(TwoFactorType::U2f as i32))
-                .load::<Self>(conn)
-                .expect("Error loading twofactor")
-        }};
-
-        use crate::api::core::two_factor::webauthn::U2FRegistration;
-        use crate::api::core::two_factor::webauthn::{get_webauthn_registrations, WebauthnRegistration};
+        use crate::api::core::two_factor::webauthn::{U2FRegistration, get_webauthn_registrations};
         use webauthn_rs::prelude::{COSEEC2Key, COSEKey, COSEKeyType, ECDSACurve};
         use webauthn_rs_proto::{COSEAlgorithm, UserVerificationPolicy};
+
+        let u2f_factors = conn
+            .run(move |conn| {
+                twofactor::table
+                    .filter(twofactor::atype.eq(TwoFactorType::U2f as i32))
+                    .load::<Self>(conn)
+                    .expect("Error loading twofactor")
+            })
+            .await;
 
         for mut u2f in u2f_factors {
             let mut regs: Vec<U2FRegistration> = serde_json::from_str(&u2f.data)?;
@@ -227,12 +236,14 @@ impl TwoFactor {
     }
 
     pub async fn migrate_credential_to_passkey(conn: &DbConn) -> EmptyResult {
-        let webauthn_factors = db_run! { conn: {
-            twofactor::table
-                .filter(twofactor::atype.eq(TwoFactorType::Webauthn as i32))
-                .load::<Self>(conn)
-                .expect("Error loading twofactor")
-        }};
+        let webauthn_factors = conn
+            .run(move |conn| {
+                twofactor::table
+                    .filter(twofactor::atype.eq(TwoFactorType::Webauthn as i32))
+                    .load::<Self>(conn)
+                    .expect("Error loading twofactor")
+            })
+            .await;
 
         for webauthn_factor in webauthn_factors {
             // assume that a failure to parse into the old struct, means that it was already converted
@@ -241,7 +252,7 @@ impl TwoFactor {
                 continue;
             };
 
-            let regs = regs.into_iter().map(|r| r.into()).collect::<Vec<WebauthnRegistration>>();
+            let regs = regs.into_iter().map(Into::into).collect::<Vec<WebauthnRegistration>>();
 
             TwoFactor::new(webauthn_factor.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&regs)?)
                 .save(conn)

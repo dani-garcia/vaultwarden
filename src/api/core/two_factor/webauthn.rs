@@ -1,32 +1,33 @@
-use crate::{
-    api::{
-        core::{log_user_event, two_factor::_generate_recover_code},
-        EmptyResult, JsonResult, PasswordOrOtpData,
-    },
-    auth::Headers,
-    crypto::ct_eq,
-    db::{
-        models::{EventType, TwoFactor, TwoFactorType, UserId},
-        DbConn,
-    },
-    error::Error,
-    util::NumberOrString,
-    CONFIG,
-};
-use rocket::serde::json::Json;
-use rocket::Route;
+use std::{str::FromStr, sync::LazyLock, time::Duration};
+
+use rocket::{Route, serde::json::Json};
 use serde_json::Value;
-use std::str::FromStr;
-use std::sync::LazyLock;
-use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
-use webauthn_rs::prelude::{Base64UrlSafeData, Credential, Passkey, PasskeyAuthentication, PasskeyRegistration};
-use webauthn_rs::{Webauthn, WebauthnBuilder};
+use webauthn_rs::{
+    Webauthn, WebauthnBuilder,
+    prelude::{Base64UrlSafeData, Credential, Passkey, PasskeyAuthentication, PasskeyRegistration},
+};
 use webauthn_rs_proto::{
     AuthenticationExtensionsClientOutputs, AuthenticatorAssertionResponseRaw, AuthenticatorAttestationResponseRaw,
     PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs,
     RequestAuthenticationExtensions, UserVerificationPolicy,
+};
+
+use crate::{
+    CONFIG,
+    api::{
+        EmptyResult, JsonResult, PasswordOrOtpData,
+        core::{log_user_event, two_factor::generate_recover_code},
+    },
+    auth::Headers,
+    crypto::ct_eq,
+    db::{
+        DbConn,
+        models::{EventType, TwoFactor, TwoFactorType, UserId},
+    },
+    error::Error,
+    util::NumberOrString,
 };
 
 static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
@@ -149,7 +150,7 @@ async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Hea
     )?;
 
     let mut state = serde_json::to_value(&state)?;
-    state["rs"]["policy"] = Value::String("discouraged".to_string());
+    state["rs"]["policy"] = Value::String("discouraged".to_owned());
     state["rs"]["extensions"].as_object_mut().unwrap().clear();
 
     let type_ = TwoFactorType::WebauthnRegisterChallenge;
@@ -265,13 +266,12 @@ async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, con
 
     // Retrieve and delete the saved challenge state
     let type_ = TwoFactorType::WebauthnRegisterChallenge as i32;
-    let state = match TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
-        Some(tf) => {
-            let state: PasskeyRegistration = serde_json::from_str(&tf.data)?;
-            tf.delete(&conn).await?;
-            state
-        }
-        None => err!("Can't recover challenge"),
+    let state = if let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
+        let state: PasskeyRegistration = serde_json::from_str(&tf.data)?;
+        tf.delete(&conn).await?;
+        state
+    } else {
+        err!("Can't recover challenge")
     };
 
     // Verify the credentials with the saved state
@@ -291,7 +291,7 @@ async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, con
     TwoFactor::new(user.uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&registrations)?)
         .save(&conn)
         .await?;
-    _generate_recover_code(&mut user, &conn).await;
+    generate_recover_code(&mut user, &conn).await;
 
     log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
@@ -342,9 +342,10 @@ async fn delete_webauthn(data: Json<DeleteU2FData>, headers: Headers, conn: DbCo
     // If entry is migrated from u2f, delete the u2f entry as well
     if let Some(mut u2f) = TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::U2f as i32, &conn).await
     {
-        let mut data: Vec<U2FRegistration> = match serde_json::from_str(&u2f.data) {
-            Ok(d) => d,
-            Err(_) => err!("Error parsing U2F data"),
+        let mut data: Vec<U2FRegistration> = if let Ok(d) = serde_json::from_str(&u2f.data) {
+            d
+        } else {
+            err!("Error parsing U2F data")
         };
 
         data.retain(|r| r.reg.key_handle != removed_item.credential.cred_id().as_slice());
@@ -388,10 +389,10 @@ pub async fn generate_webauthn_login(user_id: &UserId, conn: &DbConn) -> JsonRes
 
     // Modify to discourage user verification
     let mut state = serde_json::to_value(&state)?;
-    state["ast"]["policy"] = Value::String("discouraged".to_string());
+    state["ast"]["policy"] = Value::String("discouraged".to_owned());
 
     // Add appid, this is only needed for U2F compatibility, so maybe it can be removed as well
-    let app_id = format!("{}/app-id.json", &CONFIG.domain());
+    let app_id = format!("{}/app-id.json", CONFIG.domain());
     state["ast"]["appid"] = Value::String(app_id.clone());
 
     response.public_key.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
@@ -416,18 +417,17 @@ pub async fn generate_webauthn_login(user_id: &UserId, conn: &DbConn) -> JsonRes
 
 pub async fn validate_webauthn_login(user_id: &UserId, response: &str, conn: &DbConn) -> EmptyResult {
     let type_ = TwoFactorType::WebauthnLoginChallenge as i32;
-    let mut state = match TwoFactor::find_by_user_and_type(user_id, type_, conn).await {
-        Some(tf) => {
-            let state: PasskeyAuthentication = serde_json::from_str(&tf.data)?;
-            tf.delete(conn).await?;
-            state
-        }
-        None => err!(
+    let mut state = if let Some(tf) = TwoFactor::find_by_user_and_type(user_id, type_, conn).await {
+        let state: PasskeyAuthentication = serde_json::from_str(&tf.data)?;
+        tf.delete(conn).await?;
+        state
+    } else {
+        err!(
             "Can't recover login challenge",
             ErrorEvent {
                 event: EventType::UserFailedLogIn2fa
             }
-        ),
+        )
     };
 
     let rsp: PublicKeyCredentialCopy = serde_json::from_str(response)?;

@@ -1,4 +1,6 @@
 pub mod accounts;
+pub mod two_factor;
+
 mod ciphers;
 mod emergency_access;
 mod events;
@@ -6,17 +8,32 @@ mod folders;
 mod organizations;
 mod public;
 mod sends;
-pub mod two_factor;
 
 pub use accounts::purge_auth_requests;
-pub use ciphers::{purge_trashed_ciphers, CipherData, CipherSyncData, CipherSyncType};
+pub use ciphers::{CipherData, CipherSyncData, CipherSyncType, purge_trashed_ciphers};
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use events::{event_cleanup_job, log_event, log_user_event};
-use reqwest::Method;
 pub use sends::purge_sends;
 
+use reqwest::Method;
+use rocket::{Catcher, Route, serde::json::Json, serde::json::Value};
+
+use crate::{
+    CONFIG,
+    api::{EmptyResult, JsonResult, Notify, UpdateType},
+    auth::Headers,
+    db::{
+        DbConn,
+        models::{Membership, MembershipStatus, OrgPolicy, Organization, User},
+    },
+    error::Error,
+    http_client::make_http_request,
+    mail,
+    util::{FeatureFlagFilter, parse_experimental_client_feature_flags},
+};
+
 pub fn routes() -> Vec<Route> {
-    let mut eq_domains_routes = routes![get_eq_domains, post_eq_domains, put_eq_domains];
+    let mut eq_domains_routes = routes![get_settings_domains, post_settings_domains, put_settings_domains];
     let mut hibp_routes = routes![hibp_breach];
     let mut meta_routes = routes![alive, now, version, config, get_api_webauthn];
 
@@ -44,25 +61,6 @@ pub fn events_routes() -> Vec<Route> {
     routes
 }
 
-//
-// Move this somewhere else
-//
-use rocket::{serde::json::Json, serde::json::Value, Catcher, Route};
-
-use crate::{
-    api::{EmptyResult, JsonResult, Notify, UpdateType},
-    auth::Headers,
-    db::{
-        models::{Membership, MembershipStatus, OrgPolicy, Organization, User},
-        DbConn,
-    },
-    error::Error,
-    http_client::make_http_request,
-    mail,
-    util::{parse_experimental_client_feature_flags, FeatureFlagFilter},
-    CONFIG,
-};
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GlobalDomain {
@@ -73,14 +71,16 @@ struct GlobalDomain {
 
 const GLOBAL_DOMAINS: &str = include_str!("../../static/global_domains.json");
 
+#[expect(clippy::needless_pass_by_value, reason = "Not beneficial for Headers")]
 #[get("/settings/domains")]
-fn get_eq_domains(headers: Headers) -> Json<Value> {
-    _get_eq_domains(&headers, false)
+fn get_settings_domains(headers: Headers) -> Json<Value> {
+    get_eq_domains(&headers, false)
 }
 
-fn _get_eq_domains(headers: &Headers, no_excluded: bool) -> Json<Value> {
-    let user = &headers.user;
+fn get_eq_domains(headers: &Headers, no_excluded: bool) -> Json<Value> {
     use serde_json::from_str;
+
+    let user = &headers.user;
 
     let equivalent_domains: Vec<Vec<String>> = from_str(&user.equivalent_domains).unwrap();
     let excluded_globals: Vec<i32> = from_str(&user.excluded_globals).unwrap();
@@ -110,17 +110,23 @@ struct EquivDomainData {
 }
 
 #[post("/settings/domains", data = "<data>")]
-async fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+async fn post_settings_domains(
+    data: Json<EquivDomainData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    use serde_json::to_string;
+
     let data: EquivDomainData = data.into_inner();
 
     let excluded_globals = data.excluded_global_equivalent_domains.unwrap_or_default();
     let equivalent_domains = data.equivalent_domains.unwrap_or_default();
 
     let mut user = headers.user;
-    use serde_json::to_string;
 
-    user.excluded_globals = to_string(&excluded_globals).unwrap_or_else(|_| "[]".to_string());
-    user.equivalent_domains = to_string(&equivalent_domains).unwrap_or_else(|_| "[]".to_string());
+    user.excluded_globals = to_string(&excluded_globals).unwrap_or_else(|_| "[]".to_owned());
+    user.equivalent_domains = to_string(&equivalent_domains).unwrap_or_else(|_| "[]".to_owned());
 
     user.save(&conn).await?;
 
@@ -130,8 +136,13 @@ async fn post_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: Db
 }
 
 #[put("/settings/domains", data = "<data>")]
-async fn put_eq_domains(data: Json<EquivDomainData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    post_eq_domains(data, headers, conn, nt).await
+async fn put_settings_domains(
+    data: Json<EquivDomainData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
+    post_settings_domains(data, headers, conn, nt).await
 }
 
 #[get("/hibp/breach?<username>")]
@@ -206,9 +217,9 @@ fn config() -> Json<Value> {
     // iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
     let mut feature_states = parse_experimental_client_feature_flags(
         &CONFIG.experimental_client_feature_flags(),
-        FeatureFlagFilter::ValidOnly,
+        &FeatureFlagFilter::ValidOnly,
     );
-    feature_states.insert("pm-19148-innovation-archive".to_string(), true);
+    feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
@@ -278,9 +289,8 @@ async fn accept_org_invite(
     member.save(conn).await?;
 
     if CONFIG.mail_enabled() {
-        let org = match Organization::find_by_uuid(&member.org_uuid, conn).await {
-            Some(org) => org,
-            None => err!("Organization not found."),
+        let Some(org) = Organization::find_by_uuid(&member.org_uuid, conn).await else {
+            err!("Organization not found.")
         };
         // User was invited to an organization, so they must be confirmed manually after acceptance
         mail::send_invite_accepted(&user.email, &member.invited_by_email.unwrap_or(org.billing_email), &org.name)
