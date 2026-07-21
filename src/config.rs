@@ -1619,15 +1619,22 @@ impl Config {
         self.update_config(builder, false).await
     }
 
-    /// Returns whether admin page TOTP is enabled, and whether the secret was enrolled
-    /// via the admin page ("enrolled") or comes from the environment ("environment").
+    /// Returns whether admin page TOTP is active, and where the secret comes from:
+    /// - `"environment"`: set via the `ADMIN_TOTP_SECRET` env var; it can only be changed
+    ///   there and therefore cannot be disabled from the admin page.
+    /// - `"config"`: present in the saved config file; it can be managed from the admin page.
+    ///   A secret written to the config file by hand is indistinguishable from one enrolled
+    ///   via the admin page, so both are reported as `"config"`.
+    ///
+    /// The environment is checked first: if the secret is set there it stays effective even
+    /// after removing a (stale) copy from the config file, so it must not be reported as removable.
     pub fn admin_totp_status(&self) -> (bool, &'static str) {
         let inner = self.inner.read().unwrap();
         let is_set = |v: &Option<String>| v.as_deref().is_some_and(|s| !s.trim().is_empty());
-        if is_set(&inner._usr.admin_totp_secret) {
-            (true, "enrolled")
-        } else if is_set(&inner._env.admin_totp_secret) {
+        if is_set(&inner._env.admin_totp_secret) {
             (true, "environment")
+        } else if is_set(&inner._usr.admin_totp_secret) {
+            (true, "config")
         } else {
             (false, "none")
         }
