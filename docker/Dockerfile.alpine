@@ -66,7 +66,7 @@ RUN USER=root cargo new --bin /app
 WORKDIR /app
 
 # Environment variables for Cargo on Alpine based builds
-RUN echo "export CARGO_TARGET=${RUST_MUSL_CROSS_TARGET}" >> /env-cargo && \
+RUN echo "export CARGO_TARGET=${CARGO_BUILD_TARGET}" >> /env-cargo && \
     # Output the current contents of the file
     cat /env-cargo
 
