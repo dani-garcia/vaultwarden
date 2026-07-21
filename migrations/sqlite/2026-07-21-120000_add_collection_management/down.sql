@@ -1,0 +1,4 @@
+ALTER TABLE organizations DROP COLUMN allow_admin_access_to_all_collection_items;
+ALTER TABLE organizations DROP COLUMN limit_collection_creation;
+ALTER TABLE organizations DROP COLUMN limit_collection_deletion;
+ALTER TABLE organizations DROP COLUMN limit_item_deletion;

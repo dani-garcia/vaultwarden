@@ -126,6 +126,10 @@ table! {
         billing_email -> Text,
         private_key -> Nullable<Text>,
         public_key -> Nullable<Text>,
+        allow_admin_access_to_all_collection_items -> Bool,
+        limit_collection_creation -> Bool,
+        limit_collection_deletion -> Bool,
+        limit_item_deletion -> Bool,
     }
 }
 

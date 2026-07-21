@@ -39,6 +39,7 @@ pub fn routes() -> Vec<Route> {
         get_collection_users,
         put_organization,
         post_organization,
+        put_organization_collection_management,
         post_organization_collections,
         post_bulk_access_collections,
         post_organization_collection_update,
@@ -124,6 +125,15 @@ struct OrgData {
 struct OrganizationUpdateData {
     billing_email: String,
     name: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct OrganizationCollectionManagementUpdateData {
+    allow_admin_access_to_all_collection_items: Option<bool>,
+    limit_collection_creation: Option<bool>,
+    limit_collection_deletion: Option<bool>,
+    limit_item_deletion: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -323,6 +333,52 @@ async fn post_organization(
 
     org.name = data.name;
     org.billing_email = data.billing_email.to_lowercase();
+
+    org.save(&conn).await?;
+
+    log_event(
+        EventType::OrganizationUpdated as i32,
+        org_id.as_ref(),
+        &org_id,
+        &headers.user.uuid,
+        headers.device.atype,
+        &headers.ip.ip,
+        &conn,
+    )
+    .await;
+
+    Ok(Json(org.to_json()))
+}
+
+#[put("/organizations/<org_id>/collection-management", data = "<data>")]
+async fn put_organization_collection_management(
+    org_id: OrganizationId,
+    headers: OwnerHeaders,
+    data: Json<OrganizationCollectionManagementUpdateData>,
+    conn: DbConn,
+) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+
+    let data: OrganizationCollectionManagementUpdateData = data.into_inner();
+
+    let Some(mut org) = Organization::find_by_uuid(&org_id, &conn).await else {
+        err!("Organization not found")
+    };
+
+    if let Some(flag) = data.allow_admin_access_to_all_collection_items {
+        org.allow_admin_access_to_all_collection_items = flag;
+    };
+    if let Some(flag) = data.limit_collection_creation {
+        org.limit_collection_creation = flag;
+    };
+    if let Some(flag) = data.limit_collection_deletion {
+        org.limit_collection_deletion = flag;
+    };
+    if let Some(flag) = data.limit_item_deletion {
+        org.limit_item_deletion = flag;
+    };
 
     org.save(&conn).await?;
 

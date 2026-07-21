@@ -38,6 +38,11 @@ pub struct Organization {
     pub billing_email: String,
     pub private_key: Option<String>,
     pub public_key: Option<String>,
+
+    pub allow_admin_access_to_all_collection_items: bool,
+    pub limit_collection_creation: bool,
+    pub limit_collection_deletion: bool,
+    pub limit_item_deletion: bool,
 }
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -193,6 +198,10 @@ impl Organization {
             billing_email,
             private_key,
             public_key,
+            allow_admin_access_to_all_collection_items: true,
+            limit_collection_creation: false,
+            limit_collection_deletion: false,
+            limit_item_deletion: false,
         }
     }
     // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/Organizations/OrganizationResponseModel.cs
@@ -219,9 +228,10 @@ impl Organization {
             "useApi": true,
             "hasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
             "useResetPassword": CONFIG.mail_enabled(),
-            "allowAdminAccessToAllCollectionItems": true,
-            "limitCollectionCreation": true,
-            "limitCollectionDeletion": true,
+            "allowAdminAccessToAllCollectionItems": self.allow_admin_access_to_all_collection_items,
+            "limitCollectionCreation": self.limit_collection_creation,
+            "limitCollectionDeletion": self.limit_collection_deletion,
+            "limitItemDeletion": self.limit_item_deletion,
 
             "businessName": self.name,
             "businessAddress1": null,
@@ -509,11 +519,12 @@ impl Membership {
             "familySponsorshipValidUntil": null,
             "familySponsorshipToDelete": null,
             "accessSecretsManager": false,
-            // limit collection creation to managers with access_all permission to prevent issues
-            "limitCollectionCreation": self.atype < MembershipType::Manager || !self.access_all,
-            "limitCollectionDeletion": true,
-            "limitItemDeletion": false,
-            "allowAdminAccessToAllCollectionItems": true,
+
+            "allowAdminAccessToAllCollectionItems": org.allow_admin_access_to_all_collection_items,
+            "limitCollectionCreation": org.limit_collection_creation,
+            "limitCollectionDeletion": org.limit_collection_deletion,
+            "limitItemDeletion": org.limit_item_deletion,
+
             "userIsManagedByOrganization": false, // Means not managed via the Members UI, like SSO
             "userIsClaimedByOrganization": false, // The new key instead of the obsolete userIsManagedByOrganization
 
