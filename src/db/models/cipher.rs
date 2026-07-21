@@ -187,6 +187,8 @@ impl Cipher {
             (false, false, false)
         };
 
+        let can_delete = self.is_deletable_by_user(user_uuid, conn).await;
+
         let fields_json: Vec<_> = self
             .fields
             .as_ref()
@@ -393,8 +395,8 @@ impl Cipher {
             json_object["viewPassword"] = json!(!hide_passwords);
             // The new key used by clients since v2025.6.0
             json_object["permissions"] = json!({
-                "delete": !read_only,
-                "restore": !read_only,
+                "delete": can_delete && self.deleted_at.is_none(),
+                "restore": can_delete && self.deleted_at.is_none(),
             });
         }
 
