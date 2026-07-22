@@ -555,7 +555,13 @@ async fn post_organization_collections(
     let data: FullCollectionData = data.into_inner();
     data.validate(&org_id, &conn).await?;
 
-    if headers.membership.atype == MembershipType::Manager && !headers.membership.access_all {
+    let Some(org_settings) = Organization::find_collection_settings_by_uuid(&org_id, &conn).await else {
+        err!("Can't find organization details")
+    };
+
+    if headers.membership.atype == MembershipType::Manager
+        && (!headers.membership.access_all || org_settings.limit_collection_creation)
+    {
         err!("You don't have permission to create collections")
     }
 
@@ -1854,6 +1860,10 @@ async fn post_org_import(
     if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
+    let Some(org_settings) = Organization::find_collection_settings_by_uuid(&org_id, &conn).await else {
+        err!("Can't find organization details")
+    };
+
     let data: ImportData = data.into_inner();
 
     // Validate the import before continuing
@@ -1878,7 +1888,9 @@ async fn post_org_import(
         } else {
             // We do not allow users or managers which can not manage all collections to create new collections
             // If there is any collection other than an existing import collection, abort the import.
-            if headers.membership.atype <= MembershipType::Manager && !headers.membership.has_full_access() {
+            if headers.membership.atype <= MembershipType::Manager
+                && (!headers.membership.has_full_access() || org_settings.limit_collection_creation)
+            {
                 err!(Compact, "The current user isn't allowed to create new collections")
             }
             let new_collection = Collection::new(org_id.clone(), col.name, col.external_id);
