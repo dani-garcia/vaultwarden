@@ -20,8 +20,10 @@ WHERE atype = 4
   AND EXISTS (
     SELECT 1
     FROM groups_users
-    INNER JOIN groups ON groups.uuid = groups_users.groups_uuid
+    -- `groups` is a reserved word in MySQL 8 and must be quoted, matching the existing
+    -- `2022-07-27-110000_add_group_support` migration. (PostgreSQL/SQLite do not reserve it.)
+    INNER JOIN `groups` ON `groups`.uuid = groups_users.groups_uuid
     WHERE groups_users.users_organizations_uuid = users_organizations.uuid
-      AND groups.organizations_uuid = users_organizations.org_uuid
-      AND groups.access_all = TRUE
+      AND `groups`.organizations_uuid = users_organizations.org_uuid
+      AND `groups`.access_all = TRUE
   );
