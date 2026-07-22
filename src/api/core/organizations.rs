@@ -767,9 +767,18 @@ async fn delete_organization_collection_impl(
     if org_id != &headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
+    let Some(org_settings) = Organization::find_collection_settings_by_uuid(&org_id, &conn).await else {
+        err!("Can't find organization details")
+    };
+
     let Some(collection) = Collection::find_by_uuid_and_org(col_id, org_id, conn).await else {
         err!("Collection not found", "Collection does not exist or does not belong to this organization")
     };
+
+    if headers.membership_type <= MembershipType::Manager && org_settings.limit_collection_deletion {
+        err!("The current user isn't allowed to delete this collection")
+    }
+
     log_event(
         EventType::CollectionDeleted as i32,
         &collection.uuid,
