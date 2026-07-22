@@ -43,7 +43,7 @@ pub struct OrganizationCollectionSettings(i16);
 
 impl OrganizationCollectionSettings {
     pub fn get_flag(self, flag: OrgCollectionSetting) -> bool {
-        (self.0 | flag as i16) > 0
+        (self.0 & flag as i16) > 0
     }
 
     pub fn set_flag(&mut self, flag: OrgCollectionSetting, val: bool) {
