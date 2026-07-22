@@ -61,7 +61,7 @@ unstable = []
 # Logging
 syslog = "7.0.0"
 # Filesystem access checks (e.g. sendmail executability for the current user)
-nix = { version = "0.30.1", default-features = false, features = ["fs"] }
+nix = { version = "0.31.3", default-features = false, features = ["fs"] }
 
 [dependencies]
 macros = { path = "./macros" }
