@@ -395,8 +395,8 @@ impl Cipher {
             json_object["viewPassword"] = json!(!hide_passwords);
             // The new key used by clients since v2025.6.0
             json_object["permissions"] = json!({
-                "delete": can_delete && self.deleted_at.is_none(),
-                "restore": can_delete && self.deleted_at.is_none(),
+                "delete": can_delete,
+                "restore": can_delete,
             });
         }
 

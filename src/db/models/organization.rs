@@ -557,9 +557,9 @@ impl Membership {
                 "accessImportExport": false,
                 "accessReports": false,
                 // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": membership_type == 4 && self.access_all,
+                "createNewCollections": membership_type == 4 && self.access_all && !org.collection_settings.limit_collection_creation,
                 "editAnyCollection": membership_type == 4 && self.access_all,
-                "deleteAnyCollection": membership_type == 4 && self.access_all,
+                "deleteAnyCollection": membership_type == 4 && self.access_all && !org.collection_settings.limit_collection_deletion,
                 "manageGroups": false,
                 "managePolicies": false,
                 "manageSso": false, // Not supported
