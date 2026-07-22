@@ -31,8 +31,8 @@ pub use self::folder::{Folder, FolderCipher, FolderId};
 pub use self::group::{CollectionGroup, Group, GroupId, GroupUser};
 pub use self::org_policy::{OrgPolicy, OrgPolicyId, OrgPolicyType};
 pub use self::organization::{
-    Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, Organization, OrganizationApiKey,
-    OrganizationId,
+    Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, OrgCollectionSetting, Organization,
+    OrganizationApiKey, OrganizationId,
 };
 pub use self::send::{Send, SendFileId, SendId, SendType};
 pub use self::sso_auth::{OIDCAuthenticatedUser, OIDCCodeResponseError, SsoAuth};

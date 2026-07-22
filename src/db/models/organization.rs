@@ -5,15 +5,9 @@ use std::{
 
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
-use diesel::{
-    deserialize::FromSql,
-    prelude::*,
-    serialize::{IsNull, ToSql},
-    sql_types::SmallInt,
-};
+use diesel::{deserialize::FromSql, prelude::*, serialize::ToSql, sql_types::SmallInt};
 use num_traits::FromPrimitive;
 #[cfg(feature = "sqlite")]
-use num_traits::ToPrimitive;
 use serde_json::Value;
 
 use crate::{
@@ -35,59 +29,39 @@ use super::{
     OrgPolicyType, TwoFactor, User, UserId,
 };
 
+#[repr(i16)]
+pub enum OrgCollectionSetting {
+    AllowAdminAccessToAllCollectionItems = 0b1,
+    LimitCollectionCreation = 0b10,
+    LimitCollectionDeletion = 0b100,
+    LimitItemDeletion = 0b1000,
+}
+
 #[derive(Debug, Clone, Copy, FromSqlRow, AsExpression)]
 #[diesel(sql_type = SmallInt)]
-#[allow(clippy::struct_excessive_bools)]
-pub struct OrganizationCollectionSettings {
-    pub allow_admin_access_to_all_collection_items: bool,
-    pub limit_collection_creation: bool,
-    pub limit_collection_deletion: bool,
-    pub limit_item_deletion: bool,
-}
+pub struct OrganizationCollectionSettings(i16);
 
-impl From<&OrganizationCollectionSettings> for i16 {
-    fn from(value: &OrganizationCollectionSettings) -> Self {
-        i16::from(value.allow_admin_access_to_all_collection_items)
-            | (0b10 * i16::from(value.limit_collection_creation))
-            | (0b100 * i16::from(value.limit_collection_deletion))
-            | (0b1000 * i16::from(value.limit_item_deletion))
+impl OrganizationCollectionSettings {
+    pub fn get_flag(self, flag: OrgCollectionSetting) -> bool {
+        (self.0 | flag as i16) > 0
+    }
+
+    pub fn set_flag(&mut self, flag: OrgCollectionSetting, val: bool) {
+        if val {
+            self.0 |= flag as i16;
+        } else {
+            self.0 &= i16::MAX - flag as i16;
+        }
     }
 }
 
-#[cfg(feature = "sqlite")]
-use diesel::sqlite::Sqlite;
-#[cfg(feature = "sqlite")]
-impl ToSql<SmallInt, Sqlite> for OrganizationCollectionSettings
+impl<DB> ToSql<SmallInt, DB> for OrganizationCollectionSettings
 where
-    i16: ToSql<SmallInt, Sqlite>,
+    DB: diesel::backend::Backend,
+    i16: ToSql<SmallInt, DB>,
 {
-    fn to_sql<'b>(&'b self, out: &mut diesel::serialize::Output<'b, '_, Sqlite>) -> diesel::serialize::Result {
-        out.set_value(i16::from(self).to_i32());
-        Ok(IsNull::No)
-    }
-}
-
-#[cfg(feature = "postgresql")]
-use diesel::pg::Pg;
-#[cfg(feature = "postgresql")]
-impl ToSql<SmallInt, Pg> for OrganizationCollectionSettings
-where
-    i16: ToSql<SmallInt, Pg>,
-{
-    fn to_sql<'b>(&'b self, out: &mut diesel::serialize::Output<'b, '_, Pg>) -> diesel::serialize::Result {
-        <i16 as ToSql<SmallInt, Pg>>::to_sql(&i16::from(self), &mut out.reborrow())
-    }
-}
-
-#[cfg(feature = "mysql")]
-use diesel::mysql::Mysql;
-#[cfg(feature = "mysql")]
-impl ToSql<SmallInt, Mysql> for OrganizationCollectionSettings
-where
-    i16: ToSql<SmallInt, Mysql>,
-{
-    fn to_sql<'b>(&'b self, out: &mut diesel::serialize::Output<'b, '_, Mysql>) -> diesel::serialize::Result {
-        <i16 as ToSql<SmallInt, Mysql>>::to_sql(&i16::from(self), &mut out.reborrow())
+    fn to_sql<'b>(&'b self, out: &mut diesel::serialize::Output<'b, '_, DB>) -> diesel::serialize::Result {
+        self.0.to_sql(out)
     }
 }
 
@@ -98,12 +72,7 @@ where
 {
     fn from_sql(bytes: DB::RawValue<'_>) -> diesel::deserialize::Result<Self> {
         let val = i16::from_sql(bytes)?;
-        Ok(Self {
-            allow_admin_access_to_all_collection_items: (val & 0b1) != 0,
-            limit_collection_creation: (val & 0b10) != 0,
-            limit_collection_deletion: (val & 0b100) != 0,
-            limit_item_deletion: (val & 0b1000) != 0,
-        })
+        Ok(Self(val))
     }
 }
 
@@ -274,12 +243,11 @@ impl Organization {
             billing_email,
             private_key,
             public_key,
-            collection_settings: OrganizationCollectionSettings {
-                allow_admin_access_to_all_collection_items: true,
-                limit_collection_creation: false,
-                limit_collection_deletion: false,
-                limit_item_deletion: false,
-            },
+
+            // Collection Management Settings default to AllowAdminAccessToAllCollectionItems
+            collection_settings: OrganizationCollectionSettings(
+                OrgCollectionSetting::AllowAdminAccessToAllCollectionItems as i16,
+            ),
         }
     }
     // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/Organizations/OrganizationResponseModel.cs
@@ -306,10 +274,10 @@ impl Organization {
             "useApi": true,
             "hasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
             "useResetPassword": CONFIG.mail_enabled(),
-            "allowAdminAccessToAllCollectionItems": self.collection_settings.allow_admin_access_to_all_collection_items,
-            "limitCollectionCreation": self.collection_settings.limit_collection_creation,
-            "limitCollectionDeletion": self.collection_settings.limit_collection_deletion,
-            "limitItemDeletion": self.collection_settings.limit_item_deletion,
+            "allowAdminAccessToAllCollectionItems": self.collection_settings.get_flag(OrgCollectionSetting::AllowAdminAccessToAllCollectionItems),
+            "limitCollectionCreation": self.collection_settings.get_flag(OrgCollectionSetting::LimitCollectionCreation),
+            "limitCollectionDeletion": self.collection_settings.get_flag(OrgCollectionSetting::LimitCollectionDeletion),
+            "limitItemDeletion": self.collection_settings.get_flag(OrgCollectionSetting::LimitItemDeletion),
 
             "businessName": self.name,
             "businessAddress1": null,
@@ -557,9 +525,9 @@ impl Membership {
                 "accessImportExport": false,
                 "accessReports": false,
                 // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": membership_type == 4 && self.access_all && !org.collection_settings.limit_collection_creation,
+                "createNewCollections": membership_type == 4 && self.access_all && !org.collection_settings.get_flag(OrgCollectionSetting::LimitCollectionCreation),
                 "editAnyCollection": membership_type == 4 && self.access_all,
-                "deleteAnyCollection": membership_type == 4 && self.access_all && !org.collection_settings.limit_collection_deletion,
+                "deleteAnyCollection": membership_type == 4 && self.access_all && !org.collection_settings.get_flag(OrgCollectionSetting::LimitCollectionCreation),
                 "manageGroups": false,
                 "managePolicies": false,
                 "manageSso": false, // Not supported
@@ -612,10 +580,10 @@ impl Membership {
             "familySponsorshipToDelete": null,
             "accessSecretsManager": false,
 
-            "allowAdminAccessToAllCollectionItems": org.collection_settings.allow_admin_access_to_all_collection_items,
-            "limitCollectionCreation": org.collection_settings.limit_collection_creation,
-            "limitCollectionDeletion": org.collection_settings.limit_collection_deletion,
-            "limitItemDeletion": org.collection_settings.limit_item_deletion,
+            "allowAdminAccessToAllCollectionItems": org.collection_settings.get_flag(OrgCollectionSetting::AllowAdminAccessToAllCollectionItems),
+            "limitCollectionCreation": org.collection_settings.get_flag(OrgCollectionSetting::LimitCollectionCreation),
+            "limitCollectionDeletion": org.collection_settings.get_flag(OrgCollectionSetting::LimitCollectionDeletion),
+            "limitItemDeletion": org.collection_settings.get_flag(OrgCollectionSetting::LimitItemDeletion),
 
             "userIsManagedByOrganization": false, // Means not managed via the Members UI, like SSO
             "userIsClaimedByOrganization": false, // The new key instead of the obsolete userIsManagedByOrganization

@@ -6,9 +6,9 @@ use serde_json::Value;
 
 use crate::{
     CONFIG,
-    api::admin::FAKE_ADMIN_UUID,
     api::{
         EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
+        admin::FAKE_ADMIN_UUID,
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
     auth::{AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite},
@@ -17,7 +17,8 @@ use crate::{
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
             Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User, UserId,
+            OrgCollectionSetting, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User,
+            UserId,
         },
     },
     mail,
@@ -367,11 +368,16 @@ async fn put_organization_collection_management(
         err!("Organization not found")
     };
 
-    org.collection_settings.allow_admin_access_to_all_collection_items =
-        data.allow_admin_access_to_all_collection_items.unwrap_or(false);
-    org.collection_settings.limit_collection_creation = data.limit_collection_creation.unwrap_or(false);
-    org.collection_settings.limit_collection_deletion = data.limit_collection_deletion.unwrap_or(false);
-    org.collection_settings.limit_item_deletion = data.limit_item_deletion.unwrap_or(false);
+    org.collection_settings.set_flag(
+        OrgCollectionSetting::AllowAdminAccessToAllCollectionItems,
+        data.allow_admin_access_to_all_collection_items.unwrap_or(false),
+    );
+    org.collection_settings
+        .set_flag(OrgCollectionSetting::LimitCollectionCreation, data.limit_collection_creation.unwrap_or(false));
+    org.collection_settings
+        .set_flag(OrgCollectionSetting::LimitCollectionDeletion, data.limit_collection_deletion.unwrap_or(false));
+    org.collection_settings
+        .set_flag(OrgCollectionSetting::LimitItemDeletion, data.limit_item_deletion.unwrap_or(false));
 
     org.save(&conn).await?;
 
@@ -560,7 +566,7 @@ async fn post_organization_collections(
     };
 
     if headers.membership.atype == MembershipType::Manager
-        && (!headers.membership.access_all || org_settings.limit_collection_creation)
+        && (!headers.membership.access_all || org_settings.get_flag(OrgCollectionSetting::LimitCollectionCreation))
     {
         err!("You don't have permission to create collections")
     }
@@ -775,7 +781,9 @@ async fn delete_organization_collection_impl(
         err!("Collection not found", "Collection does not exist or does not belong to this organization")
     };
 
-    if headers.membership_type <= MembershipType::Manager && org_settings.limit_collection_deletion {
+    if headers.membership_type <= MembershipType::Manager
+        && org_settings.get_flag(OrgCollectionSetting::LimitCollectionDeletion)
+    {
         err!("The current user isn't allowed to delete this collection")
     }
 
@@ -1898,7 +1906,8 @@ async fn post_org_import(
             // We do not allow users or managers which can not manage all collections to create new collections
             // If there is any collection other than an existing import collection, abort the import.
             if headers.membership.atype <= MembershipType::Manager
-                && (!headers.membership.has_full_access() || org_settings.limit_collection_creation)
+                && (!headers.membership.has_full_access()
+                    || org_settings.get_flag(OrgCollectionSetting::LimitCollectionCreation))
             {
                 err!(Compact, "The current user isn't allowed to create new collections")
             }

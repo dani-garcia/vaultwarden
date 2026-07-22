@@ -13,6 +13,7 @@ use crate::{
     },
     db::{
         DbConn,
+        models::OrgCollectionSetting,
         schema::{
             ciphers, ciphers_collections, collections, collections_groups, folders, folders_ciphers, groups,
             groups_users, users_collections, users_organizations,
@@ -728,7 +729,7 @@ impl Cipher {
     pub async fn is_deletable_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
         let manage_required = match self.organization_uuid {
             Some(ref org_id) => match Organization::find_collection_settings_by_uuid(org_id, conn).await {
-                Some(settings) => settings.limit_item_deletion,
+                Some(settings) => settings.get_flag(OrgCollectionSetting::LimitItemDeletion),
                 None => false,
             },
             None => false,
