@@ -367,18 +367,11 @@ async fn put_organization_collection_management(
         err!("Organization not found")
     };
 
-    if let Some(flag) = data.allow_admin_access_to_all_collection_items {
-        org.allow_admin_access_to_all_collection_items = flag;
-    };
-    if let Some(flag) = data.limit_collection_creation {
-        org.limit_collection_creation = flag;
-    };
-    if let Some(flag) = data.limit_collection_deletion {
-        org.limit_collection_deletion = flag;
-    };
-    if let Some(flag) = data.limit_item_deletion {
-        org.limit_item_deletion = flag;
-    };
+    org.collection_settings.allow_admin_access_to_all_collection_items =
+        data.allow_admin_access_to_all_collection_items.unwrap_or(false);
+    org.collection_settings.limit_collection_creation = data.limit_collection_creation.unwrap_or(false);
+    org.collection_settings.limit_collection_deletion = data.limit_collection_deletion.unwrap_or(false);
+    org.collection_settings.limit_item_deletion = data.limit_item_deletion.unwrap_or(false);
 
     org.save(&conn).await?;
 
