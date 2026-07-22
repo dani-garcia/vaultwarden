@@ -6,7 +6,10 @@ use crate::{
     CONFIG,
     api::{EmptyResult, JsonResult},
     auth::Headers,
-    db::DbConn,
+    db::{
+        DbConn,
+        models::{Membership, MembershipType, UserId},
+    },
 };
 
 pub fn routes() -> Vec<Route> {
@@ -33,6 +36,13 @@ pub struct SetKeyConnectorKeyData {
     org_identifier: String,
 }
 
+async fn can_use_key_connector(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+    if Membership::find_by_user(user_uuid, conn).await.iter().any(|m| m.atype >= MembershipType::Admin) {
+        err!("Owners and admins cannot use Key Connector and must keep a master password");
+    }
+    Ok(())
+}
+
 // Called by the client to finish provisioning a new SSO user whose master key
 // was just stored on the key connector.
 #[post("/accounts/set-key-connector-key", data = "<data>")]
@@ -47,6 +57,8 @@ async fn post_set_key_connector_key(data: Json<SetKeyConnectorKeyData>, headers:
     if user.private_key.is_some() {
         err!("Account already initialized, cannot set Key Connector key");
     }
+
+    can_use_key_connector(&user.uuid, &conn).await?;
 
     user.client_kdf_type = data.kdf;
     user.client_kdf_iter = data.kdf_iterations;
@@ -77,6 +89,8 @@ async fn post_convert_to_key_connector(headers: Headers, conn: DbConn) -> EmptyR
     if user.private_key.is_none() {
         err!("Account is not initialized, cannot convert to Key Connector");
     }
+
+    can_use_key_connector(&user.uuid, &conn).await?;
 
     user.password_hash = Vec::new();
     user.password_hint = None;
