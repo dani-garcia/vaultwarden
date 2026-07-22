@@ -37,6 +37,7 @@ use super::{
 
 #[derive(Debug, Clone, Copy, FromSqlRow, AsExpression)]
 #[diesel(sql_type = SmallInt)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct OrganizationCollectionSettings {
     pub allow_admin_access_to_all_collection_items: bool,
     pub limit_collection_creation: bool,
@@ -46,10 +47,10 @@ pub struct OrganizationCollectionSettings {
 
 impl From<&OrganizationCollectionSettings> for i16 {
     fn from(value: &OrganizationCollectionSettings) -> Self {
-        (0b1 * (value.allow_admin_access_to_all_collection_items as i16))
-            | (0b10 * (value.limit_collection_creation as i16))
-            | (0b100 * (value.limit_collection_deletion as i16))
-            | (0b1000 * (value.limit_item_deletion as i16))
+        i16::from(value.allow_admin_access_to_all_collection_items)
+            | (0b10 * i16::from(value.limit_collection_creation))
+            | (0b100 * i16::from(value.limit_collection_deletion))
+            | (0b1000 * i16::from(value.limit_item_deletion))
     }
 }
 

@@ -767,7 +767,7 @@ async fn delete_organization_collection_impl(
     if org_id != &headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let Some(org_settings) = Organization::find_collection_settings_by_uuid(&org_id, &conn).await else {
+    let Some(org_settings) = Organization::find_collection_settings_by_uuid(org_id, conn).await else {
         err!("Can't find organization details")
     };
 
