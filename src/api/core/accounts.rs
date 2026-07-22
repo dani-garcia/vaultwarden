@@ -693,10 +693,6 @@ struct UnlockData {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ChangeKdfData {
-    #[allow(dead_code)]
-    new_master_password_hash: String,
-    #[allow(dead_code)]
-    key: String,
     authentication_data: AuthenticationData,
     unlock_data: UnlockData,
     master_password_hash: String,
