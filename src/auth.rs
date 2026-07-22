@@ -1016,6 +1016,24 @@ async fn can_manage_collection(
     }
 }
 
+/// Whether `membership` may edit (rewrite the access of) `collection_uuid`, using exactly the same
+/// Custom-aware rules as the path-based `ManagerHeaders` guard (`collection_edit_access`): Edit any
+/// collection (or Admin/Owner) may edit every collection, otherwise only collections on which the
+/// member holds a real per-collection Manage grant. In particular, a Custom member's membership or
+/// group `access_all` does NOT satisfy this — it must be an explicit `users_collections.manage` /
+/// `collections_groups.manage` assignment, exactly as an in-path collection edit would require.
+///
+/// Body-param endpoints (e.g. bulk collection access) take collection ids in the request body and
+/// therefore cannot use `ManagerHeaders`; they must run this per collection to stay consistent with
+/// the single-collection edit endpoint.
+pub(crate) async fn can_edit_collection(
+    membership: &Membership,
+    collection_uuid: &CollectionId,
+    conn: &DbConn,
+) -> bool {
+    can_manage_collection(collection_edit_access(membership), membership, collection_uuid, conn).await
+}
+
 /// ManagerHeaders authorizes collection updates. A Custom member with Edit any collection can
 /// update every collection; otherwise the caller must be at least a legacy Manager and have the
 /// per-collection Manage permission. Read and delete use separate guards so Edit cannot

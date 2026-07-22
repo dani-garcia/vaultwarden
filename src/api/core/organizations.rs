@@ -629,13 +629,15 @@ async fn post_bulk_access_collections(
         err!("Can't find organization details")
     }
 
-    // Security: authorization is enforced per collection below via `is_manageable_by_user`, which
-    // requires a real manage grant on each requested collection (direct users_collections.manage,
-    // a manage group, membership/group access_all, or Admin/Owner). This matches the single
-    // collection edit endpoint and the pre-existing behavior of this endpoint. A custom user with
-    // only manage_users / manage_groups / manage_policies holds no such grant and is therefore
-    // rejected, while a Manager/Custom member who manages some collections keeps the ability to
-    // bulk-edit exactly those (a blanket full-access requirement would wrongly deny that here).
+    // Security (F-1): authorization is enforced per collection below via `auth::can_edit_collection`,
+    // the exact same Custom-aware check the single-collection edit endpoint (`ManagerHeaders`) uses.
+    // Edit any collection (or Admin/Owner) may bulk-edit every collection; a legacy Manager keeps its
+    // broad per-collection helper; any other Custom member must hold a real per-collection Manage
+    // grant. In particular a Custom member's membership/group `access_all` does NOT satisfy this here
+    // (it did under the previous `is_manageable_by_user` check, which diverged from the single-edit
+    // endpoint). A custom user with only manage_users / manage_groups / manage_policies holds no such
+    // grant and is rejected, while a member who manages some collections keeps the ability to
+    // bulk-edit exactly those.
 
     // Security (audit H-3) and atomicity (audit M-2): validate the whole request against this
     // organization *before* mutating anything. Every collection must exist in the org and be
@@ -659,7 +661,7 @@ async fn post_bulk_access_collections(
             err!("Collection not found")
         };
 
-        if !collection.is_manageable_by_user(&headers.membership.user_uuid, &conn).await {
+        if !crate::auth::can_edit_collection(&headers.membership, &collection.uuid, &conn).await {
             err!("Collection not found", "The current user isn't a manager for this collection")
         }
 
