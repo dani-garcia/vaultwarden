@@ -1,4 +1,4 @@
-use std::{sync::LazyLock, time::Duration};
+use std::{net::IpAddr, sync::LazyLock, time::Duration};
 
 use chrono::Utc;
 use derive_more::{AsRef, Deref, Display, From, Into};
@@ -7,14 +7,14 @@ use url::Url;
 
 use crate::{
     CONFIG,
-    api::ApiResult,
+    api::{ApiResult, core::log_event},
     auth,
     auth::{AuthMethod, AuthTokens, BW_EXPIRATION, DEFAULT_REFRESH_VALIDITY, TokenWrapper},
     db::{
         DbConn,
         models::{
-            Device, Membership, MembershipStatus, MembershipType, OIDCAuthenticatedUser, Organization, OrganizationId,
-            SsoAuth, SsoUser, User,
+            Device, EventType, Membership, MembershipStatus, MembershipType, OIDCAuthenticatedUser, Organization,
+            OrganizationId, SsoAuth, SsoUser, User,
         },
     },
     sso_client::Client,
@@ -319,6 +319,7 @@ pub async fn exchange_code(
 }
 
 // User has passed 2FA flow we can delete auth info from database
+#[expect(clippy::too_many_arguments)]
 pub async fn redeem(
     device: &Device,
     user: &User,
@@ -326,12 +327,13 @@ pub async fn redeem(
     sso_user: Option<SsoUser>,
     sso_auth: SsoAuth,
     auth_user: OIDCAuthenticatedUser,
+    ip: &IpAddr,
     conn: &DbConn,
 ) -> ApiResult<AuthTokens> {
     sso_auth.delete(conn).await?;
 
     if sso_user.is_none() {
-        enroll_user_in_default_organization(user, conn).await?;
+        invite_user_to_default_organization(user, device.atype, ip, conn).await?;
 
         let user_sso = SsoUser {
             user_uuid: user.uuid.clone(),
@@ -359,7 +361,12 @@ pub async fn redeem(
     }
 }
 
-async fn enroll_user_in_default_organization(user: &User, conn: &DbConn) -> ApiResult<()> {
+async fn invite_user_to_default_organization(
+    user: &User,
+    device_type: i32,
+    ip: &IpAddr,
+    conn: &DbConn,
+) -> ApiResult<()> {
     let Some(org_uuid) = CONFIG.sso_default_organization_uuid() else {
         return Ok(());
     };
@@ -374,11 +381,14 @@ async fn enroll_user_in_default_organization(user: &User, conn: &DbConn) -> ApiR
     }
 
     let mut membership = Membership::new(user.uuid.clone(), org_id.clone(), None);
-    membership.status = MembershipStatus::Accepted as i32;
+    membership.status = MembershipStatus::Invited as i32;
     membership.atype = MembershipType::User as i32;
     membership.save(conn).await?;
 
-    info!("Added SSO user {} to default organization {} pending confirmation", user.uuid, org_id);
+    log_event(EventType::OrganizationUserInvited as i32, &membership.uuid, &org_id, &user.uuid, device_type, ip, conn)
+        .await;
+
+    info!("Invited SSO user {} to default organization {}", user.uuid, org_id);
     Ok(())
 }
 
