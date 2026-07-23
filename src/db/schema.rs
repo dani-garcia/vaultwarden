@@ -247,6 +247,9 @@ table! {
         create_new_collections -> Bool,
         edit_any_collection -> Bool,
         delete_any_collection -> Bool,
+        access_event_logs -> Bool,
+        access_import_export -> Bool,
+        access_reports -> Bool,
     }
 }
 

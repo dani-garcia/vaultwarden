@@ -63,6 +63,9 @@ pub struct Membership {
     pub create_new_collections: bool,
     pub edit_any_collection: bool,
     pub delete_any_collection: bool,
+    pub access_event_logs: bool,
+    pub access_import_export: bool,
+    pub access_reports: bool,
 }
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -284,6 +287,9 @@ impl Membership {
             create_new_collections: false,
             edit_any_collection: false,
             delete_any_collection: false,
+            access_event_logs: false,
+            access_import_export: false,
+            access_reports: false,
         }
     }
 
@@ -454,9 +460,9 @@ impl Membership {
         let membership_type = self.atype;
 
         let permissions = json!({
-                "accessEventLogs": false,
-                "accessImportExport": false,
-                "accessReports": false,
+                "accessEventLogs": membership_type == MembershipType::Custom as i32 && self.access_event_logs,
+                "accessImportExport": membership_type == MembershipType::Custom as i32 && self.access_import_export,
+                "accessReports": membership_type == MembershipType::Custom as i32 && self.access_reports,
                 "createNewCollections": membership_type == MembershipType::Custom as i32 && self.create_new_collections,
                 "editAnyCollection": membership_type == MembershipType::Custom as i32 && self.edit_any_collection,
                 "deleteAnyCollection": membership_type == MembershipType::Custom as i32 && self.delete_any_collection,
@@ -621,9 +627,9 @@ impl Membership {
         // all-false defaults and the role itself supplies any elevated capabilities.
         let permissions = if membership_type == MembershipType::Custom as i32 {
             json!({
-                "accessEventLogs": false,
-                "accessImportExport": false,
-                "accessReports": false,
+                "accessEventLogs": self.access_event_logs,
+                "accessImportExport": self.access_import_export,
+                "accessReports": self.access_reports,
                 "createNewCollections": self.create_new_collections,
                 "editAnyCollection": self.edit_any_collection,
                 "deleteAnyCollection": self.delete_any_collection,
@@ -861,6 +867,18 @@ impl Membership {
         self.has_type(MembershipType::Custom) && self.delete_any_collection
     }
 
+    pub fn has_access_event_logs(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.access_event_logs
+    }
+
+    pub fn has_access_import_export(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.access_import_export
+    }
+
+    pub fn has_access_reports(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.access_reports
+    }
+
     /// Check for an explicit per-collection Manage grant without treating any `access_all` value
     /// as such a grant. Custom-role collection guards use this instead of the legacy broad helper,
     /// because membership/group `access_all` must not manufacture a per-collection Manage grant.
@@ -964,6 +982,9 @@ impl Membership {
         self.create_new_collections = false;
         self.edit_any_collection = false;
         self.delete_any_collection = false;
+        self.access_event_logs = false;
+        self.access_import_export = false;
+        self.access_reports = false;
     }
 
     pub async fn find_by_uuid(uuid: &MembershipId, conn: &DbConn) -> Option<Self> {
@@ -1520,6 +1541,9 @@ mod tests {
         member.create_new_collections = true;
         member.edit_any_collection = true;
         member.delete_any_collection = true;
+        member.access_event_logs = true;
+        member.access_import_export = true;
+        member.access_reports = true;
 
         member.clear_custom_permissions();
 
@@ -1529,5 +1553,31 @@ mod tests {
         assert!(!member.create_new_collections);
         assert!(!member.edit_any_collection);
         assert!(!member.delete_any_collection);
+        assert!(!member.access_event_logs);
+        assert!(!member.access_import_export);
+        assert!(!member.access_reports);
+    }
+
+    #[test]
+    fn custom_access_permissions_are_independent_and_type_gated() {
+        let mut member = membership(MembershipType::Custom);
+        member.access_event_logs = true;
+        assert!(member.has_access_event_logs());
+        assert!(!member.has_access_import_export());
+        assert!(!member.has_access_reports());
+
+        member.access_import_export = true;
+        member.access_reports = true;
+        assert!(member.has_access_import_export());
+        assert!(member.has_access_reports());
+        // None of them imply collection or management capabilities.
+        assert!(!member.has_full_access());
+        assert!(!member.has_manage_users());
+
+        // Stale flags on a non-Custom role grant nothing.
+        member.atype = MembershipType::User as i32;
+        assert!(!member.has_access_event_logs());
+        assert!(!member.has_access_import_export());
+        assert!(!member.has_access_reports());
     }
 }

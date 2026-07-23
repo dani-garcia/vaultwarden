@@ -757,6 +757,14 @@ impl OrgHeaders {
                 || self.membership.has_manage_users()
                 || self.membership.has_manage_groups())
     }
+    fn can_access_event_logs(&self) -> bool {
+        self.is_confirmed()
+            && (self.membership_type >= MembershipType::Admin || self.membership.has_access_event_logs())
+    }
+    fn can_access_import_export(&self) -> bool {
+        self.is_confirmed()
+            && (self.membership_type >= MembershipType::Admin || self.membership.has_access_import_export())
+    }
 }
 
 // org_id is usually the second path param ("/organizations/<org_id>"),
@@ -841,6 +849,9 @@ impl<'r> FromRequest<'r> for OrgHeaders {
 }
 
 pub struct AdminHeaders {
+    // Kept for parity with the other org header guards (and possible future use); the org export
+    // endpoint that used to read this now goes through `AccessImportExportHeaders` instead.
+    #[allow(dead_code)]
     pub host: String,
     pub device: Device,
     pub user: User,
@@ -938,6 +949,16 @@ generate_manage_headers!(
     ManageUsersOrGroupsHeaders,
     can_manage_users_or_groups,
     "You need the 'Manage Users' or 'Manage Groups' permission, or to be an Admin or Owner, to call this endpoint"
+);
+generate_manage_headers!(
+    AccessEventLogsHeaders,
+    can_access_event_logs,
+    "You need the 'Access Event Logs' permission, or to be an Admin or Owner, to call this endpoint"
+);
+generate_manage_headers!(
+    AccessImportExportHeaders,
+    can_access_import_export,
+    "You need the 'Access Import/Export' permission, or to be an Admin or Owner, to call this endpoint"
 );
 
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),
