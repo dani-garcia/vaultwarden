@@ -337,6 +337,13 @@ async fn sso_login(
                 }
 
                 user.save(conn).await?;
+            } else if user.verified_at.is_none()
+                && user.email == user_infos.email
+                && user_infos.email_verified.unwrap_or(CONFIG.sso_allow_unknown_email_verification())
+            {
+                // The email verification is handled by the provider, backfill for accounts created before SSO
+                user.verified_at = Some(now);
+                user.save(conn).await?;
             }
 
             if user.email != user_infos.email {
