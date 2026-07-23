@@ -98,13 +98,13 @@ impl Collection {
     ) -> Value {
         let (read_only, hide_passwords, manage) = if let Some(cipher_sync_data) = cipher_sync_data {
             match cipher_sync_data.members.get(&self.org_uuid) {
-                // Only for Manager types Bitwarden returns true for the manage option
-                // Owners and Admins always have true. Users are not able to have full access
-                Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Manager),
+                // Only for manager-level (Custom) members does Bitwarden return true for the manage
+                // option. Owners and Admins always have true. Users cannot have full access.
+                Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Custom),
                 Some(m) => {
-                    // Only let a manager-level member (Manager or Custom) manage collections
+                    // Only let a manager-level (Custom) member manage collections
                     // when they have full read/write access
-                    let is_manager = m.atype >= MembershipType::Manager;
+                    let is_manager = m.atype >= MembershipType::Custom;
                     if let Some(cu) = cipher_sync_data.user_collections.get(&self.uuid) {
                         (
                             cu.read_only,
@@ -125,12 +125,12 @@ impl Collection {
             }
         } else {
             match Membership::find_confirmed_by_user_and_org(user_uuid, &self.org_uuid, conn).await {
-                Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Manager),
-                Some(m) if m.atype >= MembershipType::Manager && self.is_manageable_by_user(user_uuid, conn).await => {
+                Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Custom),
+                Some(m) if m.atype >= MembershipType::Custom && self.is_manageable_by_user(user_uuid, conn).await => {
                     (false, false, true)
                 }
                 Some(m) => {
-                    let is_manager = m.atype >= MembershipType::Manager;
+                    let is_manager = m.atype >= MembershipType::Custom;
                     let read_only = !self.is_writable_by_user(user_uuid, conn).await;
                     let hide_passwords = self.hide_passwords_for_user(user_uuid, conn).await;
                     (read_only, hide_passwords, is_manager && !read_only && !hide_passwords)
@@ -255,8 +255,11 @@ impl Collection {
                         users_collections::user_uuid
                             .eq(user_uuid)
                             .or(
-                                // Directly accessed collection
-                                users_organizations::access_all.eq(true), // access_all in Organization
+                                // Full-access member: Custom "Edit any collection" or org admin/owner
+                                // (successor of the removed membership access_all)
+                                users_organizations::edit_any_collection
+                                    .eq(true)
+                                    .or(users_organizations::atype.le(MembershipType::Admin as i32)),
                             )
                             .or(
                                 groups::access_all.eq(true), // access_all in groups
@@ -288,10 +291,15 @@ impl Collection {
                             .and(users_organizations::user_uuid.eq(user_uuid.clone()))),
                     )
                     .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
-                    .filter(users_collections::user_uuid.eq(user_uuid).or(
-                        // Directly accessed collection
-                        users_organizations::access_all.eq(true), // access_all in Organization
-                    ))
+                    .filter(
+                        users_collections::user_uuid.eq(user_uuid).or(
+                            // Full-access member: Custom "Edit any collection" or org admin/owner
+                            // (successor of the removed membership access_all)
+                            users_organizations::edit_any_collection
+                                .eq(true)
+                                .or(users_organizations::atype.le(MembershipType::Admin as i32)),
+                        ),
+                    )
                     .select(collections::all_columns)
                     .distinct()
                     .load::<Self>(conn)
@@ -375,8 +383,8 @@ impl Collection {
                             .eq(uuid)
                             .or(
                                 // Directly accessed collection
-                                users_organizations::access_all.eq(true).or(
-                                    // access_all in Organization
+                                users_organizations::edit_any_collection.eq(true).or(
+                                    // Custom "Edit any collection" or org admin/owner (successor of access_all)
                                     users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
                                 ),
                             )
@@ -411,8 +419,8 @@ impl Collection {
                     .filter(collections::uuid.eq(uuid))
                     .filter(users_collections::collection_uuid.eq(uuid).or(
                         // Directly accessed collection
-                        users_organizations::access_all.eq(true).or(
-                            // access_all in Organization
+                        users_organizations::edit_any_collection.eq(true).or(
+                            // Custom "Edit any collection" or org admin/owner (successor of access_all)
                             users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
                         ),
                     ))
@@ -456,7 +464,7 @@ impl Collection {
                     .filter(
                         users_organizations::atype
                             .le(MembershipType::Admin as i32) // Org admin or owner
-                            .or(users_organizations::access_all.eq(true)) // access_all via membership
+                            .or(users_organizations::edit_any_collection.eq(true)) // Custom "Edit any collection" (successor of access_all)
                             .or(users_collections::collection_uuid
                                 .eq(&self.uuid) // write access given to collection
                                 .and(users_collections::read_only.eq(false)))
@@ -489,7 +497,7 @@ impl Collection {
                     .filter(
                         users_organizations::atype
                             .le(MembershipType::Admin as i32) // Org admin or owner
-                            .or(users_organizations::access_all.eq(true)) // access_all via membership
+                            .or(users_organizations::edit_any_collection.eq(true)) // Custom "Edit any collection" (successor of access_all)
                             .or(users_collections::collection_uuid
                                 .eq(&self.uuid) // write access given to collection
                                 .and(users_collections::read_only.eq(false))),
@@ -536,8 +544,8 @@ impl Collection {
                         .and(users_collections::hide_passwords.eq(true))
                         .or(
                             // Directly accessed collection
-                            users_organizations::access_all.eq(true).or(
-                                // access_all in Organization
+                            users_organizations::edit_any_collection.eq(true).or(
+                                // Custom "Edit any collection" or org admin/owner (successor of access_all)
                                 users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
                             ),
                         )
@@ -595,8 +603,8 @@ impl Collection {
                         .and(users_collections::manage.eq(true))
                         .or(
                             // Directly accessed collection
-                            users_organizations::access_all.eq(true).or(
-                                // access_all in Organization
+                            users_organizations::edit_any_collection.eq(true).or(
+                                // Custom "Edit any collection" or org admin/owner (successor of access_all)
                                 users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
                             ),
                         )
@@ -946,7 +954,7 @@ impl CollectionMembership {
             "hidePasswords": self.hide_passwords,
             "manage": membership_type >= MembershipType::Admin
                 || self.manage
-                || (membership_type >= MembershipType::Manager
+                || (membership_type >= MembershipType::Custom
                     && !self.read_only
                     && !self.hide_passwords),
         })

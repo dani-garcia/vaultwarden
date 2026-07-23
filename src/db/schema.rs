@@ -236,7 +236,6 @@ table! {
         user_uuid -> Text,
         org_uuid -> Text,
         invited_by_email -> Nullable<Text>,
-        access_all -> Bool,
         akey -> Text,
         status -> Integer,
         atype -> Integer,

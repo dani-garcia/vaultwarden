@@ -881,7 +881,12 @@ impl Cipher {
                             .and(collections_groups::groups_uuid.eq(groups::uuid))),
                     )
                     .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
-                    .or_filter(users_organizations::access_all.eq(true)) // access_all in org
+                    // Edit any collection (Custom) or org admin/owner — the successor of access_all
+                    .or_filter(
+                        users_organizations::edit_any_collection
+                            .eq(true)
+                            .or(users_organizations::atype.le(MembershipType::Admin as i32)),
+                    )
                     .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
                     .or_filter(groups::access_all.eq(true)) // Access via groups
                     .or_filter(collections_groups::collections_uuid.is_not_null()) // Access via groups
@@ -918,7 +923,12 @@ impl Cipher {
                             .and(users_organizations::user_uuid.eq(users_collections::user_uuid))),
                     )
                     .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
-                    .or_filter(users_organizations::access_all.eq(true)) // access_all in org
+                    // Edit any collection (Custom) or org admin/owner — the successor of access_all
+                    .or_filter(
+                        users_organizations::edit_any_collection
+                            .eq(true)
+                            .or(users_organizations::atype.le(MembershipType::Admin as i32)),
+                    )
                     .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
                     .into_boxed();
 
@@ -1041,8 +1051,9 @@ impl Cipher {
                             .and(collections_groups::groups_uuid.eq(groups::uuid))),
                     )
                     .filter(
-                        users_organizations::access_all
-                            .eq(true) // User has access all
+                        users_organizations::edit_any_collection
+                            .eq(true) // Custom "Edit any collection" (successor of access_all)
+                            .or(users_organizations::atype.le(MembershipType::Admin as i32)) // or org admin/owner
                             .or(users_collections::user_uuid
                                 .eq(user_uuid) // User has access to collection
                                 .and(users_collections::read_only.eq(false)))
@@ -1072,8 +1083,9 @@ impl Cipher {
                             .and(users_collections::user_uuid.eq(user_uuid.clone()))),
                     )
                     .filter(
-                        users_organizations::access_all
-                            .eq(true) // User has access all
+                        users_organizations::edit_any_collection
+                            .eq(true) // Custom "Edit any collection" (successor of access_all)
+                            .or(users_organizations::atype.le(MembershipType::Admin as i32)) // or org admin/owner
                             .or(users_collections::user_uuid
                                 .eq(user_uuid) // User has access to collection
                                 .and(users_collections::read_only.eq(false))),
@@ -1116,8 +1128,9 @@ impl Cipher {
                             .and(collections_groups::groups_uuid.eq(groups::uuid))),
                     )
                     .filter(
-                        users_organizations::access_all
-                            .eq(true) // User has access all
+                        users_organizations::edit_any_collection
+                            .eq(true) // Custom "Edit any collection" (successor of access_all)
+                            .or(users_organizations::atype.le(MembershipType::Admin as i32)) // or org admin/owner
                             .or(users_collections::user_uuid
                                 .eq(user_uuid) // User has access to collection
                                 .and(users_collections::read_only.eq(false)))
@@ -1148,8 +1161,9 @@ impl Cipher {
                             .and(users_collections::user_uuid.eq(user_uuid.clone()))),
                     )
                     .filter(
-                        users_organizations::access_all
-                            .eq(true) // User has access all
+                        users_organizations::edit_any_collection
+                            .eq(true) // Custom "Edit any collection" (successor of access_all)
+                            .or(users_organizations::atype.le(MembershipType::Admin as i32)) // or org admin/owner
                             .or(users_collections::user_uuid
                                 .eq(user_uuid) // User has access to collection
                                 .and(users_collections::read_only.eq(false)))
@@ -1194,7 +1208,7 @@ impl Cipher {
                         .and(collections_groups::groups_uuid.eq(groups::uuid))),
                 )
                 .or_filter(users_collections::user_uuid.eq(user_uuid)) // User has access to collection
-                .or_filter(users_organizations::access_all.eq(true)) // User has access all
+                .or_filter(users_organizations::edit_any_collection.eq(true)) // Custom "Edit any collection" (successor of access_all)
                 .or_filter(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
                 .or_filter(groups::access_all.eq(true)) //Access via group
                 .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
