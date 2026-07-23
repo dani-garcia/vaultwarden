@@ -576,10 +576,27 @@ async fn post_organization_collections(
     )
     .await;
 
+    // Security (F-3): a `manage` grant carries collection *delete*/administer authority
+    // (`has_explicit_collection_manage_access` -> CollectionDeleteHeaders/ManagerHeaders), so only a
+    // caller who could delete this collection may confer it — the same rule the collection-update and
+    // bulk-access endpoints apply. Create is deliberately independent from Edit/Delete, so a Custom
+    // member holding only `create_new_collections` must not be able to hand a manage row to another
+    // member or to a group (nor to itself) while creating the collection. For such callers the
+    // requested `manage` is forced to false; Admin/Owner, Custom-with-`delete_any_collection` and the
+    // legacy access_all Manager keep it. Evaluated after the collection exists so the per-collection
+    // lookup sees it.
+    let may_grant_manage = caller_may_grant_collection_manage(&headers.membership, &collection.uuid, &conn).await;
+
     for group in data.groups {
-        CollectionGroup::new(collection.uuid.clone(), group.id, group.read_only, group.hide_passwords, group.manage)
-            .save(&org_id, &conn)
-            .await?;
+        CollectionGroup::new(
+            collection.uuid.clone(),
+            group.id,
+            group.read_only,
+            group.hide_passwords,
+            group.manage && may_grant_manage,
+        )
+        .save(&org_id, &conn)
+        .await?;
     }
 
     for user in data.users {
@@ -596,7 +613,7 @@ async fn post_organization_collections(
             &collection.uuid,
             user.read_only,
             user.hide_passwords,
-            user.manage,
+            user.manage && may_grant_manage,
             &conn,
         )
         .await?;
@@ -1371,16 +1388,27 @@ async fn send_invite(
 
         // If no accessAll, add the collections received
         if !access_all && caller_can_manage_collections {
+            // Security (F-1): a per-collection `manage` grant carries delete authority, so the
+            // caller may only confer it on collections they could delete themselves. Otherwise a
+            // caller acting via Edit-any-collection could invite an account they control with a
+            // `manage` row and reach Delete-any-collection through it.
+            let caller = Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await;
+
             for col in data.collections.iter().flatten() {
                 match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn).await {
                     None => err!("Collection not found in Organization"),
                     Some(collection) => {
+                        let manage = col.manage
+                            && match &caller {
+                                Some(c) => caller_may_grant_collection_manage(c, &collection.uuid, &conn).await,
+                                None => false,
+                            };
                         CollectionUser::save(
                             &user.uuid,
                             &collection.uuid,
                             col.read_only,
                             col.hide_passwords,
-                            col.manage,
+                            manage,
                             &conn,
                         )
                         .await?;
