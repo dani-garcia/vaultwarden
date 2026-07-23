@@ -12,9 +12,9 @@ use crate::{
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
     auth::{
-        AdminHeaders, CollectionDeleteHeaders, CollectionReadHeaders, Headers, ManageGroupsHeaders,
-        ManagePoliciesHeaders, ManageUsersHeaders, ManageUsersOrGroupsHeaders, ManagerHeaders, ManagerHeadersLoose,
-        OrgMemberHeaders, OwnerHeaders, decode_invite,
+        AccessImportExportHeaders, AdminHeaders, CollectionDeleteHeaders, CollectionReadHeaders, Headers,
+        ManageGroupsHeaders, ManagePoliciesHeaders, ManageUsersHeaders, ManageUsersOrGroupsHeaders, ManagerHeaders,
+        ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite,
     },
     db::{
         DbConn,
@@ -1192,6 +1192,9 @@ struct CustomRolePermissions {
     create_new_collections: bool,
     edit_any_collection: bool,
     delete_any_collection: bool,
+    access_event_logs: bool,
+    access_import_export: bool,
+    access_reports: bool,
 }
 
 impl CustomRolePermissions {
@@ -1208,6 +1211,9 @@ impl CustomRolePermissions {
             create_new_collections: enabled("createNewCollections"),
             edit_any_collection: enabled("editAnyCollection"),
             delete_any_collection: enabled("deleteAnyCollection"),
+            access_event_logs: enabled("accessEventLogs"),
+            access_import_export: enabled("accessImportExport"),
+            access_reports: enabled("accessReports"),
         }
     }
 
@@ -1225,6 +1231,9 @@ impl CustomRolePermissions {
             || self.create_new_collections != membership.create_new_collections
             || self.edit_any_collection != membership.edit_any_collection
             || self.delete_any_collection != membership.delete_any_collection
+            || self.access_event_logs != membership.access_event_logs
+            || self.access_import_export != membership.access_import_export
+            || self.access_reports != membership.access_reports
     }
 
     fn apply_to(self, membership: &mut Membership) {
@@ -1234,6 +1243,9 @@ impl CustomRolePermissions {
         membership.create_new_collections = self.create_new_collections;
         membership.edit_any_collection = self.edit_any_collection;
         membership.delete_any_collection = self.delete_any_collection;
+        membership.access_event_logs = self.access_event_logs;
+        membership.access_import_export = self.access_import_export;
+        membership.access_reports = self.access_reports;
     }
 }
 
@@ -2169,6 +2181,20 @@ async fn post_org_import(
     if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
+
+    // accessImportExport: importing into the organization requires the permission (or Admin/Owner),
+    // mirroring the export endpoint and the Bitwarden permission model. The web-vault only offers org
+    // import to members holding this permission; enforcing it server-side keeps the two consistent.
+    // NOTE: this tightens the previous member-level behaviour (any confirmed member could import into
+    // collections they could write) — see the branch notes.
+    if !(headers.membership.has_status(MembershipStatus::Confirmed)
+        && (headers.membership.atype >= MembershipType::Admin || headers.membership.has_access_import_export()))
+    {
+        err!(
+            "You need the 'Access Import/Export' permission, or to be an Admin or Owner, to import into this organization"
+        )
+    }
+
     let data: ImportData = data.into_inner();
 
     // Validate the import before continuing
@@ -3806,7 +3832,7 @@ async fn put_reset_password_enrollment(
 // Vaultwarden does not yet support exporting only managed collections!
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Tools/Controllers/OrganizationExportController.cs#L52
 #[get("/organizations/<org_id>/export")]
-async fn get_org_export(org_id: OrganizationId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn get_org_export(org_id: OrganizationId, headers: AccessImportExportHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -4023,6 +4049,9 @@ mod tests {
             ("createNewCollections".to_owned(), json!(true)),
             ("editAnyCollection".to_owned(), json!(true)),
             ("deleteAnyCollection".to_owned(), json!(true)),
+            ("accessEventLogs".to_owned(), json!(true)),
+            ("accessImportExport".to_owned(), json!(true)),
+            ("accessReports".to_owned(), json!(true)),
         ]);
 
         let custom = CustomRolePermissions::from_request(MembershipType::Custom, &permissions);
@@ -4032,6 +4061,9 @@ mod tests {
         assert!(custom.create_new_collections);
         assert!(custom.edit_any_collection);
         assert!(custom.delete_any_collection);
+        assert!(custom.access_event_logs);
+        assert!(custom.access_import_export);
+        assert!(custom.access_reports);
 
         let user = CustomRolePermissions::from_request(MembershipType::User, &permissions);
         assert_eq!(user, CustomRolePermissions::default());
@@ -4052,6 +4084,9 @@ mod tests {
             create_new_collections: true,
             edit_any_collection: true,
             delete_any_collection: true,
+            access_event_logs: true,
+            access_import_export: true,
+            access_reports: true,
             ..CustomRolePermissions::default()
         };
 
@@ -4061,5 +4096,8 @@ mod tests {
         assert!(membership.create_new_collections);
         assert!(membership.edit_any_collection);
         assert!(membership.delete_any_collection);
+        assert!(membership.access_event_logs);
+        assert!(membership.access_import_export);
+        assert!(membership.access_reports);
     }
 }
