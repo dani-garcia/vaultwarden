@@ -666,6 +666,12 @@ make_config! {
         ip_header:              String, true,   def,    "X-Real-IP".to_owned();
         /// Internal IP header property, used to avoid recomputing each time
         _ip_header_enabled:     bool,   false,  generated,    |c| &c.ip_header.trim().to_lowercase() != "none";
+        /// Trusted proxies |> Which addresses the client IP header is accepted from. Requests from any
+        /// other address use the remote IP instead, so a client can't spoof the header.
+        /// Either the string "local" (the default, any non-global address, which covers a reverse proxy
+        /// running on the same host or container network), the string "all" to accept it from anywhere,
+        /// or a comma separated list of IPs and CIDR ranges.
+        ip_header_trusted_proxies: String, true, def,    "local".to_owned();
         /// Icon service |> The predefined icon services are: internal, bitwarden, duckduckgo, google.
         /// To specify a custom icon service, set a URL template with exactly one instance of `{}`,
         /// which is replaced with the domain. For example: `https://icon.example.com/domain/{}`.
@@ -767,6 +773,11 @@ make_config! {
         login_ratelimit_seconds:       u64, false, def, 60;
         /// Max burst size for login requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `login_ratelimit_seconds`. Note that this applies to both the login and the 2FA, so it's recommended to allow a burst size of at least 2
         login_ratelimit_max_burst:     u32, false, def, 10;
+
+        /// Seconds between unauthenticated requests |> Number of seconds, on average, between requests from the same IP address to any of the rate limited unauthenticated endpoints
+        unauthenticated_ratelimit_seconds:   u64, false, def, 60;
+        /// Max burst size for unauthenticated requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `unauthenticated_ratelimit_seconds`. This is shared between several endpoints, so it needs to be more lenient than the login one
+        unauthenticated_ratelimit_max_burst: u32, false, def, 50;
 
         /// Seconds between admin login requests |> Number of seconds, on average, between admin requests from the same IP address before rate limiting kicks in
         admin_ratelimit_seconds:       u64, false, def, 300;
@@ -938,6 +949,18 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                         parent.display()
                     ));
                 }
+            }
+        }
+    }
+
+    let trusted_proxies = cfg.ip_header_trusted_proxies.trim();
+    if !trusted_proxies.eq_ignore_ascii_case("all") && !trusted_proxies.eq_ignore_ascii_case("local") {
+        for entry in trusted_proxies.split(',').filter(|e| !e.trim().is_empty()) {
+            if crate::auth::parse_trusted_proxy(entry).is_none() {
+                err!(format!(
+                    "Invalid IP_HEADER_TRUSTED_PROXIES entry `{}`, expected an IP or CIDR range",
+                    entry.trim()
+                ));
             }
         }
     }

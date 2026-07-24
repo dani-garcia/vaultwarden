@@ -405,6 +405,22 @@ async fn get_page(url: &str) -> Result<Response, Error> {
 }
 
 async fn get_page_with_referer(url: &str, referer: &str) -> Result<Response, Error> {
+    // The resolver only sees hosts needing name resolution, so IP-literal hrefs from
+    // attacker-controlled HTML never reach `post_resolve()`. Check them here.
+    let Ok(parsed_url) = url::Url::parse(url) else {
+        err_silent!("Invalid URL", url)
+    };
+
+    if !matches!(parsed_url.scheme(), "http" | "https") {
+        err_silent!("Invalid scheme", url)
+    }
+
+    let Some(host) = parsed_url.host() else {
+        err_silent!("Invalid host", url)
+    };
+
+    should_block_host(&host)?;
+
     let mut client = CLIENT.get(url);
     if !referer.is_empty() {
         client = client.header("Referer", referer);

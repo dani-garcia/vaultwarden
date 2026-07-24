@@ -10,6 +10,7 @@ use std::{
 };
 
 use chrono::{DateTime, TimeDelta, Utc};
+use ipnet::IpNet;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, errors::ErrorKind};
 use num_traits::FromPrimitive;
 use openssl::rsa::Rsa;
@@ -1054,12 +1055,44 @@ pub struct ClientIp {
     pub ip: IpAddr,
 }
 
+/// Parses a single entry of `ip_header_trusted_proxies`, which can be a CIDR range or a plain IP.
+pub fn parse_trusted_proxy(entry: &str) -> Option<IpNet> {
+    let entry = entry.trim();
+    match entry.parse::<IpNet>() {
+        Ok(net) => Some(net),
+        // Without a prefix length it is a single address, which is a valid way to write this.
+        Err(_) => entry.parse::<IpAddr>().ok().map(IpNet::from),
+    }
+}
+
+/// The client IP header can be set by anyone able to reach us, so only accept it from a proxy we trust.
+fn ip_header_is_trusted(remote: Option<IpAddr>) -> bool {
+    let trusted = CONFIG.ip_header_trusted_proxies();
+    let trusted = trusted.trim();
+    if trusted.eq_ignore_ascii_case("all") {
+        return true;
+    }
+
+    let Some(remote) = remote else {
+        return false;
+    };
+    // A dual stack listener reports IPv4 clients as IPv4-mapped IPv6, which `is_global()` reports as
+    // non global. That is what we want when blocking outgoing requests, but here it would trust them.
+    let remote = remote.to_canonical();
+    if trusted.eq_ignore_ascii_case("local") {
+        return !crate::util::is_global(remote);
+    }
+    trusted.split(',').filter_map(parse_trusted_proxy).any(|net| net.contains(&remote))
+}
+
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for ClientIp {
     type Error = ();
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let ip = if CONFIG._ip_header_enabled() {
+        let remote = req.remote().map(|r| r.ip());
+
+        let ip = if CONFIG._ip_header_enabled() && ip_header_is_trusted(remote) {
             req.headers().get_one(&CONFIG.ip_header()).and_then(|ip| {
                 match ip.find(',') {
                     Some(idx) => &ip[..idx],
@@ -1070,10 +1103,15 @@ impl<'r> FromRequest<'r> for ClientIp {
                 .ok()
             })
         } else {
+            if CONFIG._ip_header_enabled() && req.headers().get_one(&CONFIG.ip_header()).is_some() {
+                // Log the canonical IP, which is what the user filter will need to match against
+                let remote = remote.map(|ip| ip.to_canonical());
+                debug!("Ignoring the '{}' header, {remote:?} is not a trusted proxy", CONFIG.ip_header());
+            }
             None
         };
 
-        let ip = ip.or_else(|| req.remote().map(|r| r.ip())).unwrap_or_else(|| "0.0.0.0".parse().unwrap());
+        let ip = ip.or(remote).unwrap_or_else(|| "0.0.0.0".parse().unwrap());
 
         Outcome::Success(ClientIp {
             ip,
@@ -1268,20 +1306,8 @@ pub async fn refresh_tokens(
 ) -> ApiResult<(Device, AuthTokens)> {
     let refresh_claims = match decode_refresh(refresh_token) {
         Err(err) => {
-            error!("Failed to decode {} refresh_token: {refresh_token}: {err:?}", ip.ip);
-            //err_silent!(format!("Impossible to read refresh_token: {}", err.message()))
-
-            // If the token failed to decode, it was probably one of the old style tokens that was just a Base64 string.
-            // We can generate a claim for them for backwards compatibility. Note that the password refresh claims don't
-            // check expiration or issuer, so they're not included here.
-            RefreshJwtClaims {
-                nbf: 0,
-                exp: 0,
-                iss: String::new(),
-                sub: AuthMethod::Password,
-                device_token: refresh_token.into(),
-                token: None,
-            }
+            error!("Failed to decode refresh_token from {}: {err:?}", ip.ip);
+            err_silent!("Invalid refresh token")
         }
         Ok(claims) => claims,
     };
