@@ -450,7 +450,9 @@ pub async fn update_cipher_from_data(
         match Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, conn).await {
             None => err!("You don't have permission to add item to organization"),
             Some(member) => {
-                if shared_to_collections.is_some()
+                // A non-empty list of collections implies the caller already validated the user's write
+                // access to them, so we can move the cipher into the organization on that basis.
+                if shared_to_collections.as_ref().is_some_and(|cols| !cols.is_empty())
                     || member.has_full_access()
                     || cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await
                 {
