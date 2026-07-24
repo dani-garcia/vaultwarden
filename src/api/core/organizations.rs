@@ -96,6 +96,7 @@ pub fn routes() -> Vec<Route> {
         put_reset_password_enrollment,
         get_reset_password_details,
         put_reset_password,
+        put_recover_account,
         get_org_export,
         post_api_key,
         rotate_api_key,
@@ -469,7 +470,7 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
                 .map(CollectionGroup::to_json_details_for_group)
                 .collect()
         } else {
-            Vec::with_capacity(0)
+            Vec::new()
         };
 
         let mut json_object = col.to_json_details(&headers.user.uuid, None, &conn).await;
@@ -805,7 +806,7 @@ async fn get_org_collection_detail(
             } else {
                 // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
                 // so just act as if there are no groups.
-                Vec::with_capacity(0)
+                Vec::new()
             };
 
             // Generate a HashMap to get the correct MembershipType per user to determine the manage permission
@@ -1089,9 +1090,13 @@ async fn send_invite(
                     err!(format!("User already in organization: {email}"))
                 }
 
-                // automatically accept existing users if mail is disabled
-                if !CONFIG.mail_enabled() && !user.password_hash.is_empty() {
-                    member_status = MembershipStatus::Accepted as i32;
+                if !CONFIG.mail_enabled() {
+                    if user.password_hash.is_empty() {
+                        Invitation::new(email).save(&conn).await?;
+                    } else {
+                        // automatically accept existing users if mail is disabled
+                        member_status = MembershipStatus::Accepted as i32;
+                    }
                 }
                 user
             }
@@ -1713,6 +1718,15 @@ async fn delete_member_impl(
 
     if let Some(user) = User::find_by_uuid(&member_to_delete.user_uuid, conn).await {
         nt.send_user_update(UpdateType::SyncOrgKeys, &user, headers.device.push_uuid.as_ref(), conn).await;
+
+        if !CONFIG.mail_enabled()
+            && !Membership::find_invited_by_user(&user.uuid, conn)
+                .await
+                .into_iter()
+                .any(|m| m.uuid != member_to_delete.uuid)
+        {
+            Invitation::take(&user.email, conn).await;
+        }
     }
 
     member_to_delete.delete(conn).await
@@ -2020,18 +2034,27 @@ struct PolicyData {
     data: Option<Value>,
 }
 
+#[derive(Deserialize)]
+struct PutPolicy {
+    policy: PolicyData,
+    // Ignore metadata for now as we do not yet support this
+    // "metadata": {
+    //     "defaultUserCollectionName": "2.xx|xx==|xx="
+    // }
+}
+
 #[put("/organizations/<org_id>/policies/<pol_type>", data = "<data>")]
 async fn put_policy(
     org_id: OrganizationId,
     pol_type: i32,
-    data: Json<PolicyData>,
+    data: Json<PutPolicy>,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let data: PolicyData = data.into_inner();
+    let data: PolicyData = data.into_inner().policy;
 
     let Some(pol_type_enum) = OrgPolicyType::from_i32(pol_type) else {
         err!("Invalid or unsupported policy type")
@@ -2139,26 +2162,16 @@ async fn put_policy(
     Ok(Json(policy.to_json()))
 }
 
-#[derive(Deserialize)]
-struct PolicyDataVnext {
-    policy: PolicyData,
-    // Ignore metadata for now as we do not yet support this
-    // "metadata": {
-    //     "defaultUserCollectionName": "2.xx|xx==|xx="
-    // }
-}
-
+// Deprecated with client v2026.5.0
 #[put("/organizations/<org_id>/policies/<pol_type>/vnext", data = "<data>")]
 async fn put_policy_vnext(
     org_id: OrganizationId,
     pol_type: i32,
-    data: Json<PolicyDataVnext>,
+    data: Json<PutPolicy>,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {
-    let data: PolicyDataVnext = data.into_inner();
-    let policy: PolicyData = data.policy;
-    put_policy(org_id, pol_type, Json(policy), headers, conn).await
+    put_policy(org_id, pol_type, data, headers, conn).await
 }
 
 #[get("/plans")]
@@ -2445,7 +2458,7 @@ async fn get_groups_data(
     } else {
         // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
         // so just act as if there are no groups.
-        Vec::with_capacity(0)
+        Vec::new()
     };
 
     Ok(Json(json!({
@@ -2875,9 +2888,14 @@ struct OrganizationUserResetPasswordEnrollmentRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct OrganizationUserResetPasswordRequest {
+struct OrganizationUserRecoverAccountRequest {
     new_master_password_hash: String,
     key: String,
+
+    #[serde(default)]
+    reset_master_password: bool,
+    #[serde(default)]
+    reset_two_factor: bool,
 }
 
 // Upstream reports this is the renamed endpoint instead of `/keys`
@@ -2905,12 +2923,43 @@ async fn get_organization_keys(org_id: OrganizationId, headers: OrgMemberHeaders
     get_organization_public_key(org_id, headers, conn).await
 }
 
+// Will allow to reset 2FA too
+// https://github.com/bitwarden/clients/blob/web-v2026.4.2/libs/admin-console/src/common/organization-user/models/requests/organization-user-reset-password.request.ts
+#[put("/organizations/<org_id>/users/<member_id>/recover-account", data = "<data>")]
+async fn put_recover_account(
+    org_id: OrganizationId,
+    member_id: MembershipId,
+    headers: AdminHeaders,
+    data: Json<OrganizationUserRecoverAccountRequest>,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    let req = data.into_inner();
+    if req.reset_master_password && !req.reset_two_factor {
+        recover_account(org_id, member_id, headers, req, conn, nt).await
+    } else {
+        err!("Unsupported operation")
+    }
+}
+
+// Deprecated since `v2026.4.2`
 #[put("/organizations/<org_id>/users/<member_id>/reset-password", data = "<data>")]
 async fn put_reset_password(
     org_id: OrganizationId,
     member_id: MembershipId,
     headers: AdminHeaders,
-    data: Json<OrganizationUserResetPasswordRequest>,
+    data: Json<OrganizationUserRecoverAccountRequest>,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    recover_account(org_id, member_id, headers, data.into_inner(), conn, nt).await
+}
+
+async fn recover_account(
+    org_id: OrganizationId,
+    member_id: MembershipId,
+    headers: AdminHeaders,
+    reset_request: OrganizationUserRecoverAccountRequest,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
@@ -2943,8 +2992,6 @@ async fn put_reset_password(
     if let Err(e) = mail::send_admin_reset_password(&user.email, user.display_name(), &org.name).await {
         err!(format!("Error sending user reset password email: {e:#?}"));
     }
-
-    let reset_request = data.into_inner();
 
     let mut user = user;
     user.set_password(reset_request.new_master_password_hash.as_str(), Some(reset_request.key), true, None, &conn)
