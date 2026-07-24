@@ -19,23 +19,23 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2026.6.2
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2026.6.2
-#     [docker.io/vaultwarden/web-vault@sha256:f004f72a5d357b87483839500a517da3d1b4ea0a57b9731989d298cccea7d02a]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2026.6.4
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2026.6.4
+#     [docker.io/vaultwarden/web-vault@sha256:e7d3b31ec6a991a6bf447721ea341b4192ce5d3b920929211672fd4f3f891427]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:f004f72a5d357b87483839500a517da3d1b4ea0a57b9731989d298cccea7d02a
-#     [docker.io/vaultwarden/web-vault:v2026.6.2]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:e7d3b31ec6a991a6bf447721ea341b4192ce5d3b920929211672fd4f3f891427
+#     [docker.io/vaultwarden/web-vault:v2026.6.4]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:f004f72a5d357b87483839500a517da3d1b4ea0a57b9731989d298cccea7d02a AS vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:e7d3b31ec6a991a6bf447721ea341b4192ce5d3b920929211672fd4f3f891427 AS vault
 
 ########################## ALPINE BUILD IMAGES ##########################
 ## NOTE: The Alpine Base Images do not support other platforms then linux/amd64 and linux/arm64
 ## And for Alpine we define all build images here, they will only be loaded when actually used
-FROM --platform=$BUILDPLATFORM ghcr.io/blackdex/rust-musl:x86_64-musl-stable-1.96.1 AS build_amd64
-FROM --platform=$BUILDPLATFORM ghcr.io/blackdex/rust-musl:aarch64-musl-stable-1.96.1 AS build_arm64
-FROM --platform=$BUILDPLATFORM ghcr.io/blackdex/rust-musl:armv7-musleabihf-stable-1.96.1 AS build_armv7
-FROM --platform=$BUILDPLATFORM ghcr.io/blackdex/rust-musl:arm-musleabi-stable-1.96.1 AS build_armv6
+FROM --platform=$BUILDPLATFORM ghcr.io/blackdex/rust-musl:x86_64-musl-stable-1.97.1 AS build_amd64
+FROM --platform=$BUILDPLATFORM ghcr.io/blackdex/rust-musl:aarch64-musl-stable-1.97.1 AS build_arm64
+FROM --platform=$BUILDPLATFORM ghcr.io/blackdex/rust-musl:armv7-musleabihf-stable-1.97.1 AS build_armv7
+FROM --platform=$BUILDPLATFORM ghcr.io/blackdex/rust-musl:arm-musleabi-stable-1.97.1 AS build_armv6
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
