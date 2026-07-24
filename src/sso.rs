@@ -385,9 +385,15 @@ pub fn create_auth_tokens(
 fn create_auth_tokens_impl(
     device: &Device,
     refresh_token: Option<String>,
-    access_claims: auth::LoginJwtClaims,
+    mut access_claims: auth::LoginJwtClaims,
     access_token: String,
 ) -> ApiResult<AuthTokens> {
+    // Mark the access token as externally authenticated (SSO). Bitwarden clients gate the
+    // Key Connector flow on `amr` containing "external" (TokenService.getIsExternal).
+    if !access_claims.amr.iter().any(|m| m == "external") {
+        access_claims.amr.push("external".to_owned());
+    }
+
     let (nbf, exp, token) = if let Some(rt) = refresh_token {
         match decode_token_claims("refresh_token", &rt) {
             Err(_) => {

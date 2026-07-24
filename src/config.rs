@@ -799,6 +799,12 @@ make_config! {
     sso {
         /// Enabled
         sso_enabled:                    bool,   true,   def,    false;
+        /// Key Connector enabled |> Store master keys on an external Key Connector (requires SSO)
+        key_connector_enabled:          bool,   true,   def,    false;
+        /// Key Connector URL |> Base URL of the Key Connector service, e.g. https://keyconnector.example.com
+        key_connector_url:              String, true,   def,    String::new();
+        /// Key Connector org name |> Name shown in the client's domain-confirmation dialog
+        key_connector_org_name:         String, true,   def,    String::from("Key Connector");
         /// Only SSO login |> Disable Email+Master Password login
         sso_only:                       bool,   true,   def,    false;
         /// Allow email association |> Associate existing non-SSO user based on email
@@ -1084,6 +1090,24 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
         validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
+    }
+
+    if cfg.key_connector_enabled {
+        if !cfg.sso_enabled {
+            err!("`KEY_CONNECTOR_ENABLED=true` requires `SSO_ENABLED=true`")
+        }
+        if cfg.sso_auth_only_not_session {
+            err!(
+                "Key Connector is incompatible with `SSO_AUTH_ONLY_NOT_SESSION=true` (the connector must validate Vaultwarden-issued access tokens)"
+            )
+        }
+        if cfg.key_connector_url.is_empty() {
+            err!("`KEY_CONNECTOR_URL` must be set when Key Connector is enabled")
+        }
+        let kc_url = cfg.key_connector_url.to_lowercase();
+        if !kc_url.starts_with("http://") && !kc_url.starts_with("https://") || Url::parse(&kc_url).is_err() {
+            err!("`KEY_CONNECTOR_URL` must be a valid URL containing the protocol (http, https)")
+        }
     }
 
     if cfg._enable_yubico {

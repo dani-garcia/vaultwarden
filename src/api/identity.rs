@@ -52,8 +52,25 @@ pub fn routes() -> Vec<Route> {
         prevalidate,
         authorize,
         oidcsignin,
-        oidcsignin_error
+        oidcsignin_error,
+        openid_configuration,
+        jwks
     ]
+}
+
+// Issuer and signing key of our own login tokens, for services that verify
+// them (e.g. a key connector). The issuer is the `iss` claim, not a URL.
+#[get("/.well-known/openid-configuration")]
+fn openid_configuration() -> Json<Value> {
+    Json(json!({
+        "issuer": *auth::JWT_LOGIN_ISSUER,
+        "jwks_uri": format!("{}/identity/.well-known/jwks", CONFIG.domain()),
+    }))
+}
+
+#[get("/.well-known/jwks")]
+fn jwks() -> Json<Value> {
+    Json(auth::login_jwks().clone())
 }
 
 #[post("/connect/token", data = "<data>")]
@@ -514,7 +531,12 @@ async fn authenticated_response(
 
     let master_password_policy = master_password_policy(user, conn).await;
 
-    let has_master_password = !user.password_hash.is_empty();
+    // Key connector users have no master password, the master key is stored on the connector
+    let uses_key_connector = user.uses_key_connector;
+    if uses_key_connector && !CONFIG.key_connector_enabled() {
+        err!("This user's master key is stored on a key connector, but Key Connector support is disabled")
+    }
+    let has_master_password = !user.password_hash.is_empty() && !uses_key_connector;
     let master_password_unlock = if has_master_password {
         json!({
             "Kdf": {
@@ -570,6 +592,13 @@ async fn authenticated_response(
 
     if !user.akey.is_empty() {
         result["Key"] = Value::String(user.akey.clone());
+    }
+
+    // Also advertised to users without a master password, that is how the client
+    // knows to enroll a new SSO user with the connector
+    if CONFIG.key_connector_enabled() && !has_master_password {
+        result["UserDecryptionOptions"]["KeyConnectorOption"] =
+            crate::api::core::key_connector::key_connector_user_decryption_option();
     }
 
     if let Some(token) = twofactor_token {

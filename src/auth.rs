@@ -10,10 +10,12 @@ use std::{
 };
 
 use chrono::{DateTime, TimeDelta, Utc};
+use data_encoding::BASE64URL_NOPAD;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, errors::ErrorKind};
 use num_traits::FromPrimitive;
 use openssl::rsa::Rsa;
 use serde::{de::DeserializeOwned, ser::Serialize};
+use serde_json::json;
 
 use rocket::{
     outcome::try_outcome,
@@ -64,6 +66,7 @@ static JWT_2FA_REMEMBER_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|
 
 static PRIVATE_RSA_KEY: OnceLock<EncodingKey> = OnceLock::new();
 static PUBLIC_RSA_KEY: OnceLock<DecodingKey> = OnceLock::new();
+static LOGIN_JWKS: OnceLock<serde_json::Value> = OnceLock::new();
 
 pub async fn initialize_keys() -> Result<(), Error> {
     use std::io::Error as IoError;
@@ -90,6 +93,24 @@ pub async fn initialize_keys() -> Result<(), Error> {
     };
     let pub_key_buffer = priv_key.public_key_to_pem()?;
 
+    // Expose the public half as a JWKS on /identity/.well-known/ so token
+    // consumers (e.g. a key connector) don't need a copy of the PEM.
+    let n = BASE64URL_NOPAD.encode(&priv_key.n().to_vec());
+    let e = BASE64URL_NOPAD.encode(&priv_key.e().to_vec());
+    // the kid is the RFC 7638 thumbprint of the key
+    let thumbprint = json!({"e": e, "kty": "RSA", "n": n}).to_string();
+    let kid = BASE64URL_NOPAD.encode(&openssl::sha::sha256(thumbprint.as_bytes()));
+    let jwks = json!({
+        "keys": [{
+            "kty": "RSA",
+            "use": "sig",
+            "alg": "RS256",
+            "kid": kid,
+            "n": n,
+            "e": e,
+        }]
+    });
+
     let enc = EncodingKey::from_rsa_pem(&priv_key_buffer)?;
     let dec: DecodingKey = DecodingKey::from_rsa_pem(&pub_key_buffer)?;
     if PRIVATE_RSA_KEY.set(enc).is_err() {
@@ -98,7 +119,14 @@ pub async fn initialize_keys() -> Result<(), Error> {
     if PUBLIC_RSA_KEY.set(dec).is_err() {
         err!("PUBLIC_RSA_KEY must only be initialized once")
     }
+    if LOGIN_JWKS.set(jwks).is_err() {
+        err!("LOGIN_JWKS must only be initialized once")
+    }
     Ok(())
+}
+
+pub fn login_jwks() -> &'static serde_json::Value {
+    LOGIN_JWKS.wait()
 }
 
 pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
