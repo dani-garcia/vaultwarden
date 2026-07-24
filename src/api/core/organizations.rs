@@ -577,6 +577,13 @@ async fn post_bulk_access_collections(
         err!("Can't find organization details")
     }
 
+    // The collections and members are checked below, the groups only here.
+    let org_groups = Group::find_by_organization(&org_id, &conn).await;
+    let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
+    if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
+        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id, org_id))
+    }
+
     for col_id in data.collection_ids {
         let Some(collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &conn).await else {
             err!("Collection not found")
@@ -946,6 +953,11 @@ async fn get_members(
     if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
+
+    if !headers.membership.has_full_access() {
+        err_code!("Resource not found.", "User does not have full access", rocket::http::Status::NotFound.code);
+    }
+
     let mut users_json = Vec::new();
     for u in Membership::find_by_org(&org_id, &conn).await {
         users_json.push(
@@ -1167,6 +1179,9 @@ async fn send_invite(
         }
 
         for group_id in &data.groups {
+            if Group::find_by_uuid_and_org(group_id, &org_id, &conn).await.is_none() {
+                err!("Group not found in Organization")
+            }
             let mut group_entry = GroupUser::new(group_id.clone(), new_member.uuid.clone());
             group_entry.save(&conn).await?;
         }
@@ -1614,6 +1629,9 @@ async fn edit_member(
     GroupUser::delete_all_by_member(&member_to_edit.uuid, &conn).await?;
 
     for group_id in data.groups.iter().flatten() {
+        if Group::find_by_uuid_and_org(group_id, &org_id, &conn).await.is_none() {
+            err!("Group not found in Organization")
+        }
         let mut group_entry = GroupUser::new(group_id.clone(), member_to_edit.uuid.clone());
         group_entry.save(&conn).await?;
     }
@@ -1813,19 +1831,19 @@ async fn post_org_import(
     // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
     Cipher::validate_cipher_data(&data.ciphers)?;
 
-    let existing_collections: HashSet<Option<CollectionId>> =
-        Collection::find_by_organization(&org_id, &conn).await.into_iter().map(|c| Some(c.uuid)).collect();
+    let existing_collections: HashMap<CollectionId, Collection> =
+        Collection::find_by_organization(&org_id, &conn).await.into_iter().map(|c| (c.uuid.clone(), c)).collect();
     let mut collections: Vec<CollectionId> = Vec::with_capacity(data.collections.len());
     for col in data.collections {
-        let collection_uuid = if existing_collections.contains(&col.id) {
-            let col_id = col.id.unwrap();
-            // When not an Owner or Admin, check if the member is allowed to access the collection.
+        let existing = col.id.as_ref().and_then(|col_id| existing_collections.get(col_id));
+        let collection_uuid = if let Some(collection) = existing {
+            // When not an Owner or Admin, check if the member is allowed to write to the collection.
             if headers.membership.atype < MembershipType::Admin
-                && !Collection::can_access_collection(&headers.membership, &col_id, &conn).await
+                && !collection.is_writable_by_user(&headers.membership.user_uuid, &conn).await
             {
                 err!(Compact, "The current user isn't allowed to manage this collection")
             }
-            col_id
+            collection.uuid.clone()
         } else {
             // We do not allow users or managers which can not manage all collections to create new collections
             // If there is any collection other than an existing import collection, abort the import.
@@ -1853,6 +1871,8 @@ async fn post_org_import(
     for mut cipher_data in data.ciphers {
         // Always clear folder_id's via an organization import
         cipher_data.folder_id = None;
+        // Replace the client-provided, unvalidated organizationId with the real target org
+        cipher_data.organization_id = Some(org_id.clone());
         let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
         update_cipher_from_data(
             &mut cipher,
@@ -1870,8 +1890,9 @@ async fn post_org_import(
 
     // Assign the collections
     for (cipher_index, col_index) in relations {
-        let cipher_id = &ciphers[cipher_index];
-        let col_id = &collections[col_index];
+        let (Some(cipher_id), Some(col_id)) = (ciphers.get(cipher_index), collections.get(col_index)) else {
+            err!(Compact, "Invalid collection relationship")
+        };
         CollectionCipher::save(cipher_id, col_id, &conn).await?;
     }
 
@@ -2441,6 +2462,23 @@ async fn get_groups_data(
     if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
+
+    // The details view (group→collection/user mappings) needs full org access; the plain list only
+    // needs manage access to a collection, so a manager of a collection (directly or via a group)
+    // can load it to assign groups.
+    let has_full_access = headers.membership.has_full_access()
+        || (CONFIG.org_groups_enabled()
+            && GroupUser::has_full_access_by_member(&org_id, &headers.membership.uuid, &conn).await);
+    let allowed = if details {
+        has_full_access
+    } else {
+        has_full_access
+            || Collection::has_manageable_collection_by_user(&org_id, &headers.membership.user_uuid, &conn).await
+    };
+    if !allowed {
+        err_code!("Resource not found.", "User does not have access", rocket::http::Status::NotFound.code);
+    }
+
     let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
         let groups = Group::find_by_organization(&org_id, &conn).await;
         let mut groups_json = Vec::with_capacity(groups.len());
