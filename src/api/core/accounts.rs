@@ -1330,6 +1330,13 @@ pub async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
         "kdfIterations": kdf_iter,
         "kdfMemory": kdf_mem,
         "kdfParallelism": kdf_para,
+        "kdfSettings": {
+            "iterations": kdf_iter,
+            "kdfType": kdf_type,
+            "memory": kdf_mem,
+            "parallelism": kdf_para
+        },
+        "salt": null,
     }))
 }
 

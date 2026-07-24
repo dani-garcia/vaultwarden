@@ -21,6 +21,7 @@ use super::{
     User, UserId,
 };
 
+// See (v2026.7.0): https://github.com/bitwarden/server/blob/5d4461aa42cadbacfef8fe2166c5453a5c52773a/src/Core/AdminConsole/Entities/Collection.cs
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = collections)]
 #[diesel(treat_none_as_null = true)]
@@ -71,6 +72,11 @@ impl Collection {
             "id": self.uuid,
             "organizationId": self.org_uuid,
             "name": self.name,
+            // Collection types are either 0: SharedCollection or 1: DefaultUserCollection, of which we do not yet support DefaultUserCollection.
+            // See (v2026.7.0): https://github.com/bitwarden/server/blob/5d4461aa42cadbacfef8fe2166c5453a5c52773a/src/Core/AdminConsole/Enums/CollectionType.cs
+            "type": 0,
+            // This is only used together with MyItems/DefaultUserCollection, which we do not yet support.
+            "defaultUserCollectionEmail": null,
             "object": "collection",
         })
     }
