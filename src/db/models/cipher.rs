@@ -280,6 +280,23 @@ impl Cipher {
             if let Some(pw_revision) = type_data_json["passwordRevisionDate"].as_str() {
                 type_data_json["passwordRevisionDate"] = json!(validate_and_format_date(pw_revision));
             }
+
+            // Strip `null`s from optional Login fields — newer WASM clients panic (see #7361).
+            if let Value::Object(ref mut map) = type_data_json {
+                for key in [
+                    "password",
+                    "username",
+                    "totp",
+                    "autofillOnPageLoad",
+                    "fido2Credentials",
+                    "passwordRevisionDate",
+                    "uris",
+                ] {
+                    if map.get(key).is_some_and(Value::is_null) {
+                        map.remove(key);
+                    }
+                }
+            }
         }
 
         // Fix secure note issues when data is invalid
