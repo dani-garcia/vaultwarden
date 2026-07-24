@@ -623,6 +623,49 @@ impl Collection {
     pub async fn is_manageable_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
         Self::is_coll_manageable_by_user(&self.uuid, user_uuid, conn).await
     }
+
+    // Whether the user has manage access to at least one collection in the org, directly or via a
+    // group. Org-scoped counterpart of is_coll_manageable_by_user.
+    pub async fn has_manageable_collection_by_user(
+        org_uuid: &OrganizationId,
+        user_uuid: &UserId,
+        conn: &DbConn,
+    ) -> bool {
+        let org_uuid = org_uuid.to_string();
+        let user_uuid = user_uuid.to_string();
+        conn.run(move |conn| {
+            collections::table
+                .left_join(
+                    users_collections::table.on(users_collections::collection_uuid
+                        .eq(collections::uuid)
+                        .and(users_collections::user_uuid.eq(user_uuid.clone()))),
+                )
+                .left_join(
+                    users_organizations::table.on(collections::org_uuid
+                        .eq(users_organizations::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid))),
+                )
+                .left_join(groups_users::table.on(groups_users::users_organizations_uuid.eq(users_organizations::uuid)))
+                .left_join(
+                    collections_groups::table.on(collections_groups::groups_uuid
+                        .eq(groups_users::groups_uuid)
+                        .and(collections_groups::collections_uuid.eq(collections::uuid))),
+                )
+                .filter(collections::org_uuid.eq(&org_uuid))
+                .filter(
+                    // Manage permission on a collection assigned directly or via a group.
+                    users_collections::manage
+                        .eq(true)
+                        .or(collections_groups::manage.eq(true)),
+                )
+                .count()
+                .first::<i64>(conn)
+                .ok()
+                .unwrap_or(0)
+                != 0
+        })
+        .await
+    }
 }
 
 /// Database methods

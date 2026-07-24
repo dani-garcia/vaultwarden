@@ -2463,13 +2463,19 @@ async fn get_groups_data(
         err!("Organization not found", "Organization id's do not match");
     }
 
-    // For now, both the group list and the details view require full access to the organization
-    // (directly or via a group). Bitwarden also lets a manager of a specific collection read the
-    // plain list (to assign groups); handling that case is left for a follow-up.
+    // The details view (group→collection/user mappings) needs full org access; the plain list only
+    // needs manage access to a collection, so a manager of a collection (directly or via a group)
+    // can load it to assign groups.
     let has_full_access = headers.membership.has_full_access()
         || (CONFIG.org_groups_enabled()
             && GroupUser::has_full_access_by_member(&org_id, &headers.membership.uuid, &conn).await);
-    if !has_full_access {
+    let allowed = if details {
+        has_full_access
+    } else {
+        has_full_access
+            || Collection::has_manageable_collection_by_user(&org_id, &headers.membership.user_uuid, &conn).await
+    };
+    if !allowed {
         err_code!("Resource not found.", "User does not have access", rocket::http::Status::NotFound.code);
     }
 
