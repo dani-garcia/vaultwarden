@@ -231,6 +231,53 @@ impl Send {
         }
     }
 
+    /// Registers an access, incrementing `access_count` only while below `max_access_count`.
+    /// Returns false when the limit was already reached. The check and the increment are a single
+    /// statement, otherwise concurrent accesses can both pass the check and exceed the limit.
+    pub async fn register_access(&mut self, conn: &DbConn) -> Result<bool, crate::Error> {
+        self.update_users_revision(conn).await;
+
+        let revision_date = Utc::now().naive_utc();
+        let uuid = self.uuid.clone();
+        let updated = conn
+            .run(move |conn| {
+                diesel::update(sends::table)
+                    .filter(sends::uuid.eq(uuid))
+                    .filter(
+                        sends::max_access_count
+                            .is_null()
+                            .or(sends::access_count.nullable().lt(sends::max_access_count)),
+                    )
+                    .set((sends::access_count.eq(sends::access_count + 1), sends::revision_date.eq(revision_date)))
+                    .execute(conn)
+            })
+            .await?;
+
+        if updated == 0 {
+            return Ok(false);
+        }
+
+        self.access_count += 1;
+        self.revision_date = revision_date;
+        Ok(true)
+    }
+
+    /// Whether the Send is currently within its validity window: not disabled, not past its
+    /// expiration date, and not past its deletion date. Does not consider `max_access_count`
+    /// (consumed at token issuance) or the password.
+    pub fn is_accessible(&self) -> bool {
+        let now = Utc::now().naive_utc();
+        if self.disabled {
+            return false;
+        }
+        if let Some(expiration) = self.expiration_date
+            && now >= expiration
+        {
+            return false;
+        }
+        now < self.deletion_date
+    }
+
     pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn).await;
 

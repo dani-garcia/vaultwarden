@@ -42,13 +42,15 @@ pub struct Cipher {
 
     pub key: Option<String>,
 
-    /*
-    Login = 1,
-    SecureNote = 2,
-    Card = 3,
-    Identity = 4,
-    SshKey = 5
-    */
+    // See (v2026.7.0): https://github.com/bitwarden/server/blob/5d4461aa42cadbacfef8fe2166c5453a5c52773a/src/Core/Vault/Enums/CipherType.cs
+    // Login = 1,
+    // SecureNote = 2,
+    // Card = 3,
+    // Identity = 4,
+    // SSHKey = 5
+    // BankAccount = 6,
+    // DriversLicense = 7,
+    // Passport = 8,
     pub atype: i32,
     pub name: String,
     pub notes: Option<String>,
@@ -353,6 +355,9 @@ impl Cipher {
             "card": null,
             "identity": null,
             "sshKey": null,
+            "bankAccount": null,
+            "driversLicense": null,
+            "passport": null,
         });
 
         // These values are only needed for user/default syncs
@@ -392,6 +397,9 @@ impl Cipher {
             3 => "card",
             4 => "identity",
             5 => "sshKey",
+            6 => "bankAccount",
+            7 => "driversLicense",
+            8 => "passport",
             _ => err!(format!("Cipher {} has an invalid type {}", self.uuid, self.atype)),
         };
 
