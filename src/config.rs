@@ -859,6 +859,19 @@ make_config! {
         _duo_akey:              Pass,   false,  option;
     },
 
+    /// External 2fa Settings
+    ext2fa: _enable_ext2fa {
+        /// External 2fa provider enabled |>
+        /// WARNING: Client applications do not natively support custom 2FA providers. When they
+        /// encounter an unknown provider type, they silently ignore it and fail to display a 2FA prompt.
+        /// Thus, when `External2fa` is enabled, the backend leverages client behavior by substituting the standard
+        /// `Yubikey` provider configuration. This forces the client to display a functional token input UI.
+        /// As a consequence, it consumes `Yubikey` provider for the user.
+        enable_ext2fa:       bool,     true,   def,     false;
+        /// Url of ext2fa provider |> The address of the external 2fa provider server.
+        ext2fa_url:          String,   true,   def, "http://127.0.0.1:9090/".into();
+    },
+
     /// SMTP Email Settings
     smtp: _enable_smtp {
         /// Enabled

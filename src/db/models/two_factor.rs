@@ -36,6 +36,9 @@ pub enum TwoFactorType {
     Webauthn = 7,
     RecoveryCode = 8,
 
+    //External 2fa provider
+    External2fa = 900,
+
     // These are implementation details
     U2fRegisterChallenge = 1000,
     U2fLoginChallenge = 1001,

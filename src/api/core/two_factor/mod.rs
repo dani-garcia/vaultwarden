@@ -31,6 +31,7 @@ pub mod email;
 pub mod protected_actions;
 pub mod webauthn;
 pub mod yubikey;
+pub mod ext2fa;
 
 fn has_global_duo_credentials() -> bool {
     CONFIG._enable_duo() && CONFIG.duo_host().is_some() && CONFIG.duo_ikey().is_some() && CONFIG.duo_skey().is_some()
@@ -58,6 +59,7 @@ pub fn is_twofactor_provider_usable(provider_type: &TwoFactorType, provider_data
         }
         TwoFactorType::Webauthn => CONFIG.is_webauthn_2fa_supported(),
         TwoFactorType::Remember => !CONFIG.disable_2fa_remember(),
+        TwoFactorType::External2fa => CONFIG.enable_ext2fa(),
         TwoFactorType::U2f
         | TwoFactorType::U2fRegisterChallenge
         | TwoFactorType::U2fLoginChallenge
