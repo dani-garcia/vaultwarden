@@ -233,6 +233,11 @@ impl Cipher {
                 d.into_iter()
                     .filter_map(|d| match d.data.get("password") {
                         Some(p) if p.is_string() => Some(d.data),
+                        Some(_) => {
+                            let mut data = d.data;
+                            data["password"] = json!("");
+                            Some(data)
+                        }
                         _ => None,
                     })
                     .map(|mut d| {
@@ -279,6 +284,14 @@ impl Cipher {
             // Check if `passwordRevisionDate` is a valid date, else convert it
             if let Some(pw_revision) = type_data_json["passwordRevisionDate"].as_str() {
                 type_data_json["passwordRevisionDate"] = json!(validate_and_format_date(pw_revision));
+            }
+
+            // SDK 0.2.0 compatibility: Bitwarden extension v2026.7.0 expects these fields
+            if type_data_json.get("autofillOnPageLoad").is_none() {
+                type_data_json["autofillOnPageLoad"] = Value::Null;
+            }
+            if type_data_json.get("fido2Credentials").is_none() {
+                type_data_json["fido2Credentials"] = Value::Array(Vec::new());
             }
         }
 
