@@ -1,28 +1,72 @@
 use std::collections::HashSet;
 
-use chrono::Utc;
+use chrono::{TimeDelta, Utc};
 use rocket::{
     Request, Route,
+    form::FromForm,
     request::{FromRequest, Outcome},
     serde::json::Json,
 };
+use serde_json::Value;
 
 use crate::{
     CONFIG,
-    api::EmptyResult,
+    api::{EmptyResult, JsonResult, core::events::get_continuation_token},
     auth,
     db::{
         DbConn,
         models::{
-            Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, Organization,
+            Event, Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, Organization,
             OrganizationApiKey, OrganizationId, User,
         },
     },
     mail,
+    util::parse_date,
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![ldap_import]
+    routes![ldap_import, get_org_events]
+}
+
+#[derive(FromForm)]
+struct EventRangePublic {
+    start: Option<String>,
+    end: Option<String>,
+    #[field(name = "continuationToken")]
+    continuation_token: Option<String>,
+}
+
+// Upstream: https://github.com/bitwarden/server/blob/main/src/Api/AdminConsole/Public/Controllers/EventsController.cs
+#[get("/public/events?<data..>")]
+async fn get_org_events(data: EventRangePublic, token: PublicToken, conn: DbConn) -> JsonResult {
+    let org_id = token.0;
+
+    // Return an empty list when org events are disabled, to mirror the internal endpoints.
+    let events_json: Vec<Value> = if CONFIG.org_events_enabled() {
+        let now = Utc::now().naive_utc();
+        // Defaults match upstream ApiHelpers.GetDateRange: end = now, start = end - 1 day.
+        let start_date = data.start.as_deref().map_or_else(|| now - TimeDelta::try_days(1).unwrap(), parse_date);
+        // The continuation token, when present, becomes the new `end` cursor (same as the internal endpoints).
+        let end_date = match (&data.continuation_token, &data.end) {
+            (Some(token), _) => parse_date(token),
+            (None, Some(end)) => parse_date(end),
+            (None, None) => now,
+        };
+
+        Event::find_by_organization_uuid(&org_id, &start_date, &end_date, &conn)
+            .await
+            .iter()
+            .map(Event::to_json_public)
+            .collect()
+    } else {
+        Vec::with_capacity(0)
+    };
+
+    Ok(Json(json!({
+        "data": events_json,
+        "object": "list",
+        "continuationToken": get_continuation_token(&events_json),
+    })))
 }
 
 #[derive(Deserialize)]

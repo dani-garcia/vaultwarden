@@ -125,7 +125,7 @@ async fn get_user_events(
     })))
 }
 
-fn get_continuation_token(events_json: &[Value]) -> Option<&str> {
+pub(crate) fn get_continuation_token(events_json: &[Value]) -> Option<&str> {
     // When the length of the vec equals the max page_size there probably is more data
     // When it is less, then all events are loaded.
     #[expect(clippy::cast_possible_truncation, reason = "PAGE_SIZE fits within usize")]
