@@ -1104,6 +1104,8 @@ impl<'r> FromRequest<'r> for ClientIp {
             })
         } else {
             if CONFIG._ip_header_enabled() && req.headers().get_one(&CONFIG.ip_header()).is_some() {
+                // Log the canonical IP, which is what the user filter will need to match against
+                let remote = remote.map(|ip| ip.to_canonical());
                 debug!("Ignoring the '{}' header, {remote:?} is not a trusted proxy", CONFIG.ip_header());
             }
             None

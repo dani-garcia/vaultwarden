@@ -1871,6 +1871,8 @@ async fn post_org_import(
     for mut cipher_data in data.ciphers {
         // Always clear folder_id's via an organization import
         cipher_data.folder_id = None;
+        // Replace the client-provided, unvalidated organizationId with the real target org
+        cipher_data.organization_id = Some(org_id.clone());
         let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
         update_cipher_from_data(
             &mut cipher,
@@ -2461,8 +2463,14 @@ async fn get_groups_data(
         err!("Organization not found", "Organization id's do not match");
     }
 
-    if !headers.membership.has_full_access() {
-        err_code!("Resource not found.", "User does not have full access", rocket::http::Status::NotFound.code);
+    // For now, both the group list and the details view require full access to the organization
+    // (directly or via a group). Bitwarden also lets a manager of a specific collection read the
+    // plain list (to assign groups); handling that case is left for a follow-up.
+    let has_full_access = headers.membership.has_full_access()
+        || (CONFIG.org_groups_enabled()
+            && GroupUser::has_full_access_by_member(&org_id, &headers.membership.uuid, &conn).await);
+    if !has_full_access {
+        err_code!("Resource not found.", "User does not have access", rocket::http::Status::NotFound.code);
     }
 
     let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
