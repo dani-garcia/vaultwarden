@@ -13,6 +13,7 @@ use crate::{
     },
     db::{
         DbConn,
+        models::OrgCollectionSetting,
         schema::{
             ciphers, ciphers_collections, collections, collections_groups, folders, folders_ciphers, groups,
             groups_users, users_collections, users_organizations,
@@ -25,7 +26,7 @@ use macros::UuidFromParam;
 
 use super::{
     Archive, Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership,
-    MembershipStatus, MembershipType, OrganizationId, User, UserId,
+    MembershipStatus, MembershipType, Organization, OrganizationId, User, UserId,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -186,6 +187,8 @@ impl Cipher {
         } else {
             (false, false, false)
         };
+
+        let can_delete = self.is_deletable_by_user(user_uuid, conn).await;
 
         let fields_json: Vec<_> = self
             .fields
@@ -381,8 +384,8 @@ impl Cipher {
             json_object["viewPassword"] = json!(!hide_passwords);
             // The new key used by clients since v2025.6.0
             json_object["permissions"] = json!({
-                "delete": !read_only,
-                "restore": !read_only,
+                "delete": can_delete,
+                "restore": can_delete,
             });
         }
 
@@ -707,6 +710,21 @@ impl Cipher {
     pub async fn is_write_accessible_to_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
         match self.get_access_restrictions(user_uuid, None, conn).await {
             Some((read_only, _hide_passwords, manage)) => !read_only || manage,
+            None => false,
+        }
+    }
+
+    pub async fn is_deletable_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
+        let manage_required = match self.organization_uuid {
+            Some(ref org_id) => match Organization::find_collection_settings_by_uuid(org_id, conn).await {
+                Some(settings) => settings.get_flag(OrgCollectionSetting::LimitItemDeletion),
+                None => false,
+            },
+            None => false,
+        };
+
+        match self.get_access_restrictions(user_uuid, None, conn).await {
+            Some((read_only, _hide_passwords, manage)) => (!manage_required && !read_only) || manage,
             None => false,
         }
     }

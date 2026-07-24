@@ -1,0 +1,1 @@
+ALTER TABLE organizations DROP COLUMN collection_settings;

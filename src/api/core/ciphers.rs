@@ -13,8 +13,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::{self, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType, core::log_event},
-    auth::ClientVersion,
-    auth::{Headers, OrgIdGuard, OwnerHeaders},
+    auth::{ClientVersion, Headers, OrgIdGuard, OwnerHeaders},
     config::PathType,
     crypto,
     db::{
@@ -1778,7 +1777,7 @@ async fn delete_cipher_by_uuid(
         err!("Cipher doesn't exist")
     };
 
-    if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
+    if !cipher.is_deletable_by_user(&headers.user.uuid, conn).await {
         err!("Cipher can't be deleted by user")
     }
 

@@ -868,6 +868,7 @@ pub struct ManagerHeaders {
     pub host: String,
     pub device: Device,
     pub user: User,
+    pub membership_type: MembershipType,
     pub ip: ClientIp,
     pub org_id: OrganizationId,
 }
@@ -895,6 +896,7 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
                 host: headers.host,
                 device: headers.device,
                 user: headers.user,
+                membership_type: headers.membership_type,
                 ip: headers.ip,
                 org_id: headers.membership.org_uuid,
             })
@@ -975,6 +977,7 @@ impl ManagerHeaders {
             host: h.host,
             device: h.device,
             user: h.user,
+            membership_type: MembershipType::from_i32(h.membership.atype).unwrap(),
             ip: h.ip,
             org_id: h.membership.org_uuid,
         })

@@ -6,9 +6,9 @@ use serde_json::Value;
 
 use crate::{
     CONFIG,
-    api::admin::FAKE_ADMIN_UUID,
     api::{
         EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
+        admin::FAKE_ADMIN_UUID,
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
     auth::{AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite},
@@ -17,7 +17,8 @@ use crate::{
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
             Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User, UserId,
+            OrgCollectionSetting, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User,
+            UserId,
         },
     },
     mail,
@@ -39,6 +40,7 @@ pub fn routes() -> Vec<Route> {
         get_collection_users,
         put_organization,
         post_organization,
+        put_organization_collection_management,
         post_organization_collections,
         post_bulk_access_collections,
         post_organization_collection_update,
@@ -124,6 +126,15 @@ struct OrgData {
 struct OrganizationUpdateData {
     billing_email: String,
     name: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct OrganizationCollectionManagementUpdateData {
+    allow_admin_access_to_all_collection_items: Option<bool>,
+    limit_collection_creation: Option<bool>,
+    limit_collection_deletion: Option<bool>,
+    limit_item_deletion: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -340,6 +351,50 @@ async fn post_organization(
     Ok(Json(org.to_json()))
 }
 
+#[put("/organizations/<org_id>/collection-management", data = "<data>")]
+async fn put_organization_collection_management(
+    org_id: OrganizationId,
+    headers: OwnerHeaders,
+    data: Json<OrganizationCollectionManagementUpdateData>,
+    conn: DbConn,
+) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+
+    let data: OrganizationCollectionManagementUpdateData = data.into_inner();
+
+    let Some(mut org) = Organization::find_by_uuid(&org_id, &conn).await else {
+        err!("Organization not found")
+    };
+
+    org.collection_settings.set_flag(
+        OrgCollectionSetting::AllowAdminAccessToAllCollectionItems,
+        data.allow_admin_access_to_all_collection_items.unwrap_or(false),
+    );
+    org.collection_settings
+        .set_flag(OrgCollectionSetting::LimitCollectionCreation, data.limit_collection_creation.unwrap_or(false));
+    org.collection_settings
+        .set_flag(OrgCollectionSetting::LimitCollectionDeletion, data.limit_collection_deletion.unwrap_or(false));
+    org.collection_settings
+        .set_flag(OrgCollectionSetting::LimitItemDeletion, data.limit_item_deletion.unwrap_or(false));
+
+    org.save(&conn).await?;
+
+    log_event(
+        EventType::OrganizationUpdated as i32,
+        org_id.as_ref(),
+        &org_id,
+        &headers.user.uuid,
+        headers.device.atype,
+        &headers.ip.ip,
+        &conn,
+    )
+    .await;
+
+    Ok(Json(org.to_json()))
+}
+
 // GET /api/collections?writeOnly=false
 #[get("/collections")]
 async fn get_user_collections(headers: Headers, conn: DbConn) -> Json<Value> {
@@ -506,7 +561,13 @@ async fn post_organization_collections(
     let data: FullCollectionData = data.into_inner();
     data.validate(&org_id, &conn).await?;
 
-    if headers.membership.atype == MembershipType::Manager && !headers.membership.access_all {
+    let Some(org_settings) = Organization::find_collection_settings_by_uuid(&org_id, &conn).await else {
+        err!("Can't find organization details")
+    };
+
+    if headers.membership.atype == MembershipType::Manager
+        && (!headers.membership.access_all || org_settings.get_flag(OrgCollectionSetting::LimitCollectionCreation))
+    {
         err!("You don't have permission to create collections")
     }
 
@@ -712,9 +773,20 @@ async fn delete_organization_collection_impl(
     if org_id != &headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
+    let Some(org_settings) = Organization::find_collection_settings_by_uuid(org_id, conn).await else {
+        err!("Can't find organization details")
+    };
+
     let Some(collection) = Collection::find_by_uuid_and_org(col_id, org_id, conn).await else {
         err!("Collection not found", "Collection does not exist or does not belong to this organization")
     };
+
+    if headers.membership_type <= MembershipType::Manager
+        && org_settings.get_flag(OrgCollectionSetting::LimitCollectionDeletion)
+    {
+        err!("The current user isn't allowed to delete this collection")
+    }
+
     log_event(
         EventType::CollectionDeleted as i32,
         &collection.uuid,
@@ -1805,6 +1877,10 @@ async fn post_org_import(
     if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
+    let Some(org_settings) = Organization::find_collection_settings_by_uuid(&org_id, &conn).await else {
+        err!("Can't find organization details")
+    };
+
     let data: ImportData = data.into_inner();
 
     // Validate the import before continuing
@@ -1829,7 +1905,10 @@ async fn post_org_import(
         } else {
             // We do not allow users or managers which can not manage all collections to create new collections
             // If there is any collection other than an existing import collection, abort the import.
-            if headers.membership.atype <= MembershipType::Manager && !headers.membership.has_full_access() {
+            if headers.membership.atype <= MembershipType::Manager
+                && (!headers.membership.has_full_access()
+                    || org_settings.get_flag(OrgCollectionSetting::LimitCollectionCreation))
+            {
                 err!(Compact, "The current user isn't allowed to create new collections")
             }
             let new_collection = Collection::new(org_id.clone(), col.name, col.external_id);

@@ -1,0 +1,1 @@
+ALTER TABLE organizations ADD COLUMN collection_settings SMALLINT NOT NULL DEFAULT 1;
