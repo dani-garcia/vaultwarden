@@ -654,9 +654,7 @@ impl Collection {
                 .filter(collections::org_uuid.eq(&org_uuid))
                 .filter(
                     // Manage permission on a collection assigned directly or via a group.
-                    users_collections::manage
-                        .eq(true)
-                        .or(collections_groups::manage.eq(true)),
+                    users_collections::manage.eq(true).or(collections_groups::manage.eq(true)),
                 )
                 .count()
                 .first::<i64>(conn)
