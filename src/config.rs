@@ -1434,6 +1434,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "mutual-tls",
     "cxp-import-mobile",
     "cxp-export-mobile",
+    "pm-34171-card-scanner",
     // Platform Team
     "pm-30529-webauthn-related-origins",
 ];
