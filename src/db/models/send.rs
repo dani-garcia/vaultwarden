@@ -262,6 +262,22 @@ impl Send {
         Ok(true)
     }
 
+    /// Whether the Send is currently within its validity window: not disabled, not past its
+    /// expiration date, and not past its deletion date. Does not consider `max_access_count`
+    /// (consumed at token issuance) or the password.
+    pub fn is_accessible(&self) -> bool {
+        let now = Utc::now().naive_utc();
+        if self.disabled {
+            return false;
+        }
+        if let Some(expiration) = self.expiration_date
+            && now >= expiration
+        {
+            return false;
+        }
+        now < self.deletion_date
+    }
+
     pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         self.update_users_revision(conn).await;
 

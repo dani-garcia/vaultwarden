@@ -453,6 +453,9 @@ async fn post_access(headers: SendHeaders, conn: DbConn, nt: Notify<'_>) -> Json
     let Some(send) = Send::find_by_uuid(&headers.send_id, &conn).await else {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     };
+    if !send.is_accessible() {
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
+    }
     process_access(send, conn, nt).await
 }
 
@@ -483,17 +486,7 @@ async fn post_access_legacy(
         err_code!(SEND_INACCESSIBLE_MSG, 404);
     }
 
-    if let Some(expiration) = send.expiration_date
-        && Utc::now().naive_utc() >= expiration
-    {
-        err_code!(SEND_INACCESSIBLE_MSG, 404)
-    }
-
-    if Utc::now().naive_utc() >= send.deletion_date {
-        err_code!(SEND_INACCESSIBLE_MSG, 404)
-    }
-
-    if send.disabled {
+    if !send.is_accessible() {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
@@ -541,6 +534,9 @@ async fn post_access_file(
     let Some(send) = Send::find_by_uuid(&headers.send_id, &conn).await else {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     };
+    if !send.is_accessible() {
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
+    }
     process_access_file(send, file_id, host, conn, nt).await
 }
 
@@ -567,17 +563,7 @@ async fn post_access_file_legacy(
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
-    if let Some(expiration) = send.expiration_date
-        && Utc::now().naive_utc() >= expiration
-    {
-        err_code!(SEND_INACCESSIBLE_MSG, 404)
-    }
-
-    if Utc::now().naive_utc() >= send.deletion_date {
-        err_code!(SEND_INACCESSIBLE_MSG, 404)
-    }
-
-    if send.disabled {
+    if !send.is_accessible() {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
