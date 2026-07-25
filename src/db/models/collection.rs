@@ -1,5 +1,6 @@
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
+use num_traits::FromPrimitive;
 use serde_json::Value;
 
 use crate::{
@@ -50,6 +51,16 @@ pub struct CollectionUser {
 pub struct CollectionCipher {
     pub cipher_uuid: CipherId,
     pub collection_uuid: CollectionId,
+}
+
+/// Serialize the assignment-level `manage` capability using the same role boundary as the
+/// collection mutation guards. Read/write access is deliberately not management authority.
+pub(super) fn assignment_manage_for_member(membership_type: i32, stored_manage: bool) -> bool {
+    match MembershipType::from_i32(membership_type) {
+        Some(MembershipType::Owner | MembershipType::Admin) => true,
+        Some(MembershipType::Custom) => stored_manage,
+        Some(MembershipType::User) | None => false,
+    }
 }
 
 /// Local methods
@@ -104,25 +115,14 @@ impl Collection {
     ) -> Value {
         let (read_only, hide_passwords, manage) = if let Some(cipher_sync_data) = cipher_sync_data {
             match cipher_sync_data.members.get(&self.org_uuid) {
-                // Only for manager-level (Custom) members does Bitwarden return true for the manage
-                // option. Owners and Admins always have true. Users cannot have full access.
-                Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Custom),
+                // Full collection visibility is not collection-management authority. Admins and
+                // Owners manage implicitly; Custom members still need an explicit stored grant.
+                Some(m) if m.has_full_access() => (false, false, assignment_manage_for_member(m.atype, false)),
                 Some(m) => {
-                    // Only let a manager-level (Custom) member manage collections
-                    // when they have full read/write access
-                    let is_manager = m.atype >= MembershipType::Custom;
                     if let Some(cu) = cipher_sync_data.user_collections.get(&self.uuid) {
-                        (
-                            cu.read_only,
-                            cu.hide_passwords,
-                            is_manager && (cu.manage || (!cu.read_only && !cu.hide_passwords)),
-                        )
+                        (cu.read_only, cu.hide_passwords, assignment_manage_for_member(m.atype, cu.manage))
                     } else if let Some(cg) = cipher_sync_data.user_collections_groups.get(&self.uuid) {
-                        (
-                            cg.read_only,
-                            cg.hide_passwords,
-                            is_manager && (cg.manage || (!cg.read_only && !cg.hide_passwords)),
-                        )
+                        (cg.read_only, cg.hide_passwords, assignment_manage_for_member(m.atype, cg.manage))
                     } else {
                         (false, false, false)
                     }
@@ -131,15 +131,17 @@ impl Collection {
             }
         } else {
             match Membership::find_confirmed_by_user_and_org(user_uuid, &self.org_uuid, conn).await {
-                Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Custom),
-                Some(m) if m.atype >= MembershipType::Custom && self.is_manageable_by_user(user_uuid, conn).await => {
+                Some(m) if m.has_full_access() => (false, false, assignment_manage_for_member(m.atype, false)),
+                Some(m)
+                    if m.atype >= MembershipType::Custom
+                        && m.has_explicit_collection_manage_access(&self.uuid, conn).await =>
+                {
                     (false, false, true)
                 }
-                Some(m) => {
-                    let is_manager = m.atype >= MembershipType::Custom;
+                Some(_) => {
                     let read_only = !self.is_writable_by_user(user_uuid, conn).await;
                     let hide_passwords = self.hide_passwords_for_user(user_uuid, conn).await;
-                    (read_only, hide_passwords, is_manager && !read_only && !hide_passwords)
+                    (read_only, hide_passwords, false)
                 }
                 _ => (true, true, false),
             }
@@ -576,71 +578,8 @@ impl Collection {
         .await
     }
 
-    pub async fn is_coll_manageable_by_user(uuid: &CollectionId, user_uuid: &UserId, conn: &DbConn) -> bool {
-        let uuid = uuid.to_string();
-        let user_uuid = user_uuid.to_string();
-        conn.run(move |conn| {
-            collections::table
-                .left_join(
-                    users_collections::table.on(users_collections::collection_uuid
-                        .eq(collections::uuid)
-                        .and(users_collections::user_uuid.eq(user_uuid.clone()))),
-                )
-                .left_join(
-                    users_organizations::table.on(collections::org_uuid
-                        .eq(users_organizations::org_uuid)
-                        .and(users_organizations::user_uuid.eq(user_uuid))),
-                )
-                .left_join(groups_users::table.on(groups_users::users_organizations_uuid.eq(users_organizations::uuid)))
-                .left_join(
-                    groups::table.on(groups::uuid
-                        .eq(groups_users::groups_uuid)
-                        .and(groups::organizations_uuid.eq(users_organizations::org_uuid))),
-                )
-                .left_join(
-                    collections_groups::table.on(collections_groups::groups_uuid
-                        .eq(groups_users::groups_uuid)
-                        .and(collections_groups::collections_uuid.eq(collections::uuid))),
-                )
-                .filter(collections::uuid.eq(&uuid))
-                .filter(
-                    users_collections::collection_uuid
-                        .eq(&uuid)
-                        .and(users_collections::manage.eq(true))
-                        .or(
-                            // Directly accessed collection
-                            users_organizations::edit_any_collection.eq(true).or(
-                                // Custom "Edit any collection" or org admin/owner (successor of access_all)
-                                users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
-                            ),
-                        )
-                        .or(
-                            groups::access_all.eq(true), // access_all in groups
-                        )
-                        .or(
-                            // access via groups
-                            groups_users::users_organizations_uuid.eq(users_organizations::uuid).and(
-                                collections_groups::collections_uuid
-                                    .is_not_null()
-                                    .and(collections_groups::manage.eq(true)),
-                            ),
-                        ),
-                )
-                .count()
-                .first::<i64>(conn)
-                .ok()
-                .unwrap_or(0)
-                != 0
-        })
-        .await
-    }
-
-    pub async fn is_manageable_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
-        Self::is_coll_manageable_by_user(&self.uuid, user_uuid, conn).await
-    }
-
     // Whether the user has manage access to at least one collection in the org, directly or via a
-    // group. Org-scoped counterpart of is_coll_manageable_by_user.
+    // group.
     pub async fn has_manageable_collection_by_user(
         org_uuid: &OrganizationId,
         user_uuid: &UserId,
@@ -667,6 +606,8 @@ impl Collection {
                         .and(collections_groups::collections_uuid.eq(collections::uuid))),
                 )
                 .filter(collections::org_uuid.eq(&org_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .filter(users_organizations::atype.eq(MembershipType::Custom as i32))
                 .filter(
                     // Manage permission on a collection assigned directly or via a group.
                     users_collections::manage.eq(true).or(collections_groups::manage.eq(true)),
@@ -999,11 +940,7 @@ impl CollectionMembership {
             "id": self.membership_uuid,
             "readOnly": self.read_only,
             "hidePasswords": self.hide_passwords,
-            "manage": membership_type >= MembershipType::Admin
-                || self.manage
-                || (membership_type >= MembershipType::Custom
-                    && !self.read_only
-                    && !self.hide_passwords),
+            "manage": assignment_manage_for_member(membership_type, self.manage),
         })
     }
 }
@@ -1037,3 +974,21 @@ impl From<CollectionUser> for CollectionMembership {
     UuidFromParam,
 )]
 pub struct CollectionId(String);
+
+#[cfg(test)]
+mod tests {
+    use super::assignment_manage_for_member;
+    use crate::db::models::MembershipType;
+
+    #[test]
+    fn assignment_manage_matches_collection_guard_role_boundaries() {
+        for role in [MembershipType::Owner, MembershipType::Admin] {
+            assert!(assignment_manage_for_member(role as i32, false));
+        }
+
+        assert!(assignment_manage_for_member(MembershipType::Custom as i32, true));
+        assert!(!assignment_manage_for_member(MembershipType::Custom as i32, false));
+        assert!(!assignment_manage_for_member(MembershipType::User as i32, true));
+        assert!(!assignment_manage_for_member(i32::MAX, true));
+    }
+}

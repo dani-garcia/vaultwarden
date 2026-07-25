@@ -557,6 +557,19 @@ fn apply_membership_type_change(membership: &mut Membership, new_type: Membershi
     membership.atype = new_type as i32;
 }
 
+fn parse_admin_membership_type(user_type: NumberOrString) -> Option<MembershipType> {
+    let raw_type = user_type.into_string();
+
+    // The public API still accepts the legacy Manager representation for compatibility and folds
+    // it into Custom. The admin panel must not do that: treating an apparent Manager demotion as a
+    // Custom-to-Custom update would preserve the member's existing granular permissions.
+    if matches!(raw_type.as_str(), "3" | "Manager") {
+        return None;
+    }
+
+    MembershipType::from_str(&raw_type)
+}
+
 #[post("/users/org_type", format = "application/json", data = "<data>")]
 async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToken, conn: DbConn) -> EmptyResult {
     let data: MembershipTypeData = data.into_inner();
@@ -566,7 +579,7 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
         err!("The specified user isn't member of the organization")
     };
 
-    let Some(new_type) = MembershipType::from_str(&data.user_type.into_string()) else {
+    let Some(new_type) = parse_admin_membership_type(data.user_type) else {
         err!("Invalid type")
     };
 
@@ -954,5 +967,17 @@ mod tests {
         apply_membership_type_change(&mut promo, MembershipType::Admin);
         assert_eq!(promo.atype, MembershipType::Admin as i32);
         assert!(!promo.edit_any_collection);
+    }
+
+    #[test]
+    fn admin_type_parser_rejects_legacy_manager_before_normalization() {
+        assert!(parse_admin_membership_type(NumberOrString::Number(3)).is_none());
+        assert!(parse_admin_membership_type(NumberOrString::String("3".to_owned())).is_none());
+        assert!(parse_admin_membership_type(NumberOrString::String("Manager".to_owned())).is_none());
+
+        assert!(parse_admin_membership_type(NumberOrString::Number(4)) == Some(MembershipType::Custom));
+        assert!(
+            parse_admin_membership_type(NumberOrString::String("Custom".to_owned())) == Some(MembershipType::Custom)
+        );
     }
 }

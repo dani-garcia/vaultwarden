@@ -564,26 +564,25 @@ async fn post_organization_collections(
     let collection = Collection::new(org_id.clone(), data.name, data.external_id);
     collection.save(&conn).await?;
 
-    log_event(
-        EventType::CollectionCreated as i32,
-        &collection.uuid,
-        &org_id,
-        &headers.user.uuid,
-        headers.device.atype,
-        &headers.ip.ip,
-        &conn,
-    )
-    .await;
-
     // Security (F-3): a `manage` grant carries collection *delete*/administer authority
     // (`has_explicit_collection_manage_access` -> CollectionDeleteHeaders/ManagerHeaders), so only a
     // caller who could delete this collection may confer it — the same rule the collection-update and
     // bulk-access endpoints apply. Create is deliberately independent from Edit/Delete, so a Custom
     // member holding only `create_new_collections` must not be able to hand a manage row to another
-    // member or to a group (nor to itself) while creating the collection. For such callers the
-    // requested `manage` is forced to false; Admin/Owner and Custom-with-`delete_any_collection`
-    // keep it. Evaluated after the collection exists so the per-collection lookup sees it.
+    // member or to a group while creating the collection. For such callers the requested `manage`
+    // is forced to false; Admin/Owner and Custom-with-`delete_any_collection` keep it. The creator's
+    // own object-scoped ownership is added separately below. Evaluated after the collection exists
+    // so the per-collection lookup sees it.
     let may_grant_manage = caller_may_grant_collection_manage(&headers.membership, &collection.uuid, &conn).await;
+    let creator_needs_assignment = !headers.membership.has_full_access();
+
+    // Persist the creator's object-scoped ownership before secondary assignments. If a later
+    // assignment write fails, the otherwise non-transactional create path still leaves the new
+    // collection recoverably manageable by its creator. An explicit self-assignment below is
+    // skipped so it cannot weaken this grant.
+    if creator_needs_assignment {
+        CollectionUser::save(&headers.membership.user_uuid, &collection.uuid, false, false, true, &conn).await?;
+    }
 
     for group in data.groups {
         CollectionGroup::new(
@@ -605,6 +604,9 @@ async fn post_organization_collections(
         if member.grants_access_to_all_collections() {
             continue;
         }
+        if member.user_uuid == headers.membership.user_uuid && creator_needs_assignment {
+            continue;
+        }
 
         CollectionUser::save(
             &member.user_uuid,
@@ -616,6 +618,19 @@ async fn post_organization_collections(
         )
         .await?;
     }
+
+    // Emit the success event only after all requested assignments and the creator's object-scoped
+    // manage grant have been persisted. A later write failure must not leave a false audit record.
+    log_event(
+        EventType::CollectionCreated as i32,
+        &collection.uuid,
+        &org_id,
+        &headers.user.uuid,
+        headers.device.atype,
+        &headers.ip.ip,
+        &conn,
+    )
+    .await;
 
     Ok(Json(collection.to_json_details(&headers.membership.user_uuid, None, &conn).await))
 }
@@ -1139,10 +1154,6 @@ async fn get_members(
         err!("Organization not found", "Organization id's do not match");
     }
 
-    if !headers.membership.has_full_access() {
-        err_code!("Resource not found.", "User does not have full access", rocket::http::Status::NotFound.code);
-    }
-
     let mut users_json = Vec::new();
     for u in Membership::find_by_org(&org_id, &conn).await {
         users_json.push(
@@ -1226,7 +1237,9 @@ impl CustomRolePermissions {
             delete_any_collection: enabled("deleteAnyCollection"),
             access_event_logs: enabled("accessEventLogs"),
             access_import_export: enabled("accessImportExport"),
-            access_reports: enabled("accessReports"),
+            // Vaultwarden has no report endpoints yet. Keep the compatibility field in the
+            // database/DTO, but never accept a permission that cannot be enforced server-side.
+            access_reports: false,
         }
     }
 
@@ -1238,6 +1251,34 @@ impl CustomRolePermissions {
         member_type >= MembershipType::Admin || (member_type == MembershipType::Custom && self.edit_any_collection)
     }
 
+    /// Parse permissions for an existing member without treating an omitted permissions object as
+    /// an instruction to clear every Custom-role grant. Older clients send legacy role value `3`
+    /// without the modern object; that value is normalized to Custom for compatibility.
+    fn from_edit_request(
+        member_type: MembershipType,
+        permissions: Option<&HashMap<String, Value>>,
+        membership: &Membership,
+    ) -> Self {
+        match permissions {
+            Some(permissions) => Self::from_request(member_type, permissions),
+            None if member_type == MembershipType::Custom && membership.atype == MembershipType::Custom as i32 => {
+                Self {
+                    manage_users: membership.manage_users,
+                    manage_groups: membership.manage_groups,
+                    manage_policies: membership.manage_policies,
+                    create_new_collections: membership.create_new_collections,
+                    edit_any_collection: membership.edit_any_collection,
+                    delete_any_collection: membership.delete_any_collection,
+                    access_event_logs: membership.access_event_logs,
+                    access_import_export: membership.access_import_export,
+                    // Reports are unsupported and therefore never preserved as an active grant.
+                    access_reports: false,
+                }
+            }
+            None => Self::default(),
+        }
+    }
+
     fn differs_from(self, membership: &Membership) -> bool {
         self.manage_users != membership.manage_users
             || self.manage_groups != membership.manage_groups
@@ -1247,7 +1288,6 @@ impl CustomRolePermissions {
             || self.delete_any_collection != membership.delete_any_collection
             || self.access_event_logs != membership.access_event_logs
             || self.access_import_export != membership.access_import_export
-            || self.access_reports != membership.access_reports
     }
 
     fn apply_to(self, membership: &mut Membership) {
@@ -1310,8 +1350,8 @@ async fn send_invite(
         err!("Invalid type")
     };
 
-    if new_type != MembershipType::User && headers.membership_type != MembershipType::Owner {
-        err!("Only Owners can invite Admins, Owners or Custom members")
+    if !may_manage_member_type(headers.membership_type, new_type) {
+        err!("You don't have permission to invite this role")
     }
 
     // manageAllCollections is a client-only aggregate. Persist its three children independently.
@@ -1487,7 +1527,7 @@ async fn bulk_reinvite_members(
 
     let mut bulk_response = Vec::new();
     for member_id in data.ids {
-        let err_msg = match reinvite_member_impl(&org_id, &member_id, &headers.user.email, &conn).await {
+        let err_msg = match reinvite_member_impl(&org_id, &member_id, &headers, &conn).await {
             Ok(()) => String::new(),
             Err(e) => format!("{e:?}"),
         };
@@ -1518,18 +1558,22 @@ async fn reinvite_member(
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    reinvite_member_impl(&org_id, &member_id, &headers.user.email, &conn).await
+    reinvite_member_impl(&org_id, &member_id, &headers, &conn).await
 }
 
 async fn reinvite_member_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    invited_by_email: &str,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
     let Some(member) = Membership::find_by_uuid_and_org(member_id, org_id, conn).await else {
         err!("The user hasn't been invited to the organization.")
     };
+
+    if !may_manage_stored_member_type(headers.membership_type, member.atype) {
+        err!("You don't have permission to reinvite this user")
+    }
 
     if member.status != MembershipStatus::Invited as i32 {
         err!("The user is already accepted or confirmed to the organization")
@@ -1550,7 +1594,7 @@ async fn reinvite_member_impl(
     };
 
     if CONFIG.mail_enabled() {
-        mail::send_invite(&user, org_id.clone(), member.uuid, &org_name, Some(invited_by_email.to_owned())).await?;
+        mail::send_invite(&user, org_id.clone(), member.uuid, &org_name, Some(headers.user.email.clone())).await?;
     } else if user.password_hash.is_empty() {
         let invitation = Invitation::new(&user.email);
         invitation.save(conn).await?;
@@ -1715,8 +1759,8 @@ async fn confirm_invite_impl(
         err!("The specified user isn't a member of the organization")
     };
 
-    if member_to_confirm.atype != MembershipType::User && headers.membership_type != MembershipType::Owner {
-        err!("Only Owners can confirm Admins, Owners or Custom members")
+    if !may_manage_stored_member_type(headers.membership_type, member_to_confirm.atype) {
+        err!("You don't have permission to confirm this user")
     }
 
     if member_to_confirm.status != MembershipStatus::Accepted as i32 {
@@ -1807,8 +1851,7 @@ struct EditUserData {
     r#type: NumberOrString,
     collections: Option<Vec<CollectionData>>,
     groups: Option<Vec<GroupId>>,
-    #[serde(default)]
-    permissions: HashMap<String, Value>,
+    permissions: Option<HashMap<String, Value>>,
 }
 
 #[put("/organizations/<org_id>/users/<member_id>", data = "<data>", rank = 1)]
@@ -1840,12 +1883,13 @@ async fn edit_member(
         err!("Invalid type")
     };
 
-    let custom_permissions = CustomRolePermissions::from_request(new_type, &data.permissions);
-    let grants_full_access = custom_permissions.grants_full_collection_access(new_type);
-
     let Some(mut member_to_edit) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
         err!("The specified user isn't member of the organization")
     };
+
+    let custom_permissions =
+        CustomRolePermissions::from_edit_request(new_type, data.permissions.as_ref(), &member_to_edit);
+    let grants_full_access = custom_permissions.grants_full_collection_access(new_type);
 
     if new_type != member_to_edit.atype
         && (member_to_edit.atype >= MembershipType::Admin || new_type >= MembershipType::Admin)
@@ -1855,13 +1899,12 @@ async fn edit_member(
     }
 
     // Security: only Admins and Owners may change a member's role type at all. A Custom member
-    // with manage_users must not change roles: raising a member to Custom grants collection-"manage"
-    // on every collection they can already write (see the `atype >= Custom` branch in
-    // `Collection`/`Membership` json), and lowering it revokes that access — both are collection-
-    // access changes this caller is not entitled to make, even though the custom permission flags
-    // are already gated below. Requests that leave the role unchanged are allowed, so such members
-    // can still use the regular edit dialog. The Admin/Owner guard above still governs Admin/Owner
-    // transitions for Owners.
+    // with manage_users must not change roles: raising a member to Custom can activate existing
+    // explicit collection-Manage assignments and other Custom-only authorization paths, while
+    // lowering it revokes them. Those authority changes are outside Manage Users even though
+    // granular permission changes are independently gated below. Requests that leave the role
+    // unchanged are allowed, so such members can still use the regular edit dialog. The
+    // Admin/Owner guard above still governs Admin/Owner transitions for Owners.
     if !may_change_member_type(headers.membership_type, member_to_edit.atype, new_type) {
         err!("Only Admins or Owners can change a member's role")
     }
@@ -2081,8 +2124,8 @@ async fn delete_member_impl(
         err!("User to delete isn't member of the organization")
     };
 
-    if member_to_delete.atype != MembershipType::User && headers.membership_type != MembershipType::Owner {
-        err!("Only Owners can delete Admins or Owners")
+    if !may_manage_stored_member_type(headers.membership_type, member_to_delete.atype) {
+        err!("You don't have permission to delete this user")
     }
 
     if member_to_delete.atype == MembershipType::Owner && member_to_delete.status == MembershipStatus::Confirmed as i32
@@ -2751,14 +2794,8 @@ async fn revoke_member_impl(
             if member.user_uuid == headers.user.uuid {
                 err!("You cannot revoke yourself")
             }
-            // Security: a Custom user with manage_users must not be able to revoke Admins or
-            // Owners. Mirrors the restriction in delete_member_impl; the Owner-specific check
-            // below still guards Admin-vs-Owner actions.
-            if member.atype != MembershipType::User && headers.membership_type < MembershipType::Admin {
+            if !may_manage_stored_member_type(headers.membership_type, member.atype) {
                 err!("You don't have permission to revoke this user")
-            }
-            if member.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
-                err!("Only owners can revoke other owners")
             }
             if member.atype == MembershipType::Owner
                 && Membership::count_confirmed_by_org_and_type(org_id, MembershipType::Owner, conn).await <= 1
@@ -2857,14 +2894,8 @@ async fn restore_member_impl(
             if member.user_uuid == headers.user.uuid {
                 err!("You cannot restore yourself")
             }
-            // Security: a Custom user with manage_users must not be able to restore Admins or
-            // Owners. Mirrors the restriction in delete_member_impl; the Owner-specific check
-            // below still guards Admin-vs-Owner actions.
-            if member.atype != MembershipType::User && headers.membership_type < MembershipType::Admin {
+            if !may_manage_stored_member_type(headers.membership_type, member.atype) {
                 err!("You don't have permission to restore this user")
-            }
-            if member.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
-                err!("Only owners can restore other owners")
             }
 
             member.restore();
@@ -3179,15 +3210,30 @@ fn may_change_group_membership(caller_can_manage_collections: bool, group_confer
 /// Whether a caller of `edit_member` may change a member's role type.
 ///
 /// Only Admins and Owners may change a member's role at all. A Custom member with `manage_users`
-/// must not, because the role type has collection-access side effects: a member of type
-/// `Manager`/`Custom` gains collection-"manage" on every collection they can write (the
-/// `atype >= Manager` branches in `Collection`/`Membership`), so promoting grants that access and
-/// demoting revokes it. `manage_users` covers the user lifecycle, not the data plane, so role
-/// changes are reserved for Admins/Owners. Leaving the role unchanged is always allowed so
+/// must not, because the role type changes organization-wide collection reach and which granular
+/// permissions are effective. `manage_users` covers the user lifecycle, not the data plane, so
+/// role changes are reserved for Admins/Owners. Leaving the role unchanged is always allowed so
 /// `manage_users` members can still use the regular edit dialog. Admin/Owner transitions are
 /// additionally governed by the dedicated Owner-only guard in `edit_member`.
 fn may_change_member_type(caller_type: MembershipType, current_atype: i32, new_type: MembershipType) -> bool {
     caller_type >= MembershipType::Admin || new_type == current_atype
+}
+
+/// Whether a caller with user-management access may perform lifecycle actions on a target role.
+///
+/// Owners may manage every role. Admins may manage Admin, Custom, and User memberships, but never
+/// Owners. Custom members holding `manage_users` are limited to ordinary Users.
+fn may_manage_member_type(caller_type: MembershipType, target_type: MembershipType) -> bool {
+    match caller_type {
+        MembershipType::Owner => true,
+        MembershipType::Admin => target_type != MembershipType::Owner,
+        MembershipType::Custom => target_type == MembershipType::User,
+        MembershipType::User => false,
+    }
+}
+
+fn may_manage_stored_member_type(caller_type: MembershipType, target_atype: i32) -> bool {
+    MembershipType::from_i32(target_atype).is_some_and(|target_type| may_manage_member_type(caller_type, target_type))
 }
 
 /// Returns true if being a member of `group_id` confers collection access — either because the
@@ -3965,7 +4011,8 @@ mod tests {
 
     use super::{
         CustomRolePermissions, caller_manage_grant_role_check, filter_ciphers_for_organization,
-        may_change_group_membership, may_change_member_type, may_export_entire_organization,
+        may_change_group_membership, may_change_member_type, may_export_entire_organization, may_manage_member_type,
+        may_manage_stored_member_type,
     };
     use crate::db::models::{Cipher, Membership, MembershipStatus, MembershipType, OrganizationId};
 
@@ -4072,11 +4119,37 @@ mod tests {
         assert!(may_change_member_type(MembershipType::Custom, custom, MembershipType::Custom));
 
         // REGRESSION (privilege escalation, PR #7397 / finding F1): a caller below Admin must NOT
-        // be able to change a member's role. Promoting User -> Custom grants that member
-        // collection-"manage" on their writable collections (atype >= Custom), and demoting
-        // revokes it — collection-access changes a manage_users caller is not entitled to make.
+        // be able to change a member's role. Promoting User -> Custom can activate explicit
+        // collection-Manage assignments and Custom-only authorization paths; demoting revokes
+        // them. A manage_users caller is not entitled to either authority change.
         assert!(!may_change_member_type(MembershipType::Custom, user, MembershipType::Custom));
         assert!(!may_change_member_type(MembershipType::Custom, custom, MembershipType::User));
+    }
+
+    #[test]
+    fn member_lifecycle_permissions_follow_the_role_hierarchy() {
+        let roles = [MembershipType::Owner, MembershipType::Admin, MembershipType::Custom, MembershipType::User];
+
+        for target in roles {
+            assert!(may_manage_member_type(MembershipType::Owner, target));
+        }
+
+        assert!(!may_manage_member_type(MembershipType::Admin, MembershipType::Owner));
+        assert!(may_manage_member_type(MembershipType::Admin, MembershipType::Admin));
+        assert!(may_manage_member_type(MembershipType::Admin, MembershipType::Custom));
+        assert!(may_manage_member_type(MembershipType::Admin, MembershipType::User));
+
+        assert!(!may_manage_member_type(MembershipType::Custom, MembershipType::Owner));
+        assert!(!may_manage_member_type(MembershipType::Custom, MembershipType::Admin));
+        assert!(!may_manage_member_type(MembershipType::Custom, MembershipType::Custom));
+        assert!(may_manage_member_type(MembershipType::Custom, MembershipType::User));
+
+        for target in roles {
+            assert!(!may_manage_member_type(MembershipType::User, target));
+        }
+
+        assert!(may_manage_stored_member_type(MembershipType::Admin, MembershipType::Custom as i32));
+        assert!(!may_manage_stored_member_type(MembershipType::Owner, i32::MAX));
     }
 
     #[test]
@@ -4141,7 +4214,7 @@ mod tests {
         assert!(custom.delete_any_collection);
         assert!(custom.access_event_logs);
         assert!(custom.access_import_export);
-        assert!(custom.access_reports);
+        assert!(!custom.access_reports, "unsupported report access must remain fail-closed");
 
         let user = CustomRolePermissions::from_request(MembershipType::User, &permissions);
         assert_eq!(user, CustomRolePermissions::default());
@@ -4164,7 +4237,6 @@ mod tests {
             delete_any_collection: true,
             access_event_logs: true,
             access_import_export: true,
-            access_reports: true,
             ..CustomRolePermissions::default()
         };
 
@@ -4176,6 +4248,45 @@ mod tests {
         assert!(membership.delete_any_collection);
         assert!(membership.access_event_logs);
         assert!(membership.access_import_export);
-        assert!(membership.access_reports);
+        assert!(!membership.access_reports);
+    }
+
+    #[test]
+    fn omitted_edit_permissions_preserve_supported_custom_grants() {
+        let mut membership = confirmed_member(MembershipType::Custom);
+        membership.manage_users = true;
+        membership.manage_groups = true;
+        membership.manage_policies = true;
+        membership.create_new_collections = true;
+        membership.edit_any_collection = true;
+        membership.delete_any_collection = true;
+        membership.access_event_logs = true;
+        membership.access_import_export = true;
+        membership.access_reports = true;
+
+        let preserved = CustomRolePermissions::from_edit_request(MembershipType::Custom, None, &membership);
+        assert!(preserved.manage_users);
+        assert!(preserved.manage_groups);
+        assert!(preserved.manage_policies);
+        assert!(preserved.create_new_collections);
+        assert!(preserved.edit_any_collection);
+        assert!(preserved.delete_any_collection);
+        assert!(preserved.access_event_logs);
+        assert!(preserved.access_import_export);
+        assert!(!preserved.access_reports);
+        assert!(
+            !preserved.differs_from(&membership),
+            "a stale unsupported reports bit must not block an otherwise unchanged legacy-client update"
+        );
+
+        let explicit_reset = HashMap::new();
+        assert_eq!(
+            CustomRolePermissions::from_edit_request(MembershipType::Custom, Some(&explicit_reset), &membership),
+            CustomRolePermissions::default()
+        );
+        assert_eq!(
+            CustomRolePermissions::from_edit_request(MembershipType::User, None, &membership),
+            CustomRolePermissions::default()
+        );
     }
 }

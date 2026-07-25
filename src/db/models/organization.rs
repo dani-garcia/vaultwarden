@@ -25,7 +25,7 @@ use macros::UuidFromParam;
 
 use super::{
     Cipher, CipherId, Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy,
-    OrgPolicyType, TwoFactor, User, UserId,
+    OrgPolicyType, TwoFactor, User, UserId, collection::assignment_manage_for_member as assignment_manage,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -469,7 +469,9 @@ impl Membership {
         let permissions = json!({
                 "accessEventLogs": membership_type == MembershipType::Custom as i32 && self.access_event_logs,
                 "accessImportExport": membership_type == MembershipType::Custom as i32 && self.access_import_export,
-                "accessReports": membership_type == MembershipType::Custom as i32 && self.access_reports,
+                // Reports are not implemented server-side. Advertising a stored bit as usable
+                // would make the permission contract misleading, so this stays fail-closed.
+                "accessReports": false,
                 "createNewCollections": membership_type == MembershipType::Custom as i32 && self.create_new_collections,
                 "editAnyCollection": membership_type == MembershipType::Custom as i32 && self.edit_any_collection,
                 "deleteAnyCollection": membership_type == MembershipType::Custom as i32 && self.delete_any_collection,
@@ -584,55 +586,50 @@ impl Membership {
             CONFIG.org_groups_enabled() && Group::is_in_full_access_group(&self.user_uuid, &self.org_uuid, conn).await;
 
         // If collections are to be included, only include them if the user does not have full access via a group or defined to the user it self
-        let collections: Vec<Value> = if include_collections
-            && !(full_access_group || self.grants_access_to_all_collections())
-        {
-            // Get all collections for the user here already to prevent more queries
-            let cu: HashMap<CollectionId, CollectionUser> =
-                CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
+        let collections: Vec<Value> =
+            if include_collections && !(full_access_group || self.grants_access_to_all_collections()) {
+                // Get all collections for the user here already to prevent more queries
+                let cu: HashMap<CollectionId, CollectionUser> =
+                    CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
+                        .await
+                        .into_iter()
+                        .map(|cu| (cu.collection_uuid.clone(), cu))
+                        .collect();
+
+                // Get all collection groups for this user to prevent there inclusion
+                let cg: HashSet<CollectionId> = CollectionGroup::find_by_user(&self.user_uuid, conn)
                     .await
                     .into_iter()
-                    .map(|cu| (cu.collection_uuid.clone(), cu))
+                    .map(|cg| cg.collections_uuid)
                     .collect();
 
-            // Get all collection groups for this user to prevent there inclusion
-            let cg: HashSet<CollectionId> = CollectionGroup::find_by_user(&self.user_uuid, conn)
-                .await
-                .into_iter()
-                .map(|cg| cg.collections_uuid)
-                .collect();
+                Collection::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
+                    .await
+                    .into_iter()
+                    .filter_map(|c| {
+                        let (read_only, hide_passwords, manage) = if self.has_full_access() {
+                            (false, false, assignment_manage(self.atype, false))
+                        } else if let Some(cu) = cu.get(&c.uuid) {
+                            (cu.read_only, cu.hide_passwords, assignment_manage(self.atype, cu.manage))
+                        // If previous checks failed it might be that this user has access via a group, but we should not return those elements here
+                        // Those are returned via a special group endpoint
+                        } else if cg.contains(&c.uuid) {
+                            return None;
+                        } else {
+                            (true, true, false)
+                        };
 
-            Collection::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
-                .await
-                .into_iter()
-                .filter_map(|c| {
-                    let (read_only, hide_passwords, manage) = if self.has_full_access() {
-                        (false, false, self.atype >= MembershipType::Custom)
-                    } else if let Some(cu) = cu.get(&c.uuid) {
-                        (
-                            cu.read_only,
-                            cu.hide_passwords,
-                            cu.manage || (self.atype >= MembershipType::Custom && !cu.read_only && !cu.hide_passwords),
-                        )
-                    // If previous checks failed it might be that this user has access via a group, but we should not return those elements here
-                    // Those are returned via a special group endpoint
-                    } else if cg.contains(&c.uuid) {
-                        return None;
-                    } else {
-                        (true, true, false)
-                    };
-
-                    Some(json!({
-                        "id": c.uuid,
-                        "readOnly": read_only,
-                        "hidePasswords": hide_passwords,
-                        "manage": manage,
-                    }))
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
+                        Some(json!({
+                            "id": c.uuid,
+                            "readOnly": read_only,
+                            "hidePasswords": hide_passwords,
+                            "manage": manage,
+                        }))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
 
         let membership_type = self.atype;
 
@@ -642,7 +639,7 @@ impl Membership {
             json!({
                 "accessEventLogs": self.access_event_logs,
                 "accessImportExport": self.access_import_export,
-                "accessReports": self.access_reports,
+                "accessReports": false,
                 "createNewCollections": self.create_new_collections,
                 "editAnyCollection": self.edit_any_collection,
                 "deleteAnyCollection": self.delete_any_collection,
@@ -888,10 +885,6 @@ impl Membership {
         self.has_type(MembershipType::Custom) && self.access_import_export
     }
 
-    pub fn has_access_reports(&self) -> bool {
-        self.has_type(MembershipType::Custom) && self.access_reports
-    }
-
     /// Check for an explicit per-collection Manage grant without treating any `access_all` value
     /// as such a grant. Custom-role collection guards use this instead of the legacy broad helper,
     /// because membership/group `access_all` must not manufacture a per-collection Manage grant.
@@ -915,6 +908,7 @@ impl Membership {
                 .filter(users_organizations::user_uuid.eq(user_uuid.clone()))
                 .filter(users_organizations::org_uuid.eq(org_uuid.clone()))
                 .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .filter(users_organizations::atype.eq(MembershipType::Custom as i32))
                 .filter(collections::uuid.eq(collection_uuid.clone()))
                 .filter(users_collections::manage.eq(true))
                 .count()
@@ -945,6 +939,7 @@ impl Membership {
                 .filter(users_organizations::user_uuid.eq(user_uuid))
                 .filter(users_organizations::org_uuid.eq(org_uuid))
                 .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .filter(users_organizations::atype.eq(MembershipType::Custom as i32))
                 .filter(collections::uuid.eq(collection_uuid))
                 .filter(collections_groups::manage.eq(true))
                 .count()
@@ -1577,12 +1572,10 @@ mod tests {
         member.access_event_logs = true;
         assert!(member.has_access_event_logs());
         assert!(!member.has_access_import_export());
-        assert!(!member.has_access_reports());
 
         member.access_import_export = true;
         member.access_reports = true;
         assert!(member.has_access_import_export());
-        assert!(member.has_access_reports());
         // None of them imply collection or management capabilities.
         assert!(!member.has_full_access());
         assert!(!member.has_manage_users());
@@ -1591,6 +1584,5 @@ mod tests {
         member.atype = MembershipType::User as i32;
         assert!(!member.has_access_event_logs());
         assert!(!member.has_access_import_export());
-        assert!(!member.has_access_reports());
     }
 }
