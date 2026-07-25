@@ -472,7 +472,6 @@ const CUSTOM_ROLE_REPAIR_MIGRATION: &str = "20260723120000";
 const CUSTOM_COLLECTION_PERMISSIONS_MIGRATION: &str = "20260716120000";
 const DROP_MEMBERSHIP_ACCESS_ALL_MIGRATION: &str = "20260724120000";
 const CUSTOM_ROLE_SAME_RUN_MARKER_TABLE: &str = "__vw_custom_role_same_run_0716";
-const CUSTOM_ROLE_MIGRATION_RECOVERY_DOC: &str = "docs/custom-role-migration-recovery.md";
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[expect(
@@ -588,8 +587,8 @@ fn custom_role_preflight_error(decision: CustomRolePreflightDecision, facts: Cus
     };
 
     std::io::Error::other(format!(
-        "Custom-role migration preflight stopped startup: {detail} Back up the database and follow \
-         {CUSTOM_ROLE_MIGRATION_RECOVERY_DOC}."
+        "Custom-role migration preflight stopped startup: {detail} Back up the database and resolve \
+         the legacy membership state manually before restarting."
     ))
     .into()
 }
@@ -855,9 +854,8 @@ mod mysql_migrations {
                  {version} schema, but its column definitions or data were modified \
                  (matching columns: {matching_column_definitions}/3, unexpected rows: \
                  {unexpected_values}). Refusing automatic recovery. Back up the database and \
-                 follow {doc}.",
+                 resolve the partial migration manually before restarting.",
                 version = super::CUSTOM_COLLECTION_PERMISSIONS_MIGRATION,
-                doc = super::CUSTOM_ROLE_MIGRATION_RECOVERY_DOC,
             ))
             .into());
         }
