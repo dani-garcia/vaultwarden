@@ -1164,7 +1164,7 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                     #[cfg(unix)]
                     {
                         use std::os::unix::fs::PermissionsExt;
-                        if !metadata.permissions().mode() & 0o111 != 0 {
+                        if metadata.permissions().mode() & 0o111 == 0 {
                             err!(format!("sendmail command at `{path:?}` isn't executable"));
                         }
                     }
