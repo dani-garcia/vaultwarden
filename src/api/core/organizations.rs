@@ -1077,7 +1077,18 @@ async fn get_org_details_impl(
     user_id: &UserId,
     conn: &DbConn,
 ) -> Result<Value, crate::Error> {
-    let ciphers = Cipher::find_by_org(org_id, conn).await;
+    ciphers_to_org_json(Cipher::find_by_org(org_id, conn).await, host, user_id, conn).await
+}
+
+// Serialize an already-authorized set of organization ciphers. The caller decides which ciphers go
+// in: `CipherSyncType::Organization` skips the per-cipher access restrictions, so this must never be
+// handed a cipher the user is not allowed to see.
+async fn ciphers_to_org_json(
+    ciphers: Vec<Cipher>,
+    host: &str,
+    user_id: &UserId,
+    conn: &DbConn,
+) -> Result<Value, crate::Error> {
     let cipher_sync_data = CipherSyncData::new(user_id, CipherSyncType::Organization, conn).await;
 
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
@@ -3218,6 +3229,17 @@ async fn caller_may_grant_collection_manage(caller: &Membership, col_id: &Collec
     }
 }
 
+/// Whether `caller` may export the *entire* organization instead of only their own assignments.
+///
+/// Security (audit F1): the `AccessImportExportHeaders` guard on `get_org_export` decides whether a
+/// member may export at all; it must not decide *what* they get. Only members who already reach
+/// every collection — Admins/Owners, and Custom members holding `edit_any_collection` — may receive
+/// the full organization dump. For anyone else the export is built from their own assigned
+/// collections/ciphers, so 'Access Import/Export' can never turn into a full vault read.
+fn may_export_entire_organization(caller: &Membership) -> bool {
+    caller.has_full_access()
+}
+
 /// Pure, collection-independent part of `caller_may_grant_collection_manage`.
 ///
 /// `Some(true)`  -> the caller may grant `manage` on *any* collection (Admin/Owner, or a Custom
@@ -3847,8 +3869,9 @@ async fn put_reset_password_enrollment(
 // NOTE: It seems clients can't handle uppercase-first keys!!
 //       We need to convert all keys so they have the first character to be a lowercase.
 //       Else the export will be just an empty JSON file.
-// We currently only support exports by members of the Admin or Owner status.
-// Vaultwarden does not yet support exporting only managed collections!
+// Members with full access to the organization (Admin/Owner, or a Custom member with
+// 'Edit any collection') export the whole organization; everyone else exports only what they can
+// actually reach, like Bitwarden's export controller does.
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Tools/Controllers/OrganizationExportController.cs#L52
 #[get("/organizations/<org_id>/export")]
 async fn get_org_export(org_id: OrganizationId, headers: AccessImportExportHeaders, conn: DbConn) -> JsonResult {
@@ -3856,9 +3879,24 @@ async fn get_org_export(org_id: OrganizationId, headers: AccessImportExportHeade
         err!("Organization not found", "Organization id's do not match");
     }
 
+    // Security (audit F1): 'Access Import/Export' decides *whether* a member may export, it must not
+    // widen *what* they may read. Without this scoping a Custom member holding only this permission
+    // — assigned to no collection at all — would receive every cipher in the organization, because
+    // the organization sync type deliberately skips the per-cipher access restrictions.
+    let (collections, ciphers) = if may_export_entire_organization(&headers.membership) {
+        (Collection::find_by_organization(&org_id, &conn).await, Cipher::find_by_org(&org_id, &conn).await)
+    } else {
+        (
+            Collection::find_by_organization_and_user_uuid(&org_id, &headers.user.uuid, &conn).await,
+            filter_ciphers_for_organization(Cipher::find_by_user_visible(&headers.user.uuid, &conn).await, &org_id),
+        )
+    };
+
+    let collections_json: Value = collections.iter().map(Collection::to_json).collect();
+
     Ok(Json(json!({
-        "collections": convert_json_key_lcase_first(get_org_collections_impl(&org_id, &conn).await),
-        "ciphers": convert_json_key_lcase_first(get_org_details_impl(&org_id, &headers.host, &headers.user.uuid, &conn).await?),
+        "collections": convert_json_key_lcase_first(collections_json),
+        "ciphers": convert_json_key_lcase_first(ciphers_to_org_json(ciphers, &headers.host, &headers.user.uuid, &conn).await?),
     })))
 }
 
@@ -3927,7 +3965,7 @@ mod tests {
 
     use super::{
         CustomRolePermissions, caller_manage_grant_role_check, filter_ciphers_for_organization,
-        may_change_group_membership, may_change_member_type,
+        may_change_group_membership, may_change_member_type, may_export_entire_organization,
     };
     use crate::db::models::{Cipher, Membership, MembershipStatus, MembershipType, OrganizationId};
 
@@ -3969,6 +4007,32 @@ mod tests {
         unconfirmed.status = MembershipStatus::Accepted as i32;
         unconfirmed.delete_any_collection = true;
         assert_eq!(caller_manage_grant_role_check(&unconfirmed), Some(false));
+    }
+
+    #[test]
+    fn access_import_export_alone_does_not_widen_the_export() {
+        // REGRESSION (audit F1): 'Access Import/Export' opens the export endpoint, but a Custom
+        // member holding only that permission reaches no collection of their own, so the export
+        // must be built from their assignments — never from the whole organization.
+        let mut import_export_only = confirmed_member(MembershipType::Custom);
+        import_export_only.access_import_export = true;
+        assert!(!may_export_entire_organization(&import_export_only));
+
+        // Custom members who already reach every collection keep the full dump.
+        let mut edit_any = confirmed_member(MembershipType::Custom);
+        edit_any.edit_any_collection = true;
+        edit_any.access_import_export = true;
+        assert!(may_export_entire_organization(&edit_any));
+
+        // Admins and Owners are unaffected.
+        assert!(may_export_entire_organization(&confirmed_member(MembershipType::Admin)));
+        assert!(may_export_entire_organization(&confirmed_member(MembershipType::Owner)));
+
+        // An unconfirmed membership never qualifies, whatever its flags say.
+        let mut unconfirmed = confirmed_member(MembershipType::Custom);
+        unconfirmed.edit_any_collection = true;
+        unconfirmed.status = MembershipStatus::Accepted as i32;
+        assert!(!may_export_entire_organization(&unconfirmed));
     }
 
     #[test]
