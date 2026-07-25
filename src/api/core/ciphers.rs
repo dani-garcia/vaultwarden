@@ -450,7 +450,9 @@ pub async fn update_cipher_from_data(
         match Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, conn).await {
             None => err!("You don't have permission to add item to organization"),
             Some(member) => {
-                if shared_to_collections.is_some()
+                // A non-empty list of collections implies the caller already validated the user's write
+                // access to them, so we can move the cipher into the organization on that basis.
+                if shared_to_collections.as_ref().is_some_and(|cols| !cols.is_empty())
                     || member.has_full_access()
                     || cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await
                 {
@@ -629,7 +631,7 @@ async fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbC
 
     // Read and create the ciphers
     for (index, mut cipher_data) in data.ciphers.into_iter().enumerate() {
-        let folder_id = relations_map.get(&index).map(|i| folders[*i].clone());
+        let folder_id = relations_map.get(&index).and_then(|i| folders.get(*i).cloned());
         cipher_data.folder_id = folder_id;
 
         let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
@@ -1042,6 +1044,13 @@ async fn share_cipher_by_uuid(
     } else {
         err!("Cipher doesn't exist")
     };
+
+    // `update_cipher_from_data()` rejects this too, but only after the collections below were
+    // already linked. There are no transactions, so that would leave the cipher linked to a
+    // collection of another organization.
+    if cipher.organization_uuid.is_some() && cipher.organization_uuid != data.cipher.organization_id {
+        err!("Organization mismatch. Please resync the client before updating the cipher")
+    }
 
     let mut shared_to_collections = vec![];
 

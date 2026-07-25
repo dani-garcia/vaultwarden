@@ -659,10 +659,10 @@ async fn post_bulk_access_collections(
     // once the entire request is known-valid do we begin the destructive delete/replace of
     // assignments, so a foreign-tenant group can never be linked and a later invalid element can no
     // longer leave earlier collections with their assignments already wiped.
-    for group in &data.groups {
-        if Group::find_by_uuid_and_org(&group.id, &org_id, &conn).await.is_none() {
-            err!("Group not found in this organization")
-        }
+    let org_groups = Group::find_by_organization(&org_id, &conn).await;
+    let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
+    if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
+        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id, org_id))
     }
     for user in &data.users {
         if Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await.is_none() {
@@ -1127,6 +1127,11 @@ async fn get_members(
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
+
+    if !headers.membership.has_full_access() {
+        err_code!("Resource not found.", "User does not have full access", rocket::http::Status::NotFound.code);
+    }
+
     let mut users_json = Vec::new();
     for u in Membership::find_by_org(&org_id, &conn).await {
         users_json.push(
@@ -1430,6 +1435,8 @@ async fn send_invite(
         // Security: assigning groups can indirectly grant collection access via the groups'
         // collections. Only callers who may manage groups (Admins/Owners or users with
         // manage_groups) are allowed to assign groups when inviting.
+        // NOTE: every requested group was already validated against this organization in
+        // `InviteData::validate` above, before any record was created.
         let caller_can_manage_groups = headers.membership_type >= MembershipType::Admin
             || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
                 Some(m) => m.has_manage_groups(),
@@ -2213,19 +2220,22 @@ async fn post_org_import(
         }
     }
 
-    let existing_collections: HashSet<Option<CollectionId>> =
-        Collection::find_by_organization(&org_id, &conn).await.into_iter().map(|c| Some(c.uuid)).collect();
+    // Security (audit F8/upstream): index the existing collections by id so the per-collection
+    // authorization below can use the *write* predicate `is_writable_by_user`. A read-only
+    // assignment must not let an importer plant ciphers into a shared collection.
+    let existing_collections: HashMap<CollectionId, Collection> =
+        Collection::find_by_organization(&org_id, &conn).await.into_iter().map(|c| (c.uuid.clone(), c)).collect();
     let mut collections: Vec<CollectionId> = Vec::with_capacity(data.collections.len());
     for col in data.collections {
-        let collection_uuid = if existing_collections.contains(&col.id) {
-            let col_id = col.id.unwrap();
-            // When not an Owner or Admin, check if the member is allowed to access the collection.
+        let existing = col.id.as_ref().and_then(|col_id| existing_collections.get(col_id));
+        let collection_uuid = if let Some(collection) = existing {
+            // When not an Owner or Admin, check if the member is allowed to write to the collection.
             if headers.membership.atype < MembershipType::Admin
-                && !Collection::can_access_collection(&headers.membership, &col_id, &conn).await
+                && !collection.is_writable_by_user(&headers.membership.user_uuid, &conn).await
             {
                 err!(Compact, "The current user isn't allowed to manage this collection")
             }
-            col_id
+            collection.uuid.clone()
         } else {
             // Collection creation through an organization import is governed by the same
             // independent permission as the regular create endpoint. In particular,
@@ -2261,6 +2271,8 @@ async fn post_org_import(
     for mut cipher_data in data.ciphers {
         // Always clear folder_id's via an organization import
         cipher_data.folder_id = None;
+        // Replace the client-provided, unvalidated organizationId with the real target org
+        cipher_data.organization_id = Some(org_id.clone());
         let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
         // Propagate cipher-save failures instead of silently discarding them (audit M-3): a
         // discarded error would still push the cipher id and let a relationship reference a cipher
@@ -2282,10 +2294,7 @@ async fn post_org_import(
     // any future drift fails closed with an error instead of panicking.
     for (cipher_index, col_index) in relations {
         let (Some(cipher_id), Some(col_id)) = (ciphers.get(cipher_index), collections.get(col_index)) else {
-            err!(
-                "Invalid collection relationship",
-                "A collection relationship references a non-existent cipher or collection"
-            )
+            err!(Compact, "Invalid collection relationship")
         };
         CollectionCipher::save(cipher_id, col_id, &conn).await?;
     }
@@ -2870,7 +2879,28 @@ async fn restore_member_impl(
     Ok(())
 }
 
-async fn get_groups_data(details: bool, org_id: OrganizationId, conn: DbConn) -> JsonResult {
+async fn get_groups_data(details: bool, org_id: OrganizationId, membership: &Membership, conn: DbConn) -> JsonResult {
+    // The details view (group→collection/user mappings) needs full org access; the plain list only
+    // needs manage access to a collection, so a manager of a collection (directly or via a group)
+    // can load it to assign groups.
+    // Custom roles: the 'Manage Users'/'Manage Groups' permissions are the authority for reading the
+    // group mappings (they are what the route guards enforce for the details view), so they satisfy
+    // this check as well even when the member reaches no collection of their own.
+    let has_full_access = membership.has_full_access()
+        || (CONFIG.org_groups_enabled()
+            && GroupUser::has_full_access_by_member(&org_id, &membership.uuid, &conn).await);
+    let can_manage_users_or_groups = membership.has_manage_users() || membership.has_manage_groups();
+    let allowed = if details {
+        has_full_access || can_manage_users_or_groups
+    } else {
+        has_full_access
+            || can_manage_users_or_groups
+            || Collection::has_manageable_collection_by_user(&org_id, &membership.user_uuid, &conn).await
+    };
+    if !allowed {
+        err_code!("Resource not found.", "User does not have access", rocket::http::Status::NotFound.code);
+    }
+
     let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
         let groups = Group::find_by_organization(&org_id, &conn).await;
         let mut groups_json = Vec::with_capacity(groups.len());
@@ -2898,14 +2928,15 @@ async fn get_groups_data(details: bool, org_id: OrganizationId, conn: DbConn) ->
     })))
 }
 
-// The plain group list (id, name, externalId) stays member-readable: the web vault needs it to
-// render group names, and it exposes no access mappings.
+// The plain group list (id, name, externalId) exposes no access mappings, so it stays readable for
+// members who have a reason to see it — the web vault needs it to render group names. The exact
+// condition is enforced in `get_groups_data`.
 #[get("/organizations/<org_id>/groups")]
 async fn get_groups(org_id: OrganizationId, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
     if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
-    get_groups_data(false, org_id, conn).await
+    get_groups_data(false, org_id, &headers.membership, conn).await
 }
 
 // Security (audit M-1): group *details* expose accessAll, external IDs and collection mappings, so
@@ -2916,7 +2947,7 @@ async fn get_groups_details(org_id: OrganizationId, headers: ManageUsersOrGroups
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    get_groups_data(true, org_id, conn).await
+    get_groups_data(true, org_id, &headers.membership, conn).await
 }
 
 #[derive(Deserialize)]
