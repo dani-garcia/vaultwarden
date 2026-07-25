@@ -182,7 +182,10 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                 .await;
             }
             1600..=1699 => {
-                if let Some(org_id) = &event.organization_id {
+                // Only allow logging events for an organization the user is actually a member of.
+                if let Some(org_id) = &event.organization_id
+                    && Membership::find_confirmed_by_user_and_org(&headers.user.uuid, org_id, &conn).await.is_some()
+                {
                     log_event_impl(
                         event.r#type,
                         org_id,
@@ -197,8 +200,11 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                 }
             }
             _ => {
+                // The cipher determines the organization the event is logged to, so make sure the
+                // user can actually access it instead of trusting the provided cipher uuid.
                 if let Some(cipher_uuid) = &event.cipher_id
                     && let Some(cipher) = Cipher::find_by_uuid(cipher_uuid, &conn).await
+                    && cipher.is_accessible_to_user(&headers.user.uuid, &conn).await
                     && let Some(org_id) = cipher.organization_uuid
                 {
                     log_event_impl(

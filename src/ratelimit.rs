@@ -18,6 +18,24 @@ static LIMITER_ADMIN: LazyLock<Limiter> = LazyLock::new(|| {
     RateLimiter::keyed(Quota::with_period(seconds).expect("Non-zero admin ratelimit seconds").allow_burst(burst))
 });
 
+static LIMITER_UNAUTHENTICATED: LazyLock<Limiter> = LazyLock::new(|| {
+    let seconds = Duration::from_secs(CONFIG.unauthenticated_ratelimit_seconds());
+    let burst = NonZeroU32::new(CONFIG.unauthenticated_ratelimit_max_burst())
+        .expect("Non-zero unauthenticated ratelimit burst");
+    RateLimiter::keyed(
+        Quota::with_period(seconds).expect("Non-zero unauthenticated ratelimit seconds").allow_burst(burst),
+    )
+});
+
+pub fn check_limit_unauthenticated(ip: &IpAddr) -> Result<(), Error> {
+    match LIMITER_UNAUTHENTICATED.check_key(ip) {
+        Ok(()) => Ok(()),
+        Err(_e) => {
+            err_code!("Too many requests", 429);
+        }
+    }
+}
+
 pub fn check_limit_login(ip: &IpAddr) -> Result<(), Error> {
     match LIMITER_LOGIN.check_key(ip) {
         Ok(()) => Ok(()),
