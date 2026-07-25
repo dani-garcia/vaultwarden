@@ -42,13 +42,15 @@ pub struct Cipher {
 
     pub key: Option<String>,
 
-    /*
-    Login = 1,
-    SecureNote = 2,
-    Card = 3,
-    Identity = 4,
-    SshKey = 5
-    */
+    // See (v2026.7.0): https://github.com/bitwarden/server/blob/5d4461aa42cadbacfef8fe2166c5453a5c52773a/src/Core/Vault/Enums/CipherType.cs
+    // Login = 1,
+    // SecureNote = 2,
+    // Card = 3,
+    // Identity = 4,
+    // SSHKey = 5
+    // BankAccount = 6,
+    // DriversLicense = 7,
+    // Passport = 8,
     pub atype: i32,
     pub name: String,
     pub notes: Option<String>,
@@ -306,16 +308,6 @@ impl Cipher {
             type_data_json = Value::Null;
         }
 
-        // Clone the type_data and add some default value.
-        let mut data_json = type_data_json.clone();
-
-        // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
-        // data_json should always contain the following keys with every atype
-        data_json["fields"] = json!(fields_json);
-        data_json["name"] = json!(self.name);
-        data_json["notes"] = json!(self.notes);
-        data_json["passwordHistory"] = Value::Array(password_history_json.clone());
-
         let collection_ids = if let Some(cipher_sync_data) = cipher_sync_data {
             if let Some(cipher_collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
                 Cow::from(cipher_collections)
@@ -355,8 +347,6 @@ impl Cipher {
             "notes": self.notes,
             "fields": fields_json,
 
-            "data": data_json,
-
             "passwordHistory": password_history_json,
 
             // All Cipher types are included by default as null, but only the matching one will be populated
@@ -365,6 +355,9 @@ impl Cipher {
             "card": null,
             "identity": null,
             "sshKey": null,
+            "bankAccount": null,
+            "driversLicense": null,
+            "passport": null,
         });
 
         // These values are only needed for user/default syncs
@@ -404,6 +397,9 @@ impl Cipher {
             3 => "card",
             4 => "identity",
             5 => "sshKey",
+            6 => "bankAccount",
+            7 => "driversLicense",
+            8 => "passport",
             _ => err!(format!("Cipher {} has an invalid type {}", self.uuid, self.atype)),
         };
 
