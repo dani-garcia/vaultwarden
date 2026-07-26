@@ -1069,6 +1069,26 @@ async fn get_assigned_org_details(data: OrgIdData, headers: Headers, conn: DbCon
     })))
 }
 
+// Returns every cipher in the organization, serialized with `CipherSyncType::Organization` — which
+// deliberately skips the per-cipher access restrictions, so `readOnly`/`hidePasswords` are not
+// applied and collection assignments are ignored. Whoever passes the check below reads the whole
+// organization vault.
+//
+// `accessReports` is therefore, by design, a full organization *read* permission and not merely
+// "may open the reports screen". Vaultwarden implements no server-side reports: the clients fetch
+// this list and compute Exposed/Reused/Weak Passwords, Unsecured Websites, Inactive 2FA etc.
+// locally, so the permission cannot be satisfied with less data.
+//
+// This matches Bitwarden upstream, which grants the same endpoint to Owner/Admin and to Custom
+// members holding AccessImportExport, EditAnyCollection *or* AccessReports:
+// https://github.com/bitwarden/server/blob/main/src/Api/Vault/Controllers/CiphersController.cs
+// (`CanAccessAllCiphersAsync`)
+//
+// We are intentionally *stricter* than Bitwarden for `accessImportExport`: it does not open this
+// endpoint, and `get_org_export` scopes its output to the caller's own collections, so
+// "may export" never widens what a member can read. Granting `accessReports` does widen it — that
+// is the documented trade-off of staying Bitwarden-compatible, and administrators must treat
+// `accessReports` as equivalent to read access to every collection in the organization.
 #[get("/ciphers/organization-details?<data..>")]
 async fn get_org_details(data: OrgIdData, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
     if data.organization_id != headers.membership.org_uuid {

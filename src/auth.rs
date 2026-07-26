@@ -766,10 +766,11 @@ impl OrgHeaders {
         self.is_confirmed()
             && (self.membership_type >= MembershipType::Admin || self.membership.has_access_import_export())
     }
-
-    fn can_access_reports(&self) -> bool {
-        self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.has_access_reports())
-    }
+    // NOTE: there is deliberately no `can_access_reports` guard helper. Vaultwarden has no
+    // server-side report endpoints — the clients compute every report locally from the
+    // organization cipher list — so `accessReports` is enforced inline where that list is served
+    // (`get_org_details`), not through a request guard. A guard here would be dead code that
+    // invites gating an endpoint on "may call reports" instead of "may read these ciphers".
 }
 
 // org_id is usually the second path param ("/organizations/<org_id>"),
@@ -970,11 +971,8 @@ generate_manage_headers!(
     can_access_import_export,
     "You need the 'Access Import/Export' permission, or to be an Admin or Owner, to call this endpoint"
 );
-generate_manage_headers!(
-    AccessReportsHeaders,
-    can_access_reports,
-    "You need the 'Access Reports' permission, or to be an Admin or Owner, to call this endpoint"
-);
+// NOTE: no `AccessReportsHeaders`. See the note next to `can_access_import_export` above:
+// `accessReports` guards data (the organization cipher list), not a dedicated endpoint.
 
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),
 // but there could be cases where it is a query value.

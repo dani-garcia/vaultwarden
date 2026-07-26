@@ -352,158 +352,6 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn membership(member_type: MembershipType, status: MembershipStatus) -> Membership {
-        let mut membership = Membership::new("test-user".to_owned().into(), "test-org".to_owned().into(), None);
-        membership.atype = member_type as i32;
-        membership.status = status as i32;
-        membership
-    }
-
-    #[test]
-    fn cipher_event_access_requires_confirmed_admin_or_access_event_logs() {
-        for member_type in [MembershipType::Owner, MembershipType::Admin] {
-            assert!(membership_can_access_event_logs(&membership(member_type, MembershipStatus::Confirmed)));
-            assert!(!membership_can_access_event_logs(&membership(member_type, MembershipStatus::Invited)));
-            assert!(!membership_can_access_event_logs(&membership(member_type, MembershipStatus::Accepted)));
-            assert!(!membership_can_access_event_logs(&membership(member_type, MembershipStatus::Revoked)));
-        }
-
-        let mut custom = membership(MembershipType::Custom, MembershipStatus::Confirmed);
-        assert!(!membership_can_access_event_logs(&custom));
-        custom.access_event_logs = true;
-        assert!(membership_can_access_event_logs(&custom));
-
-        custom.status = MembershipStatus::Revoked as i32;
-        assert!(!membership_can_access_event_logs(&custom));
-        assert!(!membership_can_access_event_logs(&membership(MembershipType::User, MembershipStatus::Confirmed)));
-    }
-
-    #[test]
-    fn cipher_event_scope_is_bound_to_cipher_org_or_personal_owner() {
-        let user_id: UserId = "test-user".to_owned().into();
-        let org_id: OrganizationId = "test-org".to_owned().into();
-        let mut cipher = Cipher::new(1, "test-cipher".to_owned());
-        cipher.organization_uuid = Some(org_id.clone());
-
-        let admin = membership(MembershipType::Admin, MembershipStatus::Confirmed);
-        assert_eq!(
-            cipher_event_scope(&cipher, &user_id, Some(&admin)),
-            Some(CipherEventScope::Organization(org_id.clone()))
-        );
-
-        let accepted_admin = membership(MembershipType::Admin, MembershipStatus::Accepted);
-        assert_eq!(cipher_event_scope(&cipher, &user_id, Some(&accepted_admin)), None);
-
-        let mut foreign_membership = membership(MembershipType::Admin, MembershipStatus::Confirmed);
-        foreign_membership.org_uuid = "other-org".to_owned().into();
-        assert_eq!(cipher_event_scope(&cipher, &user_id, Some(&foreign_membership)), None);
-
-        cipher.organization_uuid = None;
-        cipher.user_uuid = Some(user_id.clone());
-        assert_eq!(cipher_event_scope(&cipher, &user_id, None), Some(CipherEventScope::Personal));
-        assert_eq!(cipher_event_scope(&cipher, &"other-user".to_owned().into(), None), None);
-    }
-
-    #[test]
-    fn cipher_event_rows_must_match_the_authorized_scope() {
-        let org_id: OrganizationId = "test-org".to_owned().into();
-        let mut event = Event::new(EventType::CipherClientViewed as i32, None);
-
-        assert!(CipherEventScope::Personal.includes(&event));
-        event.org_uuid = Some(org_id.clone());
-        assert!(!CipherEventScope::Personal.includes(&event));
-        assert!(CipherEventScope::Organization(org_id).includes(&event));
-        assert!(!CipherEventScope::Organization("other-org".to_owned().into()).includes(&event));
-    }
-
-    #[test]
-    fn event_range_rejects_invalid_dates_and_continuation_tokens() {
-        let valid = EventRange {
-            start: "2026-07-25T10:00:00Z".to_owned(),
-            end: "2026-07-25T11:00:00Z".to_owned(),
-            continuation_token: None,
-        };
-        assert!(parse_event_range(&valid).is_ok());
-
-        let invalid_start = EventRange {
-            start: "not-a-date".to_owned(),
-            ..valid
-        };
-        assert!(parse_event_range(&invalid_start).is_err());
-
-        let invalid_end = EventRange {
-            start: "2026-07-25T10:00:00Z".to_owned(),
-            end: "not-a-date".to_owned(),
-            continuation_token: None,
-        };
-        assert!(parse_event_range(&invalid_end).is_err());
-
-        let invalid_token = EventRange {
-            start: "2026-07-25T10:00:00Z".to_owned(),
-            end: "2026-07-25T11:00:00Z".to_owned(),
-            continuation_token: Some("not-a-date".to_owned()),
-        };
-        assert!(parse_event_range(&invalid_token).is_err());
-
-        let token_supersedes_end = EventRange {
-            start: "2026-07-25T10:00:00Z".to_owned(),
-            end: "legacy-client-value-that-is-not-used".to_owned(),
-            continuation_token: Some("2026-07-25T10:30:00Z".to_owned()),
-        };
-        assert!(parse_event_range(&token_supersedes_end).is_ok());
-    }
-
-    #[test]
-    fn collect_accepts_only_official_client_generated_event_types() {
-        assert_eq!(client_event_kind(EventType::UserClientExportedVault as i32), Some(ClientEventKind::User));
-        for event_type in [
-            EventType::CipherClientViewed,
-            EventType::CipherClientToggledPasswordVisible,
-            EventType::CipherClientToggledHiddenFieldVisible,
-            EventType::CipherClientToggledCardCodeVisible,
-            EventType::CipherClientCopiedPassword,
-            EventType::CipherClientCopiedHiddenField,
-            EventType::CipherClientCopiedCardCode,
-            EventType::CipherClientAutofilled,
-            EventType::CipherClientToggledCardNumberVisible,
-        ] {
-            assert_eq!(client_event_kind(event_type as i32), Some(ClientEventKind::Cipher));
-        }
-        assert_eq!(
-            client_event_kind(EventType::OrganizationClientExportedVault as i32),
-            Some(ClientEventKind::Organization)
-        );
-
-        for event_type in [
-            EventType::UserLoggedIn,
-            EventType::UserChangedPassword,
-            EventType::CipherCreated,
-            EventType::CipherUpdated,
-            EventType::CipherDeleted,
-            EventType::OrganizationUpdated,
-            EventType::OrganizationPurgedVault,
-            EventType::PolicyUpdated,
-        ] {
-            assert_eq!(client_event_kind(event_type as i32), None);
-        }
-        assert_eq!(client_event_kind(1099), None);
-        assert_eq!(client_event_kind(1199), None);
-        assert_eq!(client_event_kind(1699), None);
-    }
-
-    #[test]
-    fn collect_batch_limit_preserves_normal_batches_and_rejects_excess() {
-        assert!(validate_client_event_batch_size(0).is_ok());
-        assert!(validate_client_event_batch_size(100).is_ok());
-        assert!(validate_client_event_batch_size(MAX_CLIENT_EVENT_BATCH_SIZE).is_ok());
-        assert!(validate_client_event_batch_size(MAX_CLIENT_EVENT_BATCH_SIZE + 1).is_err());
-    }
-}
-
 pub async fn log_user_event(event_type: i32, user_id: &UserId, device_type: i32, ip: &IpAddr, conn: &DbConn) {
     if !CONFIG.org_events_enabled() {
         return;
@@ -618,5 +466,154 @@ pub async fn event_cleanup_job(pool: DbPool) {
         Event::clean_events(&conn).await.ok();
     } else {
         error!("Failed to get DB connection while trying to cleanup the events table");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn membership(member_type: MembershipType, status: MembershipStatus) -> Membership {
+        let mut membership = Membership::new("test-user".to_owned().into(), "test-org".to_owned().into(), None);
+        membership.atype = member_type as i32;
+        membership.status = status as i32;
+        membership
+    }
+
+    #[test]
+    fn cipher_event_access_requires_confirmed_admin_or_access_event_logs() {
+        for member_type in [MembershipType::Owner, MembershipType::Admin] {
+            assert!(membership_can_access_event_logs(&membership(member_type, MembershipStatus::Confirmed)));
+            assert!(!membership_can_access_event_logs(&membership(member_type, MembershipStatus::Invited)));
+            assert!(!membership_can_access_event_logs(&membership(member_type, MembershipStatus::Accepted)));
+            assert!(!membership_can_access_event_logs(&membership(member_type, MembershipStatus::Revoked)));
+        }
+
+        let mut custom = membership(MembershipType::Custom, MembershipStatus::Confirmed);
+        assert!(!membership_can_access_event_logs(&custom));
+        custom.access_event_logs = true;
+        assert!(membership_can_access_event_logs(&custom));
+
+        custom.status = MembershipStatus::Revoked as i32;
+        assert!(!membership_can_access_event_logs(&custom));
+        assert!(!membership_can_access_event_logs(&membership(MembershipType::User, MembershipStatus::Confirmed)));
+    }
+
+    #[test]
+    fn cipher_event_scope_is_bound_to_cipher_org_or_personal_owner() {
+        let user_id: UserId = "test-user".to_owned().into();
+        let org_id: OrganizationId = "test-org".to_owned().into();
+        let mut cipher = Cipher::new(1, "test-cipher".to_owned());
+        cipher.organization_uuid = Some(org_id.clone());
+
+        let admin = membership(MembershipType::Admin, MembershipStatus::Confirmed);
+        assert_eq!(cipher_event_scope(&cipher, &user_id, Some(&admin)), Some(CipherEventScope::Organization(org_id)));
+
+        let accepted_admin = membership(MembershipType::Admin, MembershipStatus::Accepted);
+        assert_eq!(cipher_event_scope(&cipher, &user_id, Some(&accepted_admin)), None);
+
+        let mut foreign_membership = membership(MembershipType::Admin, MembershipStatus::Confirmed);
+        foreign_membership.org_uuid = "other-org".to_owned().into();
+        assert_eq!(cipher_event_scope(&cipher, &user_id, Some(&foreign_membership)), None);
+
+        cipher.organization_uuid = None;
+        cipher.user_uuid = Some(user_id.clone());
+        assert_eq!(cipher_event_scope(&cipher, &user_id, None), Some(CipherEventScope::Personal));
+        assert_eq!(cipher_event_scope(&cipher, &"other-user".to_owned().into(), None), None);
+    }
+
+    #[test]
+    fn cipher_event_rows_must_match_the_authorized_scope() {
+        let org_id: OrganizationId = "test-org".to_owned().into();
+        let mut event = Event::new(EventType::CipherClientViewed as i32, None);
+
+        assert!(CipherEventScope::Personal.includes(&event));
+        event.org_uuid = Some(org_id.clone());
+        assert!(!CipherEventScope::Personal.includes(&event));
+        assert!(CipherEventScope::Organization(org_id).includes(&event));
+        assert!(!CipherEventScope::Organization("other-org".to_owned().into()).includes(&event));
+    }
+
+    #[test]
+    fn event_range_rejects_invalid_dates_and_continuation_tokens() {
+        let valid = EventRange {
+            start: "2026-07-25T10:00:00Z".to_owned(),
+            end: "2026-07-25T11:00:00Z".to_owned(),
+            continuation_token: None,
+        };
+        assert!(parse_event_range(&valid).is_ok());
+
+        let invalid_start = EventRange {
+            start: "not-a-date".to_owned(),
+            ..valid
+        };
+        assert!(parse_event_range(&invalid_start).is_err());
+
+        let invalid_end = EventRange {
+            start: "2026-07-25T10:00:00Z".to_owned(),
+            end: "not-a-date".to_owned(),
+            continuation_token: None,
+        };
+        assert!(parse_event_range(&invalid_end).is_err());
+
+        let invalid_token = EventRange {
+            start: "2026-07-25T10:00:00Z".to_owned(),
+            end: "2026-07-25T11:00:00Z".to_owned(),
+            continuation_token: Some("not-a-date".to_owned()),
+        };
+        assert!(parse_event_range(&invalid_token).is_err());
+
+        let token_supersedes_end = EventRange {
+            start: "2026-07-25T10:00:00Z".to_owned(),
+            end: "legacy-client-value-that-is-not-used".to_owned(),
+            continuation_token: Some("2026-07-25T10:30:00Z".to_owned()),
+        };
+        assert!(parse_event_range(&token_supersedes_end).is_ok());
+    }
+
+    #[test]
+    fn collect_accepts_only_official_client_generated_event_types() {
+        assert_eq!(client_event_kind(EventType::UserClientExportedVault as i32), Some(ClientEventKind::User));
+        for event_type in [
+            EventType::CipherClientViewed,
+            EventType::CipherClientToggledPasswordVisible,
+            EventType::CipherClientToggledHiddenFieldVisible,
+            EventType::CipherClientToggledCardCodeVisible,
+            EventType::CipherClientCopiedPassword,
+            EventType::CipherClientCopiedHiddenField,
+            EventType::CipherClientCopiedCardCode,
+            EventType::CipherClientAutofilled,
+            EventType::CipherClientToggledCardNumberVisible,
+        ] {
+            assert_eq!(client_event_kind(event_type as i32), Some(ClientEventKind::Cipher));
+        }
+        assert_eq!(
+            client_event_kind(EventType::OrganizationClientExportedVault as i32),
+            Some(ClientEventKind::Organization)
+        );
+
+        for event_type in [
+            EventType::UserLoggedIn,
+            EventType::UserChangedPassword,
+            EventType::CipherCreated,
+            EventType::CipherUpdated,
+            EventType::CipherDeleted,
+            EventType::OrganizationUpdated,
+            EventType::OrganizationPurgedVault,
+            EventType::PolicyUpdated,
+        ] {
+            assert_eq!(client_event_kind(event_type as i32), None);
+        }
+        assert_eq!(client_event_kind(1099), None);
+        assert_eq!(client_event_kind(1199), None);
+        assert_eq!(client_event_kind(1699), None);
+    }
+
+    #[test]
+    fn collect_batch_limit_preserves_normal_batches_and_rejects_excess() {
+        assert!(validate_client_event_batch_size(0).is_ok());
+        assert!(validate_client_event_batch_size(100).is_ok());
+        assert!(validate_client_event_batch_size(MAX_CLIENT_EVENT_BATCH_SIZE).is_ok());
+        assert!(validate_client_event_batch_size(MAX_CLIENT_EVENT_BATCH_SIZE + 1).is_err());
     }
 }
