@@ -468,6 +468,168 @@ impl<'r> FromRequest<'r> for DbConn {
     }
 }
 
+const CUSTOM_ROLE_REPAIR_MIGRATION: &str = "20260723120000";
+const CUSTOM_COLLECTION_PERMISSIONS_MIGRATION: &str = "20260716120000";
+const DROP_MEMBERSHIP_ACCESS_ALL_MIGRATION: &str = "20260724120000";
+const CUSTOM_ROLE_SAME_RUN_MARKER_TABLE: &str = "__vw_custom_role_same_run_0716";
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "These are independent facts read from a historical database schema and migration ledger"
+)]
+struct CustomRoleMigrationFacts {
+    memberships_table_exists: bool,
+    migration_table_exists: bool,
+    access_all_column_exists: bool,
+    collection_permission_columns: i64,
+    collection_permissions_migration_applied: bool,
+    repair_migration_applied: bool,
+    access_all_drop_migration_applied: bool,
+    legacy_user_access_all_count: i64,
+    ambiguous_direct_permission_count: i64,
+    same_run_0716_marker: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CustomRolePreflightDecision {
+    Proceed,
+    CompleteMysqlCollectionMigration,
+    RefuseAlreadyDropped,
+    RefuseMissingAccessAll,
+    RefuseMissingMigrationLedger,
+    RefuseLegacyUserAccessAll,
+    RefuseAmbiguousDirectPermissions,
+    RefusePartialCollectionSchema,
+    RefuseCollectionLedgerMismatch,
+}
+
+fn custom_role_preflight_decision(
+    facts: CustomRoleMigrationFacts,
+    can_complete_mysql_partial_migration: bool,
+) -> CustomRolePreflightDecision {
+    if !facts.memberships_table_exists || facts.repair_migration_applied {
+        return CustomRolePreflightDecision::Proceed;
+    }
+    if !facts.migration_table_exists {
+        return CustomRolePreflightDecision::RefuseMissingMigrationLedger;
+    }
+
+    // Once access_all has been dropped, its former value and the provenance of 0/1/1
+    // collection permissions can no longer be reconstructed. Never guess at either.
+    if facts.access_all_drop_migration_applied {
+        return CustomRolePreflightDecision::RefuseAlreadyDropped;
+    }
+    if !facts.access_all_column_exists {
+        return CustomRolePreflightDecision::RefuseMissingAccessAll;
+    }
+
+    if facts.legacy_user_access_all_count != 0 {
+        return CustomRolePreflightDecision::RefuseLegacyUserAccessAll;
+    }
+    if facts.ambiguous_direct_permission_count != 0 && !facts.same_run_0716_marker {
+        return CustomRolePreflightDecision::RefuseAmbiguousDirectPermissions;
+    }
+
+    match (facts.collection_permission_columns, facts.collection_permissions_migration_applied) {
+        (0, false) | (3, true) => CustomRolePreflightDecision::Proceed,
+        (3, false) if can_complete_mysql_partial_migration => {
+            CustomRolePreflightDecision::CompleteMysqlCollectionMigration
+        }
+        (_, true) => CustomRolePreflightDecision::RefuseCollectionLedgerMismatch,
+        _ => CustomRolePreflightDecision::RefusePartialCollectionSchema,
+    }
+}
+
+fn custom_role_preflight_error(decision: CustomRolePreflightDecision, facts: CustomRoleMigrationFacts) -> Error {
+    let detail = match decision {
+        CustomRolePreflightDecision::RefuseAlreadyDropped => format!(
+            "The membership access_all column was already dropped by migration \
+             {DROP_MEMBERSHIP_ACCESS_ALL_MIGRATION}, but the required repair migration \
+             {CUSTOM_ROLE_REPAIR_MIGRATION} is not recorded. The former permission values cannot \
+             be reconstructed safely."
+        ),
+        CustomRolePreflightDecision::RefuseMissingAccessAll => format!(
+            "The membership access_all column is missing before repair migration \
+             {CUSTOM_ROLE_REPAIR_MIGRATION}; refusing to infer deleted permissions."
+        ),
+        CustomRolePreflightDecision::RefuseMissingMigrationLedger => {
+            "The users_organizations table exists, but the Diesel migration ledger does not. \
+             Refusing to guess which schema and data migrations were previously applied."
+                .to_owned()
+        }
+        CustomRolePreflightDecision::RefuseLegacyUserAccessAll => format!(
+            "{} legacy User membership(s) still have membership access_all=true. Mapping these \
+             records to Custom/EditAny would add management authority, while clearing the bit \
+             would remove existing vault access.",
+            facts.legacy_user_access_all_count
+        ),
+        CustomRolePreflightDecision::RefuseAmbiguousDirectPermissions => format!(
+            "Found {} membership(s) with an ambiguous 0/1/1 collection-permission pattern. It is \
+             not possible to distinguish an older group-derived backfill from an intentional \
+             direct Edit+Delete assignment.",
+            facts.ambiguous_direct_permission_count
+        ),
+        CustomRolePreflightDecision::RefusePartialCollectionSchema => format!(
+            "Found {} of the three custom collection-permission columns without a completed \
+             {CUSTOM_COLLECTION_PERMISSIONS_MIGRATION} migration. This is not an automatically \
+             recoverable state for this database backend.",
+            facts.collection_permission_columns
+        ),
+        CustomRolePreflightDecision::RefuseCollectionLedgerMismatch => format!(
+            "Migration {CUSTOM_COLLECTION_PERMISSIONS_MIGRATION} is recorded, but only {} of its \
+             three collection-permission columns exist.",
+            facts.collection_permission_columns
+        ),
+        CustomRolePreflightDecision::Proceed | CustomRolePreflightDecision::CompleteMysqlCollectionMigration => {
+            unreachable!("successful preflight decisions do not produce errors")
+        }
+    };
+
+    std::io::Error::other(format!(
+        "Custom-role migration preflight stopped startup: {detail} Back up the database and resolve \
+         the legacy membership state manually before restarting."
+    ))
+    .into()
+}
+
+#[cfg(any(mysql, test))]
+fn mysql_partial_unexpected_values_query(allow_same_run_group_derived: bool) -> String {
+    let same_run_group_derived = if allow_same_run_group_derived {
+        " OR \
+         (atype = 4 \
+          AND access_all = FALSE \
+          AND create_new_collections = FALSE \
+          AND edit_any_collection = TRUE \
+          AND delete_any_collection = TRUE \
+          AND EXISTS ( \
+              SELECT 1 \
+              FROM groups_users AS gu \
+              INNER JOIN `groups` AS g ON g.uuid = gu.groups_uuid \
+              WHERE gu.users_organizations_uuid = users_organizations.uuid \
+                AND g.organizations_uuid = users_organizations.org_uuid \
+                AND g.access_all = TRUE \
+          ))"
+    } else {
+        ""
+    };
+
+    format!(
+        "SELECT COUNT(*) AS count FROM users_organizations \
+         WHERE NOT ( \
+             (create_new_collections = FALSE \
+              AND edit_any_collection = FALSE \
+              AND delete_any_collection = FALSE) \
+             OR \
+             (atype = 4 \
+              AND create_new_collections = access_all \
+              AND edit_any_collection = access_all \
+              AND delete_any_collection = access_all) \
+             {same_run_group_derived} \
+         )"
+    )
+}
+
 // Embed the migrations from the migrations folder into the application
 // This way, the program automatically migrates the database to the latest version
 // https://docs.rs/diesel_migrations/*/diesel_migrations/macro.embed_migrations.html
@@ -477,10 +639,129 @@ mod sqlite_migrations {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/sqlite");
 
+    #[derive(diesel::QueryableByName)]
+    struct Count {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        count: i64,
+    }
+
+    fn count(
+        connection: &mut diesel::sqlite::SqliteConnection,
+        query: impl Into<String>,
+    ) -> Result<i64, diesel::result::Error> {
+        diesel::sql_query(query).get_result::<Count>(connection).map(|row| row.count)
+    }
+
+    fn table_exists(
+        connection: &mut diesel::sqlite::SqliteConnection,
+        table: &str,
+    ) -> Result<bool, diesel::result::Error> {
+        count(
+            connection,
+            format!(
+                "SELECT COUNT(*) AS count FROM sqlite_master \
+                 WHERE type = 'table' AND name = '{table}'"
+            ),
+        )
+        .map(|value| value != 0)
+    }
+
+    fn migration_applied(
+        connection: &mut diesel::sqlite::SqliteConnection,
+        version: &str,
+    ) -> Result<bool, diesel::result::Error> {
+        count(
+            connection,
+            format!(
+                "SELECT COUNT(*) AS count FROM __diesel_schema_migrations \
+                 WHERE version = '{version}'"
+            ),
+        )
+        .map(|value| value != 0)
+    }
+
+    fn preflight(connection: &mut diesel::sqlite::SqliteConnection) -> Result<(), super::Error> {
+        let memberships_table_exists = table_exists(connection, "users_organizations")?;
+        if !memberships_table_exists {
+            return Ok(());
+        }
+
+        let migration_table_exists = table_exists(connection, "__diesel_schema_migrations")?;
+        let access_all_column_exists = count(
+            connection,
+            "SELECT COUNT(*) AS count FROM pragma_table_info('users_organizations') \
+             WHERE name = 'access_all'",
+        )? != 0;
+        let collection_permission_columns = count(
+            connection,
+            "SELECT COUNT(*) AS count FROM pragma_table_info('users_organizations') \
+             WHERE name IN ('create_new_collections', 'edit_any_collection', 'delete_any_collection')",
+        )?;
+
+        let collection_permissions_migration_applied =
+            migration_table_exists && migration_applied(connection, super::CUSTOM_COLLECTION_PERMISSIONS_MIGRATION)?;
+        let repair_migration_applied =
+            migration_table_exists && migration_applied(connection, super::CUSTOM_ROLE_REPAIR_MIGRATION)?;
+        let access_all_drop_migration_applied =
+            migration_table_exists && migration_applied(connection, super::DROP_MEMBERSHIP_ACCESS_ALL_MIGRATION)?;
+        let same_run_marker_table_exists = table_exists(connection, super::CUSTOM_ROLE_SAME_RUN_MARKER_TABLE)?;
+        let same_run_0716_marker = same_run_marker_table_exists
+            && count(
+                connection,
+                format!("SELECT COUNT(*) AS count FROM {} WHERE marker = 1", super::CUSTOM_ROLE_SAME_RUN_MARKER_TABLE),
+            )? != 0;
+
+        let legacy_user_access_all_count = if access_all_column_exists {
+            count(
+                connection,
+                "SELECT COUNT(*) AS count FROM users_organizations \
+                 WHERE atype = 2 AND access_all = TRUE",
+            )?
+        } else {
+            0
+        };
+
+        let ambiguous_direct_permission_count = if access_all_column_exists && collection_permission_columns == 3 {
+            count(
+                connection,
+                "SELECT COUNT(*) AS count FROM users_organizations \
+                     WHERE atype IN (3, 4) \
+                       AND access_all = FALSE \
+                       AND create_new_collections = FALSE \
+                       AND edit_any_collection = TRUE \
+                       AND delete_any_collection = TRUE",
+            )?
+        } else {
+            0
+        };
+
+        let facts = super::CustomRoleMigrationFacts {
+            memberships_table_exists,
+            migration_table_exists,
+            access_all_column_exists,
+            collection_permission_columns,
+            collection_permissions_migration_applied,
+            repair_migration_applied,
+            access_all_drop_migration_applied,
+            legacy_user_access_all_count,
+            ambiguous_direct_permission_count,
+            same_run_0716_marker,
+        };
+
+        let decision = super::custom_role_preflight_decision(facts, false);
+        if decision == super::CustomRolePreflightDecision::Proceed {
+            Ok(())
+        } else {
+            Err(super::custom_role_preflight_error(decision, facts))
+        }
+    }
+
     pub fn run_migrations(db_url: &str) -> Result<(), super::Error> {
         // Establish a connection to the sqlite database (this will create a new one, if it does
         // not exist, and exit if there is an error).
         let mut connection = diesel::sqlite::SqliteConnection::establish(db_url)?;
+
+        preflight(&mut connection)?;
 
         // Run the migrations after successfully establishing a connection
         // Disable Foreign Key Checks during migration
@@ -505,9 +786,192 @@ mod mysql_migrations {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/mysql");
 
+    #[derive(diesel::QueryableByName)]
+    struct Count {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        count: i64,
+    }
+
+    fn count(
+        connection: &mut diesel::mysql::MysqlConnection,
+        query: impl Into<String>,
+    ) -> Result<i64, diesel::result::Error> {
+        diesel::sql_query(query).get_result::<Count>(connection).map(|row| row.count)
+    }
+
+    fn table_exists(
+        connection: &mut diesel::mysql::MysqlConnection,
+        table: &str,
+    ) -> Result<bool, diesel::result::Error> {
+        count(
+            connection,
+            format!(
+                "SELECT COUNT(*) AS count FROM information_schema.tables \
+                 WHERE table_schema = DATABASE() AND table_name = '{table}'"
+            ),
+        )
+        .map(|value| value != 0)
+    }
+
+    fn migration_applied(
+        connection: &mut diesel::mysql::MysqlConnection,
+        version: &str,
+    ) -> Result<bool, diesel::result::Error> {
+        count(
+            connection,
+            format!(
+                "SELECT COUNT(*) AS count FROM __diesel_schema_migrations \
+                 WHERE version = '{version}'"
+            ),
+        )
+        .map(|value| value != 0)
+    }
+
+    fn complete_partial_collection_migration(
+        connection: &mut diesel::mysql::MysqlConnection,
+        allow_same_run_group_derived: bool,
+    ) -> Result<(), super::Error> {
+        // MySQL implicitly committed the three historical ALTER TABLE statements before the
+        // unquoted `groups` identifier made the migration fail. Complete that exact, known state
+        // without dropping columns or inventing values.
+        let matching_column_definitions = count(
+            connection,
+            "SELECT COUNT(*) AS count FROM information_schema.columns \
+             WHERE table_schema = DATABASE() \
+               AND table_name = 'users_organizations' \
+               AND column_name IN \
+                   ('create_new_collections', 'edit_any_collection', 'delete_any_collection') \
+               AND data_type = 'tinyint' \
+               AND is_nullable = 'NO' \
+               AND LOWER(COALESCE(CAST(column_default AS CHAR), '')) IN ('0', 'false')",
+        )?;
+        let unexpected_values =
+            count(connection, super::mysql_partial_unexpected_values_query(allow_same_run_group_derived))?;
+
+        if matching_column_definitions != 3 || unexpected_values != 0 {
+            return Err(std::io::Error::other(format!(
+                "Custom-role migration preflight found the historical MySQL partial \
+                 {version} schema, but its column definitions or data were modified \
+                 (matching columns: {matching_column_definitions}/3, unexpected rows: \
+                 {unexpected_values}). Refusing automatic recovery. Back up the database and \
+                 resolve the partial migration manually before restarting.",
+                version = super::CUSTOM_COLLECTION_PERMISSIONS_MIGRATION,
+            ))
+            .into());
+        }
+
+        connection.transaction::<(), diesel::result::Error, _>(|connection| {
+            // This is the first data statement from the canonical migration. It also resets an
+            // exact, same-run group-derived 0/1/1 row to 0/0/0; that authority remains dynamically
+            // derived from the group, and the separate 07-23 repair then reconciles the role.
+            diesel::sql_query(
+                "UPDATE users_organizations \
+                 SET create_new_collections = access_all, \
+                     edit_any_collection = access_all, \
+                     delete_any_collection = access_all \
+                 WHERE atype = 4",
+            )
+            .execute(connection)?;
+
+            diesel::sql_query(format!(
+                "INSERT INTO __diesel_schema_migrations (version) \
+                 VALUES ('{}')",
+                super::CUSTOM_COLLECTION_PERMISSIONS_MIGRATION
+            ))
+            .execute(connection)?;
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    fn preflight(connection: &mut diesel::mysql::MysqlConnection) -> Result<(), super::Error> {
+        let memberships_table_exists = table_exists(connection, "users_organizations")?;
+        if !memberships_table_exists {
+            return Ok(());
+        }
+
+        let migration_table_exists = table_exists(connection, "__diesel_schema_migrations")?;
+        let access_all_column_exists = count(
+            connection,
+            "SELECT COUNT(*) AS count FROM information_schema.columns \
+             WHERE table_schema = DATABASE() \
+               AND table_name = 'users_organizations' \
+               AND column_name = 'access_all'",
+        )? != 0;
+        let collection_permission_columns = count(
+            connection,
+            "SELECT COUNT(*) AS count FROM information_schema.columns \
+             WHERE table_schema = DATABASE() \
+               AND table_name = 'users_organizations' \
+               AND column_name IN \
+                   ('create_new_collections', 'edit_any_collection', 'delete_any_collection')",
+        )?;
+
+        let collection_permissions_migration_applied =
+            migration_table_exists && migration_applied(connection, super::CUSTOM_COLLECTION_PERMISSIONS_MIGRATION)?;
+        let repair_migration_applied =
+            migration_table_exists && migration_applied(connection, super::CUSTOM_ROLE_REPAIR_MIGRATION)?;
+        let access_all_drop_migration_applied =
+            migration_table_exists && migration_applied(connection, super::DROP_MEMBERSHIP_ACCESS_ALL_MIGRATION)?;
+        let same_run_marker_table_exists = table_exists(connection, super::CUSTOM_ROLE_SAME_RUN_MARKER_TABLE)?;
+        let same_run_0716_marker = same_run_marker_table_exists
+            && count(
+                connection,
+                format!("SELECT COUNT(*) AS count FROM {} WHERE marker = 1", super::CUSTOM_ROLE_SAME_RUN_MARKER_TABLE),
+            )? != 0;
+
+        let legacy_user_access_all_count = if access_all_column_exists {
+            count(
+                connection,
+                "SELECT COUNT(*) AS count FROM users_organizations \
+                 WHERE atype = 2 AND access_all = TRUE",
+            )?
+        } else {
+            0
+        };
+
+        let ambiguous_direct_permission_count = if access_all_column_exists && collection_permission_columns == 3 {
+            count(
+                connection,
+                "SELECT COUNT(*) AS count FROM users_organizations \
+                     WHERE atype IN (3, 4) \
+                       AND access_all = FALSE \
+                       AND create_new_collections = FALSE \
+                       AND edit_any_collection = TRUE \
+                       AND delete_any_collection = TRUE",
+            )?
+        } else {
+            0
+        };
+
+        let facts = super::CustomRoleMigrationFacts {
+            memberships_table_exists,
+            migration_table_exists,
+            access_all_column_exists,
+            collection_permission_columns,
+            collection_permissions_migration_applied,
+            repair_migration_applied,
+            access_all_drop_migration_applied,
+            legacy_user_access_all_count,
+            ambiguous_direct_permission_count,
+            same_run_0716_marker,
+        };
+
+        match super::custom_role_preflight_decision(facts, true) {
+            super::CustomRolePreflightDecision::Proceed => Ok(()),
+            super::CustomRolePreflightDecision::CompleteMysqlCollectionMigration => {
+                complete_partial_collection_migration(connection, same_run_0716_marker)
+            }
+            decision => Err(super::custom_role_preflight_error(decision, facts)),
+        }
+    }
+
     pub fn run_migrations(db_url: &str) -> Result<(), super::Error> {
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
         let mut connection = diesel::mysql::MysqlConnection::establish(db_url)?;
+
+        preflight(&mut connection)?;
 
         // Disable Foreign Key Checks during migration
         // Scoped to a connection/session.
@@ -522,15 +986,315 @@ mod mysql_migrations {
 
 #[cfg(postgresql)]
 mod postgresql_migrations {
-    use diesel::Connection;
+    use diesel::{Connection, RunQueryDsl};
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
     pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/postgresql");
+
+    #[derive(diesel::QueryableByName)]
+    struct Count {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        count: i64,
+    }
+
+    fn count(
+        connection: &mut diesel::pg::PgConnection,
+        query: impl Into<String>,
+    ) -> Result<i64, diesel::result::Error> {
+        diesel::sql_query(query).get_result::<Count>(connection).map(|row| row.count)
+    }
+
+    fn table_exists(connection: &mut diesel::pg::PgConnection, table: &str) -> Result<bool, diesel::result::Error> {
+        count(
+            connection,
+            format!(
+                "SELECT COUNT(*) AS count FROM information_schema.tables \
+                 WHERE table_schema = current_schema() AND table_name = '{table}'"
+            ),
+        )
+        .map(|value| value != 0)
+    }
+
+    fn migration_applied(
+        connection: &mut diesel::pg::PgConnection,
+        version: &str,
+    ) -> Result<bool, diesel::result::Error> {
+        count(
+            connection,
+            format!(
+                "SELECT COUNT(*) AS count FROM __diesel_schema_migrations \
+                 WHERE version = '{version}'"
+            ),
+        )
+        .map(|value| value != 0)
+    }
+
+    fn preflight(connection: &mut diesel::pg::PgConnection) -> Result<(), super::Error> {
+        let memberships_table_exists = table_exists(connection, "users_organizations")?;
+        if !memberships_table_exists {
+            return Ok(());
+        }
+
+        let migration_table_exists = table_exists(connection, "__diesel_schema_migrations")?;
+        let access_all_column_exists = count(
+            connection,
+            "SELECT COUNT(*) AS count FROM information_schema.columns \
+             WHERE table_schema = current_schema() \
+               AND table_name = 'users_organizations' \
+               AND column_name = 'access_all'",
+        )? != 0;
+        let collection_permission_columns = count(
+            connection,
+            "SELECT COUNT(*) AS count FROM information_schema.columns \
+             WHERE table_schema = current_schema() \
+               AND table_name = 'users_organizations' \
+               AND column_name IN \
+                   ('create_new_collections', 'edit_any_collection', 'delete_any_collection')",
+        )?;
+
+        let collection_permissions_migration_applied =
+            migration_table_exists && migration_applied(connection, super::CUSTOM_COLLECTION_PERMISSIONS_MIGRATION)?;
+        let repair_migration_applied =
+            migration_table_exists && migration_applied(connection, super::CUSTOM_ROLE_REPAIR_MIGRATION)?;
+        let access_all_drop_migration_applied =
+            migration_table_exists && migration_applied(connection, super::DROP_MEMBERSHIP_ACCESS_ALL_MIGRATION)?;
+        let same_run_marker_table_exists = table_exists(connection, super::CUSTOM_ROLE_SAME_RUN_MARKER_TABLE)?;
+        let same_run_0716_marker = same_run_marker_table_exists
+            && count(
+                connection,
+                format!("SELECT COUNT(*) AS count FROM {} WHERE marker = 1", super::CUSTOM_ROLE_SAME_RUN_MARKER_TABLE),
+            )? != 0;
+
+        let legacy_user_access_all_count = if access_all_column_exists {
+            count(
+                connection,
+                "SELECT COUNT(*) AS count FROM users_organizations \
+                 WHERE atype = 2 AND access_all = TRUE",
+            )?
+        } else {
+            0
+        };
+
+        let ambiguous_direct_permission_count = if access_all_column_exists && collection_permission_columns == 3 {
+            count(
+                connection,
+                "SELECT COUNT(*) AS count FROM users_organizations \
+                     WHERE atype IN (3, 4) \
+                       AND access_all = FALSE \
+                       AND create_new_collections = FALSE \
+                       AND edit_any_collection = TRUE \
+                       AND delete_any_collection = TRUE",
+            )?
+        } else {
+            0
+        };
+
+        let facts = super::CustomRoleMigrationFacts {
+            memberships_table_exists,
+            migration_table_exists,
+            access_all_column_exists,
+            collection_permission_columns,
+            collection_permissions_migration_applied,
+            repair_migration_applied,
+            access_all_drop_migration_applied,
+            legacy_user_access_all_count,
+            ambiguous_direct_permission_count,
+            same_run_0716_marker,
+        };
+
+        let decision = super::custom_role_preflight_decision(facts, false);
+        if decision == super::CustomRolePreflightDecision::Proceed {
+            Ok(())
+        } else {
+            Err(super::custom_role_preflight_error(decision, facts))
+        }
+    }
 
     pub fn run_migrations(db_url: &str) -> Result<(), super::Error> {
         // Make sure the database is up to date (create if it doesn't exist, or run the migrations)
         let mut connection = diesel::pg::PgConnection::establish(db_url)?;
 
+        preflight(&mut connection)?;
+
         connection.run_pending_migrations(MIGRATIONS).expect("Error running migrations");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod custom_role_migration_preflight_tests {
+    use super::{
+        CustomRoleMigrationFacts as Facts, CustomRolePreflightDecision as Decision, custom_role_preflight_decision,
+        mysql_partial_unexpected_values_query,
+    };
+
+    fn pending_repair() -> Facts {
+        Facts {
+            memberships_table_exists: true,
+            migration_table_exists: true,
+            access_all_column_exists: true,
+            ..Facts::default()
+        }
+    }
+
+    #[test]
+    fn empty_database_can_run_normal_migrations() {
+        assert_eq!(custom_role_preflight_decision(Facts::default(), false), Decision::Proceed);
+    }
+
+    #[test]
+    fn existing_schema_without_a_ledger_is_not_guessed() {
+        assert_eq!(
+            custom_role_preflight_decision(
+                Facts {
+                    memberships_table_exists: true,
+                    access_all_column_exists: true,
+                    ..Facts::default()
+                },
+                false,
+            ),
+            Decision::RefuseMissingMigrationLedger
+        );
+    }
+
+    #[test]
+    fn repair_marker_makes_completed_state_idempotent() {
+        assert_eq!(
+            custom_role_preflight_decision(
+                Facts {
+                    memberships_table_exists: true,
+                    migration_table_exists: true,
+                    repair_migration_applied: true,
+                    access_all_drop_migration_applied: true,
+                    collection_permission_columns: 3,
+                    ..Facts::default()
+                },
+                false,
+            ),
+            Decision::Proceed
+        );
+    }
+
+    #[test]
+    fn a_historical_drop_without_the_repair_is_refused() {
+        assert_eq!(
+            custom_role_preflight_decision(
+                Facts {
+                    access_all_drop_migration_applied: true,
+                    access_all_column_exists: false,
+                    ..pending_repair()
+                },
+                false,
+            ),
+            Decision::RefuseAlreadyDropped
+        );
+    }
+
+    #[test]
+    fn legacy_user_access_all_requires_an_operator_decision() {
+        assert_eq!(
+            custom_role_preflight_decision(
+                Facts {
+                    legacy_user_access_all_count: 1,
+                    ..pending_repair()
+                },
+                false,
+            ),
+            Decision::RefuseLegacyUserAccessAll
+        );
+    }
+
+    #[test]
+    fn group_derived_zero_permissions_are_safe_but_ambiguous_direct_permissions_are_refused() {
+        assert_eq!(custom_role_preflight_decision(pending_repair(), false), Decision::Proceed);
+        assert_eq!(
+            custom_role_preflight_decision(
+                Facts {
+                    collection_permission_columns: 3,
+                    collection_permissions_migration_applied: true,
+                    ..pending_repair()
+                },
+                false,
+            ),
+            Decision::Proceed
+        );
+        assert_eq!(
+            custom_role_preflight_decision(
+                Facts {
+                    collection_permission_columns: 3,
+                    collection_permissions_migration_applied: true,
+                    ambiguous_direct_permission_count: 1,
+                    ..pending_repair()
+                },
+                false,
+            ),
+            Decision::RefuseAmbiguousDirectPermissions
+        );
+        assert_eq!(
+            custom_role_preflight_decision(
+                Facts {
+                    collection_permission_columns: 3,
+                    collection_permissions_migration_applied: true,
+                    ambiguous_direct_permission_count: 1,
+                    same_run_0716_marker: true,
+                    ..pending_repair()
+                },
+                false,
+            ),
+            Decision::Proceed
+        );
+    }
+
+    #[test]
+    fn exact_mysql_partial_schema_uses_only_the_mysql_completion_path() {
+        let facts = Facts {
+            collection_permission_columns: 3,
+            collection_permissions_migration_applied: false,
+            ..pending_repair()
+        };
+        assert_eq!(custom_role_preflight_decision(facts, true), Decision::CompleteMysqlCollectionMigration);
+        assert_eq!(custom_role_preflight_decision(facts, false), Decision::RefusePartialCollectionSchema);
+    }
+
+    #[test]
+    fn historical_mysql_partial_query_does_not_require_the_new_marker_table() {
+        let query = mysql_partial_unexpected_values_query(false);
+        assert!(!query.contains(super::CUSTOM_ROLE_SAME_RUN_MARKER_TABLE));
+        assert!(!query.contains("groups_users"));
+    }
+
+    #[test]
+    fn same_run_mysql_partial_query_requires_the_current_group_source() {
+        let query = mysql_partial_unexpected_values_query(true);
+        assert!(query.contains("access_all = FALSE"));
+        assert!(query.contains("edit_any_collection = TRUE"));
+        assert!(query.contains("delete_any_collection = TRUE"));
+        assert!(query.contains("INNER JOIN `groups` AS g"));
+        assert!(query.contains("g.organizations_uuid = users_organizations.org_uuid"));
+        assert!(query.contains("g.access_all = TRUE"));
+    }
+
+    #[test]
+    fn incomplete_columns_and_ledger_mismatch_are_refused() {
+        assert_eq!(
+            custom_role_preflight_decision(
+                Facts {
+                    collection_permission_columns: 2,
+                    ..pending_repair()
+                },
+                true,
+            ),
+            Decision::RefusePartialCollectionSchema
+        );
+        assert_eq!(
+            custom_role_preflight_decision(
+                Facts {
+                    collection_permission_columns: 2,
+                    collection_permissions_migration_applied: true,
+                    ..pending_repair()
+                },
+                true,
+            ),
+            Decision::RefuseCollectionLedgerMismatch
+        );
     }
 }

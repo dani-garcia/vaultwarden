@@ -725,8 +725,10 @@ impl OrgHeaders {
     fn is_confirmed_and_admin(&self) -> bool {
         self.membership_status == MembershipStatus::Confirmed && self.membership_type >= MembershipType::Admin
     }
+    // "Manager-level or above": a confirmed Custom, Admin or Owner member. (The legacy Manager role
+    // has been folded into Custom, which shares the same authorization rank.)
     fn is_confirmed_and_manager(&self) -> bool {
-        self.membership_status == MembershipStatus::Confirmed && self.membership_type >= MembershipType::Manager
+        self.membership_status == MembershipStatus::Confirmed && self.membership_type >= MembershipType::Custom
     }
     fn is_confirmed_and_owner(&self) -> bool {
         self.membership_status == MembershipStatus::Confirmed && self.membership_type == MembershipType::Owner
@@ -756,6 +758,19 @@ impl OrgHeaders {
                 || self.membership.has_manage_users()
                 || self.membership.has_manage_groups())
     }
+    fn can_access_event_logs(&self) -> bool {
+        self.is_confirmed()
+            && (self.membership_type >= MembershipType::Admin || self.membership.has_access_event_logs())
+    }
+    fn can_access_import_export(&self) -> bool {
+        self.is_confirmed()
+            && (self.membership_type >= MembershipType::Admin || self.membership.has_access_import_export())
+    }
+    // NOTE: there is deliberately no `can_access_reports` guard helper. Vaultwarden has no
+    // server-side report endpoints — the clients compute every report locally from the
+    // organization cipher list — so `accessReports` is enforced inline where that list is served
+    // (`get_org_details`), not through a request guard. A guard here would be dead code that
+    // invites gating an endpoint on "may call reports" instead of "may read these ciphers".
 }
 
 // org_id is usually the second path param ("/organizations/<org_id>"),
@@ -840,6 +855,9 @@ impl<'r> FromRequest<'r> for OrgHeaders {
 }
 
 pub struct AdminHeaders {
+    // Kept for parity with the other org header guards (and possible future use); the org export
+    // endpoint that used to read this now goes through `AccessImportExportHeaders` instead.
+    #[allow(dead_code)]
     pub host: String,
     pub device: Device,
     pub user: User,
@@ -880,6 +898,10 @@ macro_rules! generate_manage_headers {
             pub device: Device,
             pub user: User,
             pub membership_type: MembershipType,
+            // The caller's membership record. Holding the permission that opens an endpoint says
+            // nothing about *which* data the caller may reach, so handlers need the membership to
+            // apply the regular full-access/per-collection checks on top of the guard.
+            pub membership: Membership,
             pub ip: ClientIp,
             pub org_id: OrganizationId,
         }
@@ -897,7 +919,8 @@ macro_rules! generate_manage_headers {
                         user: headers.user,
                         membership_type: headers.membership_type,
                         ip: headers.ip,
-                        org_id: headers.membership.org_uuid,
+                        org_id: headers.membership.org_uuid.clone(),
+                        membership: headers.membership,
                     })
                 } else {
                     err_handler!($err)
@@ -938,6 +961,18 @@ generate_manage_headers!(
     can_manage_users_or_groups,
     "You need the 'Manage Users' or 'Manage Groups' permission, or to be an Admin or Owner, to call this endpoint"
 );
+generate_manage_headers!(
+    AccessEventLogsHeaders,
+    can_access_event_logs,
+    "You need the 'Access Event Logs' permission, or to be an Admin or Owner, to call this endpoint"
+);
+generate_manage_headers!(
+    AccessImportExportHeaders,
+    can_access_import_export,
+    "You need the 'Access Import/Export' permission, or to be an Admin or Owner, to call this endpoint"
+);
+// NOTE: no `AccessReportsHeaders`. See the note next to `can_access_import_export` above:
+// `accessReports` guards data (the organization cipher list), not a dedicated endpoint.
 
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),
 // but there could be cases where it is a query value.
@@ -961,7 +996,6 @@ fn get_col_id(request: &Request<'_>) -> Option<CollectionId> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CollectionManageAccess {
     Any,
-    LegacyManager,
     ExplicitManage,
     Denied,
 }
@@ -973,9 +1007,6 @@ fn collection_access_by_role(membership: &Membership, custom_has_any_access: boo
 
     match MembershipType::from_i32(membership.atype) {
         Some(MembershipType::Owner | MembershipType::Admin) => CollectionManageAccess::Any,
-        // Keep the pre-Custom role's broad behavior isolated to an exact legacy Manager. Its
-        // existing helper intentionally accepts membership/group access_all.
-        Some(MembershipType::Manager) => CollectionManageAccess::LegacyManager,
         Some(MembershipType::Custom) if custom_has_any_access => CollectionManageAccess::Any,
         // A Custom member must prove an actual users_collections.manage or
         // collections_groups.manage assignment. In particular, groups.access_all is not Manage.
@@ -1007,9 +1038,6 @@ async fn can_manage_collection(
 ) -> bool {
     match access {
         CollectionManageAccess::Any => true,
-        CollectionManageAccess::LegacyManager => {
-            Collection::is_coll_manageable_by_user(collection_uuid, &membership.user_uuid, conn).await
-        }
         CollectionManageAccess::ExplicitManage => {
             membership.has_explicit_collection_manage_access(collection_uuid, conn).await
         }
@@ -1036,7 +1064,7 @@ pub(crate) async fn can_edit_collection(
 }
 
 /// ManagerHeaders authorizes collection updates. A Custom member with Edit any collection can
-/// update every collection; otherwise the caller must be at least a legacy Manager and have the
+/// update every collection; otherwise the caller must be a Custom member (or above) holding the
 /// per-collection Manage permission. Read and delete use separate guards so Edit cannot
 /// accidentally imply Delete.
 pub struct ManagerHeaders {
@@ -1145,8 +1173,8 @@ impl From<CollectionReadHeaders> for Headers {
 /// limitCollectionDeletion=true, so deleting *any* collection requires the explicit Delete any
 /// collection permission (or Admin/Owner). Deleting an individual collection is additionally
 /// allowed for members holding the per-collection Manage grant on it. Custom members use the
-/// explicit assignment only; unlike the exact legacy Manager path, membership/group access_all
-/// never counts as their per-collection Manage grant.
+/// explicit assignment only; a group `access_all` grant never counts as their per-collection Manage
+/// grant.
 pub struct CollectionDeleteHeaders {
     pub host: String,
     pub device: Device,
@@ -1172,11 +1200,11 @@ impl<'r> FromRequest<'r> for CollectionDeleteHeaders {
         match collection_delete_access(&headers.membership) {
             CollectionManageAccess::Any => {}
             CollectionManageAccess::Denied => {
-                // Custom is a distinct, fail-closed role. Edit any collection and access_all alone
-                // must not satisfy a Delete request without either Delete any or explicit Manage.
+                // Custom is a distinct, fail-closed role. Edit any collection alone must not satisfy
+                // a Delete request without either Delete any or an explicit per-collection Manage.
                 err_handler!("You need the 'Delete any collection' permission to call this endpoint")
             }
-            access @ (CollectionManageAccess::LegacyManager | CollectionManageAccess::ExplicitManage) => {
+            access @ CollectionManageAccess::ExplicitManage => {
                 let Outcome::Success(conn) = DbConn::from_request(request).await else {
                     err_handler!("Error getting DB")
                 };
@@ -1667,26 +1695,20 @@ mod tests {
 
     #[test]
     fn flagless_custom_requires_explicit_manage_for_edit_read_and_delete() {
+        // A flagless Custom member (this is what a migrated legacy Manager becomes) must prove a
+        // real per-collection Manage grant for every collection operation. ExplicitManage invokes
+        // the database helper that only accepts users_collections.manage / collections_groups.manage
+        // — an external groups.access_all grant deliberately does not switch to a broad helper.
         let custom = membership(MembershipType::Custom);
         assert_eq!(collection_edit_access(&custom), CollectionManageAccess::ExplicitManage);
         assert_eq!(collection_read_access(&custom), CollectionManageAccess::ExplicitManage);
         assert_eq!(collection_delete_access(&custom), CollectionManageAccess::ExplicitManage);
-
-        // Neither a stale membership access_all value nor an external groups.access_all grant may
-        // switch a Custom member to the legacy broad helper. ExplicitManage invokes the database
-        // helper that only accepts users_collections.manage / collections_groups.manage.
-        let mut access_all = membership(MembershipType::Custom);
-        access_all.access_all = true;
-        assert_eq!(collection_edit_access(&access_all), CollectionManageAccess::ExplicitManage);
-        assert_eq!(collection_read_access(&access_all), CollectionManageAccess::ExplicitManage);
-        assert_eq!(collection_delete_access(&access_all), CollectionManageAccess::ExplicitManage);
     }
 
     #[test]
     fn custom_any_permissions_remain_independent() {
         let mut edit_any = membership(MembershipType::Custom);
         edit_any.edit_any_collection = true;
-        edit_any.access_all = true;
         assert_eq!(collection_edit_access(&edit_any), CollectionManageAccess::Any);
         assert_eq!(collection_read_access(&edit_any), CollectionManageAccess::Any);
         // Edit-any alone is not blanket Delete. It still permits deletion of an explicitly managed
@@ -1701,18 +1723,15 @@ mod tests {
     }
 
     #[test]
-    fn exact_legacy_manager_keeps_broad_helper() {
-        let manager = membership(MembershipType::Manager);
-        assert_eq!(collection_edit_access(&manager), CollectionManageAccess::LegacyManager);
-        assert_eq!(collection_read_access(&manager), CollectionManageAccess::LegacyManager);
-        assert_eq!(collection_delete_access(&manager), CollectionManageAccess::LegacyManager);
-
+    fn admin_and_user_collection_access_roles() {
         let admin = membership(MembershipType::Admin);
         assert_eq!(collection_edit_access(&admin), CollectionManageAccess::Any);
+        assert_eq!(collection_read_access(&admin), CollectionManageAccess::Any);
         assert_eq!(collection_delete_access(&admin), CollectionManageAccess::Any);
 
         let user = membership(MembershipType::User);
         assert_eq!(collection_edit_access(&user), CollectionManageAccess::Denied);
+        assert_eq!(collection_read_access(&user), CollectionManageAccess::Denied);
         assert_eq!(collection_delete_access(&user), CollectionManageAccess::Denied);
     }
 

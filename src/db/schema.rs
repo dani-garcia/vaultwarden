@@ -236,7 +236,6 @@ table! {
         user_uuid -> Text,
         org_uuid -> Text,
         invited_by_email -> Nullable<Text>,
-        access_all -> Bool,
         akey -> Text,
         status -> Integer,
         atype -> Integer,
@@ -248,6 +247,9 @@ table! {
         create_new_collections -> Bool,
         edit_any_collection -> Bool,
         delete_any_collection -> Bool,
+        access_event_logs -> Bool,
+        access_import_export -> Bool,
+        access_reports -> Bool,
     }
 }
 

@@ -545,38 +545,29 @@ struct MembershipTypeData {
 }
 
 fn apply_membership_type_change(membership: &mut Membership, new_type: MembershipType) {
-    let was_custom = membership.atype == MembershipType::Custom;
-
-    // Leaving Custom for the legacy Manager role: `access_all` is the internal mirror of
-    // Edit any collection, but a Manager's `access_all` means the broad "manage all collections"
-    // grant (Create + Edit + Delete). Carrying an Edit-only mirror over would silently escalate the
-    // member to Create/Edit/Delete. Only preserve `access_all` when the member actually held the
-    // full manage-all grant, mirroring the collection-permissions down-migration. Must be evaluated
-    // before the flags are cleared below (and while the type is still Custom).
-    if was_custom && new_type == MembershipType::Manager {
-        membership.access_all = membership.has_manage_all_collections();
-    }
-
-    // Entering Custom through the Vaultwarden admin panel is deliberately fail-closed because
-    // that UI cannot select granular permissions; they can be granted later through the regular
-    // organization member dialog.
-    if new_type == MembershipType::Custom && !was_custom {
+    // Entering Custom through the Vaultwarden admin panel is deliberately fail-closed because that
+    // UI cannot select granular permissions; they can be granted later through the regular
+    // organization member dialog. Any non-Custom role carries no custom flags at all. Only a member
+    // that is already Custom and stays Custom keeps its existing flags.
+    let stays_custom = new_type == MembershipType::Custom && membership.atype == MembershipType::Custom;
+    if !stays_custom {
         membership.clear_custom_permissions();
-        membership.access_all = false;
-    }
-    if new_type != MembershipType::Custom {
-        membership.clear_custom_permissions();
-    }
-
-    // Prevent stale access_all from surviving a demotion to User. Admins/Owners have implicit
-    // full access, while legacy Manager access_all is intentionally preserved for compatibility.
-    match new_type {
-        MembershipType::Owner | MembershipType::Admin => membership.access_all = true,
-        MembershipType::User => membership.access_all = false,
-        MembershipType::Manager | MembershipType::Custom => {}
     }
 
     membership.atype = new_type as i32;
+}
+
+fn parse_admin_membership_type(user_type: NumberOrString) -> Option<MembershipType> {
+    let raw_type = user_type.into_string();
+
+    // The public API still accepts the legacy Manager representation for compatibility and folds
+    // it into Custom. The admin panel must not do that: treating an apparent Manager demotion as a
+    // Custom-to-Custom update would preserve the member's existing granular permissions.
+    if matches!(raw_type.as_str(), "3" | "Manager") {
+        return None;
+    }
+
+    MembershipType::from_str(&raw_type)
 }
 
 #[post("/users/org_type", format = "application/json", data = "<data>")]
@@ -588,7 +579,7 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
         err!("The specified user isn't member of the organization")
     };
 
-    let Some(new_type) = MembershipType::from_str(&data.user_type.into_string()) else {
+    let Some(new_type) = parse_admin_membership_type(data.user_type) else {
         err!("Invalid type")
     };
 
@@ -936,9 +927,8 @@ mod tests {
     }
 
     #[test]
-    fn admin_type_changes_clear_custom_permissions_and_stale_access() {
+    fn admin_type_changes_clear_custom_permissions() {
         let mut custom = membership(MembershipType::Custom);
-        custom.access_all = true;
         custom.manage_users = true;
         custom.create_new_collections = true;
         custom.edit_any_collection = true;
@@ -946,50 +936,48 @@ mod tests {
 
         apply_membership_type_change(&mut custom, MembershipType::User);
         assert_eq!(custom.atype, MembershipType::User as i32);
-        assert!(!custom.access_all);
         assert!(!custom.manage_users);
         assert!(!custom.create_new_collections);
         assert!(!custom.edit_any_collection);
         assert!(!custom.delete_any_collection);
 
+        // Entering Custom through the admin panel is fail-closed: no granular permissions are set.
         let mut admin = membership(MembershipType::Admin);
-        admin.access_all = true;
         apply_membership_type_change(&mut admin, MembershipType::Custom);
         assert_eq!(admin.atype, MembershipType::Custom as i32);
-        assert!(!admin.access_all, "entering Custom through this UI must be fail-closed");
         assert!(!admin.has_manage_all_collections());
+        assert!(!admin.edit_any_collection);
     }
 
     #[test]
-    fn admin_and_legacy_manager_access_all_behavior_is_preserved() {
-        let mut user = membership(MembershipType::User);
-        apply_membership_type_change(&mut user, MembershipType::Admin);
-        assert!(user.access_all);
+    fn admin_custom_to_custom_keeps_flags_but_other_transitions_clear() {
+        // A member kept as Custom retains its granular flags: the admin panel does not touch them;
+        // they are managed through the regular organization member dialog.
+        let mut custom = membership(MembershipType::Custom);
+        custom.manage_users = true;
+        custom.edit_any_collection = true;
+        apply_membership_type_change(&mut custom, MembershipType::Custom);
+        assert_eq!(custom.atype, MembershipType::Custom as i32);
+        assert!(custom.manage_users);
+        assert!(custom.edit_any_collection);
 
-        // REGRESSION (privilege escalation, PR #7397 / finding F2): a Custom member whose
-        // `access_all` is only the Edit-any-collection mirror must NOT be turned into a legacy
-        // Manager with the broad "manage all collections" `access_all` grant. That would escalate
-        // an Edit-only member into Create + Edit + Delete. Mirrors the collection down-migration.
-        let mut edit_only = membership(MembershipType::Custom);
-        edit_only.access_all = true;
-        edit_only.edit_any_collection = true;
-        apply_membership_type_change(&mut edit_only, MembershipType::Manager);
-        assert_eq!(edit_only.atype, MembershipType::Manager as i32);
-        assert!(!edit_only.access_all, "Edit-only Custom must not become an access_all Manager");
-        assert!(!edit_only.edit_any_collection);
+        // Promoting to Admin/Owner drops any stale custom flags.
+        let mut promo = membership(MembershipType::Custom);
+        promo.edit_any_collection = true;
+        apply_membership_type_change(&mut promo, MembershipType::Admin);
+        assert_eq!(promo.atype, MembershipType::Admin as i32);
+        assert!(!promo.edit_any_collection);
+    }
 
-        // A Custom member who genuinely held the full manage-all grant (all three collection
-        // flags) keeps the equivalent legacy Manager `access_all`.
-        let mut manage_all = membership(MembershipType::Custom);
-        manage_all.access_all = true;
-        manage_all.create_new_collections = true;
-        manage_all.edit_any_collection = true;
-        manage_all.delete_any_collection = true;
-        apply_membership_type_change(&mut manage_all, MembershipType::Manager);
-        assert_eq!(manage_all.atype, MembershipType::Manager as i32);
-        assert!(manage_all.access_all, "full manage-all Custom keeps legacy Manager access_all");
-        assert!(!manage_all.create_new_collections);
-        assert!(!manage_all.edit_any_collection);
-        assert!(!manage_all.delete_any_collection);
+    #[test]
+    fn admin_type_parser_rejects_legacy_manager_before_normalization() {
+        assert!(parse_admin_membership_type(NumberOrString::Number(3)).is_none());
+        assert!(parse_admin_membership_type(NumberOrString::String("3".to_owned())).is_none());
+        assert!(parse_admin_membership_type(NumberOrString::String("Manager".to_owned())).is_none());
+
+        assert!(parse_admin_membership_type(NumberOrString::Number(4)) == Some(MembershipType::Custom));
+        assert!(
+            parse_admin_membership_type(NumberOrString::String("Custom".to_owned())) == Some(MembershipType::Custom)
+        );
     }
 }
