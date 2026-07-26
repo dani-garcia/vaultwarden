@@ -116,9 +116,8 @@ app-security > app-two-factor-setup > form {
 }
 
 /* Hide unsupported Custom Role options */
-/* Collection permissions, manageUsers, manageGroups, managePolicies, accessEventLogs and
-   accessImportExport are supported by Vaultwarden and are intentionally not hidden here. */
-:is(bit-dialog, [bit-dialog]) bit-form-control:has(input[formcontrolname="accessReports"]),
+/* Collection permissions, manageUsers, manageGroups, managePolicies, accessEventLogs,
+   accessImportExport and accessReports are supported by Vaultwarden and are intentionally not hidden here. */
 :is(bit-dialog, [bit-dialog]) bit-form-control:has(input[formcontrolname="manageSso"]),
 :is(bit-dialog, [bit-dialog]) bit-form-control:has(input[formcontrolname="manageResetPassword"]) {
   @extend %vw-hide;
