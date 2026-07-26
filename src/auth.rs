@@ -766,6 +766,10 @@ impl OrgHeaders {
         self.is_confirmed()
             && (self.membership_type >= MembershipType::Admin || self.membership.has_access_import_export())
     }
+
+    fn can_access_reports(&self) -> bool {
+        self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.has_access_reports())
+    }
 }
 
 // org_id is usually the second path param ("/organizations/<org_id>"),
@@ -965,6 +969,11 @@ generate_manage_headers!(
     AccessImportExportHeaders,
     can_access_import_export,
     "You need the 'Access Import/Export' permission, or to be an Admin or Owner, to call this endpoint"
+);
+generate_manage_headers!(
+    AccessReportsHeaders,
+    can_access_reports,
+    "You need the 'Access Reports' permission, or to be an Admin or Owner, to call this endpoint"
 );
 
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),

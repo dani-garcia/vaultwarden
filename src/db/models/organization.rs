@@ -469,9 +469,7 @@ impl Membership {
         let permissions = json!({
                 "accessEventLogs": membership_type == MembershipType::Custom as i32 && self.access_event_logs,
                 "accessImportExport": membership_type == MembershipType::Custom as i32 && self.access_import_export,
-                // Reports are not implemented server-side. Advertising a stored bit as usable
-                // would make the permission contract misleading, so this stays fail-closed.
-                "accessReports": false,
+                "accessReports": membership_type == MembershipType::Custom as i32 && self.access_reports,
                 "createNewCollections": membership_type == MembershipType::Custom as i32 && self.create_new_collections,
                 "editAnyCollection": membership_type == MembershipType::Custom as i32 && self.edit_any_collection,
                 "deleteAnyCollection": membership_type == MembershipType::Custom as i32 && self.delete_any_collection,
@@ -639,7 +637,7 @@ impl Membership {
             json!({
                 "accessEventLogs": self.access_event_logs,
                 "accessImportExport": self.access_import_export,
-                "accessReports": false,
+                "accessReports": self.access_reports,
                 "createNewCollections": self.create_new_collections,
                 "editAnyCollection": self.edit_any_collection,
                 "deleteAnyCollection": self.delete_any_collection,
@@ -883,6 +881,10 @@ impl Membership {
 
     pub fn has_access_import_export(&self) -> bool {
         self.has_type(MembershipType::Custom) && self.access_import_export
+    }
+
+    pub fn has_access_reports(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.access_reports
     }
 
     /// Check for an explicit per-collection Manage grant without treating any `access_all` value

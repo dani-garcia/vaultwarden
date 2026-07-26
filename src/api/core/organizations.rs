@@ -1237,9 +1237,7 @@ impl CustomRolePermissions {
             delete_any_collection: enabled("deleteAnyCollection"),
             access_event_logs: enabled("accessEventLogs"),
             access_import_export: enabled("accessImportExport"),
-            // Vaultwarden has no report endpoints yet. Keep the compatibility field in the
-            // database/DTO, but never accept a permission that cannot be enforced server-side.
-            access_reports: false,
+            access_reports: enabled("accessReports"),
         }
     }
 
@@ -1271,8 +1269,7 @@ impl CustomRolePermissions {
                     delete_any_collection: membership.delete_any_collection,
                     access_event_logs: membership.access_event_logs,
                     access_import_export: membership.access_import_export,
-                    // Reports are unsupported and therefore never preserved as an active grant.
-                    access_reports: false,
+                    access_reports: membership.access_reports,
                 }
             }
             None => Self::default(),
@@ -1288,6 +1285,7 @@ impl CustomRolePermissions {
             || self.delete_any_collection != membership.delete_any_collection
             || self.access_event_logs != membership.access_event_logs
             || self.access_import_export != membership.access_import_export
+            || self.access_reports != membership.access_reports
     }
 
     fn apply_to(self, membership: &mut Membership) {
@@ -4214,7 +4212,7 @@ mod tests {
         assert!(custom.delete_any_collection);
         assert!(custom.access_event_logs);
         assert!(custom.access_import_export);
-        assert!(!custom.access_reports, "unsupported report access must remain fail-closed");
+        assert!(custom.access_reports);
 
         let user = CustomRolePermissions::from_request(MembershipType::User, &permissions);
         assert_eq!(user, CustomRolePermissions::default());
@@ -4237,6 +4235,7 @@ mod tests {
             delete_any_collection: true,
             access_event_logs: true,
             access_import_export: true,
+            access_reports: true,
             ..CustomRolePermissions::default()
         };
 
@@ -4248,7 +4247,7 @@ mod tests {
         assert!(membership.delete_any_collection);
         assert!(membership.access_event_logs);
         assert!(membership.access_import_export);
-        assert!(!membership.access_reports);
+        assert!(membership.access_reports);
     }
 
     #[test]
@@ -4273,11 +4272,8 @@ mod tests {
         assert!(preserved.delete_any_collection);
         assert!(preserved.access_event_logs);
         assert!(preserved.access_import_export);
-        assert!(!preserved.access_reports);
-        assert!(
-            !preserved.differs_from(&membership),
-            "a stale unsupported reports bit must not block an otherwise unchanged legacy-client update"
-        );
+        assert!(preserved.access_reports);
+        assert!(!preserved.differs_from(&membership));
 
         let explicit_reset = HashMap::new();
         assert_eq!(
