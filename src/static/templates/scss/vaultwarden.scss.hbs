@@ -116,9 +116,20 @@ app-security > app-two-factor-setup > form {
 }
 
 /* Hide unsupported Custom Role options */
-:is(bit-dialog, [bit-dialog]) div.tw-ml-4:has(bit-form-control input),
-:is(bit-dialog, [bit-dialog]) div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcontrolname*="manage"]) {
+:is(bit-dialog, [bit-dialog]) div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcontrolname*="manage"]),
+/* The options nested below `Manage all collections` are `Create new collections`, `Edit any
+   collection` and `Delete any collection`, in that order. Only the first one is supported, so hide
+   the two which follow it */
+:is(bit-dialog, [bit-dialog]) app-nested-checkbox div.tw-ml-4 > div:nth-child(n + 2),
+/* Keep all other nested options hidden */
+:is(bit-dialog, [bit-dialog]) div.tw-ml-4:has(bit-form-control input):not(app-nested-checkbox *) {
   @extend %vw-hide;
+}
+
+/* Present `Create new collections` as a stand-alone option instead of a nested one, since the two
+   options it is nested with are hidden */
+:is(bit-dialog, [bit-dialog]) app-nested-checkbox div.tw-ml-4 {
+  margin-left: 0;
 }
 
 /* Change collapsed menu icon to Vaultwarden */

@@ -506,9 +506,19 @@ async fn post_organization_collections(
     let data: FullCollectionData = data.into_inner();
     data.validate(&org_id, &conn).await?;
 
-    if headers.membership.atype == MembershipType::Manager && !headers.membership.access_all {
+    if headers.membership.atype == MembershipType::Manager
+        && !headers.membership.access_all
+        && !headers.membership.create_new_collections
+    {
         err!("You don't have permission to create collections")
     }
+
+    // A member with only the `Create new collections` permission does not have access to all
+    // collections, so they need to be assigned to the collection they just created. Otherwise they
+    // would lose access to it right after creating it. Skip this when they already assigned
+    // themselves, so the access they requested is not overwritten.
+    let assign_creator =
+        !headers.membership.has_full_access() && !data.users.iter().any(|u| u.id == headers.membership.uuid);
 
     let collection = Collection::new(org_id.clone(), data.name, data.external_id);
     collection.save(&conn).await?;
@@ -548,6 +558,10 @@ async fn post_organization_collections(
             &conn,
         )
         .await?;
+    }
+
+    if assign_creator {
+        CollectionUser::save(&headers.membership.user_uuid, &collection.uuid, false, false, true, &conn).await?;
     }
 
     Ok(Json(collection.to_json_details(&headers.membership.user_uuid, None, &conn).await))
@@ -1068,12 +1082,18 @@ async fn send_invite(
 
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
     // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
+    // Only `Edit any collection` and `Delete any collection` represent it, as `Create new collections`
+    // is a stand-alone permission which can be set without checking the parent checkbox
     // If the box is not checked, the user will still be a manager, but not with the access_all permission
     let access_all = new_type >= MembershipType::Admin
         || (raw_type.eq("4")
             && data.permissions.get("editAnyCollection") == Some(&json!(true))
-            && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
-            && data.permissions.get("createNewCollections") == Some(&json!(true)));
+            && data.permissions.get("deleteAnyCollection") == Some(&json!(true)));
+
+    // The `Create new collections` permission is stored independently so a custom user can be
+    // allowed to create collections without gaining access to all of them. `access_all` implies it.
+    let create_new_collections =
+        access_all || (raw_type.eq("4") && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
     let mut user_created: bool = false;
     for email in &data.emails {
@@ -1116,6 +1136,7 @@ async fn send_invite(
 
         let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), Some(headers.user.email.clone()));
         new_member.access_all = access_all;
+        new_member.create_new_collections = create_new_collections;
         new_member.atype = new_type;
         new_member.status = member_status;
         new_member.save(&conn).await?;
@@ -1562,12 +1583,18 @@ async fn edit_member(
 
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
     // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
+    // Only `Edit any collection` and `Delete any collection` represent it, as `Create new collections`
+    // is a stand-alone permission which can be set without checking the parent checkbox
     // If the box is not checked, the user will still be a manager, but not with the access_all permission
     let access_all = new_type >= MembershipType::Admin
         || (raw_type.eq("4")
             && data.permissions.get("editAnyCollection") == Some(&json!(true))
-            && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
-            && data.permissions.get("createNewCollections") == Some(&json!(true)));
+            && data.permissions.get("deleteAnyCollection") == Some(&json!(true)));
+
+    // The `Create new collections` permission is stored independently so a custom user can be
+    // allowed to create collections without gaining access to all of them. `access_all` implies it.
+    let create_new_collections =
+        access_all || (raw_type.eq("4") && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
     let Some(mut member_to_edit) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
         err!("The specified user isn't member of the organization")
@@ -1595,6 +1622,7 @@ async fn edit_member(
     }
 
     member_to_edit.access_all = access_all;
+    member_to_edit.create_new_collections = create_new_collections;
     member_to_edit.atype = new_type as i32;
 
     // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type

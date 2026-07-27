@@ -57,6 +57,7 @@ pub struct Membership {
     pub atype: i32,
     pub reset_password_key: Option<String>,
     pub external_id: Option<String>,
+    pub create_new_collections: bool,
 }
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -274,6 +275,7 @@ impl Membership {
             atype: MembershipType::User as i32,
             reset_password_key: None,
             external_id: None,
+            create_new_collections: false,
         }
     }
 
@@ -457,12 +459,14 @@ impl Membership {
         let permissions = json!({
                 // TODO: Add full support for Custom User Roles
                 // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
-                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
+                // Currently we use the custom role as a manager role and link the edit/delete Collection roles to mimic the access_all permission
                 "accessEventLogs": false,
                 "accessImportExport": false,
                 "accessReports": false,
-                // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": membership_type == 4 && self.access_all,
+                // `createNewCollections` is stored independently so a custom user can be allowed to create
+                // collections without gaining access to all of them. If `editAnyCollection` and
+                // `deleteAnyCollection` are also set the user gets the full `access_all` permission.
+                "createNewCollections": membership_type == 4 && (self.access_all || self.create_new_collections),
                 "editAnyCollection": membership_type == 4 && self.access_all,
                 "deleteAnyCollection": membership_type == 4 && self.access_all,
                 "manageGroups": false,
@@ -522,8 +526,9 @@ impl Membership {
             "familySponsorshipValidUntil": null,
             "familySponsorshipToDelete": null,
             "accessSecretsManager": false,
-            // limit collection creation to managers with access_all permission to prevent issues
-            "limitCollectionCreation": self.atype < MembershipType::Manager || !self.access_all,
+            // limit collection creation to managers with either the access_all or the
+            // create_new_collections permission to prevent issues
+            "limitCollectionCreation": self.atype < MembershipType::Manager || !(self.access_all || self.create_new_collections),
             "limitCollectionDeletion": true,
             "limitItemDeletion": false,
             "allowAdminAccessToAllCollectionItems": true,
@@ -624,20 +629,22 @@ impl Membership {
         // It will be converted back on other locations
         let membership_type = self.type_manager_as_custom();
 
-        // HACK: Only return permissions if the user is of type custom and has access_all
-        // Else Bitwarden will assume the defaults of all false
-        let permissions = if membership_type == 4 && self.access_all {
+        // HACK: Only return permissions if the user is of type custom and has access_all or the
+        // create_new_collections permission. Else Bitwarden will assume the defaults of all false
+        let permissions = if membership_type == 4 && (self.access_all || self.create_new_collections) {
             json!({
                 // TODO: Add full support for Custom User Roles
                 // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
-                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
+                // Currently we use the custom role as a manager role and link the edit/delete Collection roles to mimic the access_all permission
                 "accessEventLogs": false,
                 "accessImportExport": false,
                 "accessReports": false,
-                // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": true,
-                "editAnyCollection": true,
-                "deleteAnyCollection": true,
+                // `createNewCollections` is stored independently so a custom user can be allowed to create
+                // collections without gaining access to all of them. If `editAnyCollection` and
+                // `deleteAnyCollection` are also set the user gets the full `access_all` permission.
+                "createNewCollections": self.access_all || self.create_new_collections,
+                "editAnyCollection": self.access_all,
+                "deleteAnyCollection": self.access_all,
                 "manageGroups": false,
                 "managePolicies": false,
                 "manageSso": false, // Not supported
