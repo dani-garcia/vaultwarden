@@ -1125,9 +1125,6 @@ async fn send_invite(
         new_member.status = member_status;
         new_member.save(&conn).await?;
 
-        // With mail disabled an existing user is accepted right away, so there is no accept request later on
-        notify_pending_auto_confirm(&new_member, &conn, &nt).await;
-
         if CONFIG.mail_enabled() {
             let org_name = if let Some(org) = Organization::find_by_uuid(&org_id, &conn).await {
                 org.name
@@ -1193,6 +1190,11 @@ async fn send_invite(
             let mut group_entry = GroupUser::new(group_id.clone(), new_member.uuid.clone());
             group_entry.save(&conn).await?;
         }
+
+        // With mail disabled an existing user is accepted right away, so there is no accept request later on.
+        // This is the last step on purpose: an admin client may confirm the member the moment it is told
+        // about it, and by then the collections and groups of the invite have to be in place.
+        notify_pending_auto_confirm(&new_member, &conn, &nt).await;
     }
 
     Ok(())
@@ -1582,7 +1584,11 @@ async fn bulk_auto_confirm_members(
     match data.keys {
         Some(keys) => {
             for member in keys {
-                let member_id = member.id.unwrap();
+                // Never unwrap the id, this is client supplied and a missing one must not take the request down
+                let Some(member_id) = member.id else {
+                    error!("Ignoring a bulk auto confirm entry without a member id");
+                    continue;
+                };
                 let user_key = member.key.unwrap_or_default();
                 let err_msg = match auto_confirm_member_impl(&org_id, &member_id, &user_key, &headers, &conn, &nt).await
                 {
