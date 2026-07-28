@@ -220,6 +220,10 @@ fn config() -> Json<Value> {
         &FeatureFlagFilter::ValidOnly,
     );
     feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
+    // Web vaults up to 2026.4.x only offer the automatic user confirmation policy when this flag is on:
+    // `display$(org, config) => config.getFeatureFlag$(FeatureFlag.AutoConfirm).pipe(map(f => f && org.useAutomaticUserConfirmation))`
+    // Newer clients dropped the flag and look at `useAutomaticUserConfirmation` alone, so sending it stays harmless.
+    feature_states.insert("pm-19934-auto-confirm-organization-users".to_owned(), CONFIG.org_auto_confirm_enabled());
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
