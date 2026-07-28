@@ -45,13 +45,14 @@ static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
 });
 
 fn user_verification_policy() -> UserVerificationPolicy {
-    user_verification_policy_from_config(&CONFIG.webauthn_2fa_user_verification())
+    user_verification_policy_from_config(CONFIG.webauthn_2fa_user_verification())
 }
 
-fn user_verification_policy_from_config(value: &str) -> UserVerificationPolicy {
-    match value {
-        "preferred" => UserVerificationPolicy::Preferred,
-        _ => UserVerificationPolicy::Discouraged_DO_NOT_USE,
+fn user_verification_policy_from_config(preferred: bool) -> UserVerificationPolicy {
+    if preferred {
+        UserVerificationPolicy::Preferred
+    } else {
+        UserVerificationPolicy::Discouraged_DO_NOT_USE
     }
 }
 
@@ -537,11 +538,11 @@ mod tests {
     #[test]
     fn configured_user_verification_policy() {
         assert_eq!(
-            serde_json::to_value(user_verification_policy_from_config("discouraged")).unwrap(),
+            serde_json::to_value(user_verification_policy_from_config(false)).unwrap(),
             "discouraged"
         );
         assert_eq!(
-            serde_json::to_value(user_verification_policy_from_config("preferred")).unwrap(),
+            serde_json::to_value(user_verification_policy_from_config(true)).unwrap(),
             "preferred"
         );
     }

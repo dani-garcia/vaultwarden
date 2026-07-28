@@ -712,8 +712,8 @@ make_config! {
         /// Note that the checkbox would still be present, but ignored.
         disable_2fa_remember:   bool,   true,   def,    false;
 
-        /// WebAuthn 2FA user verification |> Controls whether PIN or biometric user verification is discouraged or preferred for WebAuthn 2FA.
-        webauthn_2fa_user_verification: String, true, def, "discouraged".to_owned();
+        /// Set WebAuthn 2FA user verification to preferred |> Discouraged avoids requesting a PIN or biometric check for standard WebAuthn 2FA. Preferred asks compatible authenticators for user verification and can improve compatibility with some security keys.
+        webauthn_2fa_user_verification: bool, true, def, false;
 
         /// Disable authenticator time drifted codes to be valid |> Enabling this only allows the current TOTP code to be valid
         /// TOTP codes of the previous and next 30 seconds will be invalid.
@@ -983,13 +983,6 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
 
     if cfg.database_min_conns > cfg.database_max_conns {
         err!("`DATABASE_MIN_CONNS` must be smaller than or equal to `DATABASE_MAX_CONNS`.");
-    }
-
-    match cfg.webauthn_2fa_user_verification.as_str() {
-        "discouraged" | "preferred" => (),
-        _ => err!(
-            "`WEBAUTHN_2FA_USER_VERIFICATION` is invalid. It needs to be one of the following options: discouraged or preferred"
-        ),
     }
 
     if let Some(log_file) = &cfg.log_file
