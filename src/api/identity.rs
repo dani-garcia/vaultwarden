@@ -577,7 +577,7 @@ async fn authenticated_response(
         result["TwoFactorToken"] = Value::String(token);
     }
 
-    info!("User {} logged in successfully. IP: {}", user.display_name(), ip.ip);
+    info!("User {} logged in successfully. IP: {}", user.email, ip.ip);
     Ok(Json(result))
 }
 
