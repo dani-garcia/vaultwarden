@@ -25,6 +25,20 @@ times out. Registering the key without a configured PIN works. YubiKeys with an
 existing PIN work correctly in the same environment, and the iShield works on
 webauthn.io.
 
+The timeout was subsequently reproduced on a clean Debian 13 test instance and
+narrowed down further:
+
+| Existing WebAuthn credentials | Policy | iShield registration |
+| --- | --- | --- |
+| none | `discouraged` | succeeds without PIN |
+| at least one YubiKey | `discouraged` | times out |
+| at least one YubiKey | `preferred` | succeeds with PIN |
+
+The registered YubiKey was physically disconnected during the failing iShield
+attempt. Removing only the YubiKey registration makes the iShield work with
+`discouraged` again. This isolates the additional trigger to the non-empty
+`excludeCredentials` list sent by Vaultwarden, rather than USB device contention.
+
 Vaultwarden deliberately changes the registration and authentication policy to
 `userVerification: discouraged`, since WebAuthn is being used as a second factor.
 The iShield advertises `makeCredUvNotRqd: yes`, so the client is allowed to try
