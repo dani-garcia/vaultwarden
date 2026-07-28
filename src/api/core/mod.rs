@@ -211,10 +211,10 @@ fn get_api_webauthn(_headers: Headers) -> Json<Value> {
 fn config() -> Json<Value> {
     let domain = CONFIG.domain();
     // Official available feature flags can be found here:
-    // Server (v2026.2.1): https://github.com/bitwarden/server/blob/0e42725d0837bd1c0dabd864ff621a579959744b/src/Core/Constants.cs#L135
-    // Client (v2026.2.1): https://github.com/bitwarden/clients/blob/f96380c3138291a028bdd2c7a5fee540d5c98ba5/libs/common/src/enums/feature-flag.enum.ts#L12
-    // Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
-    // iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
+    // Server (v2026.7.1): https://github.com/bitwarden/server/blob/97ad380f0f82b560d81c1e2e684cef9e85b3379e/src/Core/Constants.cs#L120
+    // Client (v2026.7.0): https://github.com/bitwarden/clients/blob/adf0337e4a0f788b895933792fc04fa162669eff/libs/common/src/enums/feature-flag.enum.ts#L10
+    // Android (v2026.7.0-bwpm): https://github.com/bitwarden/android/blob/36c892e1887b5051270ead6021afb16420663566/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L28
+    // iOS (v2026.7.0-bwpm): https://github.com/bitwarden/ios/blob/e9514dc0f85092ef3cf2a2ccbe07dc5a4f661b0c/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L5
     let mut feature_states = parse_experimental_client_feature_flags(
         &CONFIG.experimental_client_feature_flags(),
         &FeatureFlagFilter::ValidOnly,

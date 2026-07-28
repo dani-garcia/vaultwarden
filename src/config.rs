@@ -1409,33 +1409,33 @@ pub enum PathType {
 }
 
 // Official available feature flags can be found here:
-// Server (v2026.2.1): https://github.com/bitwarden/server/blob/0e42725d0837bd1c0dabd864ff621a579959744b/src/Core/Constants.cs#L135
-// Client (v2026.2.1): https://github.com/bitwarden/clients/blob/f96380c3138291a028bdd2c7a5fee540d5c98ba5/libs/common/src/enums/feature-flag.enum.ts#L12
-// Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
-// iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
+// Server (v2026.7.1): https://github.com/bitwarden/server/blob/97ad380f0f82b560d81c1e2e684cef9e85b3379e/src/Core/Constants.cs#L120
+// Client (v2026.7.0): https://github.com/bitwarden/clients/blob/adf0337e4a0f788b895933792fc04fa162669eff/libs/common/src/enums/feature-flag.enum.ts#L10
+// Android (v2026.7.0-bwpm): https://github.com/bitwarden/android/blob/36c892e1887b5051270ead6021afb16420663566/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L28
+// iOS (v2026.7.0-bwpm): https://github.com/bitwarden/ios/blob/e9514dc0f85092ef3cf2a2ccbe07dc5a4f661b0c/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L5
 pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
-    // Architecture
-    "desktop-ui-migration-milestone-1",
-    "desktop-ui-migration-milestone-2",
-    "desktop-ui-migration-milestone-3",
-    "desktop-ui-migration-milestone-4",
     // Auth Team
     "pm-5594-safari-account-switching",
     // Autofill Team
-    "ssh-agent",
+    "undetermined-cipher-scenario-logic",
+    "macos-native-credential-sync",
+    "fill-assist-targeting-rules",
+    "pm-39071-default-password-manager-prompt",
+    // Desktop Native Team
+    "windows-desktop-autotype",
+    "windows-desktop-autotype-ga",
     "ssh-agent-v2",
-    // Key Management Team
-    "ssh-key-vault-item",
-    "pm-25373-windows-biometrics-v2",
-    "pm-26340-linux-biometrics-v2",
+    "ssh-ecdsa",
+    // Desktop Team
+    "desktop-ui-settings-dialog",
     // Mobile Team
-    "anon-addy-self-host-alias",
-    "simple-login-self-host-alias",
-    "mutual-tls",
-    "cxp-import-mobile",
-    "cxp-export-mobile",
+    "pm-34171-card-scanner",
+    "pm-34224-mobile-attachment-updates",
     // Platform Team
     "pm-30529-webauthn-related-origins",
+    "pm-34410-attachment-upload-progress",
+    // DIRT Team
+    "phishing-detection",
 ];
 
 impl Config {

@@ -804,6 +804,23 @@ pub fn parse_experimental_client_feature_flags(
         .collect()
 }
 
+#[cfg(test)]
+mod feature_flag_tests {
+    use super::*;
+
+    #[test]
+    fn feature_flag_filters_preserve_supported_boolean_flags() {
+        let configured = format!(" unknown, {}, removed ", SUPPORTED_FEATURE_FLAGS.join(", "));
+        let valid = parse_experimental_client_feature_flags(&configured, &FeatureFlagFilter::ValidOnly);
+        let invalid = parse_experimental_client_feature_flags(&configured, &FeatureFlagFilter::InvalidOnly);
+
+        assert_eq!(valid.len(), SUPPORTED_FEATURE_FLAGS.len());
+        assert!(valid.values().all(|value| *value));
+        assert!(invalid.contains_key("unknown"));
+        assert!(invalid.contains_key("removed"));
+    }
+}
+
 /// TODO: This is extracted from IpAddr::is_global, which is unstable:
 /// https://doc.rust-lang.org/nightly/std/net/enum.IpAddr.html#method.is_global
 /// Remove once https://github.com/rust-lang/rust/issues/27709 is merged
