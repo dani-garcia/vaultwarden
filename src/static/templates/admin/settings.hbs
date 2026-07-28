@@ -26,16 +26,6 @@
                             {{#case type "text" "number" "password"}}
                             <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
                             <div class="col-sm-8">
-                                {{#if (eq name "webauthn_2fa_user_verification")}}
-                                <select class="form-select conf-text" id="input_{{name}}" name="{{name}}">
-                                    <option value="discouraged" {{#if (eq value "discouraged")}}selected{{/if}}>Discouraged</option>
-                                    <option value="preferred" {{#if (eq value "preferred")}}selected{{/if}}>Preferred</option>
-                                </select>
-                                <div class="form-text">
-                                    Discouraged avoids requesting a PIN or biometric check for standard WebAuthn 2FA.
-                                    Preferred asks compatible authenticators for user verification and can improve compatibility with some security keys.
-                                </div>
-                                {{else}}
                                 <div class="input-group">
                                 <input class="form-control conf-{{type}}" id="input_{{name}}" type="{{type}}"
                                     name="{{name}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}"{{/if}}>
@@ -43,7 +33,6 @@
                                     <button class="btn btn-outline-secondary input-group-text" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
                                 {{/case}}
                                 </div>
-                                {{/if}}
                             </div>
                             {{/case}}
                             {{#case type "checkbox"}}
