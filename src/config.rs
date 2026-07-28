@@ -790,6 +790,11 @@ make_config! {
         /// Enable groups (BETA!) (Know the risks!) |> Enables groups support for organizations (Currently contains known issues!).
         org_groups_enabled:            bool, false, def, false;
 
+        /// Enable automatic user confirmation (Know the risks!) |> Allows organizations to enable the automatic user confirmation policy.
+        /// Members which accepted an invitation are then confirmed unattended by the browser extension of an unlocked admin,
+        /// without any human reviewing the invitation. Bitwarden only enables this per organization on request, we keep it off by default.
+        org_auto_confirm_enabled:      bool, false, def, false;
+
         /// Increase note size limit (Know the risks!) |> Sets the secure note size limit to 100_000 instead of the default 10_000.
         /// WARNING: This could cause issues with clients. Also exports will not work on Bitwarden servers!
         increase_note_size_limit:      bool,  true,  def, false;

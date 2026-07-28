@@ -222,6 +222,12 @@ async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, co
         err!("You can not set yourself as an emergency contact.")
     }
 
+    // Emergency access would hand this account to somebody the organization never vetted, which is why
+    // Bitwarden forbids it for members of an organization which confirms its members automatically.
+    if OrgPolicy::is_user_in_auto_confirm_org(&grantor_user.uuid, &conn).await {
+        err!("You are a member of an organization which does not allow emergency access.")
+    }
+
     let (grantee_user, new_user) = match User::find_by_mail(&email, &conn).await {
         None => {
             if !CONFIG.invitations_allowed() {
@@ -353,6 +359,11 @@ async fn accept_invite(
     } else {
         err!("Invited user not found")
     };
+
+    // See `send_invite`, the same restriction applies to the grantee side of an emergency access.
+    if OrgPolicy::is_user_in_auto_confirm_org(&grantee_user.uuid, &conn).await {
+        err!("You are a member of an organization which does not allow emergency access.")
+    }
 
     // We need to search for the uuid in combination with the email, since we do not yet store the uuid of the grantee in the database.
     // The uuid of the grantee gets stored once accepted.
