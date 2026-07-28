@@ -318,7 +318,7 @@ async fn sso_login(
         Some((user, _)) if !user.enabled => {
             err!(
                 "This user has been disabled",
-                format!("IP: {}. Username: {}.", ip.ip, user.display_name()),
+                format!("IP: {}. Username: {}.", ip.ip, user.email),
                 ErrorEvent {
                     event: EventType::UserFailedLogIn
                 }
