@@ -4,6 +4,7 @@ import { MailDev } from 'maildev';
 import * as utils from '../global-utils';
 import * as orgs from './setups/orgs';
 import { createAccount, logUser } from './setups/user';
+import { activateTOTP } from './setups/2fa';
 
 let users = utils.loadEnv();
 
@@ -20,6 +21,7 @@ test.beforeAll('Setup', async ({ browser }, testInfo: TestInfo) => {
     await utils.startVault(browser, testInfo, {
         SMTP_HOST: process.env.MAILDEV_HOST,
         SMTP_FROM: process.env.PW_SMTP_FROM,
+        EMAIL_2FA_AUTO_FALLBACK: "true",
     });
 
     mail1Buffer = mailServer.buffer(users.user1.email);
@@ -114,7 +116,7 @@ test('invited with existing account', async ({ page }) => {
 });
 
 test('Confirm invited user', async ({ page }) => {
-    await logUser(test, page, users.user1, mail1Buffer);
+    await logUser(test, page, users.user1, { mailBuffer: mail1Buffer });
 
     await orgs.members(test, page, 'Test');
     await orgs.confirm(test, page, 'Test', users.user2.email);
@@ -123,13 +125,16 @@ test('Confirm invited user', async ({ page }) => {
 });
 
 test('Organization is visible', async ({ page }) => {
-    await logUser(test, page, users.user2, mail2Buffer);
+    await logUser(test, page, users.user2, { mailBuffer: mail2Buffer });
     await page.getByRole('button', { name: 'vault: Test', exact: true }).click();
     await expect(page.getByLabel('Filter: Default collection')).toBeVisible();
 });
 
 test('Recover user password', async ({ page }) => {
-    await logUser(test, page, users.user1, mail1Buffer);
+    await logUser(test, page, users.user2, { mailBuffer: mail2Buffer });
+    await activateTOTP(test, page, users.user2);
+
+    await logUser(test, page, users.user1, { mailBuffer: mail1Buffer });
 
     let newPassword = "TotoNewPassword";
 
@@ -140,8 +145,9 @@ test('Recover user password', async ({ page }) => {
         await page.getByRole('menuitem', { name: 'Recover account' }).click();
         await page.getByRole('textbox', { name: 'New master password (required)', exact: true }).fill(newPassword);
         await page.getByRole('textbox', { name: 'Confirm new master password (' }).fill(newPassword);
-         await page.getByRole('button', { name: 'Save' }).click();
-        await utils.checkNotification(page, 'Password reset success');
+        await page.getByRole('button', { name: 'Save' }).click();
+        await utils.checkNotification(page, 'Account recovery success');
+        await mail2Buffer.expect((m) => m.subject.includes('Admin account recovery from Test organization'));
     });
 
     let user2 = {
@@ -149,5 +155,9 @@ test('Recover user password', async ({ page }) => {
         name: users.user2.name,
         password: newPassword,
     };
-    await logUser(test, page, user2, mail2Buffer);
+    await logUser(test, page, user2, {
+        mailBuffer: mail2Buffer,
+        mail2fa: true,
+        notNewDevice: true,
+    });
 });

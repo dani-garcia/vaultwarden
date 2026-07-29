@@ -23,14 +23,14 @@ use rocket::{
 
 use crate::{
     CONFIG,
-    api::ApiResult,
+    api::{ApiResult, core::log_event},
     config::PathType,
     db::{
         DbConn,
         models::{
             AttachmentId, CipherId, Collection, CollectionId, Device, DeviceId, DeviceType, EmergencyAccessId,
-            Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, OrganizationId, SendFileId,
-            SendId, User, UserId, UserStampException,
+            EventType, Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, OrganizationId,
+            SendFileId, SendId, User, UserId, UserStampException,
         },
     },
     error::Error,
@@ -820,6 +820,12 @@ pub struct AdminHeaders {
     pub membership_type: MembershipType,
     pub ip: ClientIp,
     pub org_id: OrganizationId,
+}
+
+impl AdminHeaders {
+    pub async fn log_event(&self, event_type: EventType, source_uuid: &str, org_id: &OrganizationId, conn: &DbConn) {
+        log_event(event_type as i32, source_uuid, org_id, &self.user.uuid, self.device.atype, &self.ip.ip, conn).await;
+    }
 }
 
 #[rocket::async_trait]
