@@ -42,8 +42,6 @@ ARG TARGETARCH
 ARG TARGETVARIANT
 ARG TARGETPLATFORM
 
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
 # Build time options to avoid dpkg warnings and help with reproducible builds.
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -80,7 +78,7 @@ RUN mkdir -pv "${CARGO_HOME}" && \
 RUN USER=root cargo new --bin /app
 WORKDIR /app
 
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
 # Copies over *only* your manifests and build files
@@ -89,16 +87,17 @@ COPY ./macros ./macros
 
 ARG CARGO_PROFILE=release
 
-# Configure the DB ARG as late as possible to not invalidate the cached layers above
+# Configure the DB and FEATURES ARGs as late as possible to not invalidate the cached layers above
 ARG DB=sqlite,mysql,postgresql
+ARG FEATURES=s3
 
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     # Workaround for xx related build issues
     # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
-    PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}" && \
+    PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features "${DB}" --features "${FEATURES}" --profile "${CARGO_PROFILE}" && \
     find . -not -path "./target*" -delete
 
 # Copies the complete project
@@ -108,15 +107,15 @@ COPY . .
 ARG VW_VERSION
 
 # Builds again, this time it will be the actual source files being build
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     # Make sure that we actually build the project by updating the src/main.rs timestamp
     # Also do this for build.rs to ensure the version is rechecked
     touch build.rs src/main.rs && \
     # Create a symlink to the binary target folder to easy copy the binary in the final stage
     # Workaround for xx related build issues
     # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
-    PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}" && \
-    if [[ "${CARGO_PROFILE}" == "dev" ]] ; then \
+    PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features "${DB}" --features "${FEATURES}" --profile "${CARGO_PROFILE}" && \
+    if test "${CARGO_PROFILE}" = "dev"; then \
         ln -vfsr "/app/target/${CARGO_TARGET}/debug" /app/target/final ; \
     else \
         ln -vfsr "/app/target/${CARGO_TARGET}/${CARGO_PROFILE}" /app/target/final ; \
