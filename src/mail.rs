@@ -307,9 +307,18 @@ pub async fn send_invite(
         if CONFIG.sso_enabled() && CONFIG.sso_only() {
             query_params.append_pair("orgSsoIdentifier", &org_id);
         }
-        if user.private_key.is_some() {
-            query_params.append_pair("orgUserHasExistingUser", "true");
-        }
+
+        // The web vault requires both of these parameters to be present.
+        // If either is missing it rejects the invite client-side, before any
+        // request reaches the server, showing only "Unable to accept invitation".
+        query_params.append_pair("initOrganization", "false");
+
+        let org_user_has_existing_user = if user.private_key.is_some() {
+            "true"
+        } else {
+            "false"
+        };
+        query_params.append_pair("orgUserHasExistingUser", org_user_has_existing_user);
     }
 
     let Some(query_string) = query.query() else {
