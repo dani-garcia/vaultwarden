@@ -6,7 +6,7 @@ use rocket::{
     form::Form,
     http::{Cookie, CookieJar, MediaType, SameSite, Status},
     request::{FromRequest, Outcome, Request},
-    response::{Redirect, content::RawHtml as Html},
+    response::{Redirect, content::RawHtml as Html, status::Custom},
     serde::json::Json,
 };
 use serde::de::DeserializeOwned;
@@ -98,8 +98,11 @@ static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| ACTIVE_DB_TYPE.get().is_som
 static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| false);
 
 #[get("/")]
-fn admin_disabled() -> &'static str {
-    "The admin panel is disabled, please configure the 'ADMIN_TOKEN' variable to enable it"
+fn admin_disabled() -> Custom<&'static str> {
+    Custom(
+        Status::ServiceUnavailable,
+        "The admin panel is disabled, please configure the 'ADMIN_TOKEN' variable to enable it",
+    )
 }
 
 const COOKIE_NAME: &str = "VW_ADMIN";
@@ -868,7 +871,22 @@ impl<'r> FromRequest<'r> for AdminToken {
 
 #[cfg(test)]
 mod tests {
+    use rocket::local::blocking::Client;
+
     use super::*;
+
+    #[test]
+    fn disabled_admin_returns_service_unavailable() {
+        let client = Client::tracked(rocket::build().mount("/", routes![admin_disabled])).unwrap();
+
+        let response = client.get("/").dispatch();
+
+        assert_eq!(response.status(), Status::ServiceUnavailable);
+        assert_eq!(
+            response.into_string().as_deref(),
+            Some("The admin panel is disabled, please configure the 'ADMIN_TOKEN' variable to enable it")
+        );
+    }
 
     #[test]
     fn validate_web_vault_compare() {
