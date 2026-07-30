@@ -493,6 +493,49 @@ const LEGACY_USER_ACCESS_ALL_RECOVERY_SQL: &str = concat!(
     "access_all value to all three collection permissions before converting legacy role 3 to Custom role 4."
 );
 
+const AMBIGUOUS_DIRECT_PERMISSIONS_RECOVERY_SQL: &str = concat!(
+    "\n\nList every affected membership with this SQLite/MySQL/PostgreSQL-compatible query:\n",
+    "SELECT uuid, user_uuid, org_uuid, atype, status\n",
+    "FROM users_organizations\n",
+    "WHERE atype IN (3, 4)\n",
+    "  AND access_all = FALSE\n",
+    "  AND create_new_collections = FALSE\n",
+    "  AND edit_any_collection = TRUE\n",
+    "  AND delete_any_collection = TRUE;\n\n",
+    "To see which of them still have an organization-local full-access group as a plausible source of the pattern, ",
+    "run the query below. On MySQL/MariaDB the reserved word `groups` has to be quoted with backticks:\n",
+    "SELECT uo.uuid, uo.org_uuid, g.uuid AS group_uuid, g.name AS group_name\n",
+    "FROM users_organizations uo\n",
+    "INNER JOIN groups_users gu ON gu.users_organizations_uuid = uo.uuid\n",
+    "INNER JOIN groups g ON g.uuid = gu.groups_uuid AND g.organizations_uuid = uo.org_uuid\n",
+    "WHERE g.access_all = TRUE\n",
+    "  AND uo.atype IN (3, 4)\n",
+    "  AND uo.access_all = FALSE\n",
+    "  AND uo.create_new_collections = FALSE\n",
+    "  AND uo.edit_any_collection = TRUE\n",
+    "  AND uo.delete_any_collection = TRUE;\n\n",
+    "An organization owner has to decide per membership which of the two meanings applies. Replace ",
+    "<MEMBERSHIP_UUID> and run exactly one guarded statement for that membership while every Vaultwarden instance is ",
+    "stopped. Do not bulk-apply either statement.\n\n",
+    "The pattern was a group-derived copy, or the authority is no longer wanted: drop it and let the group (if any) ",
+    "remain the only source of access.\n",
+    "UPDATE users_organizations\n",
+    "SET edit_any_collection = FALSE,\n",
+    "    delete_any_collection = FALSE\n",
+    "WHERE uuid = '<MEMBERSHIP_UUID>' AND access_all = FALSE AND create_new_collections = FALSE;\n\n",
+    "The pattern was an intentional direct grant that has to survive: make it unambiguous so the migration can pass.\n",
+    "UPDATE users_organizations\n",
+    "SET create_new_collections = TRUE\n",
+    "WHERE uuid = '<MEMBERSHIP_UUID>' AND access_all = FALSE AND edit_any_collection = TRUE;\n\n",
+    "Note that the second statement also grants Create-any-collection, because a 0/1/1 pattern is exactly the state ",
+    "the migration cannot attribute. If that member must not be able to create collections, start the server once so ",
+    "the migration completes, then set create_new_collections back to FALSE for that membership."
+);
+const ALREADY_DROPPED_RECOVERY: &str = concat!(
+    "\n\nThe permission values cannot be recomputed from the current schema. Restore the database backup taken ",
+    "before the upgrade and run the upgrade again against that restored copy."
+);
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -605,10 +648,11 @@ fn custom_role_preflight_error(decision: CustomRolePreflightDecision, facts: Cus
             unreachable!("successful preflight decisions do not produce errors")
         }
     };
-    let recovery = if decision == CustomRolePreflightDecision::RefuseLegacyUserAccessAll {
-        LEGACY_USER_ACCESS_ALL_RECOVERY_SQL
-    } else {
-        ""
+    let recovery = match decision {
+        CustomRolePreflightDecision::RefuseLegacyUserAccessAll => LEGACY_USER_ACCESS_ALL_RECOVERY_SQL,
+        CustomRolePreflightDecision::RefuseAmbiguousDirectPermissions => AMBIGUOUS_DIRECT_PERMISSIONS_RECOVERY_SQL,
+        CustomRolePreflightDecision::RefuseAlreadyDropped => ALREADY_DROPPED_RECOVERY,
+        _ => "",
     };
 
     std::io::Error::other(format!(
@@ -1214,6 +1258,41 @@ mod custom_role_migration_preflight_tests {
             ),
             Decision::RefuseAlreadyDropped
         );
+    }
+
+    #[test]
+    fn ambiguous_direct_permissions_error_carries_a_recovery_path() {
+        let facts = Facts {
+            ambiguous_direct_permission_count: 2,
+            ..pending_repair()
+        };
+        let decision = custom_role_preflight_decision(facts, false);
+        assert_eq!(decision, Decision::RefuseAmbiguousDirectPermissions);
+
+        let error = custom_role_preflight_error(decision, facts);
+        let message = error.source().expect("preflight error should retain its I/O error source").to_string();
+        assert!(message.contains("2 membership(s)"));
+        // The operator needs the affected memberships and their possible group source ...
+        assert!(message.contains("SELECT uuid, user_uuid, org_uuid, atype, status"));
+        assert!(message.contains("WHERE g.access_all = TRUE"));
+        // ... plus both decisions, and the note that keeping the grant also grants Create.
+        assert!(message.contains("SET edit_any_collection = FALSE,\n    delete_any_collection = FALSE"));
+        assert!(message.contains("SET create_new_collections = TRUE"));
+        assert!(message.contains("also grants Create-any-collection"));
+    }
+
+    #[test]
+    fn already_dropped_error_points_at_the_backup() {
+        let facts = Facts {
+            access_all_drop_migration_applied: true,
+            ..pending_repair()
+        };
+        let decision = custom_role_preflight_decision(facts, false);
+        assert_eq!(decision, Decision::RefuseAlreadyDropped);
+
+        let error = custom_role_preflight_error(decision, facts);
+        let message = error.source().expect("preflight error should retain its I/O error source").to_string();
+        assert!(message.contains("Restore the database backup"));
     }
 
     #[test]

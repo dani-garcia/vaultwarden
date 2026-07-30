@@ -1382,6 +1382,33 @@ async fn send_invite(
     let custom_permissions = CustomRolePermissions::from_request(new_type, &data.permissions);
     let grants_full_access = custom_permissions.grants_full_collection_access(new_type);
 
+    // Security: only callers who can manage collections (Admins/Owners, or users with full access)
+    // may assign collection access when inviting. A custom user with only manage_users can invite
+    // members, but cannot grant them collection access. Assigning groups is gated separately,
+    // because a collection-bearing group grants that access indirectly.
+    let caller = Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await;
+    let caller_can_manage_collections =
+        headers.membership_type >= MembershipType::Admin || caller.as_ref().is_some_and(Membership::has_full_access);
+    let caller_can_manage_groups =
+        headers.membership_type >= MembershipType::Admin || caller.as_ref().is_some_and(Membership::has_manage_groups);
+
+    // API consistency: these fields used to be dropped silently while the invite still reported
+    // success, so the caller believed access had been granted. Reject the request instead, and do it
+    // before the loop below creates any user, invitation or membership row.
+    if !grants_full_access && !caller_can_manage_collections && data.collections.iter().flatten().next().is_some() {
+        err!("You don't have permission to assign collections to invited members")
+    }
+    if !caller_can_manage_groups && !data.groups.is_empty() {
+        err!("You don't have permission to assign groups to invited members")
+    }
+    if !caller_can_manage_collections {
+        for group_id in &data.groups {
+            if group_confers_collection_access(group_id, &org_id, &conn).await {
+                err!("You don't have permission to assign a group that grants collection access")
+            }
+        }
+    }
+
     let mut user_created: bool = false;
     for email in &data.emails {
         let mut member_status = MembershipStatus::Invited as i32;
@@ -1465,23 +1492,12 @@ async fn send_invite(
         )
         .await;
 
-        // Security: only callers who can manage collections (Admins/Owners, or users with full
-        // access) may assign collection access when inviting. A custom user with only manage_users
-        // can invite members, but cannot grant them collection access.
-        let caller_can_manage_collections = headers.membership_type >= MembershipType::Admin
-            || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
-                Some(m) => m.has_full_access(),
-                None => false,
-            };
-
         // If the member does not already reach every collection, add the collections received
         if !grants_full_access && caller_can_manage_collections {
             // Security (F-1): a per-collection `manage` grant carries delete authority, so the
             // caller may only confer it on collections they could delete themselves. Otherwise a
             // caller acting via Edit-any-collection could invite an account they control with a
             // `manage` row and reach Delete-any-collection through it.
-            let caller = Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await;
-
             for col in data.collections.iter().flatten() {
                 match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn).await {
                     None => err!("Collection not found in Organization"),
@@ -1505,27 +1521,11 @@ async fn send_invite(
             }
         }
 
-        // Security: assigning groups can indirectly grant collection access via the groups'
-        // collections. Only callers who may manage groups (Admins/Owners or users with
-        // manage_groups) are allowed to assign groups when inviting.
         // NOTE: every requested group was already validated against this organization in
-        // `InviteData::validate` above, before any record was created.
-        let caller_can_manage_groups = headers.membership_type >= MembershipType::Admin
-            || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
-                Some(m) => m.has_manage_groups(),
-                None => false,
-            };
-
+        // `InviteData::validate`, and both the manage_groups permission and the collection-bearing
+        // group restriction were rejected up front, before any record was created.
         if caller_can_manage_groups {
             for group_id in &data.groups {
-                // Security: a caller who cannot manage collections must not grant collection
-                // access to the invitee by placing them into a collection-bearing group.
-                if !may_change_group_membership(
-                    caller_can_manage_collections,
-                    group_confers_collection_access(group_id, &org_id, &conn).await,
-                ) {
-                    continue;
-                }
                 let mut group_entry = GroupUser::new(group_id.clone(), new_member.uuid.clone());
                 group_entry.save(&conn).await?;
             }
@@ -1935,6 +1935,14 @@ async fn edit_member(
         err!("Only Owners can edit Owner users")
     }
 
+    // Security: apply the same actor/target role matrix as every other member endpoint (reinvite,
+    // confirm, revoke, restore, delete). Without it `edit_member` was the only path on which a
+    // Custom member holding manage_users could aim at an Admin or at a fellow Custom membership, as
+    // long as the request left the role unchanged.
+    if !may_manage_stored_member_type(headers.membership_type, member_to_edit.atype) {
+        err!("You don't have permission to edit this member")
+    }
+
     if member_to_edit.atype == MembershipType::Owner
         && new_type != MembershipType::Owner
         && member_to_edit.status == MembershipStatus::Confirmed as i32
@@ -1963,6 +1971,24 @@ async fn edit_member(
             Some(m) => m.has_full_access(),
             None => false,
         };
+
+    // API consistency: dropping these fields silently while still answering 200 let client and
+    // server drift apart after an apparently saved change. Reject the request instead — but only
+    // when it would actually add or remove an assignment, because the regular edit dialog echoes the
+    // current assignments back and has to keep working. Flag-only differences (readOnly,
+    // hidePasswords, manage) remain ignored for these callers.
+    if !caller_can_manage_collections && !grants_full_access {
+        let requested: HashSet<CollectionId> = data.collections.iter().flatten().map(|c| c.id.clone()).collect();
+        let current: HashSet<CollectionId> =
+            CollectionUser::find_by_organization_and_user_uuid(&org_id, &member_to_edit.user_uuid, &conn)
+                .await
+                .into_iter()
+                .map(|c| c.collection_uuid)
+                .collect();
+        if requested != current {
+            err!("You don't have permission to change this member's collection assignments")
+        }
+    }
 
     // Edit any collection (the successor of the removed access_all flag) grants full access to
     // every collection. It is part of the granular custom permissions applied here, and the
@@ -2020,6 +2046,26 @@ async fn edit_member(
             Some(m) => m.has_manage_groups(),
             None => false,
         };
+
+    // API consistency, as for the collection assignments above: reject group changes this caller may
+    // not make instead of silently dropping them.
+    let requested_groups: HashSet<GroupId> = data.groups.iter().flatten().cloned().collect();
+    let current_groups: HashSet<GroupId> =
+        GroupUser::find_by_member(&member_to_edit.uuid, &conn).await.into_iter().map(|gu| gu.groups_uuid).collect();
+    if !caller_can_manage_groups && requested_groups != current_groups {
+        err!("You don't have permission to change this member's group assignments")
+    }
+    if caller_can_manage_groups && !caller_can_manage_collections {
+        let mut collection_bearing: HashSet<GroupId> = HashSet::new();
+        for group_id in requested_groups.union(&current_groups) {
+            if group_confers_collection_access(group_id, &org_id, &conn).await {
+                collection_bearing.insert(group_id.clone());
+            }
+        }
+        if !collection_bearing_membership_unchanged(&requested_groups, &current_groups, &collection_bearing) {
+            err!("You don't have permission to change memberships in groups that grant collection access")
+        }
+    }
 
     if caller_can_manage_groups {
         // Security (audit H-2): validate that every requested group belongs to this organization
@@ -3229,6 +3275,21 @@ fn may_change_group_membership(caller_can_manage_collections: bool, group_confer
     caller_can_manage_collections || !group_confers_collection_access
 }
 
+/// Whether `requested` and `current` agree on every group that confers collection access.
+///
+/// A caller who may manage groups but not collections may only change memberships in groups that
+/// confer no collection access. Anything else has to be rejected with an error rather than skipped
+/// silently, so a save that appears to succeed never means something different on the server.
+fn collection_bearing_membership_unchanged(
+    requested: &HashSet<GroupId>,
+    current: &HashSet<GroupId>,
+    collection_bearing: &HashSet<GroupId>,
+) -> bool {
+    let restrict =
+        |set: &HashSet<GroupId>| -> HashSet<GroupId> { set.intersection(collection_bearing).cloned().collect() };
+    restrict(requested) == restrict(current)
+}
+
 /// Whether a caller of `edit_member` may change a member's role type.
 ///
 /// Only Admins and Owners may change a member's role at all. A Custom member with `manage_users`
@@ -4027,16 +4088,16 @@ async fn rotate_api_key(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     use serde_json::{Value, json};
 
     use super::{
-        CustomRolePermissions, caller_manage_grant_role_check, filter_ciphers_for_organization,
-        may_change_group_membership, may_change_member_type, may_export_entire_organization, may_manage_member_type,
-        may_manage_stored_member_type,
+        CustomRolePermissions, caller_manage_grant_role_check, collection_bearing_membership_unchanged,
+        filter_ciphers_for_organization, may_change_group_membership, may_change_member_type,
+        may_export_entire_organization, may_manage_member_type, may_manage_stored_member_type,
     };
-    use crate::db::models::{Cipher, Membership, MembershipStatus, MembershipType, OrganizationId};
+    use crate::db::models::{Cipher, GroupId, Membership, MembershipStatus, MembershipType, OrganizationId};
 
     fn confirmed_member(member_type: MembershipType) -> Membership {
         let mut m = Membership::new("test-user".to_owned().into(), "test-org".to_owned().into(), None);
@@ -4172,6 +4233,36 @@ mod tests {
 
         assert!(may_manage_stored_member_type(MembershipType::Admin, MembershipType::Custom as i32));
         assert!(!may_manage_stored_member_type(MembershipType::Owner, i32::MAX));
+
+        // edit_member applies the same matrix as reinvite/confirm/revoke/restore/delete, so a
+        // Custom caller cannot target an Admin or a fellow Custom member even when the requested
+        // role equals the stored one.
+        for target in [MembershipType::Owner, MembershipType::Admin, MembershipType::Custom] {
+            assert!(may_change_member_type(MembershipType::Custom, target as i32, target));
+            assert!(!may_manage_stored_member_type(MembershipType::Custom, target as i32));
+        }
+        assert!(may_manage_stored_member_type(MembershipType::Custom, MembershipType::User as i32));
+    }
+
+    #[test]
+    fn only_collection_bearing_group_changes_are_rejected() {
+        let plain: GroupId = "plain".to_owned().into();
+        let bearing: GroupId = "bearing".to_owned().into();
+        let collection_bearing = HashSet::from([bearing.clone()]);
+
+        let set = |ids: &[&GroupId]| -> HashSet<GroupId> { ids.iter().map(|id| (*id).clone()).collect() };
+
+        // Adding, removing or keeping a group without collections is fine.
+        for (requested, current) in
+            [(set(&[&plain]), set(&[])), (set(&[]), set(&[&plain])), (set(&[&plain, &bearing]), set(&[&bearing]))]
+        {
+            assert!(collection_bearing_membership_unchanged(&requested, &current, &collection_bearing));
+        }
+
+        // Adding or removing a collection-bearing group is not.
+        for (requested, current) in [(set(&[&bearing]), set(&[])), (set(&[&plain]), set(&[&plain, &bearing]))] {
+            assert!(!collection_bearing_membership_unchanged(&requested, &current, &collection_bearing));
+        }
     }
 
     #[test]
