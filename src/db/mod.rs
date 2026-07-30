@@ -472,6 +472,26 @@ const CUSTOM_ROLE_REPAIR_MIGRATION: &str = "20260723120000";
 const CUSTOM_COLLECTION_PERMISSIONS_MIGRATION: &str = "20260716120000";
 const DROP_MEMBERSHIP_ACCESS_ALL_MIGRATION: &str = "20260724120000";
 const CUSTOM_ROLE_SAME_RUN_MARKER_TABLE: &str = "__vw_custom_role_same_run_0716";
+const LEGACY_USER_ACCESS_ALL_RECOVERY_SQL: &str = concat!(
+    "\n\nReview every affected membership with this SQLite/MySQL/PostgreSQL-compatible query:\n",
+    "SELECT uuid, user_uuid, org_uuid, status\n",
+    "FROM users_organizations\n",
+    "WHERE atype = 2 AND access_all = TRUE;\n\n",
+    "After an organization owner has decided the intended outcome, replace <MEMBERSHIP_UUID> and run exactly one ",
+    "guarded statement for that membership while every Vaultwarden instance is stopped. Do not bulk-promote these ",
+    "records.\n\n",
+    "Keep the User role and revoke organization-wide vault access:\n",
+    "UPDATE users_organizations\n",
+    "SET access_all = FALSE\n",
+    "WHERE uuid = '<MEMBERSHIP_UUID>' AND atype = 2 AND access_all = TRUE;\n\n",
+    "Preserve organization-wide vault access by intentionally granting Custom Create/Edit/Delete-any collection ",
+    "authority:\n",
+    "UPDATE users_organizations\n",
+    "SET atype = 3\n",
+    "WHERE uuid = '<MEMBERSHIP_UUID>' AND atype = 2 AND access_all = TRUE;\n\n",
+    "The second statement deliberately adds collection-management authority: the repair migration copies the retained ",
+    "access_all value to all three collection permissions before converting legacy role 3 to Custom role 4."
+);
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[expect(
@@ -585,10 +605,15 @@ fn custom_role_preflight_error(decision: CustomRolePreflightDecision, facts: Cus
             unreachable!("successful preflight decisions do not produce errors")
         }
     };
+    let recovery = if decision == CustomRolePreflightDecision::RefuseLegacyUserAccessAll {
+        LEGACY_USER_ACCESS_ALL_RECOVERY_SQL
+    } else {
+        ""
+    };
 
     std::io::Error::other(format!(
         "Custom-role migration preflight stopped startup: {detail} Back up the database and resolve \
-         the legacy membership state manually before restarting."
+         the legacy membership state manually before restarting.{recovery}"
     ))
     .into()
 }
@@ -1122,9 +1147,11 @@ mod postgresql_migrations {
 
 #[cfg(test)]
 mod custom_role_migration_preflight_tests {
+    use std::error::Error as _;
+
     use super::{
         CustomRoleMigrationFacts as Facts, CustomRolePreflightDecision as Decision, custom_role_preflight_decision,
-        mysql_partial_unexpected_values_query,
+        custom_role_preflight_error, mysql_partial_unexpected_values_query,
     };
 
     fn pending_repair() -> Facts {
@@ -1191,16 +1218,33 @@ mod custom_role_migration_preflight_tests {
 
     #[test]
     fn legacy_user_access_all_requires_an_operator_decision() {
-        assert_eq!(
-            custom_role_preflight_decision(
-                Facts {
-                    legacy_user_access_all_count: 1,
-                    ..pending_repair()
-                },
-                false,
-            ),
-            Decision::RefuseLegacyUserAccessAll
-        );
+        let facts = Facts {
+            legacy_user_access_all_count: 1,
+            ..pending_repair()
+        };
+        let decision = custom_role_preflight_decision(facts, false);
+        assert_eq!(decision, Decision::RefuseLegacyUserAccessAll);
+
+        let error = custom_role_preflight_error(decision, facts);
+        let message = error.source().expect("preflight error should retain its I/O error source").to_string();
+        assert!(message.contains("1 legacy User membership(s)"));
+        assert!(message.contains(
+            "SELECT uuid, user_uuid, org_uuid, status\n\
+             FROM users_organizations\n\
+             WHERE atype = 2 AND access_all = TRUE;"
+        ));
+        assert!(message.contains(
+            "SET access_all = FALSE\n\
+             WHERE uuid = '<MEMBERSHIP_UUID>' AND atype = 2 AND access_all = TRUE;"
+        ));
+        assert!(message.contains(
+            "SET atype = 3\n\
+             WHERE uuid = '<MEMBERSHIP_UUID>' AND atype = 2 AND access_all = TRUE;"
+        ));
+        assert!(message.contains("run exactly one guarded statement"));
+        assert!(message.contains("Do not bulk-promote"));
+        assert!(message.contains("converting legacy role 3 to Custom role 4"));
+        assert!(!message.contains("SET atype = 4"));
     }
 
     #[test]

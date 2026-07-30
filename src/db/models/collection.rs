@@ -19,7 +19,7 @@ use macros::UuidFromParam;
 
 use super::{
     CipherId, CollectionGroup, GroupUser, Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId,
-    User, UserId,
+    User, UserId, organization::custom_membership_with_edit_any_collection,
 };
 
 // See (v2026.7.0): https://github.com/bitwarden/server/blob/5d4461aa42cadbacfef8fe2166c5453a5c52773a/src/Core/AdminConsole/Entities/Collection.cs
@@ -265,8 +265,7 @@ impl Collection {
                             .or(
                                 // Full-access member: Custom "Edit any collection" or org admin/owner
                                 // (successor of the removed membership access_all)
-                                users_organizations::edit_any_collection
-                                    .eq(true)
+                                custom_membership_with_edit_any_collection()
                                     .or(users_organizations::atype.le(MembershipType::Admin as i32)),
                             )
                             .or(
@@ -303,8 +302,7 @@ impl Collection {
                         users_collections::user_uuid.eq(user_uuid).or(
                             // Full-access member: Custom "Edit any collection" or org admin/owner
                             // (successor of the removed membership access_all)
-                            users_organizations::edit_any_collection
-                                .eq(true)
+                            custom_membership_with_edit_any_collection()
                                 .or(users_organizations::atype.le(MembershipType::Admin as i32)),
                         ),
                     )
@@ -391,7 +389,7 @@ impl Collection {
                             .eq(uuid)
                             .or(
                                 // Directly accessed collection
-                                users_organizations::edit_any_collection.eq(true).or(
+                                custom_membership_with_edit_any_collection().or(
                                     // Custom "Edit any collection" or org admin/owner (successor of access_all)
                                     users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
                                 ),
@@ -427,7 +425,7 @@ impl Collection {
                     .filter(collections::uuid.eq(uuid))
                     .filter(users_collections::collection_uuid.eq(uuid).or(
                         // Directly accessed collection
-                        users_organizations::edit_any_collection.eq(true).or(
+                        custom_membership_with_edit_any_collection().or(
                             // Custom "Edit any collection" or org admin/owner (successor of access_all)
                             users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
                         ),
@@ -472,7 +470,7 @@ impl Collection {
                     .filter(
                         users_organizations::atype
                             .le(MembershipType::Admin as i32) // Org admin or owner
-                            .or(users_organizations::edit_any_collection.eq(true)) // Custom "Edit any collection" (successor of access_all)
+                            .or(custom_membership_with_edit_any_collection()) // Custom "Edit any collection" (successor of access_all)
                             .or(users_collections::collection_uuid
                                 .eq(&self.uuid) // write access given to collection
                                 .and(users_collections::read_only.eq(false)))
@@ -505,7 +503,7 @@ impl Collection {
                     .filter(
                         users_organizations::atype
                             .le(MembershipType::Admin as i32) // Org admin or owner
-                            .or(users_organizations::edit_any_collection.eq(true)) // Custom "Edit any collection" (successor of access_all)
+                            .or(custom_membership_with_edit_any_collection()) // Custom "Edit any collection" (successor of access_all)
                             .or(users_collections::collection_uuid
                                 .eq(&self.uuid) // write access given to collection
                                 .and(users_collections::read_only.eq(false))),
@@ -552,7 +550,7 @@ impl Collection {
                         .and(users_collections::hide_passwords.eq(true))
                         .or(
                             // Directly accessed collection
-                            users_organizations::edit_any_collection.eq(true).or(
+                            custom_membership_with_edit_any_collection().or(
                                 // Custom "Edit any collection" or org admin/owner (successor of access_all)
                                 users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
                             ),

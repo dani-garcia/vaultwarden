@@ -68,6 +68,17 @@ pub struct Membership {
     pub access_reports: bool,
 }
 
+/// Diesel equivalent of [`Membership::has_edit_any_collection`].
+///
+/// Keep the role check in this shared predicate so a stale flag on any non-Custom membership
+/// remains inert in every collection-access query.
+pub(super) fn custom_membership_with_edit_any_collection() -> diesel::dsl::And<
+    diesel::dsl::Eq<users_organizations::atype, i32>,
+    diesel::dsl::Eq<users_organizations::edit_any_collection, bool>,
+> {
+    users_organizations::atype.eq(MembershipType::Custom as i32).and(users_organizations::edit_any_collection.eq(true))
+}
+
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = organization_api_key)]
 #[diesel(primary_key(uuid, org_uuid))]
@@ -1112,9 +1123,7 @@ impl Membership {
                 .filter(
                     users_organizations::atype
                         .eq_any(vec![MembershipType::Owner as i32, MembershipType::Admin as i32])
-                        .or(users_organizations::atype
-                            .eq(MembershipType::Custom as i32)
-                            .and(users_organizations::edit_any_collection.eq(true))),
+                        .or(custom_membership_with_edit_any_collection()),
                 )
                 .load::<Self>(conn)
                 .unwrap_or_default()
@@ -1239,8 +1248,7 @@ impl Membership {
                         .and(ciphers_collections::cipher_uuid.eq(&cipher_uuid))),
                 )
                 .filter(
-                    users_organizations::edit_any_collection
-                        .eq(true) // Custom "Edit any collection" (successor of access_all)
+                    custom_membership_with_edit_any_collection() // Custom "Edit any collection" (successor of access_all)
                         .or(users_organizations::atype.le(MembershipType::Admin as i32)) // or org admin/owner
                         .or(ciphers_collections::cipher_uuid.eq(&cipher_uuid)), // ..or access to collection with cipher
                 )
@@ -1317,8 +1325,7 @@ impl Membership {
                 .filter(users_organizations::org_uuid.eq(org_uuid))
                 .left_join(users_collections::table.on(users_collections::user_uuid.eq(users_organizations::user_uuid)))
                 .filter(
-                    users_organizations::edit_any_collection
-                        .eq(true) // Custom "Edit any collection" (successor of access_all)
+                    custom_membership_with_edit_any_collection() // Custom "Edit any collection" (successor of access_all)
                         .or(users_organizations::atype.le(MembershipType::Admin as i32)) // or org admin/owner
                         .or(users_collections::collection_uuid.eq(&collection_uuid)), // ..or access to collection
                 )
@@ -1507,6 +1514,37 @@ mod tests {
         assert!(!member.can_create_new_collections());
         assert!(!member.can_delete_any_collection());
         assert!(!member.has_full_access());
+    }
+
+    #[cfg(sqlite)]
+    #[test]
+    fn diesel_edit_any_collection_predicate_is_custom_type_gated() {
+        use diesel::{Connection, connection::SimpleConnection, sqlite::SqliteConnection};
+
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        conn.batch_execute(
+            "CREATE TABLE users_organizations (
+                atype INTEGER NOT NULL,
+                edit_any_collection BOOLEAN NOT NULL
+            );
+            INSERT INTO users_organizations (atype, edit_any_collection) VALUES
+                (0, TRUE),
+                (1, TRUE),
+                (2, TRUE),
+                (3, TRUE),
+                (4, FALSE),
+                (4, TRUE),
+                (5, TRUE);",
+        )
+        .unwrap();
+
+        let matching_types = users_organizations::table
+            .select(users_organizations::atype)
+            .filter(custom_membership_with_edit_any_collection())
+            .load::<i32>(&mut conn)
+            .unwrap();
+
+        assert_eq!(matching_types, vec![MembershipType::Custom as i32]);
     }
 
     #[test]
