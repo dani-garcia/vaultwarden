@@ -96,8 +96,12 @@ ARG DB=sqlite,mysql,postgresql
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
 RUN source /env-cargo && \
-    # Workaround for xx related build issues
+    # Configure xx-cargo for target pkg-config and Debian transitive library lookup
     # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
+    # https://github.com/dani-garcia/vaultwarden/discussions/7522
+    if xx-info is-cross; then \
+        export XX_RUSTFLAGS="-C link-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
+    fi && \
     PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}" && \
     find . -not -path "./target*" -delete
 
@@ -113,8 +117,12 @@ RUN source /env-cargo && \
     # Also do this for build.rs to ensure the version is rechecked
     touch build.rs src/main.rs && \
     # Create a symlink to the binary target folder to easy copy the binary in the final stage
-    # Workaround for xx related build issues
+    # Configure xx-cargo for target pkg-config and Debian transitive library lookup
     # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
+    # https://github.com/dani-garcia/vaultwarden/discussions/7522
+    if xx-info is-cross; then \
+        export XX_RUSTFLAGS="-C link-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
+    fi && \
     PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}" && \
     if [[ "${CARGO_PROFILE}" == "dev" ]] ; then \
         ln -vfsr "/app/target/${CARGO_TARGET}/debug" /app/target/final ; \
