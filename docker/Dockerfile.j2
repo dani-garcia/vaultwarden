@@ -32,7 +32,8 @@
     # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
     # https://github.com/dani-garcia/vaultwarden/discussions/7522
     if xx-info is-cross; then \
-        export XX_RUSTFLAGS="-C link-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
+        XX_RUSTFLAGS="-C link-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
+        export XX_RUSTFLAGS; \
     fi && \
     PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}"
 {%- endmacro %}
