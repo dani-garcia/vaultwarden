@@ -36,7 +36,7 @@ function _fetch(method, url, successMsg, errMsg, body, reload_page = true) {
         body: body,
         mode: "same-origin",
         credentials: "same-origin",
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }
     }).then(resp => {
         if (resp.ok) {
             msg(successMsg, reload_page);
@@ -105,7 +105,7 @@ const showActiveTheme = (theme, focus = false) => {
 
     const themeSwitcherText = document.querySelector("#bd-theme-text");
     const activeThemeIcon = document.querySelector(".theme-icon-active use");
-    const btnToActive = document.querySelector(`[data-bs-theme-value="${theme}"]`);
+    const btnToActive = document.querySelector("[data-bs-theme-value=\"" + CSS.escape(theme) + "\"]");
     if (!btnToActive) {
         return;
     }
@@ -158,7 +158,7 @@ document.addEventListener("DOMContentLoaded", (/*event*/) => {
     // get current URL path and assign "active" class to the correct nav-item
     const pathname = window.location.pathname;
     if (pathname === "") return;
-    const navItem = document.querySelectorAll(`.navbar-nav .nav-item a[href="${pathname}"]`);
+    const navItem = document.querySelectorAll(".navbar-nav .nav-item a[href=\"" + CSS.escape(pathname) + "\"]");
     if (navItem.length === 1) {
         navItem[0].className = navItem[0].className + " active";
         navItem[0].setAttribute("aria-current", "page");
