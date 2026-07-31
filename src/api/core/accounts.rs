@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use rocket::{
@@ -68,6 +68,12 @@ pub fn routes() -> Vec<rocket::Route> {
         put_device_token,
         put_clear_device_token,
         post_clear_device_token,
+        put_device_keys,
+        post_device_keys,
+        post_device_retrieve_keys,
+        post_devices_update_trust,
+        post_devices_untrust,
+        post_devices_lost_trust,
         get_tasks,
         post_auth_request,
         get_auth_request,
@@ -440,14 +446,30 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     let data: SetPasswordData = data.into_inner();
     let mut user = headers.user;
 
-    if user.private_key.is_some() {
-        err!("Account already initialized, cannot set password")
+    // A trusted device account already has its key pair but no master password, and must still be
+    // able to add one later, for instance once the server stops offering trusted device encryption.
+    // What this must never do is hand out a fresh master password for an account that has one.
+    if !user.password_hash.is_empty() {
+        err!("Account already has a master password")
     }
 
     // Check against the password hint setting here so if it fails,
     // the user can retry without losing their invitation below.
     let password_hint = clean_password_hint(data.master_password_hint.as_ref());
     enforce_password_hint_setting(password_hint.as_ref())?;
+
+    // Same reasoning as in `post_keys`: the existing ciphers are encrypted under the existing key
+    // pair, so an account that has one only gets a password, never new keys.
+    let keys = match (data.keys, user.private_key.is_some() || user.public_key.is_some()) {
+        (Some(keys), false) => Some(keys),
+        (Some(keys), true)
+            if user.private_key.as_ref() != Some(&keys.encrypted_private_key)
+                || user.public_key.as_ref() != Some(&keys.public_key) =>
+        {
+            err!("Account already initialized, cannot replace the account keys")
+        }
+        _ => None,
+    };
 
     set_kdf_data(&mut user, &data.kdf)?;
 
@@ -461,7 +483,7 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     .await?;
     user.password_hint = password_hint;
 
-    if let Some(keys) = data.keys {
+    if let Some(keys) = keys {
         user.private_key = Some(keys.encrypted_private_key);
         user.public_key = Some(keys.public_key);
     }
@@ -578,6 +600,25 @@ async fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> Json
     let data: KeysData = data.into_inner();
 
     let mut user = headers.user;
+
+    // Replacing the key pair of an initialized account would make every existing cipher
+    // undecryptable, so only accept it while the account has none yet. The clients call this during
+    // account creation, including the trusted device flow, where a stale client state could
+    // otherwise send us here for an account that is already set up. Repeating the same keys stays
+    // allowed so a retried request does not fail. Mirrors the guard in `post_set_password`.
+    if user.private_key.is_some() || user.public_key.is_some() {
+        if user.private_key.as_ref() != Some(&data.encrypted_private_key)
+            || user.public_key.as_ref() != Some(&data.public_key)
+        {
+            err!("Account already initialized, cannot replace the account keys")
+        }
+
+        return Ok(Json(json!({
+            "privateKey": user.private_key,
+            "publicKey": user.public_key,
+            "object":"keys"
+        })));
+    }
 
     user.private_key = Some(data.encrypted_private_key);
     user.public_key = Some(data.public_key);
@@ -993,6 +1034,12 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     .await?;
 
     let save_result = user.save(&conn).await;
+
+    // Every trusted device holds the previous user key wrapped for itself, which unlocks nothing
+    // anymore. The client of the rotating device re-wraps the new one right after this via
+    // `POST /devices/update-trust`, so that device keeps its private key; the rest is dropped. A
+    // client that skips that call simply ends up with no trusted device instead of a broken unlock.
+    Device::invalidate_wrapped_user_keys(&user.uuid, &headers.device.uuid, &conn).await?;
 
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
@@ -1543,6 +1590,205 @@ async fn put_clear_device_token(device_id: DeviceId, ip: ClientIp, conn: DbConn)
 #[post("/devices/identifier/<device_id>/clear-token")]
 async fn post_clear_device_token(device_id: DeviceId, ip: ClientIp, conn: DbConn) -> EmptyResult {
     put_clear_device_token(device_id, ip, conn).await
+}
+
+// Trusted device encryption, see https://bitwarden.com/help/login-with-sso-trusted-devices/
+// The three key blobs below are generated and encrypted by the client, the server only stores them
+// and hands them back on the next login of that same device. It never learns the device key that
+// unwraps `encrypted_private_key`, so a stored trust is worth nothing without the device itself.
+// https://github.com/bitwarden/server/blob/main/src/Api/Controllers/DevicesController.cs
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrustedDeviceKeysData {
+    encrypted_user_key: String,
+    encrypted_public_key: String,
+    encrypted_private_key: String,
+}
+
+/// Marks a device of the current user as trusted.
+///
+/// Upstream keys this on the device identifier and does not require it to be the device the request
+/// was authenticated with, so neither do we. The keys only ever unlock the vault on the device that
+/// holds the matching device key, so writing them for another of your own devices gains nothing.
+#[put("/devices/<device_id>/keys", data = "<data>")]
+async fn put_device_keys(
+    device_id: DeviceId,
+    data: Json<TrustedDeviceKeysData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    let data = data.into_inner();
+
+    if data.encrypted_user_key.is_empty()
+        || data.encrypted_public_key.is_empty()
+        || data.encrypted_private_key.is_empty()
+    {
+        err!("All three device keys are required to trust a device")
+    }
+
+    let Some(mut device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &conn).await else {
+        err!("No device found")
+    };
+
+    device.encrypted_user_key = Some(data.encrypted_user_key);
+    device.encrypted_public_key = Some(data.encrypted_public_key);
+    device.encrypted_private_key = Some(data.encrypted_private_key);
+    device.save(true, &conn).await?;
+
+    Ok(Json(device.to_json()))
+}
+
+// Deprecated upstream in favour of the PUT variant, but still served for older clients
+#[post("/devices/<device_id>/keys", data = "<data>")]
+async fn post_device_keys(
+    device_id: DeviceId,
+    data: Json<TrustedDeviceKeysData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    put_device_keys(device_id, data, headers, conn).await
+}
+
+/// The public half of a device's trust, needed by the clients to re-wrap the user key for every
+/// trusted device during a key rotation.
+#[post("/devices/<device_id>/retrieve-keys")]
+async fn post_device_retrieve_keys(device_id: DeviceId, headers: Headers, conn: DbConn) -> JsonResult {
+    let Some(device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &conn).await else {
+        err!("No device found")
+    };
+
+    Ok(Json(device.to_protected_json()))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceTrustUpdateData {
+    encrypted_user_key: String,
+    encrypted_public_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OtherDeviceTrustUpdateData {
+    device_id: DeviceId,
+    #[serde(flatten)]
+    keys: DeviceTrustUpdateData,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateDevicesTrustData {
+    #[serde(flatten)]
+    secret: PasswordOrOtpData,
+    current_device: DeviceTrustUpdateData,
+    #[serde(default)]
+    other_devices: Vec<OtherDeviceTrustUpdateData>,
+}
+
+/// Re-wraps the user key for the trusted devices after it was replaced by a key rotation.
+///
+/// Every trusted device that is not listed loses its trust: its stored copy of the user key is the
+/// old one and would no longer unlock anything.
+#[post("/devices/update-trust", data = "<data>")]
+async fn post_devices_update_trust(data: Json<UpdateDevicesTrustData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data = data.into_inner();
+
+    data.secret.validate(&headers.user, true, &conn).await?;
+
+    if data.current_device.encrypted_user_key.is_empty() || data.current_device.encrypted_public_key.is_empty() {
+        err!("The keys of the current device are required")
+    }
+
+    let mut updates: HashMap<DeviceId, DeviceTrustUpdateData> = HashMap::new();
+    for other in data.other_devices {
+        if other.device_id == headers.device.uuid {
+            err!("The current device cannot also be part of the optional rotation")
+        }
+        if other.keys.encrypted_user_key.is_empty() || other.keys.encrypted_public_key.is_empty() {
+            err!("Both keys are required for every device in the rotation")
+        }
+        if updates.insert(other.device_id, other.keys).is_some() {
+            err!("A device was listed more than once in the rotation")
+        }
+    }
+
+    let devices = Device::find_by_user(&headers.user.uuid, &conn).await;
+    if !devices.iter().any(|device| device.uuid == headers.device.uuid) {
+        err!("No device found")
+    }
+
+    // Validate everything before writing anything: a rotation that stops halfway would leave the
+    // devices wrapping a mix of the old and the new user key.
+    if let Some(unknown) = updates.keys().find(|device_id| !devices.iter().any(|device| device.uuid == **device_id)) {
+        err!(format!("Device {unknown} does not belong to this user"))
+    }
+
+    for mut device in devices {
+        if device.uuid == headers.device.uuid {
+            device.encrypted_user_key = Some(data.current_device.encrypted_user_key.clone());
+            device.encrypted_public_key = Some(data.current_device.encrypted_public_key.clone());
+        } else if !device.is_trusted() {
+            // Nothing to rotate, and handing an untrusted device two of the three keys would not
+            // make it trusted anyway.
+            continue;
+        } else if let Some(keys) = updates.remove(&device.uuid) {
+            device.encrypted_user_key = Some(keys.encrypted_user_key);
+            device.encrypted_public_key = Some(keys.encrypted_public_key);
+        } else {
+            device.untrust();
+        }
+
+        device.save(true, &conn).await?;
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UntrustDevicesData {
+    devices: Vec<DeviceId>,
+}
+
+#[post("/devices/untrust", data = "<data>")]
+async fn post_devices_untrust(data: Json<UntrustDevicesData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data = data.into_inner();
+
+    let mut devices = Device::find_by_user(&headers.user.uuid, &conn).await;
+
+    // Check that the user owns all of them first, so a single foreign id does not leave the request
+    // half applied.
+    if let Some(unknown) =
+        data.devices.iter().find(|device_id| !devices.iter().any(|device| &device.uuid == *device_id))
+    {
+        err!(format!("Device {unknown} does not belong to this user"))
+    }
+
+    for device in devices.iter_mut().filter(|device| data.devices.contains(&device.uuid)) {
+        device.untrust();
+        device.save(true, &conn).await?;
+    }
+
+    Ok(())
+}
+
+/// Reported by a client that still holds a device key but did not get any keys back from us.
+///
+/// There is nothing left to clean up at this point, the device already counts as untrusted here.
+/// Upstream only writes a log line as well, since this points at the client and the server having
+/// drifted apart.
+#[expect(clippy::needless_pass_by_value, reason = "Not beneficial for Headers")]
+#[post("/devices/lost-trust")]
+fn post_devices_lost_trust(headers: Headers) -> EmptyResult {
+    warn!(
+        "Device {} ({}) of user {} still holds a device key, but has no trusted device keys on the server",
+        headers.device.uuid,
+        DeviceType::from_i32(headers.device.atype),
+        headers.user.uuid
+    );
+
+    Ok(())
 }
 
 #[get("/tasks")]

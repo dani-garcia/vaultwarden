@@ -840,6 +840,8 @@ make_config! {
         sso_client_cache_expiration:    u64,    true,   def,    0;
         /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
         sso_debug_tokens:               bool,   true,   def,    false;
+        /// Trusted device encryption |> Let users unlock their vault after an SSO login with a key stored on a trusted device instead of a master password. A user who never sets a master password and then loses every trusted device cannot recover their vault. See: https://bitwarden.com/help/login-with-sso-trusted-devices/
+        sso_trusted_device_encryption:  bool,   true,   def,    false;
     },
 
     /// Yubikey settings
@@ -1107,6 +1109,8 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
         validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
+    } else if cfg.sso_trusted_device_encryption {
+        err!("`SSO_TRUSTED_DEVICE_ENCRYPTION` requires `SSO_ENABLED` to be set, it only applies to SSO logins")
     }
 
     if cfg._enable_yubico {

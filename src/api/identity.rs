@@ -30,7 +30,7 @@ use crate::{
     db::{
         DbConn,
         models::{
-            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeResponseError,
+            AuthRequest, AuthRequestId, Device, DeviceId, DeviceType, EventType, Invitation, OIDCCodeResponseError,
             OrganizationApiKey, OrganizationId, SendId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete,
             TwoFactorType, User, UserId,
         },
@@ -356,7 +356,7 @@ async fn sso_login(
     // We passed 2FA get auth tokens
     let auth_tokens = sso::redeem(&device, &user, data.client_id, sso_user, sso_auth, user_infos, conn).await?;
 
-    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
+    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, true, conn, ip).await
 }
 
 async fn password_login(
@@ -478,7 +478,46 @@ async fn password_login(
 
     let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password, data.client_id);
 
-    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
+    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, false, conn, ip).await
+}
+
+/// Trusted device encryption ("passwordless SSO"): instead of deriving the user key from a master
+/// password, the client keeps a copy of it on the device, wrapped for a key pair that the device
+/// generated. Its presence in the response is what makes the clients offer the flow at all.
+///
+/// Upstream ties this to the SSO configuration of an organization; Vaultwarden configures SSO for
+/// the whole server, so `SSO_TRUSTED_DEVICE_ENCRYPTION` decides it here. Either way it stays an SSO
+/// feature, a password login never gets these options.
+/// https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/UserDecryptionOptionsBuilder.cs
+async fn trusted_device_option(user: &User, device: &Device, conn: &DbConn) -> Option<Value> {
+    let enabled = CONFIG.sso_trusted_device_encryption();
+
+    // Once the feature is switched off again, a user without a master password would be locked out
+    // of their own vault. Keep telling their still trusted devices about it so their client can walk
+    // them through setting one while they can still unlock.
+    let offboarding = !enabled && device.is_trusted() && user.password_hash.is_empty();
+    if !enabled && !offboarding {
+        return None;
+    }
+
+    // Any other device of this user that could show an approval prompt. The user unlocks a new
+    // device from one of these, or with the master password if they have one.
+    let has_login_approving_device = Device::find_by_user(&user.uuid, conn)
+        .await
+        .iter()
+        .any(|other| other.uuid != device.uuid && DeviceType::from_i32(other.atype).can_approve_login_requests());
+
+    // Approval by an organization admin is not implemented. Announcing it would leave the client
+    // waiting on a request that nobody here can answer.
+    Some(json!({
+        "HasAdminApproval": false,
+        "HasLoginApprovingDevice": has_login_approving_device,
+        "HasManageResetPasswordPermission": false,
+        "IsTdeOffboarding": offboarding,
+        "EncryptedPrivateKey": device.trusted_private_key(),
+        "EncryptedUserKey": device.trusted_user_key(),
+        "Object": "trustedDeviceUserDecryptionOption"
+    }))
 }
 
 async fn authenticated_response(
@@ -486,6 +525,7 @@ async fn authenticated_response(
     device: &mut Device,
     auth_tokens: auth::AuthTokens,
     twofactor_token: Option<String>,
+    sso_login: bool,
     conn: &DbConn,
     ip: &ClientIp,
 ) -> JsonResult {
@@ -547,6 +587,16 @@ async fn authenticated_response(
         Value::Null
     };
 
+    let mut user_decryption_options = json!({
+        "HasMasterPassword": has_master_password,
+        "MasterPasswordUnlock": master_password_unlock,
+        "Object": "userDecryptionOptions"
+    });
+
+    if sso_login && let Some(option) = trusted_device_option(user, device, conn).await {
+        user_decryption_options["TrustedDeviceOption"] = option;
+    }
+
     let mut result = json!({
         "access_token": auth_tokens.access_token(),
         "expires_in": auth_tokens.expires_in(),
@@ -562,11 +612,7 @@ async fn authenticated_response(
         "MasterPasswordPolicy": master_password_policy,
         "scope": auth_tokens.scope(),
         "AccountKeys": account_keys,
-        "UserDecryptionOptions": {
-            "HasMasterPassword": has_master_password,
-            "MasterPasswordUnlock": master_password_unlock,
-            "Object": "userDecryptionOptions"
-        },
+        "UserDecryptionOptions": user_decryption_options,
     });
 
     if !user.akey.is_empty() {
