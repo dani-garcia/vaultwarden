@@ -30,9 +30,9 @@ use crate::{
     db::{
         DbConn,
         models::{
-            AuthRequest, AuthRequestId, Device, DeviceId, DeviceType, EventType, Invitation, OIDCCodeResponseError,
-            OrganizationApiKey, OrganizationId, SendId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete,
-            TwoFactorType, User, UserId,
+            AuthRequest, AuthRequestId, Device, DeviceId, DeviceType, EventType, Invitation, Membership,
+            MembershipStatus, MembershipType, OIDCCodeResponseError, OrganizationApiKey, OrganizationId, SendId,
+            SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
     },
     error::MapResult,
@@ -507,12 +507,23 @@ async fn trusted_device_option(user: &User, device: &Device, conn: &DbConn) -> O
         .iter()
         .any(|other| other.uuid != device.uuid && DeviceType::from_i32(other.atype).can_approve_login_requests());
 
-    // Approval by an organization admin is not implemented. Announcing it would leave the client
-    // waiting on a request that nobody here can answer.
+    let memberships = Membership::find_by_user(&user.uuid, conn).await;
+
+    // An admin can only take over the approval once the member handed them a key to work with,
+    // which is what enrolling into account recovery does.
+    let has_admin_approval =
+        memberships.iter().any(|member| member.reset_password_key.as_ref().is_some_and(|key| !key.is_empty()));
+
+    // Whether the user is on the answering side of that. The clients use it to push someone who
+    // could approve others, but has no master password themselves, into setting one.
+    let has_manage_reset_password_permission = memberships.iter().any(|member| {
+        member.status != MembershipStatus::Revoked as i32 && member.atype <= MembershipType::Admin as i32
+    });
+
     Some(json!({
-        "HasAdminApproval": false,
+        "HasAdminApproval": has_admin_approval,
         "HasLoginApprovingDevice": has_login_approving_device,
-        "HasManageResetPasswordPermission": false,
+        "HasManageResetPasswordPermission": has_manage_reset_password_permission,
         "IsTdeOffboarding": offboarding,
         "EncryptedPrivateKey": device.trusted_private_key(),
         "EncryptedUserKey": device.trusted_user_key(),

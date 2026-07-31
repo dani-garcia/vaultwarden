@@ -1732,6 +1732,7 @@ where
     reg!("email/change_email_invited", ".html");
     reg!("email/change_email", ".html");
     reg!("email/delete_account", ".html");
+    reg!("email/device_approval_requested", ".html");
     reg!("email/emergency_access_invite_accepted", ".html");
     reg!("email/emergency_access_invite_confirmed", ".html");
     reg!("email/emergency_access_recovery_approved", ".html");
@@ -1753,6 +1754,7 @@ where
     reg!("email/send_single_org_removed_from_org", ".html");
     reg!("email/smtp_test", ".html");
     reg!("email/sso_change_email", ".html");
+    reg!("email/trusted_device_admin_approval", ".html");
     reg!("email/twofactor_email", ".html");
     reg!("email/verify_email", ".html");
     reg!("email/welcome_must_verify", ".html");

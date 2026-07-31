@@ -20,9 +20,10 @@ use crate::{
     db::{
         DbConn, DbPool,
         models::{
-            AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
-            EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
+            AuthRequest, AuthRequestId, AuthRequestType, Cipher, CipherId, Device, DeviceId, DeviceType,
+            DeviceWithAuthRequest, EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation,
+            Membership, MembershipId, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send,
+            SendId, User, UserId, UserKdfType,
         },
     },
     mail,
@@ -76,6 +77,7 @@ pub fn routes() -> Vec<rocket::Route> {
         post_devices_lost_trust,
         get_tasks,
         post_auth_request,
+        post_admin_auth_request,
         get_auth_request,
         put_auth_request,
         get_auth_request_response,
@@ -1806,9 +1808,26 @@ struct AuthRequestRequest {
     device_identifier: DeviceId,
     email: String,
     public_key: String,
-    // Not used for now
-    // #[serde(alias = "type")]
-    // _type: i32,
+    #[serde(default, rename = "type")]
+    atype: i32,
+}
+
+fn auth_request_json(auth_request: &AuthRequest) -> Value {
+    json!({
+        "id": auth_request.uuid,
+        "publicKey": auth_request.public_key,
+        "type": auth_request.atype,
+        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
+        "requestDeviceIdentifier": auth_request.request_device_identifier,
+        "requestIpAddress": auth_request.request_ip,
+        "key": auth_request.enc_key,
+        "masterPasswordHash": auth_request.master_password_hash,
+        "creationDate": format_date(&auth_request.creation_date),
+        "responseDate": auth_request.response_date.as_ref().map(format_date),
+        "requestApproved": auth_request.approved.unwrap_or(false),
+        "origin": CONFIG.domain_origin(),
+        "object": "auth-request"
+    })
 }
 
 #[post("/auth-requests", data = "<data>")]
@@ -1820,6 +1839,12 @@ async fn post_auth_request(
 ) -> JsonResult {
     let data = data.into_inner();
 
+    // Asking an administrator for approval means telling them who is asking, so that one is only
+    // available to a caller who has already proven who they are. See `post_admin_auth_request`.
+    if AuthRequestType::from_i32(data.atype) == Some(AuthRequestType::AdminApproval) {
+        err!("You must be authenticated to create a request of that type")
+    }
+
     let Some(user) = User::find_by_mail(&data.email, &conn).await else {
         err!("AuthRequest doesn't exist", "User not found")
     };
@@ -1830,8 +1855,14 @@ async fn post_auth_request(
         _ => err!("AuthRequest doesn't exist", "Device verification failed"),
     };
 
+    let Some(atype) = AuthRequestType::from_i32(data.atype) else {
+        err!("Unknown auth request type")
+    };
+
     let mut auth_request = AuthRequest::new(
         user.uuid.clone(),
+        None,
+        atype,
         data.device_identifier.clone(),
         client_headers.device_type,
         client_headers.ip.ip.to_string(),
@@ -1851,19 +1882,91 @@ async fn post_auth_request(
     )
     .await;
 
-    Ok(Json(json!({
-        "id": auth_request.uuid,
-        "publicKey": auth_request.public_key,
-        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-        "requestIpAddress": auth_request.request_ip,
-        "key": null,
-        "masterPasswordHash": null,
-        "creationDate": format_date(&auth_request.creation_date),
-        "responseDate": null,
-        "requestApproved": false,
-        "origin": CONFIG.domain_origin(),
-        "object": "auth-request"
-    })))
+    Ok(Json(auth_request_json(&auth_request)))
+}
+
+/// Asks the administrators of every organization the user belongs to to let this device in.
+///
+/// The way out for someone who unlocks with trusted devices and has no other device left to ask.
+/// One request per organization, so whichever administrator gets there first can answer.
+/// https://github.com/bitwarden/server/blob/main/src/Api/Auth/Controllers/AuthRequestsController.cs
+#[post("/auth-requests/admin-request", data = "<data>")]
+async fn post_admin_auth_request(data: Json<AuthRequestRequest>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data = data.into_inner();
+
+    if AuthRequestType::from_i32(data.atype) != Some(AuthRequestType::AdminApproval) {
+        err!("Invalid auth request type, expected admin approval")
+    }
+
+    if data.device_identifier != headers.device.uuid {
+        err!("AuthRequest doesn't exist", "Device verification failed")
+    }
+
+    let memberships = Membership::find_by_user(&headers.user.uuid, &conn).await;
+    if memberships.is_empty() {
+        err!("User does not belong to any organization")
+    }
+
+    log_user_event(
+        EventType::UserRequestedDeviceApproval as i32,
+        &headers.user.uuid,
+        headers.device.atype,
+        &headers.ip.ip,
+        &conn,
+    )
+    .await;
+
+    let mut first_request = None;
+    for membership in memberships {
+        let mut auth_request = AuthRequest::new(
+            headers.user.uuid.clone(),
+            Some(membership.org_uuid.clone()),
+            AuthRequestType::AdminApproval,
+            data.device_identifier.clone(),
+            headers.device.atype,
+            headers.ip.ip.to_string(),
+            data.access_code.clone(),
+            data.public_key.clone(),
+        );
+        auth_request.save(&conn).await?;
+
+        notify_device_approval_requested(&headers.user, &membership.org_uuid, &conn).await;
+
+        if first_request.is_none() {
+            first_request = Some(auth_request);
+        }
+    }
+
+    // Guaranteed by the emptiness check above
+    let auth_request = first_request.expect("at least one organization");
+    Ok(Json(auth_request_json(&auth_request)))
+}
+
+/// Mails everyone in the organization who could answer the request. Failing to reach them must not
+/// undo the request itself, so problems are logged rather than returned.
+async fn notify_device_approval_requested(user: &User, org_id: &OrganizationId, conn: &DbConn) {
+    if !CONFIG.mail_enabled() {
+        return;
+    }
+
+    let Some(org) = Organization::find_by_uuid(org_id, conn).await else {
+        return;
+    };
+
+    let approvers = Membership::find_confirmed_by_org(org_id, conn)
+        .await
+        .into_iter()
+        .filter(|member| member.atype <= MembershipType::Admin as i32);
+
+    for approver in approvers {
+        let Some(admin) = User::find_by_uuid(&approver.user_uuid, conn).await else {
+            continue;
+        };
+
+        if let Err(e) = mail::send_device_approval_requested(&admin.email, &org.name, &user.email, &user.name).await {
+            error!("Error sending device approval request email: {e:#?}");
+        }
+    }
 }
 
 #[get("/auth-requests/<auth_request_id>")]
@@ -1873,21 +1976,7 @@ async fn get_auth_request(auth_request_id: AuthRequestId, headers: Headers, conn
         err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
     };
 
-    let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
-
-    Ok(Json(json!({
-        "id": &auth_request_id,
-        "publicKey": auth_request.public_key,
-        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-        "requestIpAddress": auth_request.request_ip,
-        "key": auth_request.enc_key,
-        "masterPasswordHash": auth_request.master_password_hash,
-        "creationDate": format_date(&auth_request.creation_date),
-        "responseDate": response_date_utc,
-        "requestApproved": auth_request.approved,
-        "origin": CONFIG.domain_origin(),
-        "object":"auth-request"
-    })))
+    Ok(Json(auth_request_json(&auth_request)))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1914,6 +2003,13 @@ async fn put_auth_request(
         err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
     };
 
+    // A request addressed to an administrator is answered through the organization, where the
+    // permission to do so can actually be checked. Letting the asking user answer it here would
+    // make the whole detour pointless.
+    if auth_request.is_admin_approval() {
+        err!("AuthRequest doesn't exist", "Admin approval requests are answered by the organization")
+    }
+
     if headers.device.uuid != data.device_identifier {
         err!("AuthRequest doesn't exist", "Device verification failed")
     }
@@ -1922,8 +2018,11 @@ async fn put_auth_request(
         err!("An authentication request with the same device already exists")
     }
 
+    if auth_request.is_expired() {
+        err!("AuthRequest doesn't exist", "Request has expired")
+    }
+
     let response_date = Utc::now().naive_utc();
-    let response_date_utc = format_date(&response_date);
 
     if data.request_approved {
         auth_request.approved = Some(data.request_approved);
@@ -1957,19 +2056,7 @@ async fn put_auth_request(
         .await;
     }
 
-    Ok(Json(json!({
-        "id": &auth_request_id,
-        "publicKey": auth_request.public_key,
-        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-        "requestIpAddress": auth_request.request_ip,
-        "key": auth_request.enc_key,
-        "masterPasswordHash": auth_request.master_password_hash,
-        "creationDate": format_date(&auth_request.creation_date),
-        "responseDate": response_date_utc,
-        "requestApproved": auth_request.approved,
-        "origin": CONFIG.domain_origin(),
-        "object":"auth-request"
-    })))
+    Ok(Json(auth_request_json(&auth_request)))
 }
 
 #[get("/auth-requests/<auth_request_id>/response?<code>")]
@@ -1990,21 +2077,11 @@ async fn get_auth_request_response(
         err!("AuthRequest doesn't exist", "Invalid device, IP or code")
     }
 
-    let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
+    if auth_request.is_expired() {
+        err!("AuthRequest doesn't exist", "Request has expired")
+    }
 
-    Ok(Json(json!({
-        "id": &auth_request_id,
-        "publicKey": auth_request.public_key,
-        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-        "requestIpAddress": auth_request.request_ip,
-        "key": auth_request.enc_key,
-        "masterPasswordHash": auth_request.master_password_hash,
-        "creationDate": format_date(&auth_request.creation_date),
-        "responseDate": response_date_utc,
-        "requestApproved": auth_request.approved,
-        "origin": CONFIG.domain_origin(),
-        "object":"auth-request"
-    })))
+    Ok(Json(auth_request_json(&auth_request)))
 }
 
 // Now unused but not yet removed

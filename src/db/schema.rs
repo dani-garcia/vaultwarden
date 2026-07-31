@@ -331,6 +331,7 @@ table! {
         uuid -> Text,
         user_uuid -> Text,
         organization_uuid -> Nullable<Text>,
+        atype -> Integer,
         request_device_identifier -> Text,
         device_type -> Integer,
         request_ip -> Text,
