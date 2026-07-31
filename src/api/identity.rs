@@ -481,6 +481,18 @@ async fn password_login(
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, false, conn, ip).await
 }
 
+/// Whether offering the trusted device options can lead anywhere for this account.
+///
+/// Creating an account this way ends with enrolling into account recovery, which the clients do
+/// unconditionally and which needs an organization to enroll into. An account that has nothing yet
+/// and belongs to nowhere would therefore be shown the screen for a new account and get stuck
+/// halfway through it, with its keys already written and its device still untrusted. Withholding
+/// the options sends it to setting a master password instead, which works and leaves the door to
+/// trusted devices open for the next login.
+fn trusted_device_flow_is_completable(has_account_keys: bool, in_organization: bool) -> bool {
+    has_account_keys || in_organization
+}
+
 /// Trusted device encryption ("passwordless SSO"): instead of deriving the user key from a master
 /// password, the client keeps a copy of it on the device, wrapped for a key pair that the device
 /// generated. Its presence in the response is what makes the clients offer the flow at all.
@@ -500,14 +512,18 @@ async fn trusted_device_option(user: &User, device: &Device, conn: &DbConn) -> O
         return None;
     }
 
+    let memberships = Membership::find_by_user(&user.uuid, conn).await;
+
+    if !trusted_device_flow_is_completable(user.private_key.is_some(), !memberships.is_empty()) {
+        return None;
+    }
+
     // Any other device of this user that could show an approval prompt. The user unlocks a new
     // device from one of these, or with the master password if they have one.
     let has_login_approving_device = Device::find_by_user(&user.uuid, conn)
         .await
         .iter()
         .any(|other| other.uuid != device.uuid && DeviceType::from_i32(other.atype).can_approve_login_requests());
-
-    let memberships = Membership::find_by_user(&user.uuid, conn).await;
 
     // An admin can only take over the approval once the member handed them a key to work with,
     // which is what enrolling into account recovery does.
@@ -1380,4 +1396,25 @@ async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure,
     );
 
     Ok(Redirect::temporary(String::from(auth_url)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_account_with_nothing_and_nowhere_to_go_is_not_offered_trusted_devices() {
+        // The one combination the clients cannot finish: nothing set up yet and no organization
+        // to enroll into.
+        assert!(!trusted_device_flow_is_completable(false, false));
+
+        // A brand new account that was invited somewhere can enroll, so the flow completes.
+        assert!(trusted_device_flow_is_completable(false, true));
+
+        // An account that is already set up does not go through account creation at all, with or
+        // without an organization. This covers the master password first route as well as an
+        // account that already trusts a device.
+        assert!(trusted_device_flow_is_completable(true, false));
+        assert!(trusted_device_flow_is_completable(true, true));
+    }
 }
