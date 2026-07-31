@@ -1,0 +1,68 @@
+<main class="container-xxl">
+    <div id="device-approvals-block" class="my-3 p-3 rounded shadow">
+        <h6 class="border-bottom pb-2 mb-3">Device approvals</h6>
+
+        <p class="small">
+            A member who unlocks with a trusted device and has no other device of their own left to
+            ask can ask an administrator of their organization instead. Answering hands them their
+            own user key, encrypted for the device that is asking. It only works for members who
+            enrolled into account recovery.
+        </p>
+
+        <div id="approval-status" class="d-none"></div>
+
+        <form id="approval-signin" class="row g-2 align-items-end">
+            <div class="col-12">
+                <div class="alert alert-warning small mb-2">
+                    <strong>This asks for a vault account, not for the admin token.</strong>
+                    The server cannot answer these requests on its own: it holds the organization's
+                    private key only encrypted with a key that never leaves its members. So sign in
+                    below as an administrator <em>of the organization</em> and the whole chain is
+                    unwrapped here in your browser. Your master password is not sent anywhere; only
+                    the same login hash a regular sign-in would send leaves this page.
+                </div>
+            </div>
+            <div class="col-md-5">
+                <label for="approval-email" class="form-label small mb-1">Email of an organization administrator</label>
+                <input type="email" class="form-control form-control-sm" id="approval-email" autocomplete="username" required>
+            </div>
+            <div class="col-md-5">
+                <label for="approval-password" class="form-label small mb-1">Master password</label>
+                <input type="password" class="form-control form-control-sm" id="approval-password" autocomplete="current-password" required>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-sm btn-primary w-100" id="approval-signin-button">Unlock</button>
+            </div>
+        </form>
+
+        <div id="approval-list" class="d-none">
+            <p class="small mb-3">
+                Signed in as <span class="badge bg-success font-monospace" id="approval-signed-in-as"></span>
+            </p>
+
+            <p id="approval-empty" class="small fst-italic">No requests are waiting for an answer.</p>
+
+            <div class="table-responsive-xl small d-none" id="approval-table">
+                <table class="table table-sm table-striped table-hover">
+                    <thead>
+                        <tr>
+                            <th>Member</th>
+                            <th>Organization</th>
+                            <th>Device</th>
+                            <th>IP address</th>
+                            <th>Asked at</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="approval-rows"></tbody>
+                </table>
+            </div>
+
+            <div class="mt-3 clearfix">
+                <button type="button" class="btn btn-sm btn-primary float-end" id="approval-reload">Reload requests</button>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script src="{{urlpath}}/vw_static/admin_device_approvals.js"></script>

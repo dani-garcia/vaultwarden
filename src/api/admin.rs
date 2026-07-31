@@ -67,6 +67,7 @@ pub fn routes() -> Vec<Route> {
         users_overview,
         organizations_overview,
         delete_organization,
+        device_approvals,
         diagnostics,
         get_diagnostics_config,
         resend_user_invite,
@@ -613,6 +614,18 @@ async fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<H
 async fn delete_organization(org_id: OrganizationId, _token: AdminToken, conn: DbConn) -> EmptyResult {
     let org = Organization::find_by_uuid(&org_id, &conn).await.map_res("Organization doesn't exist")?;
     org.delete(&conn).await
+}
+
+/// Stand-in for the "Device approvals" page of the admin console, which lives in the part of
+/// bitwarden/clients that is not AGPL licensed and is therefore in no web vault build.
+///
+/// This page only serves the markup. Everything else happens in the browser against the regular
+/// API, because answering a request needs the master password of an administrator of the
+/// organization: the server keeps its private key encrypted with a key it does not have.
+#[get("/device-approvals")]
+fn device_approvals(_token: AdminToken) -> ApiResult<Html<String>> {
+    let text = AdminTemplateData::new("admin/device_approvals", json!({})).render()?;
+    Ok(Html(text))
 }
 
 #[derive(Deserialize)]
