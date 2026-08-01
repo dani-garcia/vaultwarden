@@ -55,12 +55,28 @@ pub struct CollectionCipher {
 
 /// Serialize the assignment-level `manage` capability using the same role boundary as the
 /// collection mutation guards. Read/write access is deliberately not management authority.
+///
+/// This answers "may this member manage this collection?" and therefore belongs on the objects a
+/// member receives about themselves. For the administrative lists that echo a *stored* grant back
+/// to the client, use `stored_assignment_manage` instead.
 pub(super) fn assignment_manage_for_member(membership_type: i32, stored_manage: bool) -> bool {
     match MembershipType::from_i32(membership_type) {
         Some(MembershipType::Owner | MembershipType::Admin) => true,
         Some(MembershipType::Custom) => stored_manage,
         Some(MembershipType::User) | None => false,
     }
+}
+
+/// Serialize a *stored* per-collection assignment row for the admin-console access lists.
+///
+/// These lists describe the grant an administrator configured, and the client writes the very same
+/// value back when the dialog is saved. Reporting anything other than the persisted bit would make
+/// an unrelated save silently strip it — for a plain User that would also revoke the cipher write
+/// access `users_collections.manage` still grants (see `Cipher::get_access_restrictions`). Admins
+/// and Owners manage implicitly, so they are reported as managing regardless of the stored row.
+pub(super) fn stored_assignment_manage(membership_type: i32, stored_manage: bool) -> bool {
+    matches!(MembershipType::from_i32(membership_type), Some(MembershipType::Owner | MembershipType::Admin))
+        || stored_manage
 }
 
 /// Local methods
@@ -938,7 +954,7 @@ impl CollectionMembership {
             "id": self.membership_uuid,
             "readOnly": self.read_only,
             "hidePasswords": self.hide_passwords,
-            "manage": assignment_manage_for_member(membership_type, self.manage),
+            "manage": stored_assignment_manage(membership_type, self.manage),
         })
     }
 }
@@ -975,8 +991,23 @@ pub struct CollectionId(String);
 
 #[cfg(test)]
 mod tests {
-    use super::assignment_manage_for_member;
+    use super::{assignment_manage_for_member, stored_assignment_manage};
     use crate::db::models::MembershipType;
+
+    // A stored `users_collections.manage` row must survive being listed in the admin console and
+    // written back unchanged. Reporting `false` for a plain User made an unrelated save strip the
+    // grant, which also revoked the cipher write access the row still confers.
+    #[test]
+    fn stored_assignment_manage_echoes_the_persisted_grant() {
+        for role in [MembershipType::Owner, MembershipType::Admin] {
+            assert!(stored_assignment_manage(role as i32, false));
+        }
+
+        for role in [MembershipType::Custom, MembershipType::User] {
+            assert!(stored_assignment_manage(role as i32, true));
+            assert!(!stored_assignment_manage(role as i32, false));
+        }
+    }
 
     #[test]
     fn assignment_manage_matches_collection_guard_role_boundaries() {

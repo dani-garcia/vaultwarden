@@ -25,7 +25,8 @@ use macros::UuidFromParam;
 
 use super::{
     Cipher, CipherId, Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy,
-    OrgPolicyType, TwoFactor, User, UserId, collection::assignment_manage_for_member as assignment_manage,
+    OrgPolicyType, TwoFactor, User, UserId,
+    collection::{assignment_manage_for_member as assignment_manage, stored_assignment_manage},
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -619,7 +620,7 @@ impl Membership {
                         let (read_only, hide_passwords, manage) = if self.has_full_access() {
                             (false, false, assignment_manage(self.atype, false))
                         } else if let Some(cu) = cu.get(&c.uuid) {
-                            (cu.read_only, cu.hide_passwords, assignment_manage(self.atype, cu.manage))
+                            (cu.read_only, cu.hide_passwords, stored_assignment_manage(self.atype, cu.manage))
                         // If previous checks failed it might be that this user has access via a group, but we should not return those elements here
                         // Those are returned via a special group endpoint
                         } else if cg.contains(&c.uuid) {

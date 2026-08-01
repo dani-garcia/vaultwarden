@@ -79,6 +79,21 @@ pub enum EventType {
     CipherSoftDeleted = 1115,
     CipherRestored = 1116,
     CipherClientToggledCardNumberVisible = 1117,
+    // CipherClientToggledTOTPSeedVisible = 1118, // Not accepted from clients by upstream either
+    CipherClientCopiedBankAccountNumber = 1119,
+    CipherClientCopiedBankAccountPin = 1120,
+    CipherClientToggledBankAccountNumberVisible = 1121,
+    CipherClientToggledBankAccountPinVisible = 1122,
+    CipherClientCopiedLicenseNumber = 1123,
+    CipherClientToggledLicenseNumberVisible = 1124,
+    CipherClientCopiedPassportNumber = 1125,
+    CipherClientToggledPassportNumberVisible = 1126,
+    CipherClientCopiedSwiftCode = 1127,
+    CipherClientToggledSwiftCodeVisible = 1128,
+    CipherClientCopiedIban = 1129,
+    CipherClientToggledIbanVisible = 1130,
+    CipherClientCopiedNationalIdentificationNumber = 1131,
+    CipherClientToggledNationalIdentificationNumberVisible = 1132,
 
     // Collection
     CollectionCreated = 1300,
@@ -120,6 +135,11 @@ pub enum EventType {
     // OrganizationDisabledKeyConnector = 1607, // Not supported
     // OrganizationSponsorshipsSynced = 1608, // Not supported
     // OrganizationCollectionManagementUpdated = 1609, // Not supported
+    OrganizationItemOrganizationAccepted = 1618,
+    OrganizationItemOrganizationDeclined = 1619,
+    OrganizationAutoConfirmEnabledAdmin = 1620,
+    OrganizationAutoConfirmDisabledAdmin = 1621,
+    OrganizationInviteLinkClientCopied = 1627,
 
     // Policy
     PolicyUpdated = 1700,

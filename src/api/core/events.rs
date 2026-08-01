@@ -247,6 +247,11 @@ fn validate_client_event_batch_size(event_count: usize) -> Result<(), crate::Err
     Ok(())
 }
 
+/// The client-generated event types upstream's `/events/collect` accepts. Anything else is ignored,
+/// so that an authenticated client cannot write arbitrary event types into an organization's audit
+/// log. Keep this in sync with upstream's `CollectController`: a type missing here is silently not
+/// logged, which is why the newer item-type events below are listed explicitly rather than matched
+/// by range.
 fn client_event_kind(event_type: i32) -> Option<ClientEventKind> {
     match event_type {
         event_type if event_type == EventType::UserClientExportedVault as i32 => Some(ClientEventKind::User),
@@ -259,11 +264,32 @@ fn client_event_kind(event_type: i32) -> Option<ClientEventKind> {
                 || event_type == EventType::CipherClientCopiedHiddenField as i32
                 || event_type == EventType::CipherClientCopiedCardCode as i32
                 || event_type == EventType::CipherClientAutofilled as i32
-                || event_type == EventType::CipherClientToggledCardNumberVisible as i32 =>
+                || event_type == EventType::CipherClientToggledCardNumberVisible as i32
+                || event_type == EventType::CipherClientCopiedBankAccountNumber as i32
+                || event_type == EventType::CipherClientCopiedBankAccountPin as i32
+                || event_type == EventType::CipherClientToggledBankAccountNumberVisible as i32
+                || event_type == EventType::CipherClientToggledBankAccountPinVisible as i32
+                || event_type == EventType::CipherClientCopiedLicenseNumber as i32
+                || event_type == EventType::CipherClientToggledLicenseNumberVisible as i32
+                || event_type == EventType::CipherClientCopiedPassportNumber as i32
+                || event_type == EventType::CipherClientToggledPassportNumberVisible as i32
+                || event_type == EventType::CipherClientCopiedSwiftCode as i32
+                || event_type == EventType::CipherClientToggledSwiftCodeVisible as i32
+                || event_type == EventType::CipherClientCopiedIban as i32
+                || event_type == EventType::CipherClientToggledIbanVisible as i32
+                || event_type == EventType::CipherClientCopiedNationalIdentificationNumber as i32
+                || event_type == EventType::CipherClientToggledNationalIdentificationNumberVisible as i32 =>
         {
             Some(ClientEventKind::Cipher)
         }
-        event_type if event_type == EventType::OrganizationClientExportedVault as i32 => {
+        event_type
+            if event_type == EventType::OrganizationClientExportedVault as i32
+                || event_type == EventType::OrganizationItemOrganizationAccepted as i32
+                || event_type == EventType::OrganizationItemOrganizationDeclined as i32
+                || event_type == EventType::OrganizationAutoConfirmEnabledAdmin as i32
+                || event_type == EventType::OrganizationAutoConfirmDisabledAdmin as i32
+                || event_type == EventType::OrganizationInviteLinkClientCopied as i32 =>
+        {
             Some(ClientEventKind::Organization)
         }
         _ => None,
@@ -584,13 +610,36 @@ mod tests {
             EventType::CipherClientCopiedCardCode,
             EventType::CipherClientAutofilled,
             EventType::CipherClientToggledCardNumberVisible,
+            EventType::CipherClientCopiedBankAccountNumber,
+            EventType::CipherClientCopiedBankAccountPin,
+            EventType::CipherClientToggledBankAccountNumberVisible,
+            EventType::CipherClientToggledBankAccountPinVisible,
+            EventType::CipherClientCopiedLicenseNumber,
+            EventType::CipherClientToggledLicenseNumberVisible,
+            EventType::CipherClientCopiedPassportNumber,
+            EventType::CipherClientToggledPassportNumberVisible,
+            EventType::CipherClientCopiedSwiftCode,
+            EventType::CipherClientToggledSwiftCodeVisible,
+            EventType::CipherClientCopiedIban,
+            EventType::CipherClientToggledIbanVisible,
+            EventType::CipherClientCopiedNationalIdentificationNumber,
+            EventType::CipherClientToggledNationalIdentificationNumberVisible,
         ] {
             assert_eq!(client_event_kind(event_type as i32), Some(ClientEventKind::Cipher));
         }
-        assert_eq!(
-            client_event_kind(EventType::OrganizationClientExportedVault as i32),
-            Some(ClientEventKind::Organization)
-        );
+        for event_type in [
+            EventType::OrganizationClientExportedVault,
+            EventType::OrganizationItemOrganizationAccepted,
+            EventType::OrganizationItemOrganizationDeclined,
+            EventType::OrganizationAutoConfirmEnabledAdmin,
+            EventType::OrganizationAutoConfirmDisabledAdmin,
+            EventType::OrganizationInviteLinkClientCopied,
+        ] {
+            assert_eq!(client_event_kind(event_type as i32), Some(ClientEventKind::Organization));
+        }
+
+        // Upstream does not accept the TOTP seed toggle from clients either.
+        assert_eq!(client_event_kind(1118), None);
 
         for event_type in [
             EventType::UserLoggedIn,
