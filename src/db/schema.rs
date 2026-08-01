@@ -217,6 +217,22 @@ table! {
         api_key -> Nullable<Text>,
         avatar_color -> Nullable<Text>,
         external_id -> Nullable<Text>,
+        signed_public_key -> Nullable<Text>,
+        security_state -> Nullable<Text>,
+        security_version -> Nullable<Integer>,
+        v2_upgrade_token -> Nullable<Text>,
+    }
+}
+
+table! {
+    user_signature_key_pairs (uuid) {
+        uuid -> Text,
+        user_uuid -> Text,
+        signature_algorithm -> Integer,
+        signing_key -> Text,
+        verifying_key -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -382,6 +398,7 @@ joinable!(collections_groups -> groups (groups_uuid));
 joinable!(event -> users_organizations (uuid));
 joinable!(auth_requests -> users (user_uuid));
 joinable!(sso_users -> users (user_uuid));
+joinable!(user_signature_key_pairs -> users (user_uuid));
 
 allow_tables_to_appear_in_same_query!(
     archives,
@@ -408,4 +425,5 @@ allow_tables_to_appear_in_same_query!(
     collections_groups,
     event,
     auth_requests,
+    user_signature_key_pairs,
 );
