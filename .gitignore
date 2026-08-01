@@ -14,3 +14,9 @@ data
 
 # Web vault
 web-vault
+
+# Playwright artifacts (the suite is invoked from playwright/ so its
+# own .gitignore catches in-tree paths; this catches stray artifacts
+# that end up at the repo root when playwright is invoked elsewhere).
+test-results
+playwright-report

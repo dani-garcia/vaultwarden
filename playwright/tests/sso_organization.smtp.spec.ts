@@ -4,6 +4,7 @@ import { MailDev } from 'maildev';
 import * as utils from "../global-utils";
 import * as orgs from './setups/orgs';
 import { logNewUser, logUser } from './setups/sso';
+import { fillNewMasterPassword } from './setups/user';
 
 let users = utils.loadEnv();
 
@@ -67,8 +68,7 @@ test('invited with new account', async ({ page }) => {
 
     await test.step('Create Vault account', async () => {
         await expect(page.getByRole('heading', { name: 'Join organisation' })).toBeVisible();
-        await page.getByLabel('Master password (required)', { exact: true }).fill(users.user2.password);
-        await page.getByLabel('Confirm master password (').fill(users.user2.password);
+        await fillNewMasterPassword(page, users.user2.password);
         await page.getByRole('button', { name: 'Create account' }).click();
 
         await utils.checkNotification(page, 'Account successfully created!');
@@ -95,6 +95,9 @@ test('invited with existing account', async ({ page }) => {
 
     await test.step('Redirect to Keycloak', async () => {
         await page.goto(link);
+        // Existing accounts land on the email-prefilled login form rather
+        // than auto-redirecting; click through to Keycloak explicitly.
+        await page.getByRole('button', { name: 'Use single sign-on' }).click();
     });
 
     await test.step('Keycloak login', async () => {
@@ -109,7 +112,7 @@ test('invited with existing account', async ({ page }) => {
         await page.getByLabel('Master password').fill(users.user3.password);
         await page.getByRole('button', { name: 'Unlock' }).click();
 
-        await utils.checkNotification(page, 'Invitation accepted');
+        await utils.checkNotification(page, 'Successfully accepted your invitation');
         await utils.ignoreExtension(page);
     });
 

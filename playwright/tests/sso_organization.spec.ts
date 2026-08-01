@@ -68,7 +68,7 @@ test('Enforce password policy', async ({ page }) => {
         await page.locator("input[type=email].vw-email-sso").fill(users.user1.email);
         await page.getByRole('button', { name: 'Use single sign-on' }).click();
 
-        await page.getByRole('textbox', { name: 'Master password (required)' }).fill(users.user1.password);
+        await page.getByLabel('Master password').fill(users.user1.password);
         await page.getByRole('button', { name: 'Unlock' }).click();
 
         await expect(page.getByRole('heading', { name: 'Update master password' })).toBeVisible();

@@ -35,6 +35,7 @@ export default defineConfig({
         /* Base URL to use in actions like `await page.goto('/')`. */
         baseURL: process.env.DOMAIN,
         browserName: 'firefox',
+        ignoreHTTPSErrors: true,
         locale: 'en-GB',
         timezoneId: 'Europe/London',
 

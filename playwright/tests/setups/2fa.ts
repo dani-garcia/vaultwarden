@@ -3,39 +3,106 @@ import { type MailBuffer } from 'maildev';
 import * as OTPAuth from "otpauth";
 
 import * as utils from '../../global-utils';
+import { openAvatarMenu, submitMasterPasswordVerification } from './user';
 
-export async function activateTOTP(test: Test, page: Page, user: { name: string, password: string }): OTPAuth.TOTP {
+/**
+ * A 2FA challenge factor used by the login helpers. Discriminated by `kind`
+ * so each variant carries only the state it needs:
+ *   - `totp`     — TOTP code generator (authenticator app)
+ *   - `mail2fa`  — email OTP; the helper retrieves the code from `mailBuffer`
+ *   - `fido2`    — WebAuthn-as-2FA (the bundled web vault labels this
+ *                  provider "FIDO2 WebAuthn" in en_GB / "Passkey" in en).
+ *                  Currently unimplemented; `submitTwoFactor` throws.
+ */
+export type TwoFactor =
+    | { kind: 'totp', totp: OTPAuth.TOTP }
+    | { kind: 'mail2fa', mailBuffer: MailBuffer }
+    | { kind: 'fido2' };
+
+/**
+ * Satisfy the /#/2fa challenge for the given `TwoFactor`. Asserts the
+ * "Verify your Identity" heading is shown, then dispatches per `kind`:
+ *  - `totp` / `mail2fa`: fill the verification code, click Continue.
+ *  - `fido2`: throws Not Implemented.
+ *
+ * For TOTP, the code is generated for the *next* period boundary to avoid
+ * server-side expiry races when the test submits near a 30-second tick.
+ */
+export async function submitTwoFactor(test: Test, page: Page, twoFactor: TwoFactor): Promise<void> {
+    await test.step(`Submit 2FA (${twoFactor.kind})`, async () => {
+        await expect(page.getByRole('heading', { name: 'Verify your Identity' })).toBeVisible();
+        switch (twoFactor.kind) {
+            case 'totp': {
+                const { totp } = twoFactor;
+                const nowSec = Math.floor(Date.now() / 1000);
+                const timestamp = (nowSec + totp.period - (nowSec % totp.period) + 1) * 1000;
+                await page.getByLabel(/Verification code/).fill(totp.generate({ timestamp }));
+                await page.getByRole('button', { name: 'Continue' }).click();
+                break;
+            }
+            case 'mail2fa': {
+                const code = await retrieveEmailCode(test, page, twoFactor.mailBuffer);
+                await page.getByLabel(/Verification code/).fill(code);
+                await page.getByRole('button', { name: 'Continue' }).click();
+                break;
+            }
+            case 'fido2':
+                throw new Error('Not Implemented');
+        }
+    });
+}
+
+/**
+ * Navigate to the two-step-login provider list under Settings → Security.
+ * Centralised here so a future web-vault nav restructure only touches one
+ * call chain.
+ */
+export async function gotoTwoStepLogin(page: Page, userName: string) {
+    await openAvatarMenu(page, userName);
+    await page.getByRole('menuitem', { name: 'Account settings' }).click();
+    await page.getByRole('link', { name: 'Security' }).click();
+    await page.getByRole('link', { name: 'Two-step login' }).click();
+}
+
+/**
+ * Click the "Manage" button on a 2FA provider row identified by a substring
+ * of its label (e.g. /Authenticator app/, /Passkey/, 'Email'). The Manage
+ * dialog typically opens with the user-verification gate as its first step.
+ */
+export async function clickTwoFactorProviderManage(page: Page, providerLabel: string | RegExp) {
+    await page.locator('bit-item').filter({ hasText: providerLabel }).first().getByRole('button').first().click();
+}
+
+export async function activateTOTP(test: Test, page: Page, user: { name: string, password: string }): Promise<OTPAuth.TOTP> {
     return await test.step('Activate TOTP 2FA', async () => {
-        await page.getByRole('button', { name: user.name }).click();
-        await page.getByRole('menuitem', { name: 'Account settings' }).click();
-        await page.getByRole('link', { name: 'Security' }).click();
-        await page.getByRole('link', { name: 'Two-step login' }).click();
-        await page.locator('bit-item').filter({ hasText: /Authenticator app/ }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').fill(user.password);
-        await page.getByRole('button', { name: 'Continue' }).click();
+        await gotoTwoStepLogin(page, user.name);
+        await clickTwoFactorProviderManage(page, /Authenticator app/);
+        await submitMasterPasswordVerification(page, user.password);
 
-        const secret = await page.getByLabel('Key').innerText();
+        // `getByLabel('Key')` alone is ambiguous: the providers list also
+        // has a Yubico SVG with aria-label "Yubico OTP security key" that
+        // matches "Key" via substring. Anchor with exact match.
+        const secret = (await page.getByLabel('Key', { exact: true }).innerText()).replace(/\s+/g, '');
         let totp = new OTPAuth.TOTP({ secret, period: 30 });
 
         await page.getByLabel(/Verification code/).fill(totp.generate());
         await page.getByRole('button', { name: 'Turn on' }).click();
-        await page.getByRole('heading', { name: 'Turned on', exact: true });
-        await page.getByLabel('Close').click();
+        // Wait for the activation request to complete. The current
+        // bundled web vault uses an asynchronous Turn-on flow; we don't
+        // try to assert the exact success-heading text (it varies across
+        // vault versions) — instead we wait for network to settle, then
+        // the dialog closes itself.
+        await page.waitForLoadState('networkidle');
 
         return totp;
     })
 }
 
-export async function disableTOTP(test: Test, page: Page, user: { password: string }) {
+export async function disableTOTP(test: Test, page: Page, user: { name: string, password: string }) {
     await test.step('Disable TOTP 2FA', async () => {
-        await page.getByRole('button', { name: 'Test' }).click();
-        await page.getByRole('menuitem', { name: 'Account settings' }).click();
-        await page.getByRole('link', { name: 'Security' }).click();
-        await page.getByRole('link', { name: 'Two-step login' }).click();
-        await page.locator('bit-item').filter({ hasText: /Authenticator app/ }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').click();
-        await page.getByLabel('Master password (required)').fill(user.password);
-        await page.getByRole('button', { name: 'Continue' }).click();
+        await gotoTwoStepLogin(page, user.name);
+        await clickTwoFactorProviderManage(page, /Authenticator app/);
+        await submitMasterPasswordVerification(page, user.password);
         await page.getByRole('button', { name: 'Turn off' }).click();
         await page.getByRole('button', { name: 'Yes' }).click();
         await utils.checkNotification(page, 'Two-step login provider turned off');
@@ -44,13 +111,9 @@ export async function disableTOTP(test: Test, page: Page, user: { password: stri
 
 export async function activateEmail(test: Test, page: Page, user: { name: string, password: string }, mailBuffer: MailBuffer) {
     await test.step('Activate Email 2FA', async () => {
-        await page.getByRole('button', { name: user.name }).click();
-        await page.getByRole('menuitem', { name: 'Account settings' }).click();
-        await page.getByRole('link', { name: 'Security' }).click();
-        await page.getByRole('link', { name: 'Two-step login' }).click();
-        await page.locator('bit-item').filter({ hasText: 'Enter a code sent to your email' }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').fill(user.password);
-        await page.getByRole('button', { name: 'Continue' }).click();
+        await gotoTwoStepLogin(page, user.name);
+        await clickTwoFactorProviderManage(page, 'Enter a code sent to your email');
+        await submitMasterPasswordVerification(page, user.password);
         await page.getByRole('button', { name: 'Send email' }).click();
     });
 
@@ -63,7 +126,7 @@ export async function activateEmail(test: Test, page: Page, user: { name: string
     });
 }
 
-export async function retrieveEmailCode(test: Test, page: Page, mailBuffer: MailBuffer): string {
+export async function retrieveEmailCode(test: Test, page: Page, mailBuffer: MailBuffer): Promise<string> {
     return await test.step('retrieve code', async () => {
         const codeMail = await mailBuffer.expect((mail) => mail.subject.includes("Login Verification Code"));
         const page2 = await page.context().newPage();
@@ -74,16 +137,11 @@ export async function retrieveEmailCode(test: Test, page: Page, mailBuffer: Mail
     });
 }
 
-export async function disableEmail(test: Test, page: Page, user: { password: string }) {
+export async function disableEmail(test: Test, page: Page, user: { name: string, password: string }) {
     await test.step('Disable Email 2FA', async () => {
-        await page.getByRole('button', { name: 'Test' }).click();
-        await page.getByRole('menuitem', { name: 'Account settings' }).click();
-        await page.getByRole('link', { name: 'Security' }).click();
-        await page.getByRole('link', { name: 'Two-step login' }).click();
-        await page.locator('bit-item').filter({ hasText: 'Email' }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').click();
-        await page.getByLabel('Master password (required)').fill(user.password);
-        await page.getByRole('button', { name: 'Continue' }).click();
+        await gotoTwoStepLogin(page, user.name);
+        await clickTwoFactorProviderManage(page, 'Email');
+        await submitMasterPasswordVerification(page, user.password);
         await page.getByRole('button', { name: 'Turn off' }).click();
         await page.getByRole('button', { name: 'Yes' }).click();
 
