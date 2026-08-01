@@ -20,6 +20,7 @@ use macros::UuidFromParam;
 
 use super::{
     Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
+    UserSignatureKeyPair,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
@@ -69,6 +70,15 @@ pub struct User {
     pub avatar_color: Option<String>,
 
     pub external_id: Option<String>, // Todo: Needs to be removed in the future, this is not used anymore.
+
+    // "v2" account cryptographic state. Either all of these are set (together with a row in
+    // `user_signature_key_pairs`) or none of them are; see `User::is_v2`.
+    pub signed_public_key: Option<String>,
+    pub security_state: Option<String>,
+    pub security_version: Option<i32>,
+    /// JSON `{"wrappedUserKey1": ..., "wrappedUserKey2": ...}`, letting clients that still hold the
+    /// v1 user key obtain the v2 one after another client performed the upgrade. Opaque to us.
+    pub v2_upgrade_token: Option<String>,
 }
 
 #[derive(Identifiable, Queryable, Insertable)]
@@ -154,7 +164,16 @@ impl User {
             avatar_color: None,
 
             external_id: None, // Todo: Needs to be removed in the future, this is not used anymore.
+
+            signed_public_key: None,
+            security_state: None,
+            security_version: None,
+            v2_upgrade_token: None,
         }
+    }
+
+    pub fn is_v2(&self) -> bool {
+        self.signed_public_key.is_some() && self.security_state.is_some() && self.security_version.is_some()
     }
 
     pub fn check_valid_password(&self, password: &str) -> bool {
@@ -253,6 +272,61 @@ impl User {
 
 /// Database methods
 impl User {
+    async fn v2_signature_key_pair(&self, conn: &DbConn) -> Option<UserSignatureKeyPair> {
+        if !self.is_v2() {
+            return None;
+        }
+        UserSignatureKeyPair::find_active_by_user(&self.uuid, conn).await
+    }
+
+    pub async fn account_keys_json(&self, conn: &DbConn) -> Value {
+        if self.private_key.is_none() {
+            return Value::Null;
+        }
+
+        let (signed_public_key, signature_key_pair, security_state) = match self.v2_signature_key_pair(conn).await {
+            Some(key_pair) => (
+                json!(self.signed_public_key),
+                key_pair.to_json(),
+                json!({
+                    "securityState": self.security_state,
+                    "securityVersion": self.security_version,
+                }),
+            ),
+            None => (Value::Null, Value::Null, Value::Null),
+        };
+
+        json!({
+            "publicKeyEncryptionKeyPair": {
+                "wrappedPrivateKey": self.private_key,
+                "publicKey": self.public_key,
+                "signedPublicKey": signed_public_key,
+                "object": "publicKeyEncryptionKeyPair",
+            },
+            "signatureKeyPair": signature_key_pair,
+            "securityState": security_state,
+            "object": "privateKeys"
+        })
+    }
+
+    pub async fn public_keys_json(&self, conn: &DbConn) -> Value {
+        let (signed_public_key, verifying_key) = match self.v2_signature_key_pair(conn).await {
+            Some(key_pair) => (json!(self.signed_public_key), json!(key_pair.verifying_key)),
+            None => (Value::Null, Value::Null),
+        };
+
+        json!({
+            "publicKey": self.public_key,
+            "signedPublicKey": signed_public_key,
+            "verifyingKey": verifying_key,
+            "object": "publicKeys"
+        })
+    }
+
+    pub fn v2_upgrade_token_json(&self) -> Value {
+        self.v2_upgrade_token.as_ref().and_then(|token| serde_json::from_str(token).ok()).unwrap_or(Value::Null)
+    }
+
     pub async fn to_json(&self, conn: &DbConn) -> Value {
         let mut orgs_json = Vec::new();
         for c in Membership::find_confirmed_by_user(&self.uuid, conn).await {
@@ -268,21 +342,7 @@ impl User {
             UserStatus::Enabled
         };
 
-        let account_keys = if self.private_key.is_some() {
-            json!({
-                "publicKeyEncryptionKeyPair": {
-                    "wrappedPrivateKey": self.private_key,
-                    "publicKey": self.public_key,
-                    "signedPublicKey": null,
-                    "object": "publicKeyEncryptionKeyPair",
-                },
-                "securityState": null,
-                "signatureKeyPair": null,
-                "object": "privateKeys"
-            })
-        } else {
-            Value::Null
-        };
+        let account_keys = self.account_keys_json(conn).await;
 
         json!({
             "_status": status as i32,
@@ -357,6 +417,7 @@ impl User {
         Device::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactor::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn).await?;
+        UserSignatureKeyPair::delete_all_by_user(&self.uuid, conn).await?;
         Invitation::take(&self.email, conn).await; // Delete invitation if any
 
         conn.run(move |conn| {
