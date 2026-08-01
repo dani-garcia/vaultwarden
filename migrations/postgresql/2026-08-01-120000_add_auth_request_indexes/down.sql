@@ -1,0 +1,2 @@
+DROP INDEX auth_requests_organization_type;
+DROP INDEX auth_requests_creation_date;

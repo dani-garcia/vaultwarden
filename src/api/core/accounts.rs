@@ -22,8 +22,8 @@ use crate::{
         models::{
             AuthRequest, AuthRequestId, AuthRequestType, Cipher, CipherId, Device, DeviceId, DeviceType,
             DeviceWithAuthRequest, EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation,
-            Membership, MembershipId, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send,
-            SendId, User, UserId, UserKdfType,
+            Membership, MembershipId, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization,
+            OrganizationId, Send, SendId, User, UserId, UserKdfType,
         },
     },
     mail,
@@ -1022,6 +1022,14 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         }
     }
 
+    // Every device holds the previous user key wrapped for itself, which unlocks nothing anymore.
+    // Drop those copies before the new key is written, never after: the other order leaves a window
+    // in which a device still counts as trusted and hands its owner a key that no longer opens the
+    // vault. This way a failure here means the rotation simply did not happen.
+    // The clients re-wrap the new user key for every device right after this via
+    // `POST /devices/update-trust`; whatever they leave out stays untrusted.
+    Device::invalidate_wrapped_user_keys(&headers.user.uuid, &conn).await?;
+
     // Update user data
     let mut user = headers.user;
 
@@ -1036,12 +1044,6 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     .await?;
 
     let save_result = user.save(&conn).await;
-
-    // Every trusted device holds the previous user key wrapped for itself, which unlocks nothing
-    // anymore. The client of the rotating device re-wraps the new one right after this via
-    // `POST /devices/update-trust`, so that device keeps its private key; the rest is dropped. A
-    // client that skips that call simply ends up with no trusted device instead of a broken unlock.
-    Device::invalidate_wrapped_user_keys(&user.uuid, &headers.device.uuid, &conn).await?;
 
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
@@ -1608,6 +1610,20 @@ struct TrustedDeviceKeysData {
     encrypted_private_key: String,
 }
 
+/// Refuses anything that does not even have the shape of an `EncString`.
+///
+/// The server cannot tell whether a blob decrypts, but storing something that certainly does not
+/// only leaves a device that calls itself trusted and fails its owner at the next unlock. Upstream
+/// puts `[EncryptedString]` on the same fields.
+fn validate_enc_strings(values: &[(&str, &str)]) -> EmptyResult {
+    for (name, value) in values {
+        if !crate::util::is_valid_enc_string(value) {
+            err!(format!("{name} is not a valid encrypted string"))
+        }
+    }
+    Ok(())
+}
+
 /// Marks a device of the current user as trusted.
 ///
 /// Upstream keys this on the device identifier and does not require it to be the device the request
@@ -1622,12 +1638,11 @@ async fn put_device_keys(
 ) -> JsonResult {
     let data = data.into_inner();
 
-    if data.encrypted_user_key.is_empty()
-        || data.encrypted_public_key.is_empty()
-        || data.encrypted_private_key.is_empty()
-    {
-        err!("All three device keys are required to trust a device")
-    }
+    validate_enc_strings(&[
+        ("encryptedUserKey", &data.encrypted_user_key),
+        ("encryptedPublicKey", &data.encrypted_public_key),
+        ("encryptedPrivateKey", &data.encrypted_private_key),
+    ])?;
 
     let Some(mut device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &conn).await else {
         err!("No device found")
@@ -1698,18 +1713,20 @@ async fn post_devices_update_trust(data: Json<UpdateDevicesTrustData>, headers: 
 
     data.secret.validate(&headers.user, true, &conn).await?;
 
-    if data.current_device.encrypted_user_key.is_empty() || data.current_device.encrypted_public_key.is_empty() {
-        err!("The keys of the current device are required")
-    }
+    validate_enc_strings(&[
+        ("encryptedUserKey", &data.current_device.encrypted_user_key),
+        ("encryptedPublicKey", &data.current_device.encrypted_public_key),
+    ])?;
 
     let mut updates: HashMap<DeviceId, DeviceTrustUpdateData> = HashMap::new();
     for other in data.other_devices {
         if other.device_id == headers.device.uuid {
             err!("The current device cannot also be part of the optional rotation")
         }
-        if other.keys.encrypted_user_key.is_empty() || other.keys.encrypted_public_key.is_empty() {
-            err!("Both keys are required for every device in the rotation")
-        }
+        validate_enc_strings(&[
+            ("encryptedUserKey", &other.keys.encrypted_user_key),
+            ("encryptedPublicKey", &other.keys.encrypted_public_key),
+        ])?;
         if updates.insert(other.device_id, other.keys).is_some() {
             err!("A device was listed more than once in the rotation")
         }
@@ -1730,15 +1747,20 @@ async fn post_devices_update_trust(data: Json<UpdateDevicesTrustData>, headers: 
         if device.uuid == headers.device.uuid {
             device.encrypted_user_key = Some(data.current_device.encrypted_user_key.clone());
             device.encrypted_public_key = Some(data.current_device.encrypted_public_key.clone());
-        } else if !device.is_trusted() {
-            // Nothing to rotate, and handing an untrusted device two of the three keys would not
-            // make it trusted anyway.
-            continue;
         } else if let Some(keys) = updates.remove(&device.uuid) {
+            // A rotation clears the wrapped user key of every device, so the listed ones are not
+            // trusted at this point; their key pair is what they are restored from. Without it
+            // there is nothing the two keys could belong to.
+            if !device.holds_private_key() {
+                continue;
+            }
             device.encrypted_user_key = Some(keys.encrypted_user_key);
             device.encrypted_public_key = Some(keys.encrypted_public_key);
-        } else {
+        } else if device.holds_any_key() {
+            // Not listed, so whatever it still holds wraps the previous user key.
             device.untrust();
+        } else {
+            continue;
         }
 
         device.save(true, &conn).await?;
@@ -1892,6 +1914,10 @@ async fn post_auth_request(
 /// https://github.com/bitwarden/server/blob/main/src/Api/Auth/Controllers/AuthRequestsController.cs
 #[post("/auth-requests/admin-request", data = "<data>")]
 async fn post_admin_auth_request(data: Json<AuthRequestRequest>, headers: Headers, conn: DbConn) -> JsonResult {
+    // Every call mails all administrators of every organization involved, so it is worth a limit of
+    // its own even though the caller is authenticated.
+    crate::ratelimit::check_limit_unauthenticated(&headers.ip.ip)?;
+
     let data = data.into_inner();
 
     if AuthRequestType::from_i32(data.atype) != Some(AuthRequestType::AdminApproval) {
@@ -1902,9 +1928,16 @@ async fn post_admin_auth_request(data: Json<AuthRequestRequest>, headers: Header
         err!("AuthRequest doesn't exist", "Device verification failed")
     }
 
-    let memberships = Membership::find_by_user(&headers.user.uuid, &conn).await;
+    // Only an organization the user really belongs to can answer for them. A pending invitation is
+    // not a membership yet, and a revoked one is not one anymore; sending either of them the email
+    // address, the address and the device of the asker is more than they are owed.
+    let memberships: Vec<Membership> = Membership::find_by_user(&headers.user.uuid, &conn)
+        .await
+        .into_iter()
+        .filter(|membership| membership.status == MembershipStatus::Confirmed as i32)
+        .collect();
     if memberships.is_empty() {
-        err!("User does not belong to any organization")
+        err!("User does not belong to any organization that could approve a device")
     }
 
     log_user_event(
@@ -1918,19 +1951,42 @@ async fn post_admin_auth_request(data: Json<AuthRequestRequest>, headers: Header
 
     let mut first_request = None;
     for membership in memberships {
-        let mut auth_request = AuthRequest::new(
-            headers.user.uuid.clone(),
-            Some(membership.org_uuid.clone()),
-            AuthRequestType::AdminApproval,
-            data.device_identifier.clone(),
-            headers.device.atype,
-            headers.ip.ip.to_string(),
-            data.access_code.clone(),
-            data.public_key.clone(),
-        );
+        // Asking again from the same device replaces the open request instead of adding one, so a
+        // client that retries does not pile up rows and does not mail the administrators twice.
+        let existing = AuthRequest::find_pending_admin_approval(
+            &headers.user.uuid,
+            &data.device_identifier,
+            &membership.org_uuid,
+            &conn,
+        )
+        .await;
+        let is_new = existing.is_none();
+
+        let mut auth_request = match existing {
+            Some(mut auth_request) => {
+                auth_request.access_code.clone_from(&data.access_code);
+                auth_request.public_key.clone_from(&data.public_key);
+                auth_request.device_type = headers.device.atype;
+                auth_request.request_ip = headers.ip.ip.to_string();
+                auth_request.creation_date = Utc::now().naive_utc();
+                auth_request
+            }
+            None => AuthRequest::new(
+                headers.user.uuid.clone(),
+                Some(membership.org_uuid.clone()),
+                AuthRequestType::AdminApproval,
+                data.device_identifier.clone(),
+                headers.device.atype,
+                headers.ip.ip.to_string(),
+                data.access_code.clone(),
+                data.public_key.clone(),
+            ),
+        };
         auth_request.save(&conn).await?;
 
-        notify_device_approval_requested(&headers.user, &membership.org_uuid, &conn).await;
+        if is_new {
+            notify_device_approval_requested(&headers.user, &membership.org_uuid, &conn).await;
+        }
 
         if first_request.is_none() {
             first_request = Some(auth_request);
@@ -1976,6 +2032,12 @@ async fn get_auth_request(auth_request_id: AuthRequestId, headers: Headers, conn
         err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
     };
 
+    // The anonymous lookup refuses an expired request, and so does this one: the window an approval
+    // stays usable in should not depend on which of the two the client happens to poll.
+    if auth_request.is_expired() {
+        err!("AuthRequest doesn't exist", "Request has expired")
+    }
+
     Ok(Json(auth_request_json(&auth_request)))
 }
 
@@ -2020,6 +2082,21 @@ async fn put_auth_request(
 
     if auth_request.is_expired() {
         err!("AuthRequest doesn't exist", "Request has expired")
+    }
+
+    // Only the newest request of a device may be approved. Anyone can create a request for a known
+    // device, so without this an older one could still be sitting there when the user approves what
+    // their screen shows, and the answer would go to whoever left it. Same check as upstream.
+    if data.request_approved
+        && AuthRequest::find_by_user_and_requested_device(
+            &headers.user.uuid,
+            &auth_request.request_device_identifier,
+            &conn,
+        )
+        .await
+        .is_none_or(|newest| newest.uuid != auth_request.uuid)
+    {
+        err!("This request is no longer valid. Make sure to approve the most recent request.")
     }
 
     let response_date = Utc::now().naive_utc();

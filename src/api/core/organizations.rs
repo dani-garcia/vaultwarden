@@ -17,8 +17,8 @@ use crate::{
         DbConn,
         models::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId,
-            CollectionUser, DeviceType, EventType, Group, GroupId, GroupUser, Invitation, Membership, MembershipId,
-            MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
+            CollectionUser, Device, DeviceType, EventType, Group, GroupId, GroupUser, Invitation, Membership,
+            MembershipId, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
             OrganizationId, User, UserId,
         },
     },
@@ -3181,7 +3181,13 @@ async fn put_reset_password_enrollment(
     // Enrolling is where a member who was invited into a trusted device organization turns into a
     // real one; upstream accepts the invitation at this point as well. Without it they would stay
     // invited forever and no admin could ever confirm them.
-    if enrolled && membership.status == MembershipStatus::Invited as i32 {
+    //
+    // Tied to the same condition as the exception above, so that turning the feature off leaves the
+    // invitation flow exactly as it was: an invitation is otherwise accepted only against the token
+    // that was mailed out, and that is the only thing proving the address belongs to the account.
+    if enrolled && trusted_device_enrollment && membership.status == MembershipStatus::Invited as i32 {
+        // Do not leave the open invitation behind, it would keep the address signup-eligible.
+        Invitation::take(&headers.user.email, &conn).await;
         accept_org_invite(&headers.user, membership, reset_password_key, &conn).await?;
     } else {
         membership.reset_password_key = reset_password_key;
@@ -3219,14 +3225,18 @@ async fn get_organization_auth_requests(org_id: OrganizationId, headers: AdminHe
             continue;
         }
 
-        // A request whose asker is no longer a member of this organization is none of its business
-        // anymore, so it is quietly left out instead of being offered for approval.
+        // A request whose asker is not a confirmed member of this organization is none of its
+        // business, so it is quietly left out instead of being offered for approval. Same condition
+        // as when answering, so nothing is shown here that would be refused there.
         let (Some(member), Some(user)) = (
             Membership::find_by_user_and_org(&auth_request.user_uuid, &org_id, &conn).await,
             User::find_by_uuid(&auth_request.user_uuid, &conn).await,
         ) else {
             continue;
         };
+        if member.status != MembershipStatus::Confirmed as i32 {
+            continue;
+        }
 
         requests.push(auth_request.to_json_for_organization(&user.email, &member.uuid));
     }
@@ -3259,6 +3269,22 @@ struct OrganizationAuthRequestUpdateData {
     key: Option<String>,
 }
 
+/// How many requests one call may answer. A screen full of pending approvals is a handful.
+const MAX_BULK_AUTH_REQUESTS: usize = 500;
+
+/// Whether one entry that cannot be answered takes the whole call down with it.
+///
+/// A single request is addressed by its id, so a caller that names a request nobody can answer
+/// deserves to hear about it. A batch is a list of what an administrator saw a moment ago, where an
+/// entry may well have expired or been answered by a colleague since; upstream processes those as
+/// far as it can and passes over the rest. Failing the batch instead would report an error while
+/// having already answered everything before the bad entry.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OnUnanswerable {
+    Fail,
+    Skip,
+}
+
 #[post("/organizations/<org_id>/auth-requests/<request_id>", data = "<data>", rank = 2)]
 async fn update_organization_auth_request(
     org_id: OrganizationId,
@@ -3275,6 +3301,7 @@ async fn update_organization_auth_request(
         &request_id,
         data.request_approved,
         data.encrypted_user_key,
+        OnUnanswerable::Fail,
         &headers,
         &conn,
         &ant,
@@ -3292,8 +3319,24 @@ async fn deny_organization_auth_requests(
     ant: AnonymousNotify<'_>,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    for request_id in data.into_inner().ids {
-        answer_organization_auth_request(&org_id, &request_id, false, None, &headers, &conn, &ant, &nt).await?;
+    let ids = data.into_inner().ids;
+    if ids.len() > MAX_BULK_AUTH_REQUESTS {
+        err!(format!("At most {MAX_BULK_AUTH_REQUESTS} requests can be answered at once"))
+    }
+
+    for request_id in ids {
+        answer_organization_auth_request(
+            &org_id,
+            &request_id,
+            false,
+            None,
+            OnUnanswerable::Skip,
+            &headers,
+            &conn,
+            &ant,
+            &nt,
+        )
+        .await?;
     }
 
     Ok(())
@@ -3308,9 +3351,24 @@ async fn update_many_organization_auth_requests(
     ant: AnonymousNotify<'_>,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    for update in data.into_inner() {
-        answer_organization_auth_request(&org_id, &update.id, update.approved, update.key, &headers, &conn, &ant, &nt)
-            .await?;
+    let updates = data.into_inner();
+    if updates.len() > MAX_BULK_AUTH_REQUESTS {
+        err!(format!("At most {MAX_BULK_AUTH_REQUESTS} requests can be answered at once"))
+    }
+
+    for update in updates {
+        answer_organization_auth_request(
+            &org_id,
+            &update.id,
+            update.approved,
+            update.key,
+            OnUnanswerable::Skip,
+            &headers,
+            &conn,
+            &ant,
+            &nt,
+        )
+        .await?;
     }
 
     Ok(())
@@ -3322,6 +3380,7 @@ async fn answer_organization_auth_request(
     request_id: &AuthRequestId,
     approved: bool,
     encrypted_user_key: Option<String>,
+    on_unanswerable: OnUnanswerable,
     headers: &AdminHeaders,
     conn: &DbConn,
     ant: &AnonymousNotify<'_>,
@@ -3331,30 +3390,47 @@ async fn answer_organization_auth_request(
         err!("Organization not found", "Organization id's do not match");
     }
 
+    // Everything below this point is a request that this administrator cannot answer, whether it
+    // never existed, was already dealt with, or ran out. In a batch that is expected and skipped.
+    macro_rules! unanswerable {
+        ($($err:tt)*) => {{
+            if on_unanswerable == OnUnanswerable::Skip {
+                return Ok(());
+            }
+            err!($($err)*)
+        }};
+    }
+
     // Only ever reachable through the organization it was addressed to, so an administrator cannot
     // answer for an organization they have no say in.
     let Some(mut auth_request) = AuthRequest::find_admin_approval_by_org_and_uuid(request_id, org_id, conn).await
     else {
-        err!("AuthRequest doesn't exist", "Record not found or not addressed to this organization")
+        unanswerable!("AuthRequest doesn't exist", "Record not found or not addressed to this organization")
     };
 
     if auth_request.approved.is_some() {
-        err!("This request has already been answered")
+        unanswerable!("This request has already been answered");
     }
 
     if auth_request.is_expired() {
-        err!("AuthRequest doesn't exist", "Request has expired")
+        unanswerable!("AuthRequest doesn't exist", "Request has expired");
     }
 
-    let Some(member) = Membership::find_by_user_and_org(&auth_request.user_uuid, org_id, conn).await else {
-        err!("AuthRequest doesn't exist", "The requesting user is no longer a member of this organization")
+    // Answering means acting for a member of this organization, so it has to be one: an invitation
+    // that was never accepted is not a membership yet, and a revoked one is not one anymore.
+    let member = match Membership::find_by_user_and_org(&auth_request.user_uuid, org_id, conn).await {
+        Some(member) if member.status == MembershipStatus::Confirmed as i32 => member,
+        _ => unanswerable!("AuthRequest doesn't exist", "The requesting user is not a member of this organization"),
     };
 
     if approved {
         // Without the wrapped user key the answer is worthless: it is the whole point of approving.
         let Some(key) = encrypted_user_key.filter(|key| !key.is_empty()) else {
-            err!("An approved request needs the encrypted user key")
+            unanswerable!("An approved request needs the encrypted user key")
         };
+        if !crate::util::is_valid_enc_string(&key) {
+            unanswerable!("encryptedUserKey is not a valid encrypted string");
+        }
         auth_request.enc_key = Some(key);
     }
 
@@ -3376,7 +3452,15 @@ async fn answer_organization_auth_request(
     }
 
     ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
-    nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, &headers.device, conn).await;
+
+    // The device that asked, not the one the administrator happens to be answering from: that one
+    // belongs to somebody else, and naming it here would both address the notification at a device
+    // of the wrong account and hand its identifiers to the push relay under a foreign user id.
+    if let Some(device) =
+        Device::find_by_uuid_and_user(&auth_request.request_device_identifier, &auth_request.user_uuid, conn).await
+    {
+        nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, &device, conn).await;
+    }
 
     if CONFIG.mail_enabled()
         && let Some(user) = User::find_by_uuid(&auth_request.user_uuid, conn).await

@@ -543,7 +543,9 @@ pub async fn send_device_approval_requested(
     let (subject, body_html, body_text) = get_text(
         "email/device_approval_requested",
         json!({
-            "url": CONFIG.domain(),
+            // The page that can actually answer these, which is in the admin panel rather than in
+            // the web vault: the one upstream uses is not part of any open source build.
+            "url": format!("{}/admin/device-approvals", CONFIG.domain()),
             "img_src": CONFIG._smtp_img_src(),
             "org_name": org_name,
             "user_email": user_email,

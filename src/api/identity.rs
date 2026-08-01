@@ -526,14 +526,19 @@ async fn trusted_device_option(user: &User, device: &Device, conn: &DbConn) -> O
         .any(|other| other.uuid != device.uuid && DeviceType::from_i32(other.atype).can_approve_login_requests());
 
     // An admin can only take over the approval once the member handed them a key to work with,
-    // which is what enrolling into account recovery does.
-    let has_admin_approval =
-        memberships.iter().any(|member| member.reset_password_key.as_ref().is_some_and(|key| !key.is_empty()));
+    // which is what enrolling into account recovery does. Only a confirmed membership counts, the
+    // same condition the request itself is created and answered under, so this does not announce a
+    // way out that would be refused the moment it is taken.
+    let has_admin_approval = memberships.iter().any(|member| {
+        member.status == MembershipStatus::Confirmed as i32
+            && member.reset_password_key.as_ref().is_some_and(|key| !key.is_empty())
+    });
 
     // Whether the user is on the answering side of that. The clients use it to push someone who
-    // could approve others, but has no master password themselves, into setting one.
+    // could approve others, but has no master password themselves, into setting one. Matches what
+    // `AdminHeaders` actually lets through.
     let has_manage_reset_password_permission = memberships.iter().any(|member| {
-        member.status != MembershipStatus::Revoked as i32 && member.atype <= MembershipType::Admin as i32
+        member.status == MembershipStatus::Confirmed as i32 && member.atype <= MembershipType::Admin as i32
     });
 
     Some(json!({

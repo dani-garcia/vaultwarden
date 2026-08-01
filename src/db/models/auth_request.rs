@@ -237,6 +237,30 @@ impl AuthRequest {
         .await
     }
 
+    /// The open request a device already has waiting at this organization, if any.
+    ///
+    /// Asking again from the same device updates that one instead of adding another, so a client
+    /// that retries cannot fill the table or mail the administrators over and over.
+    pub async fn find_pending_admin_approval(
+        user_uuid: &UserId,
+        device_uuid: &DeviceId,
+        org_uuid: &OrganizationId,
+        conn: &DbConn,
+    ) -> Option<Self> {
+        conn.run(move |conn| {
+            auth_requests::table
+                .filter(auth_requests::user_uuid.eq(user_uuid))
+                .filter(auth_requests::request_device_identifier.eq(device_uuid))
+                .filter(auth_requests::organization_uuid.eq(org_uuid))
+                .filter(auth_requests::atype.eq(AuthRequestType::AdminApproval as i32))
+                .filter(auth_requests::approved.is_null())
+                .order_by(auth_requests::creation_date.desc())
+                .first::<Self>(conn)
+                .ok()
+        })
+        .await
+    }
+
     /// Everything an administrator of this organization still has to answer.
     pub async fn find_pending_admin_approval_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
@@ -269,16 +293,6 @@ impl AuthRequest {
         .await
     }
 
-    pub async fn find_created_before(dt: &NaiveDateTime, conn: &DbConn) -> Vec<Self> {
-        conn.run(move |conn| {
-            auth_requests::table
-                .filter(auth_requests::creation_date.lt(dt))
-                .load::<Self>(conn)
-                .expect("Error loading auth_requests")
-        })
-        .await
-    }
-
     pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         conn.run(move |conn| {
             diesel::delete(auth_requests::table.filter(auth_requests::uuid.eq(&self.uuid)))
@@ -292,16 +306,56 @@ impl AuthRequest {
         ct_eq(&self.access_code, access_code)
     }
 
+    /// Drops everything past its window, which is a different one per type.
+    ///
+    /// https://github.com/bitwarden/server/blob/f8ee2270409f7a13125cd414c450740af605a175/src/Sql/dbo/Auth/Stored%20Procedures/AuthRequest_DeleteIfExpired.sql
+    /// One statement per case rather than reading the table and deleting row by row, so the work
+    /// stays in the database however many requests have piled up.
     pub async fn purge_expired_auth_requests(conn: &DbConn) {
-        // https://github.com/bitwarden/server/blob/f8ee2270409f7a13125cd414c450740af605a175/src/Sql/dbo/Auth/Stored%20Procedures/AuthRequest_DeleteIfExpired.sql
-        // Nothing can be expired before the shortest window has passed, so that is the cheapest
-        // way to narrow the table down; which of them really are is decided per type afterwards,
-        // because a request waiting for an administrator lives a week rather than 15 minutes.
-        let candidates = Utc::now().naive_utc() - Self::user_request_expiration();
-        for auth_request in Self::find_created_before(&candidates, conn).await {
-            if auth_request.is_expired() {
-                auth_request.delete(conn).await.ok();
-            }
+        let now = Utc::now().naive_utc();
+        let admin = AuthRequestType::AdminApproval as i32;
+
+        let between_devices = now - Self::user_request_expiration();
+        let for_an_admin = now - Self::admin_request_expiration();
+        let after_approval = now - Self::after_admin_approval_expiration();
+
+        let result = conn
+            .run(move |conn| -> EmptyResult {
+                // Between the user's own devices: 15 minutes from the moment it was asked.
+                let _: () = diesel::delete(
+                    auth_requests::table
+                        .filter(auth_requests::atype.ne(admin))
+                        .filter(auth_requests::creation_date.lt(between_devices)),
+                )
+                .execute(conn)
+                .map_res("Error purging the expired auth requests")?;
+
+                // Approved by an administrator: half a day from the answer, so the user has time to
+                // come back and use it.
+                let _: () = diesel::delete(
+                    auth_requests::table
+                        .filter(auth_requests::atype.eq(admin))
+                        .filter(auth_requests::approved.eq(true))
+                        .filter(auth_requests::response_date.lt(after_approval)),
+                )
+                .execute(conn)
+                .map_res("Error purging the approved auth requests")?;
+
+                // Waiting for an administrator, or refused by one: a week from the moment it was
+                // asked either way, a refusal does not extend anything.
+                diesel::delete(
+                    auth_requests::table
+                        .filter(auth_requests::atype.eq(admin))
+                        .filter(auth_requests::approved.is_null().or(auth_requests::approved.eq(false)))
+                        .filter(auth_requests::creation_date.lt(for_an_admin)),
+                )
+                .execute(conn)
+                .map_res("Error purging the unanswered auth requests")
+            })
+            .await;
+
+        if let Err(e) = result {
+            error!("Error purging the expired auth requests: {e:#?}");
         }
     }
 }
