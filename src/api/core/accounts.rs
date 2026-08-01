@@ -2019,7 +2019,9 @@ async fn notify_device_approval_requested(user: &User, org_id: &OrganizationId, 
             continue;
         };
 
-        if let Err(e) = mail::send_device_approval_requested(&admin.email, &org.name, &user.email, &user.name).await {
+        if let Err(e) =
+            mail::send_device_approval_requested(&admin.email, org_id, &org.name, &user.email, &user.name).await
+        {
             error!("Error sending device approval request email: {e:#?}");
         }
     }

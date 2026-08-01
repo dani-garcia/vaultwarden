@@ -536,6 +536,7 @@ pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTi
 /// of their own left to ask.
 pub async fn send_device_approval_requested(
     address: &str,
+    org_id: &OrganizationId,
     org_name: &str,
     user_email: &str,
     user_name: &str,
@@ -543,9 +544,9 @@ pub async fn send_device_approval_requested(
     let (subject, body_html, body_text) = get_text(
         "email/device_approval_requested",
         json!({
-            // The page that can actually answer these, which is in the admin panel rather than in
-            // the web vault: the one upstream uses is not part of any open source build.
-            "url": format!("{}/admin/device-approvals", CONFIG.domain()),
+            // Straight to the page that answers these, the same route the upstream admin console
+            // uses for them.
+            "url": format!("{}/#/organizations/{}/settings/device-approvals", CONFIG.domain(), org_id),
             "img_src": CONFIG._smtp_img_src(),
             "org_name": org_name,
             "user_email": user_email,

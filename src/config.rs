@@ -1769,7 +1769,6 @@ where
     reg!("admin/settings");
     reg!("admin/users");
     reg!("admin/organizations");
-    reg!("admin/device_approvals");
     reg!("admin/diagnostics");
 
     reg!("404");
