@@ -130,6 +130,7 @@ async fn login(
         }
         "webauthn" => err!("Passkey login is not allowed"),
         "send_access" => {
+            crate::ratelimit::check_limit_unauthenticated(&client_header.ip.ip)?;
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
             check_is_some(data.send_id.as_ref(), "send_id cannot be blank")?;
 
@@ -1232,8 +1233,11 @@ enum RegisterVerificationResponse {
 #[post("/accounts/register/send-verification-email", data = "<data>")]
 async fn register_verification_email(
     data: Json<RegisterVerificationData>,
+    ip: ClientIp,
     conn: DbConn,
 ) -> ApiResult<RegisterVerificationResponse> {
+    crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
+
     let data = data.into_inner();
 
     // the registration can only continue if signup is allowed or there exists an invitation
