@@ -15,6 +15,7 @@ extend-ignore-re = [
     "(?i)helo_name",
     "Server name sent during.+HELO",
     # COSE Is short for CBOR Object Signing and Encryption, ignore these specific items
+    "COSE",
     "COSEKey",
     "COSEAlgorithm",
     # Ignore this specific string as it's valid
