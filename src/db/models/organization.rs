@@ -57,6 +57,10 @@ pub struct Membership {
     pub atype: i32,
     pub reset_password_key: Option<String>,
     pub external_id: Option<String>,
+    /// A copy of the user's v2 upgrade token, kept when a v1 -> v2 upgrade leaves the account
+    /// recovery key (`reset_password_key`) wrapped by the v1 user key. It lets the organization
+    /// unwrap the v2 user key from it. Opaque to us, like `User::v2_upgrade_token`.
+    pub v2_upgrade_token: Option<String>,
 }
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -274,6 +278,7 @@ impl Membership {
             atype: MembershipType::User as i32,
             reset_password_key: None,
             external_id: None,
+            v2_upgrade_token: None,
         }
     }
 
