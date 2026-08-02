@@ -1416,16 +1416,21 @@ pub enum PathType {
 pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     // Auth Team
     "pm-5594-safari-account-switching",
+    "pm-32413-multi-client-password-management",
+    "pm-4516-devices-add-last-activity-date",
     // Autofill Team
     "undetermined-cipher-scenario-logic",
     "macos-native-credential-sync",
     "fill-assist-targeting-rules",
     "pm-39071-default-password-manager-prompt",
+    "pm-29968-fill-after-save",
+    "content-script-ipc-channel-framework",
     // Desktop Native Team
     "windows-desktop-autotype",
     "windows-desktop-autotype-ga",
     "ssh-agent-v2",
     "ssh-ecdsa",
+    "pm-32783-electron-storage-cache",
     // Desktop Team
     "desktop-ui-settings-dialog",
     // Key Management Team
@@ -1438,6 +1443,13 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "pm-34410-attachment-upload-progress",
     // DIRT Team
     "phishing-detection",
+    // Vault Team
+    "pm-37785-vault-batch-bar",
+    "pm-37785-desktop-vault-batch-bar",
+    "pm-31039-item-action-in-extension",
+    "pm-32380-btn-text-add-create",
+    "pm-28091-add-copy-and-quick-launch-actions",
+    "pm-32016-remove-at-risk-callout",
 ];
 
 impl Config {

@@ -835,6 +835,31 @@ mod feature_flag_tests {
             ]),
         );
     }
+
+    #[test]
+    fn additional_2026_7_client_feature_flags_are_supported() {
+        let flags = parse_experimental_client_feature_flags(
+            "pm-37785-vault-batch-bar,pm-37785-desktop-vault-batch-bar,pm-31039-item-action-in-extension,pm-29968-fill-after-save,pm-32380-btn-text-add-create,pm-28091-add-copy-and-quick-launch-actions,pm-32016-remove-at-risk-callout,pm-32783-electron-storage-cache,content-script-ipc-channel-framework,pm-32413-multi-client-password-management,pm-4516-devices-add-last-activity-date",
+            &FeatureFlagFilter::ValidOnly,
+        );
+
+        assert_eq!(
+            flags,
+            HashMap::from([
+                ("pm-37785-vault-batch-bar".to_owned(), true),
+                ("pm-37785-desktop-vault-batch-bar".to_owned(), true),
+                ("pm-31039-item-action-in-extension".to_owned(), true),
+                ("pm-29968-fill-after-save".to_owned(), true),
+                ("pm-32380-btn-text-add-create".to_owned(), true),
+                ("pm-28091-add-copy-and-quick-launch-actions".to_owned(), true),
+                ("pm-32016-remove-at-risk-callout".to_owned(), true),
+                ("pm-32783-electron-storage-cache".to_owned(), true),
+                ("content-script-ipc-channel-framework".to_owned(), true),
+                ("pm-32413-multi-client-password-management".to_owned(), true),
+                ("pm-4516-devices-add-last-activity-date".to_owned(), true),
+            ]),
+        );
+    }
 }
 
 /// TODO: This is extracted from IpAddr::is_global, which is unstable:
