@@ -819,6 +819,22 @@ mod feature_flag_tests {
         assert!(invalid.contains_key("unknown"));
         assert!(invalid.contains_key("removed"));
     }
+
+    #[test]
+    fn shared_unlock_feature_flags_are_supported() {
+        let flags = parse_experimental_client_feature_flags(
+            "innovation-sprint-shared-unlock-part-1, innovation-sprint-shared-unlock-part-2",
+            &FeatureFlagFilter::ValidOnly,
+        );
+
+        assert_eq!(
+            flags,
+            HashMap::from([
+                ("innovation-sprint-shared-unlock-part-1".to_owned(), true),
+                ("innovation-sprint-shared-unlock-part-2".to_owned(), true),
+            ]),
+        );
+    }
 }
 
 /// TODO: This is extracted from IpAddr::is_global, which is unstable:

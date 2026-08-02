@@ -1428,6 +1428,9 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "ssh-ecdsa",
     // Desktop Team
     "desktop-ui-settings-dialog",
+    // Key Management Team
+    "innovation-sprint-shared-unlock-part-1",
+    "innovation-sprint-shared-unlock-part-2",
     // Mobile Team
     "pm-34224-mobile-attachment-updates",
     // Platform Team
