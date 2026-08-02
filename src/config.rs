@@ -1429,7 +1429,6 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     // Desktop Team
     "desktop-ui-settings-dialog",
     // Mobile Team
-    "pm-34171-card-scanner",
     "pm-34224-mobile-attachment-updates",
     // Platform Team
     "pm-30529-webauthn-related-origins",
