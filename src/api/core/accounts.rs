@@ -2177,7 +2177,8 @@ async fn get_auth_requests_pending(headers: Headers, conn: DbConn) -> JsonResult
     Ok(Json(json!({
         "data": auth_requests
             .iter()
-            .filter(|request| request.approved.is_none())
+            // The same set a device answers for itself, see `find_by_user_and_requested_device`.
+            .filter(|request| request.approved.is_none() && !request.is_admin_approval() && !request.is_expired())
             .map(|request| {
             let response_date_utc = request.response_date.map(|response_date| format_date(&response_date));
 

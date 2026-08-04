@@ -220,16 +220,27 @@ impl AuthRequest {
         .await
     }
 
+    /// The request a device is currently waiting on, if it is still open and still within its
+    /// window.
+    ///
+    /// Only the types a device answers for itself. A request addressed to an administrator is
+    /// answered through the organization and stays open for a week, so counting it here would let
+    /// it shadow the short lived request the user is actually being shown.
+    /// https://github.com/bitwarden/server/blob/main/src/Infrastructure.EntityFramework/Auth/Repositories/Queries/DeviceWithPendingAuthByUserIdQuery.cs
     pub async fn find_by_user_and_requested_device(
         user_uuid: &UserId,
         device_uuid: &DeviceId,
         conn: &DbConn,
     ) -> Option<Self> {
+        let oldest = Utc::now().naive_utc() - Self::user_request_expiration();
+
         conn.run(move |conn| {
             auth_requests::table
                 .filter(auth_requests::user_uuid.eq(user_uuid))
                 .filter(auth_requests::request_device_identifier.eq(device_uuid))
+                .filter(auth_requests::atype.ne(AuthRequestType::AdminApproval as i32))
                 .filter(auth_requests::approved.is_null())
+                .filter(auth_requests::creation_date.gt(oldest))
                 .order_by(auth_requests::creation_date.desc())
                 .first::<Self>(conn)
                 .ok()
