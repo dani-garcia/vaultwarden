@@ -256,7 +256,7 @@ rpassword = "7.5.4"
 grass_compiler = { version = "0.13.4", default-features = false }
 
 # File are accessed through Apache OpenDAL
-opendal = { version = "0.57.0", default-features = false, features = ["services-fs"] }
+opendal = { version = "0.58.1", default-features = false, features = ["services-fs"] }
 
 # For retrieving AWS credentials, including temporary SSO credentials
 aws-config = { version = "1.10.0", optional = true, default-features = false, features = [

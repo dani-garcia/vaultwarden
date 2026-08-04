@@ -67,7 +67,7 @@ pub(crate) fn operator_for_path(path: &str) -> Result<opendal::Operator, crate::
         s3::operator_for_path(path)?
     } else {
         let builder = opendal::services::Fs::default().root(path);
-        opendal::Operator::new(builder)?.finish()
+        opendal::Operator::new(builder)?
     };
 
     OPERATORS_BY_PATH.insert(path.to_owned(), operator.clone());
@@ -236,7 +236,7 @@ mod s3 {
                 builder.credential_provider_chain(ProvideCredentialChain::new().push(OpenDALS3CredentialProvider));
         }
 
-        Ok(opendal::Operator::new(builder)?.finish())
+        Ok(opendal::Operator::new(builder)?)
     }
 
     fn uri_has_option(uri: &opendal::OperatorUri, names: &[&str]) -> bool {
@@ -250,7 +250,11 @@ mod s3 {
             || config.role_arn.is_some()
             || config.external_id.is_some()
             || config.role_session_name.is_some()
-            || uri_has_option(uri, &["allow_anonymous", "disable_config_load", "disable_ec2_metadata"])
+            // OpenDAL 0.58: allow_anonymous is deprecated in favor of skip_signature.
+            || uri_has_option(
+                uri,
+                &["skip_signature", "allow_anonymous", "disable_config_load", "disable_ec2_metadata"],
+            )
     }
 }
 
