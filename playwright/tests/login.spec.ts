@@ -37,8 +37,8 @@ test('Authenticator 2fa', async ({ page }) => {
 
         await page.getByLabel(/Email address/).fill(users.user1.email);
         await page.getByRole('button', { name: 'Continue' }).click();
-        await page.getByLabel('Master password').fill(users.user1.password);
-        await page.getByRole('button', { name: 'Log in with master password' }).click();
+        await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).fill(users.user1.password);
+        await page.getByRole('button', { name: 'Log in', exact: true }).click();
 
         await expect(page.getByRole('heading', { name: 'Verify your Identity' })).toBeVisible();
         await page.getByLabel(/Verification code/).fill(totp.generate({timestamp}));

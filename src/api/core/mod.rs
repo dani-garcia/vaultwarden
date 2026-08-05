@@ -238,7 +238,7 @@ fn config() -> Json<Value> {
             "disableUserRegistration": CONFIG.is_signup_disabled(),
             // When enabled, this setting signals to clients that onboarding interstitials
             // (post-login welcome dialogs, extension install prompts, setup extension redirects, and premium upsell modals) should be suppressed
-            "suppressOnboardingInterstitials": false
+            "suppressOnboardingInterstitials": CONFIG.client_suppress_onboarding(),
         },
         "environment": {
           "vault": domain,
