@@ -1,6 +1,5 @@
 "use strict";
-/* eslint-env es2017, browser, jquery */
-/* global _post:readable, BASE_URL:readable, reload:readable, jdenticon:readable */
+/* global jQuery, _post:readable, BASE_URL:readable, reload:readable, jdenticon:readable */
 
 function deleteOrganization(event) {
     event.preventDefault();
