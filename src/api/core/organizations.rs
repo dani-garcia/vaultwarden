@@ -9,16 +9,18 @@ use crate::{
     api::admin::FAKE_ADMIN_UUID,
     api::{
         EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
-        core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, notify_pending_auto_confirm, two_factor},
+        core::{
+            CipherSyncData, CipherSyncType, accept_org_invite, emergency_access::delete_all_emergency_access_of_user,
+            log_event, notify_pending_auto_confirm, two_factor,
+        },
     },
     auth::{AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite},
     db::{
         DbConn,
         models::{
-            Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser,
-            EmergencyAccess, EventType, Group, GroupId, GroupUser, Invitation, Membership, MembershipId,
-            MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
-            OrganizationId, User, UserId,
+            Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
+            Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
+            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User, UserId,
         },
     },
     mail,
@@ -1486,7 +1488,7 @@ async fn confirm_member(
     // like there it applies to the manual confirmation as well.
     // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/OrganizationUsers/ConfirmOrganizationUserCommand.cs
     if OrgPolicy::is_auto_confirm_enabled(&org_id, conn).await {
-        EmergencyAccess::delete_all_by_user(&member_to_confirm.user_uuid, conn).await?;
+        delete_all_emergency_access_of_user(&member_to_confirm.user_uuid, conn).await?;
     }
 
     log_event(
@@ -2411,7 +2413,7 @@ async fn put_policy(
                 "Removing emergency access of {} because automatic user confirmation was enabled for {org_id}",
                 member.user_uuid
             );
-            EmergencyAccess::delete_all_by_user(&member.user_uuid, &conn).await?;
+            delete_all_emergency_access_of_user(&member.user_uuid, &conn).await?;
         }
     }
 

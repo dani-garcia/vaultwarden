@@ -394,6 +394,22 @@ pub async fn send_emergency_access_invite_accepted(address: &str, grantee_email:
     send_email(address, &subject, body_html, body_text).await
 }
 
+/// Tells a grantor which of its emergency access contacts were dropped. Deliberately does not name the
+/// reason: the recipient can be somebody outside of the organization which triggered this, and it has no
+/// business learning about the memberships of others. Bitwarden keeps this generic as well.
+pub async fn send_emergency_access_grantees_removed(address: &str, grantee_emails: &[String]) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_grantees_removed",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "grantee_emails": grantee_emails,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_emergency_access_invite_confirmed(address: &str, grantor_name: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/emergency_access_invite_confirmed",

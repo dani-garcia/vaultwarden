@@ -1738,6 +1738,7 @@ where
     reg!("email/change_email_invited", ".html");
     reg!("email/change_email", ".html");
     reg!("email/delete_account", ".html");
+    reg!("email/emergency_access_grantees_removed", ".html");
     reg!("email/emergency_access_invite_accepted", ".html");
     reg!("email/emergency_access_invite_confirmed", ".html");
     reg!("email/emergency_access_recovery_approved", ".html");
@@ -1857,3 +1858,33 @@ handlebars::handlebars_helper!(webver: | web_vault_version: String |
 handlebars::handlebars_helper!(vwver: | vw_version: String |
     semver::VersionReq::parse(&vw_version).expect("Invalid Vaultwarden version compare string").matches(&VW_VERSION)
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The registry runs in strict mode, so a placeholder which the sender does not fill only blows up
+    /// when the mail is actually sent. Render both templates of the emergency access removal notification
+    /// with the data `mail::send_emergency_access_grantees_removed` passes.
+    #[test]
+    fn emergency_access_grantees_removed_renders() {
+        let hb = load_templates(std::env::temp_dir());
+        let data = serde_json::json!({
+            "url": "https://vault.example.com",
+            "img_src": "https://vault.example.com/mail/",
+            "grantee_emails": ["first@example.com", "second@example.com"],
+        });
+
+        for name in ["email/emergency_access_grantees_removed", "email/emergency_access_grantees_removed.html"] {
+            let rendered = match hb.render(name, &data) {
+                Ok(rendered) => rendered,
+                Err(e) => panic!("{name} failed to render: {e:?}"),
+            };
+
+            let (subject, body) = rendered.split_once("<!---------------->").expect("no subject separator");
+            assert_eq!(subject.trim(), "Emergency contacts removed");
+            assert!(body.contains("first@example.com"), "{name} does not list every removed contact");
+            assert!(body.contains("second@example.com"), "{name} does not list every removed contact");
+        }
+    }
+}
