@@ -1,15 +1,33 @@
--- A normal User with the historical membership-level access_all bit cannot be mapped to the
--- Custom role without adding collection-management authority. Stop before dropping the source bit.
-CREATE TEMPORARY TABLE __vw_legacy_user_access_all_guard (
-    blocked INTEGER NOT NULL PRIMARY KEY
+-- A normal User with the historical membership-level access_all bit reached every collection of the
+-- organization with full read/write, but held no collection-management authority. Mapping that onto
+-- the Custom role would add authority, clearing the bit would remove existing access — so instead,
+-- materialize the reach as explicit per-collection assignments while the source bit still exists.
+-- `manage` stays FALSE, so no management authority is invented. This is the same approach Bitwarden
+-- took when it retired `accessAll`; the one behavioral difference is that the access is no longer
+-- dynamic, i.e. collections created later are not added automatically.
+--
+-- Step 1: a pre-existing assignment was overridden by access_all (full read/write regardless of
+-- read_only/hide_passwords), so relax it to match what the member actually had.
+UPDATE users_collections
+SET read_only = FALSE,
+    hide_passwords = FALSE
+WHERE EXISTS (
+    SELECT 1
+    FROM users_organizations AS uo
+    INNER JOIN collections AS c ON c.org_uuid = uo.org_uuid
+    WHERE uo.atype = 2
+      AND uo.access_all = TRUE
+      AND uo.user_uuid = users_collections.user_uuid
+      AND c.uuid = users_collections.collection_uuid
 );
-INSERT INTO __vw_legacy_user_access_all_guard (blocked) VALUES (1);
-INSERT INTO __vw_legacy_user_access_all_guard (blocked)
-SELECT 1
-FROM users_organizations
-WHERE atype = 2 AND access_all = TRUE
-LIMIT 1;
-DROP TABLE __vw_legacy_user_access_all_guard;
+
+-- Step 2: add the assignments that did not exist yet. Existing rows are left to step 1.
+INSERT OR IGNORE INTO users_collections (user_uuid, collection_uuid, read_only, hide_passwords, manage)
+SELECT uo.user_uuid, c.uuid, FALSE, FALSE, FALSE
+FROM users_organizations AS uo
+INNER JOIN collections AS c ON c.org_uuid = uo.org_uuid
+WHERE uo.atype = 2
+  AND uo.access_all = TRUE;
 
 -- The current 2026-07-16 migration copied a legacy full-access group's dynamic authority to the
 -- exact direct 0/1/1 pattern. While the same organization-local source group is still present,

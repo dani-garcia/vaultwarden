@@ -400,7 +400,10 @@ async fn get_org_collections(org_id: OrganizationId, headers: ManagerHeadersLoos
     let can_read_collection_list = headers.membership.has_full_access()
         || headers.membership.has_manage_users()
         || headers.membership.has_manage_groups()
-        || headers.membership.has_delete_any_collection();
+        || headers.membership.has_delete_any_collection()
+        // Create new collections needs the list too: the client resolves the parent of a nested
+        // collection against it and refreshes it after a create.
+        || headers.membership.has_create_new_collections();
     if !can_read_collection_list {
         err_code!("Resource not found.", "User does not have full access", rocket::http::Status::NotFound.code);
     }
@@ -437,8 +440,10 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
     // (metadata only) so the web client can render member/group collection assignments
     // without crashing on collections it can't otherwise see. This exposes names/ids
     // only, never cipher contents. manage_policies does not need the collection list.
-    let can_read_collection_list =
-        member.has_manage_users() || member.has_manage_groups() || member.has_delete_any_collection();
+    let can_read_collection_list = member.has_manage_users()
+        || member.has_manage_groups()
+        || member.has_delete_any_collection()
+        || member.has_create_new_collections();
     // Delete any collection can reveal collection access metadata, matching Bitwarden's
     // ReadAllWithAccess behavior, but still does not grant cipher access. Manage Users/Groups
     // retain the narrower metadata-only view introduced by the base PR.
@@ -1047,64 +1052,78 @@ async fn get_assigned_org_details(data: OrgIdData, headers: Headers, conn: DbCon
         );
     }
 
-    let ciphers = filter_ciphers_for_organization(
-        Cipher::find_by_user_visible(&headers.user.uuid, &conn).await,
-        &data.organization_id,
-    );
-    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, CipherSyncType::User, &conn).await;
-
-    let mut ciphers_json = Vec::with_capacity(ciphers.len());
-    for cipher in ciphers {
-        ciphers_json.push(
-            cipher
-                .to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &conn)
-                .await?,
-        );
-    }
-
     Ok(Json(json!({
-        "data": ciphers_json,
+        "data": assigned_org_ciphers_json(&data.organization_id, &headers.host, &headers.user.uuid, &conn).await?,
         "object": "list",
         "continuationToken": null,
     })))
 }
 
-// Returns every cipher in the organization, serialized with `CipherSyncType::Organization` — which
-// deliberately skips the per-cipher access restrictions, so `readOnly`/`hidePasswords` are not
-// applied and collection assignments are ignored. Whoever passes the check below reads the whole
-// organization vault.
+// Serialize exactly the organization ciphers the user is actually assigned to, directly or via a
+// group. `CipherSyncType::User` keeps the per-cipher access restrictions in place, so nothing outside
+// the caller's own collections is returned and every cipher carries its real `edit`/`viewPassword`
+// flags.
 //
-// `accessReports` is therefore, by design, a full organization *read* permission and not merely
-// "may open the reports screen". Vaultwarden implements no server-side reports: the clients fetch
-// this list and compute Exposed/Reused/Weak Passwords, Unsecured Websites, Inactive 2FA etc.
-// locally, so the permission cannot be satisfied with less data.
+// NOTE: as everywhere else in Vaultwarden (and in Bitwarden), a `hidePasswords` assignment is
+// reported to the client as `viewPassword: false` rather than redacted server-side. This therefore
+// returns exactly what the same member already receives from `/api/sync` — never more.
+async fn assigned_org_ciphers_json(
+    org_id: &OrganizationId,
+    host: &str,
+    user_id: &UserId,
+    conn: &DbConn,
+) -> Result<Value, crate::Error> {
+    let ciphers = filter_ciphers_for_organization(Cipher::find_by_user_visible(user_id, conn).await, org_id);
+    let cipher_sync_data = CipherSyncData::new(user_id, CipherSyncType::User, conn).await;
+
+    let mut ciphers_json = Vec::with_capacity(ciphers.len());
+    for cipher in ciphers {
+        ciphers_json.push(cipher.to_json(host, user_id, Some(&cipher_sync_data), CipherSyncType::User, conn).await?);
+    }
+
+    Ok(Value::Array(ciphers_json))
+}
+
+// The organization cipher list the clients use for the admin vault view and for computing every
+// report (Exposed/Reused/Weak Passwords, Unsecured Websites, Inactive 2FA, ...) locally — Vaultwarden
+// has no server-side reports.
 //
-// This matches Bitwarden upstream, which grants the same endpoint to Owner/Admin and to Custom
-// members holding AccessImportExport, EditAnyCollection *or* AccessReports:
-// https://github.com/bitwarden/server/blob/main/src/Api/Vault/Controllers/CiphersController.cs
-// (`CanAccessAllCiphersAsync`)
+// Two different answers, depending on how much the caller may actually read:
 //
-// We are intentionally *stricter* than Bitwarden for `accessImportExport`: it does not open this
-// endpoint, and `get_org_export` scopes its output to the caller's own collections, so
-// "may export" never widens what a member can read. Granting `accessReports` does widen it — that
-// is the documented trade-off of staying Bitwarden-compatible, and administrators must treat
-// `accessReports` as equivalent to read access to every collection in the organization.
+//   * Members who already reach every collection (Admin/Owner, or Custom + `editAnyCollection`) get
+//     the whole organization, serialized with `CipherSyncType::Organization` which deliberately skips
+//     the per-cipher access restrictions. This is unchanged behavior.
+//
+//   * `accessReports` opens the endpoint *without* widening what may be read: the response is built
+//     from the caller's own assignments with `CipherSyncType::User`, so `readOnly`/`hidePasswords`
+//     still apply and collections the member is not assigned to never appear. Their reports therefore
+//     cover exactly their own collections.
+//
+// This mirrors `accessImportExport`/`get_org_export`: a permission decides *whether* a member may use
+// a feature, never *what* they may read. Bitwarden upstream is more permissive here (its
+// `CanAccessAllCiphersAsync` grants the full organization to AccessReports as well); we deliberately
+// deviate so that ticking "Access reports" cannot hand out read access to every password in the
+// organization.
 #[get("/ciphers/organization-details?<data..>")]
 async fn get_org_details(data: OrgIdData, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
     if data.organization_id != headers.membership.org_uuid {
         err_code!("Resource not found.", "Organization id's do not match", rocket::http::Status::NotFound.code);
     }
 
-    if !headers.membership.has_full_access() && !headers.membership.has_access_reports() {
+    let ciphers_json = if headers.membership.has_full_access() {
+        get_org_details_impl(&data.organization_id, &headers.host, &headers.user.uuid, &conn).await?
+    } else if headers.membership.has_access_reports() {
+        assigned_org_ciphers_json(&data.organization_id, &headers.host, &headers.user.uuid, &conn).await?
+    } else {
         err_code!(
             "Resource not found.",
-            "User does not have permission to access all organization ciphers",
+            "User does not have permission to read the organization ciphers",
             rocket::http::Status::NotFound.code
         );
-    }
+    };
 
     Ok(Json(json!({
-        "data": get_org_details_impl(&data.organization_id, &headers.host, &headers.user.uuid, &conn).await?,
+        "data": ciphers_json,
         "object": "list",
         "continuationToken": null,
     })))
@@ -1372,7 +1391,7 @@ async fn send_invite(
         err!("Invalid type")
     };
 
-    if !may_manage_member_type(headers.membership_type, new_type) {
+    if !may_provision_member_type(headers.membership_type, new_type) {
         err!("You don't have permission to invite this role")
     }
 
@@ -1781,7 +1800,7 @@ async fn confirm_invite_impl(
         err!("The specified user isn't a member of the organization")
     };
 
-    if !may_manage_stored_member_type(headers.membership_type, member_to_confirm.atype) {
+    if !may_provision_stored_member_type(headers.membership_type, member_to_confirm.atype) {
         err!("You don't have permission to confirm this user")
     }
 
@@ -2192,7 +2211,7 @@ async fn delete_member_impl(
         err!("User to delete isn't member of the organization")
     };
 
-    if !may_manage_stored_member_type(headers.membership_type, member_to_delete.atype) {
+    if !may_provision_stored_member_type(headers.membership_type, member_to_delete.atype) {
         err!("You don't have permission to delete this user")
     }
 
@@ -2305,17 +2324,19 @@ async fn post_org_import(
         err!("Organization not found", "Organization id's do not match");
     }
 
-    // accessImportExport: importing into the organization requires the permission (or Admin/Owner),
-    // mirroring the export endpoint and the Bitwarden permission model. The web-vault only offers org
-    // import to members holding this permission; enforcing it server-side keeps the two consistent.
-    // NOTE: this tightens the previous member-level behaviour (any confirmed member could import into
-    // collections they could write) — see the branch notes.
-    if !(headers.membership.has_status(MembershipStatus::Confirmed)
-        && (headers.membership.atype >= MembershipType::Admin || headers.membership.has_access_import_export()))
-    {
-        err!(
-            "You need the 'Access Import/Export' permission, or to be an Admin or Owner, to import into this organization"
-        )
+    // NOTE: no `accessImportExport` gate here on purpose. Bitwarden requires that permission for an
+    // organization import, but Vaultwarden has always authorized this endpoint per target collection,
+    // and adding an up-front role check would take a capability away from ordinary members that they
+    // have today. The real boundary is enforced below and is unchanged: an existing collection must be
+    // writable for the caller (`Collection::is_writable_by_user`), and creating a new one requires the
+    // independent `createNewCollections` permission. `accessImportExport` therefore governs the export
+    // side only.
+    //
+    // A confirmed membership is required though: both checks below are confirmed-gated, so an
+    // invited/accepted member could otherwise only import ciphers without any collection — which lands
+    // unreachable, unmanaged ciphers in the organization.
+    if !headers.membership.has_status(MembershipStatus::Confirmed) {
+        err!("You need to be a confirmed member of this organization to import into it")
     }
 
     let data: ImportData = data.into_inner();
@@ -3154,13 +3175,24 @@ async fn post_groups(
             None => false,
         };
 
-    let mut group = group_request.to_group(&org_id);
     // Security: `access_all` grants the group access to every collection, so it is a
     // collection-access grant just like assigning collections. A custom user without
     // collection-management rights must not be able to create an access_all group.
+    //
+    // API consistency: reject instead of silently creating a group without the requested access, so a
+    // caller never believes it granted something the server dropped. A request that grants nothing
+    // (no access_all, no collections) is still accepted, which is what the plain "new group" dialog
+    // sends for such a caller.
     if !caller_can_manage_collections {
-        group.access_all = false;
+        if group_request.access_all {
+            err!("You don't have permission to create a group with access to all collections")
+        }
+        if !group_request.collections.is_empty() {
+            err!("You don't have permission to assign collections to a group")
+        }
     }
+
+    let group = group_request.to_group(&org_id);
 
     log_event(
         EventType::GroupCreated as i32,
@@ -3215,21 +3247,35 @@ async fn put_group(
 
     // Security: only callers who can actually manage collections (Admins/Owners, or users with
     // full access) may change a group's collection assignments. A custom user with only
-    // manage_groups must not be able to add/remove collection access. For them we keep the
-    // group's existing collection assignments untouched (neither cleared nor overwritten).
+    // manage_groups must not be able to add/remove collection access.
     let caller_can_manage_collections = headers.membership_type >= MembershipType::Admin
         || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
             Some(m) => m.has_full_access(),
             None => false,
         };
 
-    // Preserve the current `access_all` grant for callers who can't manage collections, so a
-    // manage_groups-only user cannot turn a group into an access_all (all-collections) grant.
-    let previous_access_all = group.access_all;
-    let mut updated_group = group_request.update_group(group);
+    // API consistency: reject a collection-access change this caller may not make instead of
+    // answering 200 and silently keeping the old value — the same rule `edit_member` and
+    // `send_invite` follow. Only an actual difference is rejected (the regular group dialog echoes
+    // the current assignments back and has to keep working), and per-assignment flag differences
+    // (readOnly, hidePasswords, manage) stay ignored, exactly as for a member's assignments.
     if !caller_can_manage_collections {
-        updated_group.access_all = previous_access_all;
+        if group_request.access_all != group.access_all {
+            err!("You don't have permission to change a group's access to all collections")
+        }
+
+        let requested: HashSet<CollectionId> = group_request.collections.iter().map(|c| c.id.clone()).collect();
+        let current: HashSet<CollectionId> = CollectionGroup::find_by_group(&group_id, &org_id, &conn)
+            .await
+            .into_iter()
+            .map(|cg| cg.collections_uuid)
+            .collect();
+        if requested != current {
+            err!("You don't have permission to change this group's collection assignments")
+        }
     }
+
+    let updated_group = group_request.update_group(group);
 
     if caller_can_manage_collections {
         CollectionGroup::delete_all_by_group(&group_id, &org_id, &conn).await?;
@@ -3319,6 +3365,30 @@ fn may_manage_stored_member_type(caller_type: MembershipType, target_atype: i32)
     MembershipType::from_i32(target_atype).is_some_and(|target_type| may_manage_member_type(caller_type, target_type))
 }
 
+/// Whether a caller may *provision* a membership of `target_type` — create it (invite), activate it
+/// (confirm) or remove it (delete).
+///
+/// This is deliberately stricter than [`may_manage_member_type`] and preserves the pre-existing
+/// Vaultwarden rule that only Owners bring Admin (or Owner) memberships into or out of existence
+/// ("Only Owners can invite Managers, Admins or Owners" / "Only Owners can delete Admins or Owners").
+/// `edit_member` keeps that boundary too, via its dedicated Owner-only guard on Admin/Owner role
+/// transitions, so an Admin must not be able to route around it by inviting a fresh Admin instead.
+/// State changes that leave the membership in place (reinvite, revoke, restore, edit) keep using
+/// [`may_manage_member_type`], which is what Vaultwarden allowed for them before this feature.
+fn may_provision_member_type(caller_type: MembershipType, target_type: MembershipType) -> bool {
+    match caller_type {
+        MembershipType::Owner => true,
+        MembershipType::Admin => target_type < MembershipType::Admin,
+        MembershipType::Custom => target_type == MembershipType::User,
+        MembershipType::User => false,
+    }
+}
+
+fn may_provision_stored_member_type(caller_type: MembershipType, target_atype: i32) -> bool {
+    MembershipType::from_i32(target_atype)
+        .is_some_and(|target_type| may_provision_member_type(caller_type, target_type))
+}
+
 /// Returns true if being a member of `group_id` confers collection access — either because the
 /// group has `access_all` set, or because it has collections assigned.
 async fn group_confers_collection_access(group_id: &GroupId, org_id: &OrganizationId, conn: &DbConn) -> bool {
@@ -3400,6 +3470,26 @@ async fn add_update_group(
     conn: &DbConn,
     caller_can_manage_collections: bool,
 ) -> JsonResult {
+    // Security: assigning members to a group that grants collection access (via `access_all` or
+    // assigned collections) would indirectly grant those members access to the collections' contents,
+    // and removing them would revoke it. Only callers who can manage collections may change the
+    // membership of such a group.
+    //
+    // API consistency: reject a membership change this caller may not make instead of answering 200
+    // and keeping the old membership — same rule as `edit_member`/`send_invite`. Checked before the
+    // first write so a rejected request leaves nothing behind. On create the group is brand new, so
+    // it grants no collection access yet and this never triggers.
+    if !caller_can_manage_collections
+        && (group.access_all || !CollectionGroup::find_by_group(&group.uuid, &org_id, conn).await.is_empty())
+    {
+        let requested: HashSet<&MembershipId> = members.iter().collect();
+        let current_members = GroupUser::find_by_group(&group.uuid, &org_id, conn).await;
+        let current: HashSet<&MembershipId> = current_members.iter().map(|gu| &gu.users_organizations_uuid).collect();
+        if requested != current {
+            err!("You don't have permission to change the membership of a group that grants collection access")
+        }
+    }
+
     group.save(conn).await?;
 
     // Security (F-1): a `collections_groups.manage` grant carries collection delete authority, so a
@@ -4096,6 +4186,7 @@ mod tests {
         CustomRolePermissions, caller_manage_grant_role_check, collection_bearing_membership_unchanged,
         filter_ciphers_for_organization, may_change_group_membership, may_change_member_type,
         may_export_entire_organization, may_manage_member_type, may_manage_stored_member_type,
+        may_provision_member_type, may_provision_stored_member_type,
     };
     use crate::db::models::{Cipher, GroupId, Membership, MembershipStatus, MembershipType, OrganizationId};
 
@@ -4242,6 +4333,43 @@ mod tests {
             assert!(!may_manage_stored_member_type(MembershipType::Custom, target as i32));
         }
         assert!(may_manage_stored_member_type(MembershipType::Custom, MembershipType::User as i32));
+    }
+
+    #[test]
+    fn only_owners_provision_admin_memberships() {
+        // REGRESSION: bringing an Admin (or Owner) membership into or out of existence stays
+        // Owner-only, exactly as before this feature ("Only Owners can invite Managers, Admins or
+        // Owners" / "Only Owners can delete Admins or Owners"). Otherwise an Admin could route around
+        // the Owner-only role-change guard in `edit_member` by inviting a fresh Admin instead.
+        for target in [MembershipType::Owner, MembershipType::Admin, MembershipType::Custom, MembershipType::User] {
+            assert!(may_provision_member_type(MembershipType::Owner, target));
+        }
+
+        assert!(!may_provision_member_type(MembershipType::Admin, MembershipType::Owner));
+        assert!(!may_provision_member_type(MembershipType::Admin, MembershipType::Admin));
+        assert!(may_provision_member_type(MembershipType::Admin, MembershipType::Custom));
+        assert!(may_provision_member_type(MembershipType::Admin, MembershipType::User));
+
+        // A Custom member with manage_users stays limited to ordinary Users, as for every other
+        // lifecycle action.
+        assert!(may_provision_member_type(MembershipType::Custom, MembershipType::User));
+        for target in [MembershipType::Owner, MembershipType::Admin, MembershipType::Custom] {
+            assert!(!may_provision_member_type(MembershipType::Custom, target));
+        }
+        for target in [MembershipType::Owner, MembershipType::Admin, MembershipType::Custom, MembershipType::User] {
+            assert!(!may_provision_member_type(MembershipType::User, target));
+        }
+
+        // Provisioning is strictly narrower than the state-change matrix: an Admin may still revoke,
+        // restore or edit a peer Admin (which Vaultwarden allowed before), but no longer create,
+        // confirm or delete one.
+        assert!(may_manage_member_type(MembershipType::Admin, MembershipType::Admin));
+        assert!(!may_provision_member_type(MembershipType::Admin, MembershipType::Admin));
+
+        assert!(may_provision_stored_member_type(MembershipType::Admin, MembershipType::User as i32));
+        assert!(!may_provision_stored_member_type(MembershipType::Admin, MembershipType::Admin as i32));
+        // An unknown stored role never qualifies.
+        assert!(!may_provision_stored_member_type(MembershipType::Owner, i32::MAX));
     }
 
     #[test]

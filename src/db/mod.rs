@@ -471,26 +471,67 @@ impl<'r> FromRequest<'r> for DbConn {
 const CUSTOM_ROLE_REPAIR_MIGRATION: &str = "20260723120000";
 const CUSTOM_COLLECTION_PERMISSIONS_MIGRATION: &str = "20260716120000";
 const DROP_MEMBERSHIP_ACCESS_ALL_MIGRATION: &str = "20260724120000";
+const CUSTOM_ROLE_MANAGE_PERMISSIONS_MIGRATION: &str = "20260630120000";
+const CUSTOM_ACCESS_PERMISSIONS_MIGRATION: &str = "20260724130000";
 const CUSTOM_ROLE_SAME_RUN_MARKER_TABLE: &str = "__vw_custom_role_same_run_0716";
-const LEGACY_USER_ACCESS_ALL_RECOVERY_SQL: &str = concat!(
-    "\n\nReview every affected membership with this SQLite/MySQL/PostgreSQL-compatible query:\n",
-    "SELECT uuid, user_uuid, org_uuid, status\n",
-    "FROM users_organizations\n",
-    "WHERE atype = 2 AND access_all = TRUE;\n\n",
-    "After an organization owner has decided the intended outcome, replace <MEMBERSHIP_UUID> and run exactly one ",
-    "guarded statement for that membership while every Vaultwarden instance is stopped. Do not bulk-promote these ",
-    "records.\n\n",
-    "Keep the User role and revoke organization-wide vault access:\n",
-    "UPDATE users_organizations\n",
-    "SET access_all = FALSE\n",
-    "WHERE uuid = '<MEMBERSHIP_UUID>' AND atype = 2 AND access_all = TRUE;\n\n",
-    "Preserve organization-wide vault access by intentionally granting Custom Create/Edit/Delete-any collection ",
-    "authority:\n",
-    "UPDATE users_organizations\n",
-    "SET atype = 3\n",
-    "WHERE uuid = '<MEMBERSHIP_UUID>' AND atype = 2 AND access_all = TRUE;\n\n",
-    "The second statement deliberately adds collection-management authority: the repair migration copies the retained ",
-    "access_all value to all three collection permissions before converting legacy role 3 to Custom role 4."
+
+/// One of the three groups of granular permission columns, each added by its own migration.
+///
+/// A partially present group means the migration was interrupted between its `ALTER TABLE`
+/// statements. On MySQL/MariaDB that is reachable because DDL commits implicitly, so the ledger entry
+/// can be missing while some columns already exist; re-running the migration then fails forever with
+/// `Duplicate column name`. Detect it and hand the operator an unambiguous fix instead.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PermissionColumnGroup {
+    Manage,
+    Collection,
+    Access,
+}
+
+impl PermissionColumnGroup {
+    const fn migration(self) -> &'static str {
+        match self {
+            Self::Manage => CUSTOM_ROLE_MANAGE_PERMISSIONS_MIGRATION,
+            Self::Collection => CUSTOM_COLLECTION_PERMISSIONS_MIGRATION,
+            Self::Access => CUSTOM_ACCESS_PERMISSIONS_MIGRATION,
+        }
+    }
+
+    /// SQL list literal of the group's column names, for the `IN (...)` lookups.
+    const fn column_list(self) -> &'static str {
+        match self {
+            Self::Manage => "'manage_users', 'manage_groups', 'manage_policies'",
+            Self::Collection => "'create_new_collections', 'edit_any_collection', 'delete_any_collection'",
+            Self::Access => "'access_event_logs', 'access_import_export', 'access_reports'",
+        }
+    }
+
+    const fn description(self) -> &'static str {
+        match self {
+            Self::Manage => "custom management-permission",
+            Self::Collection => "custom collection-permission",
+            Self::Access => "custom access-permission",
+        }
+    }
+}
+
+const PARTIAL_PERMISSION_COLUMNS_RECOVERY: &str = concat!(
+    "\n\nThis happens when a migration was interrupted between its ALTER TABLE statements (on ",
+    "MySQL/MariaDB every DDL statement commits on its own, so columns can exist without the ledger ",
+    "entry). The leftover columns only ever hold their FALSE default at this point, so dropping them ",
+    "loses nothing and lets the migration run again from a clean state.\n\n",
+    "List the columns that are already present:\n",
+    "SELECT column_name\n",
+    "FROM information_schema.columns\n",
+    "WHERE table_name = 'users_organizations'\n",
+    "  AND column_name IN ('manage_users', 'manage_groups', 'manage_policies',\n",
+    "                      'create_new_collections', 'edit_any_collection', 'delete_any_collection',\n",
+    "                      'access_event_logs', 'access_import_export', 'access_reports');\n\n",
+    "(On SQLite: SELECT name FROM pragma_table_info('users_organizations');)\n\n",
+    "Then, with every Vaultwarden instance stopped and a backup taken, drop exactly the columns of ",
+    "the affected group that the message above names, e.g.:\n",
+    "ALTER TABLE users_organizations DROP COLUMN <COLUMN_NAME>;\n\n",
+    "Afterwards restart Vaultwarden so the migration applies the whole group in one go."
 );
 
 const AMBIGUOUS_DIRECT_PERMISSIONS_RECOVERY_SQL: &str = concat!(
@@ -545,13 +586,33 @@ struct CustomRoleMigrationFacts {
     memberships_table_exists: bool,
     migration_table_exists: bool,
     access_all_column_exists: bool,
+    manage_permission_columns: i64,
+    manage_permissions_migration_applied: bool,
     collection_permission_columns: i64,
     collection_permissions_migration_applied: bool,
+    access_permission_columns: i64,
+    access_permissions_migration_applied: bool,
     repair_migration_applied: bool,
     access_all_drop_migration_applied: bool,
-    legacy_user_access_all_count: i64,
     ambiguous_direct_permission_count: i64,
     same_run_0716_marker: bool,
+}
+
+impl CustomRoleMigrationFacts {
+    /// `(columns present, migration recorded)` for one permission column group.
+    const fn permission_columns(self, group: PermissionColumnGroup) -> (i64, bool) {
+        match group {
+            PermissionColumnGroup::Manage => {
+                (self.manage_permission_columns, self.manage_permissions_migration_applied)
+            }
+            PermissionColumnGroup::Collection => {
+                (self.collection_permission_columns, self.collection_permissions_migration_applied)
+            }
+            PermissionColumnGroup::Access => {
+                (self.access_permission_columns, self.access_permissions_migration_applied)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -561,10 +622,9 @@ enum CustomRolePreflightDecision {
     RefuseAlreadyDropped,
     RefuseMissingAccessAll,
     RefuseMissingMigrationLedger,
-    RefuseLegacyUserAccessAll,
     RefuseAmbiguousDirectPermissions,
-    RefusePartialCollectionSchema,
-    RefuseCollectionLedgerMismatch,
+    RefusePartialPermissionSchema(PermissionColumnGroup),
+    RefusePermissionLedgerMismatch(PermissionColumnGroup),
 }
 
 fn custom_role_preflight_decision(
@@ -587,21 +647,27 @@ fn custom_role_preflight_decision(
         return CustomRolePreflightDecision::RefuseMissingAccessAll;
     }
 
-    if facts.legacy_user_access_all_count != 0 {
-        return CustomRolePreflightDecision::RefuseLegacyUserAccessAll;
-    }
     if facts.ambiguous_direct_permission_count != 0 && !facts.same_run_0716_marker {
         return CustomRolePreflightDecision::RefuseAmbiguousDirectPermissions;
     }
 
-    match (facts.collection_permission_columns, facts.collection_permissions_migration_applied) {
-        (0, false) | (3, true) => CustomRolePreflightDecision::Proceed,
-        (3, false) if can_complete_mysql_partial_migration => {
-            CustomRolePreflightDecision::CompleteMysqlCollectionMigration
+    // Every permission column group must be either completely absent (its migration is still pending)
+    // or completely present with its ledger entry. Anything else is an interrupted migration whose
+    // re-run would fail with `Duplicate column name`, so refuse with an actionable message. The single
+    // historical exception is the collection group on MySQL, where the known-good partial state is
+    // completed in place.
+    for group in [PermissionColumnGroup::Manage, PermissionColumnGroup::Collection, PermissionColumnGroup::Access] {
+        match facts.permission_columns(group) {
+            (0, false) | (3, true) => {}
+            (3, false) if group == PermissionColumnGroup::Collection && can_complete_mysql_partial_migration => {
+                return CustomRolePreflightDecision::CompleteMysqlCollectionMigration;
+            }
+            (_, true) => return CustomRolePreflightDecision::RefusePermissionLedgerMismatch(group),
+            _ => return CustomRolePreflightDecision::RefusePartialPermissionSchema(group),
         }
-        (_, true) => CustomRolePreflightDecision::RefuseCollectionLedgerMismatch,
-        _ => CustomRolePreflightDecision::RefusePartialCollectionSchema,
     }
+
+    CustomRolePreflightDecision::Proceed
 }
 
 fn custom_role_preflight_error(decision: CustomRolePreflightDecision, facts: CustomRoleMigrationFacts) -> Error {
@@ -621,36 +687,35 @@ fn custom_role_preflight_error(decision: CustomRolePreflightDecision, facts: Cus
              Refusing to guess which schema and data migrations were previously applied."
                 .to_owned()
         }
-        CustomRolePreflightDecision::RefuseLegacyUserAccessAll => format!(
-            "{} legacy User membership(s) still have membership access_all=true. Mapping these \
-             records to Custom/EditAny would add management authority, while clearing the bit \
-             would remove existing vault access.",
-            facts.legacy_user_access_all_count
-        ),
         CustomRolePreflightDecision::RefuseAmbiguousDirectPermissions => format!(
             "Found {} membership(s) with an ambiguous 0/1/1 collection-permission pattern. It is \
              not possible to distinguish an older group-derived backfill from an intentional \
              direct Edit+Delete assignment.",
             facts.ambiguous_direct_permission_count
         ),
-        CustomRolePreflightDecision::RefusePartialCollectionSchema => format!(
-            "Found {} of the three custom collection-permission columns without a completed \
-             {CUSTOM_COLLECTION_PERMISSIONS_MIGRATION} migration. This is not an automatically \
-             recoverable state for this database backend.",
-            facts.collection_permission_columns
+        CustomRolePreflightDecision::RefusePartialPermissionSchema(group) => format!(
+            "Found {} of the three {} columns ({}) without a completed {} migration. The migration \
+             was interrupted between its ALTER TABLE statements.",
+            facts.permission_columns(group).0,
+            group.description(),
+            group.column_list(),
+            group.migration()
         ),
-        CustomRolePreflightDecision::RefuseCollectionLedgerMismatch => format!(
-            "Migration {CUSTOM_COLLECTION_PERMISSIONS_MIGRATION} is recorded, but only {} of its \
-             three collection-permission columns exist.",
-            facts.collection_permission_columns
+        CustomRolePreflightDecision::RefusePermissionLedgerMismatch(group) => format!(
+            "Migration {} is recorded, but only {} of its three {} columns ({}) exist.",
+            group.migration(),
+            facts.permission_columns(group).0,
+            group.description(),
+            group.column_list()
         ),
         CustomRolePreflightDecision::Proceed | CustomRolePreflightDecision::CompleteMysqlCollectionMigration => {
             unreachable!("successful preflight decisions do not produce errors")
         }
     };
     let recovery = match decision {
-        CustomRolePreflightDecision::RefuseLegacyUserAccessAll => LEGACY_USER_ACCESS_ALL_RECOVERY_SQL,
         CustomRolePreflightDecision::RefuseAmbiguousDirectPermissions => AMBIGUOUS_DIRECT_PERMISSIONS_RECOVERY_SQL,
+        CustomRolePreflightDecision::RefusePartialPermissionSchema(_)
+        | CustomRolePreflightDecision::RefusePermissionLedgerMismatch(_) => PARTIAL_PERMISSION_COLUMNS_RECOVERY,
         CustomRolePreflightDecision::RefuseAlreadyDropped => ALREADY_DROPPED_RECOVERY,
         _ => "",
     };
@@ -761,14 +826,28 @@ mod sqlite_migrations {
             "SELECT COUNT(*) AS count FROM pragma_table_info('users_organizations') \
              WHERE name = 'access_all'",
         )? != 0;
-        let collection_permission_columns = count(
-            connection,
-            "SELECT COUNT(*) AS count FROM pragma_table_info('users_organizations') \
-             WHERE name IN ('create_new_collections', 'edit_any_collection', 'delete_any_collection')",
-        )?;
+        let permission_columns = |connection: &mut diesel::sqlite::SqliteConnection,
+                                  group: super::PermissionColumnGroup|
+         -> Result<i64, diesel::result::Error> {
+            count(
+                connection,
+                format!(
+                    "SELECT COUNT(*) AS count FROM pragma_table_info('users_organizations') \
+                     WHERE name IN ({})",
+                    group.column_list()
+                ),
+            )
+        };
+        let manage_permission_columns = permission_columns(connection, super::PermissionColumnGroup::Manage)?;
+        let collection_permission_columns = permission_columns(connection, super::PermissionColumnGroup::Collection)?;
+        let access_permission_columns = permission_columns(connection, super::PermissionColumnGroup::Access)?;
 
+        let manage_permissions_migration_applied =
+            migration_table_exists && migration_applied(connection, super::CUSTOM_ROLE_MANAGE_PERMISSIONS_MIGRATION)?;
         let collection_permissions_migration_applied =
             migration_table_exists && migration_applied(connection, super::CUSTOM_COLLECTION_PERMISSIONS_MIGRATION)?;
+        let access_permissions_migration_applied =
+            migration_table_exists && migration_applied(connection, super::CUSTOM_ACCESS_PERMISSIONS_MIGRATION)?;
         let repair_migration_applied =
             migration_table_exists && migration_applied(connection, super::CUSTOM_ROLE_REPAIR_MIGRATION)?;
         let access_all_drop_migration_applied =
@@ -779,16 +858,6 @@ mod sqlite_migrations {
                 connection,
                 format!("SELECT COUNT(*) AS count FROM {} WHERE marker = 1", super::CUSTOM_ROLE_SAME_RUN_MARKER_TABLE),
             )? != 0;
-
-        let legacy_user_access_all_count = if access_all_column_exists {
-            count(
-                connection,
-                "SELECT COUNT(*) AS count FROM users_organizations \
-                 WHERE atype = 2 AND access_all = TRUE",
-            )?
-        } else {
-            0
-        };
 
         let ambiguous_direct_permission_count = if access_all_column_exists && collection_permission_columns == 3 {
             count(
@@ -808,11 +877,14 @@ mod sqlite_migrations {
             memberships_table_exists,
             migration_table_exists,
             access_all_column_exists,
+            manage_permission_columns,
+            manage_permissions_migration_applied,
             collection_permission_columns,
             collection_permissions_migration_applied,
+            access_permission_columns,
+            access_permissions_migration_applied,
             repair_migration_applied,
             access_all_drop_migration_applied,
-            legacy_user_access_all_count,
             ambiguous_direct_permission_count,
             same_run_0716_marker,
         };
@@ -968,17 +1040,27 @@ mod mysql_migrations {
                AND table_name = 'users_organizations' \
                AND column_name = 'access_all'",
         )? != 0;
-        let collection_permission_columns = count(
-            connection,
-            "SELECT COUNT(*) AS count FROM information_schema.columns \
-             WHERE table_schema = DATABASE() \
-               AND table_name = 'users_organizations' \
-               AND column_name IN \
-                   ('create_new_collections', 'edit_any_collection', 'delete_any_collection')",
-        )?;
+        let permission_columns = |connection: &mut diesel::mysql::MysqlConnection,
+                                  group: super::PermissionColumnGroup|
+         -> Result<i64, diesel::result::Error> {
+            count(
+                connection,
+                format!(
+                    "SELECT COUNT(*) AS count FROM information_schema.columns                      WHERE table_schema = DATABASE()                        AND table_name = 'users_organizations'                        AND column_name IN ({})",
+                    group.column_list()
+                ),
+            )
+        };
+        let manage_permission_columns = permission_columns(connection, super::PermissionColumnGroup::Manage)?;
+        let collection_permission_columns = permission_columns(connection, super::PermissionColumnGroup::Collection)?;
+        let access_permission_columns = permission_columns(connection, super::PermissionColumnGroup::Access)?;
 
+        let manage_permissions_migration_applied =
+            migration_table_exists && migration_applied(connection, super::CUSTOM_ROLE_MANAGE_PERMISSIONS_MIGRATION)?;
         let collection_permissions_migration_applied =
             migration_table_exists && migration_applied(connection, super::CUSTOM_COLLECTION_PERMISSIONS_MIGRATION)?;
+        let access_permissions_migration_applied =
+            migration_table_exists && migration_applied(connection, super::CUSTOM_ACCESS_PERMISSIONS_MIGRATION)?;
         let repair_migration_applied =
             migration_table_exists && migration_applied(connection, super::CUSTOM_ROLE_REPAIR_MIGRATION)?;
         let access_all_drop_migration_applied =
@@ -989,16 +1071,6 @@ mod mysql_migrations {
                 connection,
                 format!("SELECT COUNT(*) AS count FROM {} WHERE marker = 1", super::CUSTOM_ROLE_SAME_RUN_MARKER_TABLE),
             )? != 0;
-
-        let legacy_user_access_all_count = if access_all_column_exists {
-            count(
-                connection,
-                "SELECT COUNT(*) AS count FROM users_organizations \
-                 WHERE atype = 2 AND access_all = TRUE",
-            )?
-        } else {
-            0
-        };
 
         let ambiguous_direct_permission_count = if access_all_column_exists && collection_permission_columns == 3 {
             count(
@@ -1018,11 +1090,14 @@ mod mysql_migrations {
             memberships_table_exists,
             migration_table_exists,
             access_all_column_exists,
+            manage_permission_columns,
+            manage_permissions_migration_applied,
             collection_permission_columns,
             collection_permissions_migration_applied,
+            access_permission_columns,
+            access_permissions_migration_applied,
             repair_migration_applied,
             access_all_drop_migration_applied,
-            legacy_user_access_all_count,
             ambiguous_direct_permission_count,
             same_run_0716_marker,
         };
@@ -1111,17 +1186,27 @@ mod postgresql_migrations {
                AND table_name = 'users_organizations' \
                AND column_name = 'access_all'",
         )? != 0;
-        let collection_permission_columns = count(
-            connection,
-            "SELECT COUNT(*) AS count FROM information_schema.columns \
-             WHERE table_schema = current_schema() \
-               AND table_name = 'users_organizations' \
-               AND column_name IN \
-                   ('create_new_collections', 'edit_any_collection', 'delete_any_collection')",
-        )?;
+        let permission_columns = |connection: &mut diesel::pg::PgConnection,
+                                  group: super::PermissionColumnGroup|
+         -> Result<i64, diesel::result::Error> {
+            count(
+                connection,
+                format!(
+                    "SELECT COUNT(*) AS count FROM information_schema.columns                      WHERE table_schema = current_schema()                        AND table_name = 'users_organizations'                        AND column_name IN ({})",
+                    group.column_list()
+                ),
+            )
+        };
+        let manage_permission_columns = permission_columns(connection, super::PermissionColumnGroup::Manage)?;
+        let collection_permission_columns = permission_columns(connection, super::PermissionColumnGroup::Collection)?;
+        let access_permission_columns = permission_columns(connection, super::PermissionColumnGroup::Access)?;
 
+        let manage_permissions_migration_applied =
+            migration_table_exists && migration_applied(connection, super::CUSTOM_ROLE_MANAGE_PERMISSIONS_MIGRATION)?;
         let collection_permissions_migration_applied =
             migration_table_exists && migration_applied(connection, super::CUSTOM_COLLECTION_PERMISSIONS_MIGRATION)?;
+        let access_permissions_migration_applied =
+            migration_table_exists && migration_applied(connection, super::CUSTOM_ACCESS_PERMISSIONS_MIGRATION)?;
         let repair_migration_applied =
             migration_table_exists && migration_applied(connection, super::CUSTOM_ROLE_REPAIR_MIGRATION)?;
         let access_all_drop_migration_applied =
@@ -1132,16 +1217,6 @@ mod postgresql_migrations {
                 connection,
                 format!("SELECT COUNT(*) AS count FROM {} WHERE marker = 1", super::CUSTOM_ROLE_SAME_RUN_MARKER_TABLE),
             )? != 0;
-
-        let legacy_user_access_all_count = if access_all_column_exists {
-            count(
-                connection,
-                "SELECT COUNT(*) AS count FROM users_organizations \
-                 WHERE atype = 2 AND access_all = TRUE",
-            )?
-        } else {
-            0
-        };
 
         let ambiguous_direct_permission_count = if access_all_column_exists && collection_permission_columns == 3 {
             count(
@@ -1161,11 +1236,14 @@ mod postgresql_migrations {
             memberships_table_exists,
             migration_table_exists,
             access_all_column_exists,
+            manage_permission_columns,
+            manage_permissions_migration_applied,
             collection_permission_columns,
             collection_permissions_migration_applied,
+            access_permission_columns,
+            access_permissions_migration_applied,
             repair_migration_applied,
             access_all_drop_migration_applied,
-            legacy_user_access_all_count,
             ambiguous_direct_permission_count,
             same_run_0716_marker,
         };
@@ -1295,35 +1373,70 @@ mod custom_role_migration_preflight_tests {
         assert!(message.contains("Restore the database backup"));
     }
 
+    // REGRESSION: a legacy `User` membership with the historical access_all bit must NOT stop the
+    // upgrade. The 2026-07-23 migration materializes that reach as explicit per-collection
+    // assignments, so the preflight has nothing left to decide and every other fact stays untouched.
     #[test]
-    fn legacy_user_access_all_requires_an_operator_decision() {
-        let facts = Facts {
-            legacy_user_access_all_count: 1,
-            ..pending_repair()
-        };
-        let decision = custom_role_preflight_decision(facts, false);
-        assert_eq!(decision, Decision::RefuseLegacyUserAccessAll);
+    fn legacy_user_access_all_no_longer_blocks_the_upgrade() {
+        assert_eq!(custom_role_preflight_decision(pending_repair(), false), Decision::Proceed);
+        assert_eq!(
+            custom_role_preflight_decision(
+                Facts {
+                    collection_permission_columns: 3,
+                    collection_permissions_migration_applied: true,
+                    manage_permission_columns: 3,
+                    manage_permissions_migration_applied: true,
+                    ..pending_repair()
+                },
+                false,
+            ),
+            Decision::Proceed
+        );
+    }
 
-        let error = custom_role_preflight_error(decision, facts);
-        let message = error.source().expect("preflight error should retain its I/O error source").to_string();
-        assert!(message.contains("1 legacy User membership(s)"));
-        assert!(message.contains(
-            "SELECT uuid, user_uuid, org_uuid, status\n\
-             FROM users_organizations\n\
-             WHERE atype = 2 AND access_all = TRUE;"
-        ));
-        assert!(message.contains(
-            "SET access_all = FALSE\n\
-             WHERE uuid = '<MEMBERSHIP_UUID>' AND atype = 2 AND access_all = TRUE;"
-        ));
-        assert!(message.contains(
-            "SET atype = 3\n\
-             WHERE uuid = '<MEMBERSHIP_UUID>' AND atype = 2 AND access_all = TRUE;"
-        ));
-        assert!(message.contains("run exactly one guarded statement"));
-        assert!(message.contains("Do not bulk-promote"));
-        assert!(message.contains("converting legacy role 3 to Custom role 4"));
-        assert!(!message.contains("SET atype = 4"));
+    #[test]
+    fn a_partial_permission_column_group_is_refused_with_an_actionable_message() {
+        // Every group is checked, not just the collection one: an interrupted MySQL migration can
+        // leave `manage_*` or `access_*` columns behind, and re-running it would fail forever with
+        // `Duplicate column name`.
+        for (facts, group, expected) in [
+            (
+                Facts {
+                    manage_permission_columns: 2,
+                    ..pending_repair()
+                },
+                "manage_users",
+                Decision::RefusePartialPermissionSchema(super::PermissionColumnGroup::Manage),
+            ),
+            (
+                Facts {
+                    manage_permission_columns: 3,
+                    manage_permissions_migration_applied: true,
+                    access_permission_columns: 3,
+                    ..pending_repair()
+                },
+                "access_event_logs",
+                Decision::RefusePartialPermissionSchema(super::PermissionColumnGroup::Access),
+            ),
+            (
+                Facts {
+                    manage_permission_columns: 1,
+                    manage_permissions_migration_applied: true,
+                    ..pending_repair()
+                },
+                "manage_users",
+                Decision::RefusePermissionLedgerMismatch(super::PermissionColumnGroup::Manage),
+            ),
+        ] {
+            // `true` = MySQL: only the historical collection-group state is auto-completed, never these.
+            assert_eq!(custom_role_preflight_decision(facts, true), expected);
+            assert_eq!(custom_role_preflight_decision(facts, false), expected);
+
+            let error = custom_role_preflight_error(expected, facts);
+            let message = error.source().expect("preflight error should retain its I/O error source").to_string();
+            assert!(message.contains(group), "message should name the affected columns: {message}");
+            assert!(message.contains("ALTER TABLE users_organizations DROP COLUMN"));
+        }
     }
 
     #[test]
@@ -1375,7 +1488,10 @@ mod custom_role_migration_preflight_tests {
             ..pending_repair()
         };
         assert_eq!(custom_role_preflight_decision(facts, true), Decision::CompleteMysqlCollectionMigration);
-        assert_eq!(custom_role_preflight_decision(facts, false), Decision::RefusePartialCollectionSchema);
+        assert_eq!(
+            custom_role_preflight_decision(facts, false),
+            Decision::RefusePartialPermissionSchema(super::PermissionColumnGroup::Collection)
+        );
     }
 
     #[test]
@@ -1406,7 +1522,7 @@ mod custom_role_migration_preflight_tests {
                 },
                 true,
             ),
-            Decision::RefusePartialCollectionSchema
+            Decision::RefusePartialPermissionSchema(super::PermissionColumnGroup::Collection)
         );
         assert_eq!(
             custom_role_preflight_decision(
@@ -1417,7 +1533,7 @@ mod custom_role_migration_preflight_tests {
                 },
                 true,
             ),
-            Decision::RefuseCollectionLedgerMismatch
+            Decision::RefusePermissionLedgerMismatch(super::PermissionColumnGroup::Collection)
         );
     }
 }

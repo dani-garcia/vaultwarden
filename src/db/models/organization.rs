@@ -15,7 +15,7 @@ use crate::{
     db::{
         DbConn,
         schema::{
-            ciphers, ciphers_collections, collections, collections_groups, groups, groups_users, org_policies,
+            ciphers_collections, collections, collections_groups, groups, groups_users, org_policies,
             organization_api_key, organizations, users, users_collections, users_organizations,
         },
     },
@@ -1291,27 +1291,6 @@ impl Membership {
                 .distinct()
                 .load::<Self>(conn)
                 .expect("Error loading user organizations with groups")
-        })
-        .await
-    }
-
-    pub async fn user_has_ge_admin_access_to_cipher(user_uuid: &UserId, cipher_uuid: &CipherId, conn: &DbConn) -> bool {
-        conn.run(move |conn| {
-            users_organizations::table
-                .inner_join(
-                    ciphers::table.on(ciphers::uuid
-                        .eq(cipher_uuid)
-                        .and(ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()))),
-                )
-                .filter(users_organizations::user_uuid.eq(user_uuid))
-                .filter(
-                    users_organizations::atype.eq_any(vec![MembershipType::Owner as i32, MembershipType::Admin as i32]),
-                )
-                .count()
-                .first::<i64>(conn)
-                .ok()
-                .unwrap_or(0)
-                != 0
         })
         .await
     }

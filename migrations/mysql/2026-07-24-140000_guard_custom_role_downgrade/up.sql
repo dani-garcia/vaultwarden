@@ -1,3 +1,7 @@
--- Forward migration marker. Its down migration intentionally blocks an automatic lossy downgrade
+-- Forward migration marker: its down migration intentionally blocks an automatic lossy downgrade
 -- before any granular permission column is removed.
-SELECT 1;
+--
+-- It also cleans up after 2026-07-15: the same-run bookkeeping table has served its purpose by now
+-- (2026-07-23 consumed the marker), so it is not left behind in every database. A single DDL
+-- statement is safe even on MySQL, where DDL commits implicitly -- re-running it is a no-op.
+DROP TABLE IF EXISTS __vw_custom_role_same_run_0716;
