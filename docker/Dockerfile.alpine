@@ -70,7 +70,7 @@ RUN echo "export CARGO_TARGET=${CARGO_BUILD_TARGET}" >> /env-cargo && \
     # Output the current contents of the file
     cat /env-cargo
 
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
 # Copies over *only* your manifests and build files
@@ -86,7 +86,7 @@ ARG DB=sqlite,mysql,postgresql,enable_mimalloc
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
     find . -not -path "./target*" -delete
 
@@ -97,13 +97,13 @@ COPY . .
 ARG VW_VERSION
 
 # Builds again, this time it will be the actual source files being build
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     # Make sure that we actually build the project by updating the src/main.rs timestamp
     # Also do this for build.rs to ensure the version is rechecked
     touch build.rs src/main.rs && \
     # Create a symlink to the binary target folder to easy copy the binary in the final stage
     cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
-    if [[ "${CARGO_PROFILE}" == "dev" ]] ; then \
+    if [ "${CARGO_PROFILE}" = "dev" ] ; then \
         ln -vfsr "/app/target/${CARGO_TARGET}/debug" /app/target/final ; \
     else \
         ln -vfsr "/app/target/${CARGO_TARGET}/${CARGO_PROFILE}" /app/target/final ; \
@@ -126,6 +126,7 @@ RUN source /env-cargo && \
 # To uninstall: docker run --privileged --rm tonistiigi/binfmt --uninstall 'qemu-*'
 #
 # We need to add `--platform` here, because of a podman bug: https://github.com/containers/buildah/issues/4742
+# hadolint ignore=DL3065
 FROM --platform=$TARGETPLATFORM docker.io/library/alpine:3.24
 
 ENV ROCKET_PROFILE="release" \
