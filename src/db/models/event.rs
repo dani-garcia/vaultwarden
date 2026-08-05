@@ -298,12 +298,16 @@ impl Event {
     ) -> Vec<Self> {
         conn.run(move |conn| {
             event::table
-                .inner_join(users_organizations::table.on(users_organizations::uuid.eq(member_uuid)))
+                .inner_join(
+                    users_organizations::table
+                        .on(users_organizations::uuid.eq(member_uuid).and(users_organizations::org_uuid.eq(org_uuid))),
+                )
                 .filter(event::org_uuid.eq(org_uuid))
                 .filter(event::event_date.between(start, end))
                 .filter(
-                    event::user_uuid
-                        .eq(users_organizations::user_uuid.nullable())
+                    event::org_user_uuid
+                        .eq(member_uuid)
+                        .or(event::user_uuid.eq(users_organizations::user_uuid.nullable()))
                         .or(event::act_user_uuid.eq(users_organizations::user_uuid.nullable())),
                 )
                 .select(event::all_columns)
