@@ -293,7 +293,13 @@ pub async fn notify_pending_auto_confirm(member: &Membership, conn: &DbConn, nt:
         return;
     }
 
-    for admin in Membership::find_confirmed_and_manage_all_by_org(&member.org_uuid, conn).await {
+    // Confirming requires `AdminHeaders`, so skip the managers this also returns. They could not act on
+    // the notification anyway and would only run into a rejected request.
+    for admin in Membership::find_confirmed_and_manage_all_by_org(&member.org_uuid, conn)
+        .await
+        .into_iter()
+        .filter(|m| m.atype >= MembershipType::Admin)
+    {
         nt.send_auto_confirm_member(&admin.user_uuid, &member.org_uuid, &member.uuid, &member.user_uuid).await;
     }
 }

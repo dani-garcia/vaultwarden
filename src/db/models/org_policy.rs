@@ -283,7 +283,7 @@ impl OrgPolicy {
     /// Returns true if the user is a member of an organization other than `exclude_org_uuid` which has the
     /// automatic user confirmation policy enabled. Contrary to `is_applicable_to_user` this does not exempt
     /// owners and admins, the policy applies to every role and every status.
-    /// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/OrganizationFeatures/Policies/PolicyRequirements/AutomaticUserConfirmationPolicyRequirement.cs
+    /// https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/PolicyRequirements/AutomaticUserConfirmationPolicyRequirement.cs
     pub async fn auto_confirm_enabled_for_other_org(
         user_uuid: &UserId,
         exclude_org_uuid: &OrganizationId,
@@ -360,7 +360,7 @@ impl OrgPolicy {
         // The automatic user confirmation policy is a stricter variant of the SingleOrg policy, it does not
         // exempt owners and admins and it applies to every status. Therefore it is checked outside of the
         // block above.
-        // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/OrganizationFeatures/Policies/Enforcement/AutoConfirm/AutomaticUserConfirmationPolicyEnforcementHandler.cs
+        // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/Enforcement/AutoConfirm/AutomaticUserConfirmationPolicyEnforcementHandler.cs
         if Self::auto_confirm_enabled_for_other_org(&m.user_uuid, &m.org_uuid, conn).await {
             err!(format!(
                 "Cannot {} because another organization confirms its members automatically and forbids other memberships (membership {})",

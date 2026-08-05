@@ -1388,7 +1388,11 @@ async fn bulk_confirm_invite(
     match data.keys {
         Some(keys) => {
             for invite in keys {
-                let member_id = invite.id.unwrap();
+                // Never unwrap the id, this is client supplied and a missing one must not take the request down
+                let Some(member_id) = invite.id else {
+                    error!("Ignoring a bulk confirm entry without a member id");
+                    continue;
+                };
                 let user_key = invite.key.unwrap_or_default();
                 let err_msg = match confirm_invite_impl(&org_id, &member_id, &user_key, &headers, &conn, &nt).await {
                     Ok(()) => String::new(),
@@ -1474,6 +1478,16 @@ async fn confirm_member(
 
     // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
     OrgPolicy::check_user_allowed(&member_to_confirm, "confirm", conn).await?;
+
+    // An organization which confirms its members automatically does not tolerate emergency access: the
+    // grantee could take over the account of a member that nobody ever vetted and reach the organization
+    // vault through it. Enabling the policy drops the grants of the members present at that time, this
+    // covers the member which brings one along when it joins afterwards. Bitwarden does the same, and
+    // like there it applies to the manual confirmation as well.
+    // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/OrganizationUsers/ConfirmOrganizationUserCommand.cs
+    if OrgPolicy::is_auto_confirm_enabled(&org_id, conn).await {
+        EmergencyAccess::delete_all_by_user(&member_to_confirm.user_uuid, conn).await?;
+    }
 
     log_event(
         EventType::OrganizationUserConfirmed as i32,
@@ -2280,8 +2294,14 @@ async fn put_policy(
 
     // The automatic user confirmation policy hands out organization access without anybody looking at it,
     // so it needs to be allowed by the server first and it requires the Single Org policy on top.
-    // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/OrganizationFeatures/Policies/PolicyEventHandlers/AutomaticUserConfirmationPolicyEventHandler.cs
-    if pol_type_enum == OrgPolicyType::AutomaticUserConfirmation && data.enabled {
+    // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/PolicyEventHandlers/AutomaticUserConfirmationPolicyEventHandler.cs
+    let auto_confirm_turned_on = if pol_type_enum == OrgPolicyType::AutomaticUserConfirmation
+        && data.enabled
+        // Only the step from disabled to enabled validates and has side effects. The web vault saves a
+        // policy on every edit, and re-running the below on an already enabled policy would keep wiping
+        // emergency access that members created in the meantime. Bitwarden guards this the same way.
+        && !OrgPolicy::is_auto_confirm_enabled(&org_id, &conn).await
+    {
         if !CONFIG.org_auto_confirm_enabled() {
             err!("Automatic user confirmation is not enabled on this server.")
         }
@@ -2299,8 +2319,7 @@ async fn put_policy(
         // Every member has to be compliant already. Contrary to the Single Org policy below we do not revoke
         // the members that are not, because this policy also applies to owners and admins and revoking those
         // could lock the organization out of itself.
-        let members = Membership::find_by_org(&org_id, &conn).await;
-        for member in &members {
+        for member in Membership::find_by_org(&org_id, &conn).await {
             if member.status != MembershipStatus::Invited as i32
                 && Membership::count_accepted_and_confirmed_by_user(&member.user_uuid, &org_id, &conn).await > 0
             {
@@ -2308,14 +2327,10 @@ async fn put_policy(
             }
         }
 
-        // Emergency access would hand the account of a member to somebody outside of the control of this
-        // organization, which defeats the point of vetting members. Bitwarden drops these grants when the
-        // policy is turned on, and blocks new ones while it is on (see `emergency_access.rs`).
-        for member in &members {
-            info!("Removing emergency access of {} because automatic user confirmation was enabled", member.user_uuid);
-            EmergencyAccess::delete_all_by_user(&member.user_uuid, &conn).await?;
-        }
-    }
+        true
+    } else {
+        false
+    };
 
     // Also prevent the Single Org policy to be disabled while automatic user confirmation depends on it
     if pol_type_enum == OrgPolicyType::SingleOrg
@@ -2380,6 +2395,25 @@ async fn put_policy(
     policy.enabled = data.enabled;
     policy.data = serde_json::to_string(&data.data)?;
     policy.save(&conn).await?;
+
+    // Emergency access would hand the account of a member to somebody outside of the control of this
+    // organization, which defeats the point of vetting members. Bitwarden drops these grants when the
+    // policy is turned on, and blocks new ones while it is on (see `emergency_access.rs`).
+    // This runs after the policy is stored so that a failed save can not destroy data for nothing, and it
+    // skips invited members on purpose: an invitation is created by an admin without any consent of the
+    // invited user, so it must never be able to delete data of an account that never joined.
+    if auto_confirm_turned_on {
+        for member in Membership::find_by_org(&org_id, &conn).await {
+            if member.status == MembershipStatus::Invited as i32 {
+                continue;
+            }
+            info!(
+                "Removing emergency access of {} because automatic user confirmation was enabled for {org_id}",
+                member.user_uuid
+            );
+            EmergencyAccess::delete_all_by_user(&member.user_uuid, &conn).await?;
+        }
+    }
 
     log_event(
         EventType::PolicyUpdated as i32,
