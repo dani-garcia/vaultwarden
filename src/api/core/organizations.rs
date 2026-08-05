@@ -1837,9 +1837,12 @@ async fn post_org_import(
     for col in data.collections {
         let existing = col.id.as_ref().and_then(|col_id| existing_collections.get(col_id));
         let collection_uuid = if let Some(collection) = existing {
-            // When not an Owner or Admin, check if the member is allowed to write to the collection.
+            // When not an Owner or Admin, the member must have the "Manage collection" permission
+            // (directly or via a group) on the collection. Plain edit/write access is not enough:
+            // importing creates items in bulk on the member's behalf, so it requires the same
+            // permission level as manually managing the collection's contents.
             if headers.membership.atype < MembershipType::Admin
-                && !collection.is_writable_by_user(&headers.membership.user_uuid, &conn).await
+                && !collection.is_manageable_by_user(&headers.membership.user_uuid, &conn).await
             {
                 err!(Compact, "The current user isn't allowed to manage this collection")
             }
@@ -1863,6 +1866,17 @@ async fn post_org_import(
     let mut relations = Vec::with_capacity(data.collection_relationships.len());
     for relation in data.collection_relationships {
         relations.push((relation.key, relation.value));
+    }
+
+    // Members without full organization access (e.g. importing into collections they manage
+    // under an active "Organization Data Ownership" policy) can only ever act within collections
+    // they're allowed to manage. Reject the whole import up-front if any cipher wouldn't end up
+    // assigned to at least one such collection, so we never create orphaned organization items.
+    if headers.membership.atype < MembershipType::Admin
+        && !headers.membership.has_full_access()
+        && !every_cipher_assigned_to_a_collection(data.ciphers.len(), &relations, !collections.is_empty())
+    {
+        err!(Compact, "Every imported item must be assigned to a collection you're allowed to manage")
     }
 
     let headers: Headers = headers.into();
@@ -1898,6 +1912,60 @@ async fn post_org_import(
 
     let mut user = headers.user;
     user.update_revision(&conn).await
+}
+
+/// Returns whether every cipher in `0..cipher_count` appears as the cipher-index side of at
+/// least one entry in `relations`. Used to reject an organization import up-front, before any
+/// ciphers are created, when the importing member doesn't have full org access and therefore
+/// must place every item into a collection they're allowed to manage.
+fn every_cipher_assigned_to_a_collection(
+    cipher_count: usize,
+    relations: &[(usize, usize)],
+    has_any_collection: bool,
+) -> bool {
+    if cipher_count == 0 {
+        return true;
+    }
+    if !has_any_collection {
+        return false;
+    }
+    let assigned: HashSet<usize> = relations.iter().map(|(cipher_idx, _)| *cipher_idx).collect();
+    (0..cipher_count).all(|i| assigned.contains(&i))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::every_cipher_assigned_to_a_collection;
+
+    #[test]
+    fn no_ciphers_is_always_allowed() {
+        assert!(every_cipher_assigned_to_a_collection(0, &[], false));
+    }
+
+    #[test]
+    fn ciphers_without_any_collection_are_rejected() {
+        assert!(!every_cipher_assigned_to_a_collection(2, &[], false));
+    }
+
+    #[test]
+    fn every_cipher_mapped_to_a_collection_is_allowed() {
+        let relations = [(0, 0), (1, 0)];
+        assert!(every_cipher_assigned_to_a_collection(2, &relations, true));
+    }
+
+    #[test]
+    fn a_cipher_missing_from_relations_is_rejected() {
+        // Cipher index 1 has no entry in `relations`.
+        let relations = [(0, 0)];
+        assert!(!every_cipher_assigned_to_a_collection(2, &relations, true));
+    }
+
+    #[test]
+    fn a_cipher_assigned_to_multiple_collections_still_counts_as_assigned() {
+        // Cipher 0 is mapped to two collections, cipher 1 to one: both are covered.
+        let relations = [(0, 0), (0, 1), (1, 0)];
+        assert!(every_cipher_assigned_to_a_collection(2, &relations, true));
+    }
 }
 
 #[derive(Deserialize)]
