@@ -2,6 +2,7 @@ import { expect, type Browser, Page } from '@playwright/test';
 
 import { type MailBuffer } from 'maildev';
 
+import * as OTPAuth from "otpauth";
 import * as utils from '../../global-utils';
 import { retrieveEmailCode } from './2fa';
 
@@ -43,6 +44,7 @@ export async function logUser(
         mailBuffer ?: MailBuffer,
         mail2fa?: boolean,
         notNewDevice?: boolean,
+        totp?: OTPAuth.TOTP,
     } = {}
 ) {
     await test.step(`Log user ${user.email}`, async () => {
@@ -55,11 +57,23 @@ export async function logUser(
         await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).fill(user.password);
         await page.getByRole('button', { name: 'Log in', exact: true }).click();
 
-        if( options.mail2fa ){
+        if( options.mail2fa || options.totp ){
+            let code;
+
             await test.step('2FA check', async () => {
                 await expect(page.getByRole('heading', { name: 'Verify your Identity' })).toBeVisible();
-                let code = await retrieveEmailCode(test, page, options.mailBuffer);
+
+                if( options.totp ) {
+                    const totp = options.totp;
+                    let timestamp = Date.now(); // Needed to use the next token
+                    timestamp = timestamp + (totp.period - (Math.floor(timestamp / 1000) % totp.period) + 1) * 1000;
+                    code = totp.generate({timestamp});
+                } else if( options.mail2fa ){
+                    code = await retrieveEmailCode(test, page, mailBuffer);
+                }
+
                 await page.getByLabel(/Verification code/).fill(code);
+
                 await page.getByRole('button', { name: 'Continue' }).click();
             });
         }
