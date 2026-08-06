@@ -682,6 +682,11 @@ make_config! {
         events_days_retain:     i64,    false,   option;
     },
 
+    client {
+        /// Control whether clients onboarding interstitials are suppressed |> post-login welcome dialogs, extension install prompts, setup extension redirects, and premium upsell modals
+        client_suppress_onboarding:         bool, true,   def,    false;
+    },
+
     /// Advanced settings
     advanced {
         /// Client IP header |> If not present, the remote IP is used.
