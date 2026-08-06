@@ -1,8 +1,8 @@
 # Integration tests
 
 This allows running integration tests using [Playwright](https://playwright.dev/).
-
-It uses its own `test.env` with different ports to not collide with a running dev instance.
+\
+It usse its own [test.env](/test/scenarios/test.env) with different ports to not collide with a running dev instance.
 
 ## Install
 
@@ -11,11 +11,11 @@ Databases (`Mariadb`, `Mysql` and `Postgres`) and `Playwright` will run in conta
 
 ### Running Playwright outside docker
 
-It is possible to run `Playwright` outside of the container, this removes the need to rebuild the image for each change.
-You will additionally need `nodejs` then run:
+It's possible to run `Playwright` outside of the container, this remove the need to rebuild the image for each change.
+You'll additionally need `nodejs` then run:
 
 ```bash
-npm ci --ignore-scripts
+npm ci --ignore-scripts --allow-git=none --allow-remote=none
 npx playwright install-deps
 npx playwright install firefox
 ```
@@ -65,7 +65,7 @@ DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env run Pl
 If you want you can keep the DB and Keycloak runnning (states are not impacted by the tests):
 
 ```bash
-PW_KEEP_SERVICE_RUNNNING=true npx playwright test
+PW_KEEP_SERVICE_RUNNING=true npx playwright test
 ```
 
 ### Running specific tests
@@ -77,7 +77,7 @@ DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env run Pl
 DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env run Playwright test --project=sqlite login
 ```
 
-To run only a specifc test (It might fail if it has dependency):
+To run only a specific test (It might fail if it has dependency):
 
 ```bash
 DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env run Playwright test --project=sqlite -g "Account creation"
@@ -92,7 +92,7 @@ This does not start the server, you will need to start it manually.
 
 ```bash
 DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env up Vaultwarden
-npx playwright codegen "http://127.0.0.1:8003"
+npx playwright codegen "https://127.0.0.1:8000" --ignore-https-errors
 ```
 
 ## Override web-vault
@@ -112,12 +112,11 @@ You can check the result running:
 DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env up Vaultwarden
 ```
 
-Then check `http://127.0.0.1:8003/admin/diagnostics` with `admin`.
+Then check `https://127.0.0.1:8003/admin/diagnostics` with `admin`.
 
 # OpenID Connect test setup
 
-Additionally this `docker-compose` template allows to run locally Vaultwarden,
-[Keycloak](https://www.keycloak.org/) and [Maildev](https://github.com/timshel/maildev) to test OIDC.
+Additionally this `docker-compose` template allow to run locally `Vaultwarden`, [Keycloak](https://www.keycloak.org/) and [Maildev](https://github.com/timshel/maildev) to test OIDC.
 
 ## Setup
 
@@ -131,18 +130,17 @@ Then start the stack (the `profile` is required to run `Vaultwarden`) :
 ```bash
 > docker compose --profile vaultwarden --env-file .env up
 ....
-keycloakSetup_1  | Logging into http://127.0.0.1:8080 as user admin of realm master
+keycloakSetup_1  | Logging into https://127.0.0.1:8080 as user admin of realm master
 keycloakSetup_1  | Created new realm with id 'test'
 keycloakSetup_1  | 74af4933-e386-4e64-ba15-a7b61212c45e
 oidc_keycloakSetup_1 exited with code 0
 ```
 
-Wait until `oidc_keycloakSetup_1 exited with code 0` which indicates the correct setup of the Keycloak realm, client and user
-(It is normal for this container to stop once the configuration is done).
+Wait until `oidc_keycloakSetup_1 exited with code 0` which indicate the correct setup of the Keycloak realm, client and user (It's normal for this container to stop once the configuration is done).
 
 Then you can access :
 
-- `Vaultwarden` on http://0.0.0.0:8000 with the default user `test@yopmail.com/test`.
+- `Vaultwarden` on https://0.0.0.0:8000 with the default user `test@yopmail.com/test`.
 - `Keycloak` on http://0.0.0.0:8080/admin/master/console/ with the default user `admin/admin`
 - `Maildev` on http://0.0.0.0:1080
 
@@ -171,7 +169,7 @@ docker compose --profile vaultwarden --env-file .env build VaultwardenPrebuild V
 All configuration for `keycloak` / `Vaultwarden` / `keycloak_setup.sh` can be found in [.env](.env.template).
 The content of the file will be loaded as environment variables in all containers.
 
-- `keycloak` [configuration](https://www.keycloak.org/server/all-config) includes `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` and any variable prefixed `KC_` ([more information](https://www.keycloak.org/server/configuration#_example_configuring_the_db_url_host_parameter)).
+- `keycloak` [configuration](https://www.keycloak.org/server/all-config) include `KC_BOOTSTRAP_ADMIN_USERNAME` / `KC_BOOTSTRAP_ADMIN_PASSWORD` and any variable prefixed `KC_` ([more information](https://www.keycloak.org/server/configuration#_example_configuring_the_db_url_host_parameter)).
 - All `Vaultwarden` configuration can be set (EX: `SMTP_*`)
 
 ## Cleanup
