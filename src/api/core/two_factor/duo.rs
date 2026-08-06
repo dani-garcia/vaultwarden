@@ -5,10 +5,11 @@ use rocket::{Route, serde::json::Json};
 use crate::{
     CONFIG,
     api::{
-        ApiResult, EmptyResult, JsonResult, PasswordOrOtpData, core::log_user_event,
-        core::two_factor::generate_recover_code,
+        ApiResult, EmptyResult, JsonResult, PasswordOrOtpData,
+        core::log_user_event,
+        core::two_factor::{VerificationTokenData, generate_recover_code},
     },
-    auth::Headers,
+    auth::{Headers, two_factor, two_factor::DuoData},
     crypto,
     db::{
         DbConn,
@@ -19,55 +20,7 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![get_duo, activate_duo, activate_duo_put,]
-}
-
-#[derive(Serialize, Deserialize)]
-struct DuoData {
-    host: String, // Duo API hostname
-    ik: String,   // client id
-    sk: String,   // client secret
-}
-
-impl DuoData {
-    fn global() -> Option<Self> {
-        match (CONFIG._enable_duo(), CONFIG.duo_host()) {
-            (true, Some(host)) => Some(Self {
-                host,
-                ik: CONFIG.duo_ikey().unwrap(),
-                sk: CONFIG.duo_skey().unwrap(),
-            }),
-            _ => None,
-        }
-    }
-    fn msg(s: &str) -> Self {
-        Self {
-            host: s.into(),
-            ik: s.into(),
-            sk: s.into(),
-        }
-    }
-    fn secret() -> Self {
-        Self::msg("<global_secret>")
-    }
-    fn obscure(self) -> Self {
-        let mut host = self.host;
-        let mut ik = self.ik;
-        let mut sk = self.sk;
-
-        let digits = 4;
-        let replaced = "************";
-
-        host.replace_range(digits.., replaced);
-        ik.replace_range(digits.., replaced);
-        sk.replace_range(digits.., replaced);
-
-        Self {
-            host,
-            ik,
-            sk,
-        }
-    }
+    routes![get_duo, activate_duo, activate_duo_put, disable_duo,]
 }
 
 enum DuoStatus {
@@ -96,22 +49,19 @@ async fn get_duo(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) 
 
     data.validate(&user, false, &conn).await?;
 
-    let data = get_user_duo_data(&user.uuid, &conn).await;
-
-    let (enabled, data) = match data {
+    let (enabled, duo) = match get_user_duo_data(&user.uuid, &conn).await {
         DuoStatus::Global(_) => (true, Some(DuoData::secret())),
         DuoStatus::User(data) => (true, Some(data.obscure())),
         DuoStatus::Disabled(true) => (false, Some(DuoData::msg(DISABLED_MESSAGE_DEFAULT))),
         DuoStatus::Disabled(false) => (false, None),
     };
 
-    let json = if let Some(data) = data {
+    let duo_json = if let Some(data) = duo.as_ref() {
         json!({
             "enabled": enabled,
             "host": data.host,
             "clientSecret": data.sk,
             "clientId": data.ik,
-            "object": "twoFactorDuo"
         })
     } else {
         json!({
@@ -119,11 +69,13 @@ async fn get_duo(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) 
             "host": null,
             "clientSecret": null,
             "clientId": null,
-            "object": "twoFactorDuo"
         })
     };
 
-    Ok(Json(json))
+    Ok(Json(rocket::serde::json::json!({
+        "duo": duo_json,
+        "userVerificationToken": two_factor::duo_token(user.uuid, duo, enabled),
+    })))
 }
 
 #[derive(Deserialize)]
@@ -132,8 +84,7 @@ struct EnableDuoData {
     host: String,
     client_secret: String,
     client_id: String,
-    master_password_hash: Option<String>,
-    otp: Option<String>,
+    user_verification_token: String,
 }
 
 impl From<EnableDuoData> for DuoData {
@@ -160,12 +111,7 @@ async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, conn: DbConn)
     let data: EnableDuoData = data.into_inner();
     let mut user = headers.user;
 
-    PasswordOrOtpData {
-        master_password_hash: data.master_password_hash.clone(),
-        otp: data.otp.clone(),
-    }
-    .validate(&user, true, &conn)
-    .await?;
+    two_factor::validate_duo(&data.user_verification_token, &user.uuid, None, false)?;
 
     let (data, data_str) = if check_duo_fields_custom(&data) {
         let data_req: DuoData = data.into();
@@ -185,17 +131,44 @@ async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, conn: DbConn)
     log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(Json(json!({
-        "enabled": true,
-        "host": data.host,
-        "clientSecret": data.sk,
-        "clientId": data.ik,
-        "object": "twoFactorDuo"
+        "duo": json!({
+            "enabled": true,
+            "host": data.host,
+            "clientSecret": data.sk,
+            "clientId": data.ik,
+        }),
     })))
 }
 
 #[put("/two-factor/duo", data = "<data>")]
 async fn activate_duo_put(data: Json<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
     activate_duo(data, headers, conn).await
+}
+
+#[delete("/two-factor/duo", data = "<data>")]
+async fn disable_duo(data: Json<VerificationTokenData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let user = headers.user;
+
+    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Duo as i32, &conn).await {
+        // Apply the same transformation than in `get_duo` to check we are disabling the correct one
+        let duo = match to_user_duo_data(&twofactor) {
+            DuoStatus::Global(_) => Some(DuoData::secret()),
+            DuoStatus::User(data) => Some(data.obscure()),
+            DuoStatus::Disabled(_) => None,
+        };
+
+        two_factor::validate_duo(&data.user_verification_token, &user.uuid, duo.as_ref(), true)?;
+
+        twofactor.delete(&conn).await?;
+        log_user_event(EventType::UserDisabled2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)
+            .await;
+    }
+
+    if TwoFactor::find_by_user(&user.uuid, &conn).await.is_empty() {
+        super::enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await?;
+    }
+
+    Ok(())
 }
 
 async fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {
@@ -237,6 +210,10 @@ async fn get_user_duo_data(user_id: &UserId, conn: &DbConn) -> DuoStatus {
         return DuoStatus::Disabled(DuoData::global().is_some());
     };
 
+    to_user_duo_data(&twofactor)
+}
+
+fn to_user_duo_data(twofactor: &TwoFactor) -> DuoStatus {
     // If the user has the required values, we use those
     if let Ok(data) = serde_json::from_str(&twofactor.data) {
         return DuoStatus::User(data);
