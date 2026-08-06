@@ -24,12 +24,15 @@ services:
     environment:
       - ADMIN_TOKEN
       - DATABASE_URL
+      - CLIENT_SUPPRESS_ONBOARDING
+      - EMAIL_2FA_AUTO_FALLBACK
       - I_REALLY_WANT_VOLATILE_STORAGE
       - LOG_LEVEL
       - LOGIN_RATELIMIT_MAX_BURST
       - SMTP_HOST
       - SMTP_FROM
       - SMTP_DEBUG
+      - SSO_AUTH_ONLY_NOT_SESSION
       - SSO_DEBUG_TOKENS
       - SSO_ENABLED
       - SSO_FRONTEND
@@ -70,7 +73,7 @@ services:
   Mysql:
     profiles: ["playwright"]
     container_name: playwright_mysql
-    image: mysql:8.4.1
+    image: mysql:9.7.0
     env_file: test.env
     healthcheck:
       test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
@@ -82,7 +85,7 @@ services:
   Postgres:
     profiles: ["playwright"]
     container_name: playwright_postgres
-    image: postgres:16.3
+    image: postgres:18.4
     env_file: test.env
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
@@ -94,7 +97,7 @@ services:
   Maildev:
     profiles: ["vaultwarden", "maildev"]
     container_name: maildev
-    image: timshel/maildev:3.0.4
+    image: timshel/maildev:3.2.19
     ports:
       - ${SMTP_PORT}:1025
       - 1080:1080
@@ -102,7 +105,7 @@ services:
   Keycloak:
     profiles: ["keycloak", "vaultwarden"]
     container_name: keycloak-${ENV:-dev}
-    image: quay.io/keycloak/keycloak:26.3.4
+    image: quay.io/keycloak/keycloak:26.6.2
     network_mode: "host"
     command:
       - start-dev
@@ -112,12 +115,12 @@ services:
     profiles: ["keycloak", "vaultwarden"]
     container_name: keycloakSetup-${ENV:-dev}
     image: keycloak_setup-${ENV:-dev}
+    network_mode: "host"
     build:
       context: compose/keycloak
       dockerfile: Dockerfile
       args:
-        KEYCLOAK_VERSION: 26.3.4
-    network_mode: "host"
+        KEYCLOAK_VERSION: 26.6.2
     depends_on:
       - Keycloak
     restart: "no"

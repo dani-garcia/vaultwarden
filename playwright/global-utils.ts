@@ -207,7 +207,7 @@ export async function startVault(browser: Browser, testInfo: TestInfo, env = {},
 }
 
 export async function stopVault(force: boolean = false) {
-    if( force === false && process.env.PW_KEEP_SERVICE_RUNNNING === "true" ) {
+    if( force === false && process.env.PW_KEEP_SERVICE_RUNNING === "true" ) {
         console.log(`Keep vaultwarden running on: ${process.env.DOMAIN}`);
     } else {
         console.log(`Vaultwarden stopping`);
@@ -231,6 +231,7 @@ export async function checkNotification(page: Page, hasText: string) {
 }
 
 export async function cleanLanding(page: Page) {
+    await page.context().clearCookies();
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('button').nth(0)).toBeVisible();
 
@@ -247,16 +248,4 @@ export async function logout(test: Test, page: Page, user: { name: string }) {
         await page.getByRole('menuitem', { name: 'Log out' }).click();
         await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
     });
-}
-
-export async function ignoreExtension(page: Page) {
-    await page.waitForLoadState('domcontentloaded');
-
-    try {
-        await page.getByRole('button', { name: 'Add it later' }).click({timeout: 5_000});
-        await page.getByRole('link', { name: 'Skip to web app' }).click();
-    } catch (error) {
-        console.log('Extension setup not visible. Continuing');
-    }
-
 }
