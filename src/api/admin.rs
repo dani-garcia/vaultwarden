@@ -716,6 +716,36 @@ fn web_vault_compare(active: &str, latest: &str) -> i8 {
     }
 }
 
+fn check_template_overrides() -> Vec<&'static str> {
+    let template_folder = std::path::PathBuf::from(CONFIG.templates_folder());
+    let mut overrides = Vec::new();
+    for folder in ["admin", "email", "scss"] {
+        if folder_has_hbs_files(&template_folder.join(folder)) {
+            overrides.push(folder);
+        }
+    }
+
+    if folder_has_hbs_files(&template_folder) {
+        overrides.push("other");
+    }
+
+    overrides
+}
+
+fn folder_has_hbs_files(dir: &std::path::Path) -> bool {
+    let Ok(files) = std::fs::read_dir(dir) else {
+        // No files in this directory at all, so we can return false
+        return false;
+    };
+
+    files.flatten().any(|f| {
+        // Validate if it is a file and if it has the `.hbs` extension and starts with a-z or 0-9
+        f.file_type().is_ok_and(|t| t.is_file())
+            && f.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("hbs"))
+            && f.file_name().to_str().is_some_and(|n| n.starts_with(|c: char| c.is_ascii_alphanumeric()))
+    })
+}
+
 #[get("/diagnostics")]
 async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResult<Html<String>> {
     use chrono::prelude::*;
@@ -770,6 +800,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
         "db_version": get_sql_server_version(&conn).await,
         "admin_url": format!("{}/diagnostics", admin_url()),
         "overrides": &CONFIG.get_overrides().join(", "),
+        "template_overrides": check_template_overrides().join(", "),
         "invalid_feature_flags": invalid_feature_flags,
         "host_arch": env::consts::ARCH,
         "host_os":  env::consts::OS,

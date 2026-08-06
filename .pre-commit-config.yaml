@@ -18,9 +18,10 @@ repos:
 
   # When this version is updated, do not forget to update this in `.github/workflows/typos.yaml` too
   - repo: https://github.com/crate-ci/typos
-    rev: bee27e3a4fd1ea2111cf90ab89cd076c870fce14 # v1.48.0
+    rev: 8a48f81b6c64dcfea44b3633223084c4be58ac5f # v1.49.0
     hooks:
       - id: typos
+        always_run: true
 
   - repo: local
     hooks:
@@ -38,8 +39,7 @@ repos:
         entry: cargo test
         language: system
         args: [ "--features", "sqlite,mysql,postgresql", "--" ]
-        types_or: [ rust, file ]
-        files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
+        types_or: [ rust, toml ] # Cargo.lock matches toml type which is intended
         pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy
@@ -47,8 +47,7 @@ repos:
         entry: cargo clippy
         language: system
         args: [ "--features", "sqlite,mysql,postgresql", "--", "-D", "warnings" ]
-        types_or: [ rust, file ]
-        files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
+        types_or: [ rust, toml ] # Cargo.lock matches toml type which is intended
         pass_filenames: false
       - id: check-docker-templates
         name: check docker templates
