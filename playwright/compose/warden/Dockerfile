@@ -35,6 +35,7 @@ WORKDIR /
 
 COPY --from=prebuilt /start.sh .
 COPY --from=prebuilt /vaultwarden .
+COPY --from=build /data ./data
 COPY --from=build /web-vault ./web-vault
 
 ENTRYPOINT ["/start.sh"]
