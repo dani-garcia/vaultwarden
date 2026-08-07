@@ -299,8 +299,6 @@ pub async fn exchange_code(
 
     let user_name = extract_claim(&id_claims_json, &configured_claim)
         .or_else(|| extract_claim(&user_info_json, &configured_claim))
-        .or_else(|| extract_claim(&id_claims_json, "name"))
-        .or_else(|| extract_claim(&user_info_json, "name"))
         .or_else(|| id_claims.preferred_username().map(|n| n.to_string()))
         .or_else(|| user_info.preferred_username().map(|n| n.to_string()));
 
