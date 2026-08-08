@@ -1,5 +1,4 @@
 "use strict";
-/* eslint-env es2017, browser */
 /* global BASE_URL:readable, bootstrap:readable */
 
 var dnsCheck = false;
@@ -80,37 +79,44 @@ async function generateSupportString(event, dj) {
     event.preventDefault();
     event.stopPropagation();
 
+    // Health check Markdown emoji, if something is a failure or not
+    const chk = v => v ? "true :white_check_mark:" : "false :x:";
+    // Yes/No Markdown emoji, if something is not a failure, but just yes or no
+    const yn = v => v ? "yes :heavy_plus_sign:" : "no :heavy_minus_sign:";
+
+    const template_overrides = dj.template_overrides !== "" ? ` (${dj.template_overrides})` : "";
     let supportString = "### Your environment (Generated via diagnostics page)\n\n";
 
     supportString += `* Vaultwarden version: v${dj.current_release}\n`;
     supportString += `* Web-vault version: v${dj.active_web_release}\n`;
     supportString += `* OS/Arch: ${dj.host_os}/${dj.host_arch}\n`;
-    supportString += `* Running within a container: ${dj.running_within_container} (Base: ${dj.container_base_image})\n`;
+    supportString += `* Running within a container: ${yn(dj.running_within_container)} (Base: ${dj.container_base_image})\n`;
     supportString += `* Database type: ${dj.db_type}\n`;
     supportString += `* Database version: ${dj.db_version}\n`;
-    supportString += `* Uses config.json: ${dj.overrides !== ""}\n`;
-    supportString += `* Uses a reverse proxy: ${dj.ip_header_exists}\n`;
+    supportString += `* Uses config.json: ${yn(dj.overrides !== "")}\n`;
+    supportString += `* Uses custom templates: ${yn(dj.template_overrides !== "")}${template_overrides}\n`;
+    supportString += `* Uses a reverse proxy: ${yn(dj.ip_header_exists)}\n`;
     if (dj.ip_header_exists) {
-        supportString += `* IP Header check: ${dj.ip_header_match} (${dj.ip_header_name})\n`;
+        supportString += `* IP Header check: ${chk(dj.ip_header_match)} (${dj.ip_header_name})\n`;
     }
-    supportString += `* Internet access: ${dj.has_http_access}\n`;
-    supportString += `* Internet access via a proxy: ${dj.uses_proxy}\n`;
-    supportString += `* DNS Check: ${dnsCheck}\n`;
+    supportString += `* Internet access: ${chk(dj.has_http_access)}\n`;
+    supportString += `* Internet access via a proxy: ${yn(dj.uses_proxy)}\n`;
+    supportString += `* DNS Check: ${chk(dnsCheck)}\n`;
     if (dj.tz_env !== "") {
         supportString += `* TZ environment: ${dj.tz_env}\n`;
     }
-    supportString += `* Browser/Server Time Check: ${timeCheck}\n`;
-    supportString += `* Server/NTP Time Check: ${ntpTimeCheck}\n`;
-    supportString += `* Domain Configuration Check: ${domainCheck}\n`;
-    supportString += `* HTTPS Check: ${httpsCheck}\n`;
+    supportString += `* Browser/Server Time Check: ${chk(timeCheck)}\n`;
+    supportString += `* Server/NTP Time Check: ${chk(ntpTimeCheck)}\n`;
+    supportString += `* Domain Configuration Check: ${chk(domainCheck)}\n`;
+    supportString += `* HTTPS Check: ${chk(httpsCheck)}\n`;
     if (dj.enable_websocket) {
-        supportString += `* Websocket Check: ${websocketCheck}\n`;
+        supportString += `* Websocket Check: ${chk(websocketCheck)}\n`;
     } else {
         supportString += "* Websocket Check: disabled\n";
     }
-    supportString += `* HTTP Response Checks: ${httpResponseCheck}\n`;
+    supportString += `* HTTP Response Checks: ${chk(httpResponseCheck)}\n`;
     if (dj.invalid_feature_flags != "") {
-        supportString += `* Invalid feature flags: true\n`;
+        supportString += "* Invalid feature flags: true\n";
     }
 
     const jsonResponse = await fetch(`${BASE_URL}/admin/diagnostics/config`, {
