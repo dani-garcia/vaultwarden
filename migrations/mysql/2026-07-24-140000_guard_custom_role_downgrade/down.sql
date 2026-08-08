@@ -21,3 +21,7 @@ WHERE NOT EXISTS (
     WHERE table_schema = DATABASE() AND table_name = '__vw_allow_custom_role_downgrade'
 );
 DROP TABLE __vw_custom_role_downgrade_guard;
+
+-- Consume the acknowledgement: it authorized *this* revert, not every future one. After a
+-- re-upgrade the next revert has to be acknowledged again.
+DROP TABLE IF EXISTS __vw_allow_custom_role_downgrade;

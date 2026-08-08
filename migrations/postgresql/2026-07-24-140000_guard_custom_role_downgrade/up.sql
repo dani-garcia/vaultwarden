@@ -5,3 +5,7 @@
 -- (2026-07-23 consumed the marker), so it is not left behind in every database. A single DDL
 -- statement is safe even on MySQL, where DDL commits implicitly -- re-running it is a no-op.
 DROP TABLE IF EXISTS __vw_custom_role_same_run_0716;
+
+-- Also clear a downgrade acknowledgement left over from an earlier revert, so consent is
+-- never inherited across an upgrade.
+DROP TABLE IF EXISTS __vw_allow_custom_role_downgrade;

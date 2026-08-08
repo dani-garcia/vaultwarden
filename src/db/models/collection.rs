@@ -131,37 +131,52 @@ impl Collection {
     ) -> Value {
         let (read_only, hide_passwords, manage) = if let Some(cipher_sync_data) = cipher_sync_data {
             match cipher_sync_data.members.get(&self.org_uuid) {
-                // Full collection visibility is not collection-management authority. Admins and
-                // Owners manage implicitly; Custom members still need an explicit stored grant.
-                Some(m) if m.has_full_access() => (false, false, assignment_manage_for_member(m.atype, false)),
                 Some(m) => {
+                    // What the client is told here has to match what the collection guards actually
+                    // allow, or it renders the wrong controls. A stored grant therefore counts even
+                    // for a member who already reaches every collection: full visibility is not
+                    // management authority, but it does not cancel out a real grant either.
+                    //
                     // A legacy organization-local `access_all` group confers collection management
                     // on its Custom members (see `has_legacy_group_collection_manage_access`), and
                     // reaches every collection without a `collections_groups` row that could carry
                     // the `manage` bit — so it has to be answered from the membership side.
                     let legacy_group_manage = m.has_type(MembershipType::Custom)
+                        && !m.has_create_new_collections()
+                        && !m.has_edit_any_collection()
+                        && !m.has_delete_any_collection()
                         && cipher_sync_data.user_group_full_access_for_organizations.contains(&self.org_uuid);
-                    if let Some(cu) = cipher_sync_data.user_collections.get(&self.uuid) {
-                        (
-                            cu.read_only,
-                            cu.hide_passwords,
-                            legacy_group_manage || assignment_manage_for_member(m.atype, cu.manage),
-                        )
-                    } else if let Some(cg) = cipher_sync_data.user_collections_groups.get(&self.uuid) {
-                        (
-                            cg.read_only,
-                            cg.hide_passwords,
-                            legacy_group_manage || assignment_manage_for_member(m.atype, cg.manage),
-                        )
-                    } else {
-                        (false, false, legacy_group_manage)
+                    let assignment = cipher_sync_data
+                        .user_collections
+                        .get(&self.uuid)
+                        .map(|cu| (cu.read_only, cu.hide_passwords, cu.manage))
+                        .or_else(|| {
+                            cipher_sync_data
+                                .user_collections_groups
+                                .get(&self.uuid)
+                                .map(|cg| (cg.read_only, cg.hide_passwords, cg.manage))
+                        });
+                    let stored_manage = assignment.is_some_and(|(_, _, manage)| manage);
+                    let manage = legacy_group_manage || assignment_manage_for_member(m.atype, stored_manage);
+                    match assignment {
+                        Some((read_only, hide_passwords, _)) if !m.has_full_access() => {
+                            (read_only, hide_passwords, manage)
+                        }
+                        // Reaching every collection means nothing is read-only or hidden here.
+                        _ => (false, false, manage),
                     }
                 }
                 _ => (true, true, false),
             }
         } else {
             match Membership::find_confirmed_by_user_and_org(user_uuid, &self.org_uuid, conn).await {
-                Some(m) if m.has_full_access() => (false, false, assignment_manage_for_member(m.atype, false)),
+                // Same rule as the cached branch above: a member who reaches every collection still
+                // reports a real stored grant, so the serialized value matches the guards.
+                Some(m) if m.has_full_access() => (
+                    false,
+                    false,
+                    assignment_manage_for_member(m.atype, m.has_collection_manage_authority(&self.uuid, conn).await),
+                ),
                 Some(m)
                     if m.atype >= MembershipType::Custom
                         && m.has_collection_manage_authority(&self.uuid, conn).await =>

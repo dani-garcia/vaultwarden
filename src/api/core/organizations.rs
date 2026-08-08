@@ -3420,13 +3420,14 @@ async fn caller_may_grant_collection_manage(caller: &Membership, col_id: &Collec
     match caller_manage_grant_role_check(caller) {
         // Role alone decides it (Admin/Owner or delete_any -> yes; User/unknown/unconfirmed -> no).
         Some(decision) => decision,
-        // Custom without delete_any: the answer is per-collection and must mirror
-        // `collection_delete_access` exactly, so it can never hand out a right the caller lacks —
-        // a real users_collections.manage / collections_groups.manage grant, or the legacy
-        // organization-local `access_all` group that also confers deletion. Edit any collection
-        // deliberately does not count here.
+        // Custom without delete_any: the answer is per-collection and must reflect a *real* stored
+        // manage grant. Edit any collection deliberately does not count here, and neither does the
+        // legacy `access_all`-group authority: that one is derived from a group membership that can
+        // be taken away again, while a `manage` row written here outlives it. Accepting it would let
+        // temporary authority be laundered into a permanent grant — and with it collection deletion
+        // — which is exactly the escalation this clamp exists to prevent.
         None => match MembershipType::from_i32(caller.atype) {
-            Some(MembershipType::Custom) => caller.has_collection_manage_authority(col_id, conn).await,
+            Some(MembershipType::Custom) => caller.has_explicit_collection_manage_access(col_id, conn).await,
             _ => false,
         },
     }

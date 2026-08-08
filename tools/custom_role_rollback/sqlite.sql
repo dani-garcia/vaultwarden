@@ -6,9 +6,29 @@
 -- script has to work on the same older system SQLite the forward migrations support. Rebuilding the
 -- table also recreates `access_all` and drops all nine permission columns in one step.
 
+-- Stop at the first error. Without this the sqlite3 shell keeps going after a failed statement,
+-- and a second run -- where the SELECT below can no longer see the permission columns -- would
+-- still reach DROP TABLE and commit an empty users_organizations. `.bail on` is a shell command;
+-- a runner that is not the sqlite3 CLI has to abort on the first error and roll back by itself.
+.bail on
+
 PRAGMA foreign_keys = OFF;
 
 BEGIN;
+
+-- Refuse to start at all unless the database is in the state this script converts *from*. A repeat
+-- run would otherwise only fail somewhere in the middle. The failing CHECK names the reason.
+CREATE TEMPORARY TABLE __vw_rollback_precondition (
+    ok INTEGER NOT NULL CONSTRAINT
+        this_database_has_no_custom_role_permission_columns_to_roll_back CHECK (ok = 1)
+);
+INSERT INTO __vw_rollback_precondition (ok)
+SELECT CASE
+    WHEN EXISTS (SELECT 1 FROM pragma_table_info('users_organizations') WHERE name = 'create_new_collections')
+    THEN 1
+    ELSE 0
+END;
+DROP TABLE __vw_rollback_precondition;
 
 CREATE TABLE users_organizations_rollback (
   uuid       TEXT    NOT NULL PRIMARY KEY,

@@ -47,7 +47,7 @@ Stop every Vaultwarden instance and take a backup first. Then:
 
 ```bash
 # SQLite
-sqlite3 /path/to/data/db.sqlite3 < tools/custom_role_rollback/sqlite.sql
+sqlite3 -bail /path/to/data/db.sqlite3 < tools/custom_role_rollback/sqlite.sql
 
 # MySQL / MariaDB
 mysql -u <user> -p <database> < tools/custom_role_rollback/mysql.sql
@@ -56,10 +56,18 @@ mysql -u <user> -p <database> < tools/custom_role_rollback/mysql.sql
 psql -U <user> -d <database> -v ON_ERROR_STOP=1 -f tools/custom_role_rollback/postgresql.sql
 ```
 
-Run it exactly once — a second run fails because the permission columns are already gone. On
-MySQL/MariaDB the statements cannot be wrapped in a transaction (DDL commits implicitly there); if
-the script is interrupted, restore the backup and start over. SQLite and PostgreSQL apply the whole
-script atomically.
+Each script stops on its own if the database is not in the state it converts from, so running one
+twice is refused rather than half-applied.
+
+**Do not drop the `-bail` / `ON_ERROR_STOP=1` flags, and do not run these through a client that
+keeps going after a failed statement.** The sqlite3 shell continues after errors by default; the
+script sets `.bail on` itself, but that is a shell command a different runner will ignore. A runner
+that carries on past the failing statement would reach the `DROP TABLE` and commit an empty
+`users_organizations`.
+
+SQLite and PostgreSQL apply the script in a single transaction, so an aborted run leaves the
+database untouched. On MySQL/MariaDB the statements cannot be wrapped in a transaction (DDL commits
+implicitly there); if the script is interrupted, restore the backup and start over.
 
 Afterwards start the older Vaultwarden version. Upgrading again later re-applies the seven
 migrations from a clean state.

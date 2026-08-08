@@ -18,3 +18,7 @@ INSERT INTO __vw_custom_role_downgrade_guard (blocked)
 SELECT 1
 WHERE to_regclass('__vw_allow_custom_role_downgrade') IS NULL;
 DROP TABLE __vw_custom_role_downgrade_guard;
+
+-- Consume the acknowledgement: it authorized *this* revert, not every future one. After a
+-- re-upgrade the next revert has to be acknowledged again.
+DROP TABLE IF EXISTS __vw_allow_custom_role_downgrade;

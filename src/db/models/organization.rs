@@ -976,11 +976,22 @@ impl Membership {
     ///
     /// Deliberately not collection *creation*: that historically required membership-level
     /// `access_all` and is now the independent `create_new_collections` permission.
+    ///
+    /// Security: the exception is limited to members holding *none* of the three collection
+    /// permissions, which is exactly the shape the migration leaves a group-derived legacy Manager
+    /// in. Without that limit it would also cover a Custom member holding `edit_any_collection` —
+    /// and since `edit_any_collection` is what lets a caller create an `access_all` group in the
+    /// first place, such a member could grant themselves this authority and use it to persist a
+    /// real `collections_groups.manage` row, keeping collection deletion after leaving the group.
     pub async fn has_legacy_group_collection_manage_access(
         &self,
         collection_uuid: &CollectionId,
         conn: &DbConn,
     ) -> bool {
+        if self.create_new_collections || self.edit_any_collection || self.delete_any_collection {
+            return false;
+        }
+
         let membership_uuid = self.uuid.clone();
         let user_uuid = self.user_uuid.clone();
         let org_uuid = self.org_uuid.clone();
