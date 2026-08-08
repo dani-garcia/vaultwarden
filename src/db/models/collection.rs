@@ -135,12 +135,26 @@ impl Collection {
                 // Owners manage implicitly; Custom members still need an explicit stored grant.
                 Some(m) if m.has_full_access() => (false, false, assignment_manage_for_member(m.atype, false)),
                 Some(m) => {
+                    // A legacy organization-local `access_all` group confers collection management
+                    // on its Custom members (see `has_legacy_group_collection_manage_access`), and
+                    // reaches every collection without a `collections_groups` row that could carry
+                    // the `manage` bit — so it has to be answered from the membership side.
+                    let legacy_group_manage = m.has_type(MembershipType::Custom)
+                        && cipher_sync_data.user_group_full_access_for_organizations.contains(&self.org_uuid);
                     if let Some(cu) = cipher_sync_data.user_collections.get(&self.uuid) {
-                        (cu.read_only, cu.hide_passwords, assignment_manage_for_member(m.atype, cu.manage))
+                        (
+                            cu.read_only,
+                            cu.hide_passwords,
+                            legacy_group_manage || assignment_manage_for_member(m.atype, cu.manage),
+                        )
                     } else if let Some(cg) = cipher_sync_data.user_collections_groups.get(&self.uuid) {
-                        (cg.read_only, cg.hide_passwords, assignment_manage_for_member(m.atype, cg.manage))
+                        (
+                            cg.read_only,
+                            cg.hide_passwords,
+                            legacy_group_manage || assignment_manage_for_member(m.atype, cg.manage),
+                        )
                     } else {
-                        (false, false, false)
+                        (false, false, legacy_group_manage)
                     }
                 }
                 _ => (true, true, false),
@@ -150,7 +164,7 @@ impl Collection {
                 Some(m) if m.has_full_access() => (false, false, assignment_manage_for_member(m.atype, false)),
                 Some(m)
                     if m.atype >= MembershipType::Custom
-                        && m.has_explicit_collection_manage_access(&self.uuid, conn).await =>
+                        && m.has_collection_manage_authority(&self.uuid, conn).await =>
                 {
                     (false, false, true)
                 }

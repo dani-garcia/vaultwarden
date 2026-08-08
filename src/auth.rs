@@ -1008,8 +1008,9 @@ fn collection_access_by_role(membership: &Membership, custom_has_any_access: boo
     match MembershipType::from_i32(membership.atype) {
         Some(MembershipType::Owner | MembershipType::Admin) => CollectionManageAccess::Any,
         Some(MembershipType::Custom) if custom_has_any_access => CollectionManageAccess::Any,
-        // A Custom member must prove an actual users_collections.manage or
-        // collections_groups.manage assignment. In particular, groups.access_all is not Manage.
+        // A Custom member must prove an actual users_collections.manage / collections_groups.manage
+        // assignment, or the legacy organization-local `access_all` group a Manager's authority used
+        // to come from. Membership-level `access_all` is gone and never counted here.
         Some(MembershipType::Custom) => CollectionManageAccess::ExplicitManage,
         Some(MembershipType::User) | None => CollectionManageAccess::Denied,
     }
@@ -1039,7 +1040,7 @@ async fn can_manage_collection(
     match access {
         CollectionManageAccess::Any => true,
         CollectionManageAccess::ExplicitManage => {
-            membership.has_explicit_collection_manage_access(collection_uuid, conn).await
+            membership.has_collection_manage_authority(collection_uuid, conn).await
         }
         CollectionManageAccess::Denied => false,
     }
@@ -1695,10 +1696,11 @@ mod tests {
 
     #[test]
     fn flagless_custom_requires_explicit_manage_for_edit_read_and_delete() {
-        // A flagless Custom member (this is what a migrated legacy Manager becomes) must prove a
-        // real per-collection Manage grant for every collection operation. ExplicitManage invokes
-        // the database helper that only accepts users_collections.manage / collections_groups.manage
-        // — an external groups.access_all grant deliberately does not switch to a broad helper.
+        // A flagless Custom member (this is what a migrated legacy Manager becomes) never gets
+        // blanket collection authority from its role alone: every collection operation has to be
+        // answered per collection. ExplicitManage invokes the database helper that accepts a real
+        // users_collections.manage / collections_groups.manage grant, or the legacy
+        // organization-local access_all group — never the membership-level access_all that is gone.
         let custom = membership(MembershipType::Custom);
         assert_eq!(collection_edit_access(&custom), CollectionManageAccess::ExplicitManage);
         assert_eq!(collection_read_access(&custom), CollectionManageAccess::ExplicitManage);

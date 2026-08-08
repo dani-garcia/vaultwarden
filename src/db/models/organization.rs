@@ -964,6 +964,61 @@ impl Membership {
         .await
     }
 
+    /// Legacy collection-management authority derived from an organization-local `access_all` group.
+    ///
+    /// Before this role model existed, a Manager who reached every collection through such a group
+    /// could edit and delete all of them — `Collection::is_coll_manageable_by_user` accepted
+    /// `groups.access_all` outright. Managers are Custom members now, so that authority has to keep
+    /// coming from the same place, or the upgrade would silently strip a capability from members who
+    /// hold no explicit per-collection grant. Deriving it live (instead of copying it into the
+    /// permission columns during the migration) is what keeps it revocable: remove the member from
+    /// the group, or clear the group's `access_all`, and the authority is gone with it.
+    ///
+    /// Deliberately not collection *creation*: that historically required membership-level
+    /// `access_all` and is now the independent `create_new_collections` permission.
+    pub async fn has_legacy_group_collection_manage_access(
+        &self,
+        collection_uuid: &CollectionId,
+        conn: &DbConn,
+    ) -> bool {
+        let membership_uuid = self.uuid.clone();
+        let user_uuid = self.user_uuid.clone();
+        let org_uuid = self.org_uuid.clone();
+        let collection_uuid = collection_uuid.clone();
+
+        conn.run(move |conn| {
+            users_organizations::table
+                .inner_join(
+                    groups_users::table.on(groups_users::users_organizations_uuid.eq(users_organizations::uuid)),
+                )
+                .inner_join(
+                    groups::table.on(groups::uuid
+                        .eq(groups_users::groups_uuid)
+                        .and(groups::organizations_uuid.eq(users_organizations::org_uuid))),
+                )
+                .inner_join(collections::table.on(collections::org_uuid.eq(users_organizations::org_uuid)))
+                .filter(users_organizations::uuid.eq(membership_uuid))
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::org_uuid.eq(org_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .filter(users_organizations::atype.eq(MembershipType::Custom as i32))
+                .filter(collections::uuid.eq(collection_uuid))
+                .filter(groups::access_all.eq(true))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0)
+                != 0
+        })
+        .await
+    }
+
+    /// Whether this member may manage `collection_uuid` without holding a blanket collection
+    /// permission: either a real stored per-collection grant, or the legacy full-access group.
+    pub async fn has_collection_manage_authority(&self, collection_uuid: &CollectionId, conn: &DbConn) -> bool {
+        self.has_explicit_collection_manage_access(collection_uuid, conn).await
+            || self.has_legacy_group_collection_manage_access(collection_uuid, conn).await
+    }
+
     /// `manageAllCollections` is a client-side aggregate checkbox, not a separately persisted
     /// Bitwarden permission. It is selected exactly when all three child permissions are selected.
     pub fn has_manage_all_collections(&self) -> bool {

@@ -32,7 +32,9 @@ ON CONFLICT (user_uuid, collection_uuid) DO NOTHING;
 
 -- The current 2026-07-16 migration copied a legacy full-access group's dynamic authority to the
 -- exact direct 0/1/1 pattern. While the same organization-local source group is still present,
--- remove that deterministic copy so later group removal also revokes the authority.
+-- remove that deterministic copy so later group removal also revokes the authority. The runtime
+-- keeps deriving edit/delete from that group -- see
+-- `Membership::has_legacy_group_collection_manage_access` -- so nothing is lost here.
 UPDATE users_organizations
 SET edit_any_collection = FALSE,
     delete_any_collection = FALSE

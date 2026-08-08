@@ -572,6 +572,24 @@ const AMBIGUOUS_DIRECT_PERMISSIONS_RECOVERY_SQL: &str = concat!(
     "the migration cannot attribute. If that member must not be able to create collections, start the server once so ",
     "the migration completes, then set create_new_collections back to FALSE for that membership."
 );
+const INTERRUPTED_ACCESS_ALL_DROP_RECOVERY: &str = concat!(
+    "\n\nThe drop itself carries no data, so the schema is already in its intended final state and ",
+    "only the ledger entry is missing. Vaultwarden completes this automatically on MySQL/MariaDB, ",
+    "where it is reachable because DDL commits implicitly. On this backend DDL is transactional, so ",
+    "the state points at a manual schema change. With every Vaultwarden instance stopped and a ",
+    "backup taken, record the migration:\n",
+    "INSERT INTO __diesel_schema_migrations (version) VALUES ('20260724120000');\n\n",
+    "Afterwards restart Vaultwarden so the remaining migrations run."
+);
+
+const ACCESS_ALL_DROP_MISMATCH_RECOVERY: &str = concat!(
+    "\n\nThis state cannot arise from a normal upgrade -- the column is removed before the migration ",
+    "is recorded. Verify whether the column was re-added manually. If it was, and its values are no ",
+    "longer needed, drop it again with every Vaultwarden instance stopped and a backup taken:\n",
+    "ALTER TABLE users_organizations DROP COLUMN access_all;\n\n",
+    "Otherwise restore the database backup taken before the upgrade and run the upgrade again."
+);
+
 const ALREADY_DROPPED_RECOVERY: &str = concat!(
     "\n\nThe permission values cannot be recomputed from the current schema. Restore the database backup taken ",
     "before the upgrade and run the upgrade again against that restored copy."
@@ -619,10 +637,13 @@ impl CustomRoleMigrationFacts {
 enum CustomRolePreflightDecision {
     Proceed,
     CompleteMysqlCollectionMigration,
+    CompleteInterruptedAccessAllDrop,
     RefuseAlreadyDropped,
     RefuseMissingAccessAll,
     RefuseMissingMigrationLedger,
     RefuseAmbiguousDirectPermissions,
+    RefuseInterruptedAccessAllDrop,
+    RefuseAccessAllDropLedgerMismatch,
     RefusePartialPermissionSchema(PermissionColumnGroup),
     RefusePermissionLedgerMismatch(PermissionColumnGroup),
 }
@@ -631,24 +652,48 @@ fn custom_role_preflight_decision(
     facts: CustomRoleMigrationFacts,
     can_complete_mysql_partial_migration: bool,
 ) -> CustomRolePreflightDecision {
-    if !facts.memberships_table_exists || facts.repair_migration_applied {
+    if !facts.memberships_table_exists {
         return CustomRolePreflightDecision::Proceed;
     }
     if !facts.migration_table_exists {
         return CustomRolePreflightDecision::RefuseMissingMigrationLedger;
     }
 
-    // Once access_all has been dropped, its former value and the provenance of 0/1/1
-    // collection permissions can no longer be reconstructed. Never guess at either.
-    if facts.access_all_drop_migration_applied {
-        return CustomRolePreflightDecision::RefuseAlreadyDropped;
-    }
-    if !facts.access_all_column_exists {
-        return CustomRolePreflightDecision::RefuseMissingAccessAll;
-    }
+    // The legacy reconstruction below only makes sense while the repair migration is still ahead of
+    // us. Everything *after* it -- the access_all drop and the third permission column group -- still
+    // has to be checked on every start: both run after the repair, and on MySQL/MariaDB each DDL
+    // statement commits on its own, so a crash between the statement and Diesel's ledger insert
+    // leaves a durable partial state. Returning early for every repaired database would hide exactly
+    // those states, and the generic Diesel retry then fails on every following start with
+    // `Unknown column` (1091) or `Duplicate column name` (1060).
+    if facts.repair_migration_applied {
+        // The drop is a single statement with no data component, so it is all-or-nothing: either the
+        // column is still there and the migration is pending, or the column is gone and the
+        // migration is recorded.
+        if facts.access_all_column_exists == facts.access_all_drop_migration_applied {
+            return if facts.access_all_drop_migration_applied {
+                CustomRolePreflightDecision::RefuseAccessAllDropLedgerMismatch
+            } else if can_complete_mysql_partial_migration {
+                // Only reachable on MySQL/MariaDB, and the schema is already in its intended final
+                // state -- just record the migration instead of stopping the operator.
+                CustomRolePreflightDecision::CompleteInterruptedAccessAllDrop
+            } else {
+                CustomRolePreflightDecision::RefuseInterruptedAccessAllDrop
+            };
+        }
+    } else {
+        // Once access_all has been dropped, its former value and the provenance of 0/1/1
+        // collection permissions can no longer be reconstructed. Never guess at either.
+        if facts.access_all_drop_migration_applied {
+            return CustomRolePreflightDecision::RefuseAlreadyDropped;
+        }
+        if !facts.access_all_column_exists {
+            return CustomRolePreflightDecision::RefuseMissingAccessAll;
+        }
 
-    if facts.ambiguous_direct_permission_count != 0 && !facts.same_run_0716_marker {
-        return CustomRolePreflightDecision::RefuseAmbiguousDirectPermissions;
+        if facts.ambiguous_direct_permission_count != 0 && !facts.same_run_0716_marker {
+            return CustomRolePreflightDecision::RefuseAmbiguousDirectPermissions;
+        }
     }
 
     // Every permission column group must be either completely absent (its migration is still pending)
@@ -708,7 +753,18 @@ fn custom_role_preflight_error(decision: CustomRolePreflightDecision, facts: Cus
             group.description(),
             group.column_list()
         ),
-        CustomRolePreflightDecision::Proceed | CustomRolePreflightDecision::CompleteMysqlCollectionMigration => {
+        CustomRolePreflightDecision::RefuseInterruptedAccessAllDrop => format!(
+            "The membership access_all column is already gone, but migration \
+             {DROP_MEMBERSHIP_ACCESS_ALL_MIGRATION} is not recorded. The column was dropped without \
+             its ledger entry, so re-running the migration would fail on every start."
+        ),
+        CustomRolePreflightDecision::RefuseAccessAllDropLedgerMismatch => format!(
+            "Migration {DROP_MEMBERSHIP_ACCESS_ALL_MIGRATION} is recorded, but the membership \
+             access_all column still exists. Schema and migration ledger disagree."
+        ),
+        CustomRolePreflightDecision::Proceed
+        | CustomRolePreflightDecision::CompleteMysqlCollectionMigration
+        | CustomRolePreflightDecision::CompleteInterruptedAccessAllDrop => {
             unreachable!("successful preflight decisions do not produce errors")
         }
     };
@@ -717,6 +773,8 @@ fn custom_role_preflight_error(decision: CustomRolePreflightDecision, facts: Cus
         CustomRolePreflightDecision::RefusePartialPermissionSchema(_)
         | CustomRolePreflightDecision::RefusePermissionLedgerMismatch(_) => PARTIAL_PERMISSION_COLUMNS_RECOVERY,
         CustomRolePreflightDecision::RefuseAlreadyDropped => ALREADY_DROPPED_RECOVERY,
+        CustomRolePreflightDecision::RefuseInterruptedAccessAllDrop => INTERRUPTED_ACCESS_ALL_DROP_RECOVERY,
+        CustomRolePreflightDecision::RefuseAccessAllDropLedgerMismatch => ACCESS_ALL_DROP_MISMATCH_RECOVERY,
         _ => "",
     };
 
@@ -1026,6 +1084,23 @@ mod mysql_migrations {
         Ok(())
     }
 
+    fn complete_interrupted_access_all_drop(
+        connection: &mut diesel::mysql::MysqlConnection,
+    ) -> Result<(), super::Error> {
+        // MySQL/MariaDB commit DDL implicitly, so the single `ALTER TABLE ... DROP COLUMN access_all`
+        // can be durable while Diesel's ledger insert that follows it is not. Re-running the
+        // migration would then fail with error 1091 (Unknown column) on every start. The statement
+        // has no data component and the preflight has just confirmed the column is gone, so the
+        // schema already is what the migration wanted: record it and let the rest of the chain run.
+        diesel::sql_query(format!(
+            "INSERT INTO __diesel_schema_migrations (version) VALUES ('{}')",
+            super::DROP_MEMBERSHIP_ACCESS_ALL_MIGRATION
+        ))
+        .execute(connection)?;
+
+        Ok(())
+    }
+
     fn preflight(connection: &mut diesel::mysql::MysqlConnection) -> Result<(), super::Error> {
         let memberships_table_exists = table_exists(connection, "users_organizations")?;
         if !memberships_table_exists {
@@ -1106,6 +1181,9 @@ mod mysql_migrations {
             super::CustomRolePreflightDecision::Proceed => Ok(()),
             super::CustomRolePreflightDecision::CompleteMysqlCollectionMigration => {
                 complete_partial_collection_migration(connection, same_run_0716_marker)
+            }
+            super::CustomRolePreflightDecision::CompleteInterruptedAccessAllDrop => {
+                complete_interrupted_access_all_drop(connection)
             }
             decision => Err(super::custom_role_preflight_error(decision, facts)),
         }
@@ -1305,22 +1383,127 @@ mod custom_role_migration_preflight_tests {
         );
     }
 
+    /// A database on which the whole chain has already run.
+    fn fully_migrated() -> Facts {
+        Facts {
+            memberships_table_exists: true,
+            migration_table_exists: true,
+            access_all_column_exists: false,
+            manage_permission_columns: 3,
+            manage_permissions_migration_applied: true,
+            collection_permission_columns: 3,
+            collection_permissions_migration_applied: true,
+            access_permission_columns: 3,
+            access_permissions_migration_applied: true,
+            repair_migration_applied: true,
+            access_all_drop_migration_applied: true,
+            ambiguous_direct_permission_count: 0,
+            same_run_0716_marker: false,
+        }
+    }
+
     #[test]
     fn repair_marker_makes_completed_state_idempotent() {
+        assert_eq!(custom_role_preflight_decision(fully_migrated(), false), Decision::Proceed);
+    }
+
+    /// The repair migration runs *before* the access_all drop and the third permission column group,
+    /// so a partial state of either always carries `repair_migration_applied`. Skipping the schema
+    /// checks for repaired databases would make them unreachable in exactly the situation they were
+    /// written for.
+    #[test]
+    fn interrupted_migrations_after_the_repair_are_still_detected() {
+        // Crash after `DROP COLUMN access_all`, before the ledger insert. MySQL/MariaDB commit DDL
+        // implicitly, so the column is gone for good; a retry would fail with 1091.
+        let interrupted_drop = Facts {
+            access_all_drop_migration_applied: false,
+            access_permission_columns: 0,
+            access_permissions_migration_applied: false,
+            ..fully_migrated()
+        };
+        assert_eq!(
+            custom_role_preflight_decision(interrupted_drop, true),
+            Decision::CompleteInterruptedAccessAllDrop,
+            "MySQL/MariaDB can complete this in place"
+        );
+        assert_eq!(
+            custom_role_preflight_decision(interrupted_drop, false),
+            Decision::RefuseInterruptedAccessAllDrop,
+            "backends with transactional DDL cannot reach this state by themselves"
+        );
+
+        // Crash after one of the three `ADD COLUMN` statements of the access group, before the
+        // ledger insert. A retry would fail with 1060.
+        for present in [1, 2] {
+            assert_eq!(
+                custom_role_preflight_decision(
+                    Facts {
+                        access_permission_columns: present,
+                        access_permissions_migration_applied: false,
+                        ..fully_migrated()
+                    },
+                    true,
+                ),
+                Decision::RefusePartialPermissionSchema(super::PermissionColumnGroup::Access)
+            );
+        }
+
+        // Ledger recorded, columns missing.
         assert_eq!(
             custom_role_preflight_decision(
                 Facts {
-                    memberships_table_exists: true,
-                    migration_table_exists: true,
-                    repair_migration_applied: true,
-                    access_all_drop_migration_applied: true,
-                    collection_permission_columns: 3,
-                    ..Facts::default()
+                    access_permission_columns: 2,
+                    ..fully_migrated()
+                },
+                true
+            ),
+            Decision::RefusePermissionLedgerMismatch(super::PermissionColumnGroup::Access)
+        );
+
+        // Drop recorded, but the column is back: schema and ledger disagree.
+        assert_eq!(
+            custom_role_preflight_decision(
+                Facts {
+                    access_all_column_exists: true,
+                    ..fully_migrated()
+                },
+                true
+            ),
+            Decision::RefuseAccessAllDropLedgerMismatch
+        );
+    }
+
+    #[test]
+    fn a_pending_drop_after_the_repair_proceeds() {
+        // The repair ran, the drop is simply next in line: column present, migration not recorded.
+        assert_eq!(
+            custom_role_preflight_decision(
+                Facts {
+                    access_all_column_exists: true,
+                    access_all_drop_migration_applied: false,
+                    access_permission_columns: 0,
+                    access_permissions_migration_applied: false,
+                    ..fully_migrated()
                 },
                 false,
             ),
             Decision::Proceed
         );
+    }
+
+    #[test]
+    fn interrupted_access_all_drop_error_names_the_ledger_fix() {
+        let facts = Facts {
+            access_all_drop_migration_applied: false,
+            access_permission_columns: 0,
+            access_permissions_migration_applied: false,
+            ..fully_migrated()
+        };
+        let decision = custom_role_preflight_decision(facts, false);
+        let error = custom_role_preflight_error(decision, facts);
+        let message = error.source().expect("preflight error should retain its I/O error source").to_string();
+        assert!(message.contains(super::DROP_MEMBERSHIP_ACCESS_ALL_MIGRATION));
+        assert!(message.contains("INSERT INTO __diesel_schema_migrations"));
     }
 
     #[test]

@@ -2324,13 +2324,15 @@ async fn post_org_import(
         err!("Organization not found", "Organization id's do not match");
     }
 
-    // NOTE: no `accessImportExport` gate here on purpose. Bitwarden requires that permission for an
-    // organization import, but Vaultwarden has always authorized this endpoint per target collection,
-    // and adding an up-front role check would take a capability away from ordinary members that they
-    // have today. The real boundary is enforced below and is unchanged: an existing collection must be
-    // writable for the caller (`Collection::is_writable_by_user`), and creating a new one requires the
-    // independent `createNewCollections` permission. `accessImportExport` therefore governs the export
-    // side only.
+    // NOTE: no `accessImportExport` gate here on purpose. Bitwarden does not require the permission
+    // either — `ImportCiphersController.CheckOrgImportPermissionAsync` authorizes an organization
+    // import on `AccessImportExport` *or* per-collection Create/ImportCiphers authority. Vaultwarden
+    // has always authorized this endpoint per target collection, so an up-front role check would take
+    // a capability away from ordinary members that they have today. The real boundary is enforced
+    // below and is unchanged: an existing collection must be writable for the caller
+    // (`Collection::is_writable_by_user`), and creating a new one requires the independent
+    // `createNewCollections` permission. The one deliberate difference from Bitwarden is that
+    // `accessImportExport` alone does not open the endpoint here; it governs the export side only.
     //
     // A confirmed membership is required though: both checks below are confirmed-gated, so an
     // invited/accepted member could otherwise only import ciphers without any collection — which lands
@@ -3418,11 +3420,13 @@ async fn caller_may_grant_collection_manage(caller: &Membership, col_id: &Collec
     match caller_manage_grant_role_check(caller) {
         // Role alone decides it (Admin/Owner or delete_any -> yes; User/unknown/unconfirmed -> no).
         Some(decision) => decision,
-        // Custom without delete_any: the answer is per-collection and must reflect a *real* manage
-        // grant. A Custom member must prove a real users_collections.manage /
-        // collections_groups.manage grant; Edit any collection deliberately does not count here.
+        // Custom without delete_any: the answer is per-collection and must mirror
+        // `collection_delete_access` exactly, so it can never hand out a right the caller lacks —
+        // a real users_collections.manage / collections_groups.manage grant, or the legacy
+        // organization-local `access_all` group that also confers deletion. Edit any collection
+        // deliberately does not count here.
         None => match MembershipType::from_i32(caller.atype) {
-            Some(MembershipType::Custom) => caller.has_explicit_collection_manage_access(col_id, conn).await,
+            Some(MembershipType::Custom) => caller.has_collection_manage_authority(col_id, conn).await,
             _ => false,
         },
     }
