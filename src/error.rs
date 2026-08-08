@@ -58,7 +58,7 @@ use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IoErr;
 use std::time::SystemTimeError as TimeErr;
 use webauthn_rs::prelude::WebauthnError as WebauthnErr;
-use yubico::yubicoerror::YubicoError as YubiErr;
+use yubico_ng::error::YubicoError as YubiErr;
 
 #[derive(Serialize)]
 pub struct Empty {}

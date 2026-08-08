@@ -1506,6 +1506,9 @@ impl Config {
         let operator = storage::operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
         operator.write(&CONFIG_FILENAME, config_str).await?;
 
+        // Invalidate CSS Cache because several config items might have impact on the rendered CSS
+        crate::api::invalidate_css_cache();
+
         Ok(())
     }
 
@@ -1587,6 +1590,9 @@ impl Config {
             writer._usr = usr;
             writer._overrides = Vec::new();
         }
+
+        // Invalidate CSS Cache because several config items might have impact on the rendered CSS
+        crate::api::invalidate_css_cache();
 
         Ok(())
     }
