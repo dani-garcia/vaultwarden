@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, RwLock},
+};
 
 use rocket::{
     Catcher, Route,
@@ -13,12 +16,13 @@ use crate::{
     CONFIG,
     api::{ApiResult, EmptyResult, core::now},
     auth::decode_file_download,
+    crypto::sha256_hex,
     db::{
         DbConn,
         models::{AttachmentId, CipherId},
     },
     error::Error,
-    util::Cached,
+    util::{Cached, EtagCached},
 };
 
 pub fn routes() -> Vec<Route> {
@@ -63,8 +67,27 @@ fn not_found() -> ApiResult<Html<String>> {
     Ok(Html(text))
 }
 
+struct CssCache {
+    css: String,
+    etag: String,
+}
+
+static CSS_CACHE: RwLock<Option<Arc<CssCache>>> = RwLock::new(None);
+
+pub fn invalidate_css_cache() {
+    *CSS_CACHE.write().unwrap() = None;
+}
+
 #[get("/css/vaultwarden.css")]
-fn vaultwarden_css() -> Cached<Css<String>> {
+fn vaultwarden_css() -> EtagCached<Css<String>> {
+    // If reload_templates is false, and we already have the CSS Cached, return this
+    if !CONFIG.reload_templates()
+        && let Some(cached) = CSS_CACHE.read().unwrap().as_ref()
+    {
+        return EtagCached::new(Css(cached.css.clone()), &cached.etag);
+    }
+
+    // Else, there is either no cache, or reload_templates is true and we need to rebuild the CSS
     let css_options = json!({
         "emergency_access_allowed": CONFIG.emergency_access_allowed(),
         "load_user_scss": true,
@@ -112,8 +135,18 @@ fn vaultwarden_css() -> Cached<Css<String>> {
         }
     };
 
-    // Cache for one day should be enough and not too much
-    Cached::ttl(Css(css), 86_400, false)
+    let etag = sha256_hex(css.as_bytes());
+    let cached = Arc::new(CssCache {
+        css,
+        etag,
+    });
+
+    if !CONFIG.reload_templates() {
+        *CSS_CACHE.write().unwrap() = Some(Arc::clone(&cached));
+    }
+
+    // Etag Caching will let the browser send us an etag to verify and send new content if needed
+    EtagCached::new(Css(cached.css.clone()), &cached.etag)
 }
 
 #[get("/")]

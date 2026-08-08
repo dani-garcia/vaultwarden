@@ -67,7 +67,7 @@ pub(crate) fn operator_for_path(path: &str) -> Result<opendal::Operator, crate::
         s3::operator_for_path(path)?
     } else {
         let builder = opendal::services::Fs::default().root(path);
-        opendal::Operator::new(builder)?.finish()
+        opendal::Operator::new(builder)?
     };
 
     OPERATORS_BY_PATH.insert(path.to_owned(), operator.clone());
@@ -236,7 +236,7 @@ mod s3 {
                 builder.credential_provider_chain(ProvideCredentialChain::new().push(OpenDALS3CredentialProvider));
         }
 
-        Ok(opendal::Operator::new(builder)?.finish())
+        Ok(opendal::Operator::new(builder)?)
     }
 
     fn uri_has_option(uri: &opendal::OperatorUri, names: &[&str]) -> bool {
