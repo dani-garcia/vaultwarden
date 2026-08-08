@@ -1,5 +1,4 @@
 "use strict";
-/* eslint-env es2017, browser */
 /* global _post:readable, BASE_URL:readable, qrcode:readable */
 
 const ADMIN_TOTP_SECRET_BYTES = 20;
