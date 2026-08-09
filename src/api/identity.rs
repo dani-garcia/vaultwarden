@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{NaiveDateTime, Utc};
 use num_traits::FromPrimitive;
 use rocket::{
     Route,
@@ -481,6 +481,40 @@ async fn password_login(
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
 }
 
+// Notify the user that a new device logged in.
+//
+// When `require_device_email` is enabled this stays awaited, so a failure to send
+// the notification aborts the login. When it is disabled (the default) the email
+// is best-effort and is spawned onto a background task, so a slow SMTP server can
+// no longer block (and thereby time out) the login response. See #5856.
+async fn send_new_device_email(user: &User, device: &Device, now: NaiveDateTime, ip: &ClientIp) -> EmptyResult {
+    if CONFIG.require_device_email() {
+        if let Err(e) =
+            mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name, device.atype).await
+        {
+            error!("Error sending new device email: {e:#?}");
+            err!(
+                "Could not send login notification email. Please contact your administrator.",
+                ErrorEvent {
+                    event: EventType::UserFailedLogIn
+                }
+            )
+        }
+    } else {
+        let address = user.email.clone();
+        let ip = ip.ip.to_string();
+        let device_name = device.name.clone();
+        let device_type = device.atype;
+        tokio::task::spawn(async move {
+            if let Err(e) = mail::send_new_device_logged_in(&address, &ip, &now, &device_name, device_type).await {
+                error!("Error sending new device email: {e:#?}");
+            }
+        });
+    }
+
+    Ok(())
+}
+
 async fn authenticated_response(
     user: &User,
     device: &mut Device,
@@ -491,18 +525,7 @@ async fn authenticated_response(
 ) -> JsonResult {
     if CONFIG.mail_enabled() && device.is_new() {
         let now = Utc::now().naive_utc();
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, device).await {
-            error!("Error sending new device email: {e:#?}");
-
-            if CONFIG.require_device_email() {
-                err!(
-                    "Could not send login notification email. Please contact your administrator.",
-                    ErrorEvent {
-                        event: EventType::UserFailedLogIn
-                    }
-                )
-            }
-        }
+        send_new_device_email(user, device, now, ip).await?;
     }
 
     // register push device
@@ -639,18 +662,7 @@ async fn user_api_key_login(
 
     if CONFIG.mail_enabled() && device.is_new() {
         let now = Utc::now().naive_utc();
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
-            error!("Error sending new device email: {e:#?}");
-
-            if CONFIG.require_device_email() {
-                err!(
-                    "Could not send login notification email. Please contact your administrator.",
-                    ErrorEvent {
-                        event: EventType::UserFailedLogIn
-                    }
-                )
-            }
-        }
+        send_new_device_email(&user, &device, now, ip).await?;
     }
 
     // ---
