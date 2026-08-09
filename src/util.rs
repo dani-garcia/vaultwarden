@@ -485,7 +485,13 @@ pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
 }
 
 pub fn parse_date(date: &str) -> NaiveDateTime {
-    DateTime::parse_from_rfc3339(date).unwrap().naive_utc()
+    parse_date_checked(date).unwrap()
+}
+
+/// Parses an RFC 3339 date, returning None instead of panicking when the input is not a
+/// valid date. Use this for dates that come straight from a request.
+pub fn parse_date_checked(date: &str) -> Option<NaiveDateTime> {
+    DateTime::parse_from_rfc3339(date).ok().map(|d| d.naive_utc())
 }
 
 /// Returns true or false if an email address is valid or not
