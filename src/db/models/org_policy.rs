@@ -1,3 +1,4 @@
+use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, From};
 use diesel::prelude::*;
 use serde::Deserialize;
@@ -11,6 +12,7 @@ use crate::{
         schema::{org_policies, users_organizations},
     },
     error::MapResult,
+    util::format_date,
 };
 
 use super::{Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId, TwoFactor, UserId};
@@ -24,6 +26,7 @@ pub struct OrgPolicy {
     pub atype: i32,
     pub enabled: bool,
     pub data: String,
+    pub revision_date: NaiveDateTime,
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Enums/PolicyType.cs
@@ -76,6 +79,7 @@ impl OrgPolicy {
             atype: atype as i32,
             enabled,
             data,
+            revision_date: Utc::now().naive_utc(),
         }
     }
 
@@ -91,6 +95,7 @@ impl OrgPolicy {
             "type": self.atype,
             "data": data_json,
             "enabled": self.enabled,
+            "revisionDate": format_date(&self.revision_date),
             "object": "policy",
         });
 
@@ -108,11 +113,13 @@ impl OrgPolicy {
 
 /// Database methods
 impl OrgPolicy {
-    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+        self.revision_date = Utc::now().naive_utc();
+
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(org_policies::table)
-                    .values(self)
+                    .values(&*self)
                     .execute(conn)
                 {
                     Ok(_) => Ok(()),
@@ -120,7 +127,7 @@ impl OrgPolicy {
                     Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
                         diesel::update(org_policies::table)
                             .filter(org_policies::uuid.eq(&self.uuid))
-                            .set(self)
+                            .set(&*self)
                             .execute(conn)
                             .map_res("Error saving org_policy")
                     }
@@ -140,10 +147,10 @@ impl OrgPolicy {
                 .map_res("Error deleting org_policy for insert")?;
 
                 diesel::insert_into(org_policies::table)
-                    .values(self)
+                    .values(&*self)
                     .on_conflict(org_policies::uuid)
                     .do_update()
-                    .set(self)
+                    .set(&*self)
                     .execute(conn)
                     .map_res("Error saving org_policy")
             }
