@@ -243,6 +243,15 @@ async fn member_to_json(member: &Membership, conn: &DbConn) -> Value {
         None => (Value::Null, Value::Null),
     };
 
+    // Revoked members carry their pre-revocation status offset by ACTIVATE_REVOKE_DIFF so
+    // it can be restored later. Upstream only knows -1, which is what the other serializers
+    // report too, so clamp it here rather than leaking the internal encoding.
+    let status = if member.status < MembershipStatus::Revoked as i32 {
+        MembershipStatus::Revoked as i32
+    } else {
+        member.status
+    };
+
     json!({
         "object": "member",
         "id": member.uuid,
@@ -252,7 +261,7 @@ async fn member_to_json(member: &Membership, conn: &DbConn) -> Value {
         "type": member.atype,
         "externalId": member.external_id,
         "resetPasswordEnrolled": member.reset_password_key.is_some(),
-        "status": member.status,
+        "status": status,
     })
 }
 
@@ -473,10 +482,11 @@ struct MemberCreateData {
 struct MemberUpdateData {
     r#type: NumberOrString,
     external_id: Option<String>,
+    // An omitted collections list clears the assignments, but an omitted groups list
+    // leaves them alone, matching how upstream treats the two.
     #[serde(default)]
     collections: Vec<AssociationData>,
-    #[serde(default)]
-    groups: Vec<GroupId>,
+    groups: Option<Vec<GroupId>>,
     #[serde(default)]
     permissions: HashMap<String, Value>,
 }
@@ -486,9 +496,9 @@ struct MemberUpdateData {
 struct GroupCreateUpdateData {
     name: String,
     // Upstream dropped accessAll from its group model, but the Vaultwarden group still
-    // carries the flag, so it is accepted here and defaults to false when omitted.
-    #[serde(default)]
-    access_all: bool,
+    // carries the flag. It is accepted here so it stays reachable, and left untouched
+    // when omitted so a client following the upstream model cannot silently clear it.
+    access_all: Option<bool>,
     external_id: Option<String>,
     #[serde(default)]
     collections: Vec<AssociationData>,
@@ -526,6 +536,23 @@ fn member_type_and_access_all(
             && permissions.get("createNewCollections") == Some(&json!(true)));
 
     Some((new_type, access_all))
+}
+
+// The internal endpoints only let an Owner grant, change or remove Owner. A Public API
+// client has no user behind it to check that against, and the organization API key can be
+// created by an Admin, so ownership is placed out of its reach entirely.
+fn deny_owner_grant(new_type: MembershipType) -> EmptyResult {
+    if new_type == MembershipType::Owner {
+        err!("The Public API cannot grant the Owner role")
+    }
+    Ok(())
+}
+
+fn deny_owner_target(member: &Membership) -> EmptyResult {
+    if member.atype == MembershipType::Owner {
+        err!("The Public API cannot modify an organization owner")
+    }
+    Ok(())
 }
 
 async fn validate_collections(collections: &[AssociationData], org_id: &OrganizationId, conn: &DbConn) -> EmptyResult {
@@ -621,6 +648,7 @@ async fn post_member(data: Json<MemberCreateData>, token: PublicToken, ip: auth:
     let Some((new_type, access_all)) = member_type_and_access_all(data.r#type, &data.permissions) else {
         err!("Invalid type")
     };
+    deny_owner_grant(new_type)?;
 
     validate_collections(&data.collections, &org_id, &conn).await?;
     validate_groups(&data.groups, &org_id, &conn).await?;
@@ -669,7 +697,11 @@ async fn post_member(data: Json<MemberCreateData>, token: PublicToken, ip: auth:
     new_member.access_all = access_all;
     new_member.atype = new_type as i32;
     new_member.status = member_status;
-    new_member.set_external_id(data.external_id.clone());
+    // Only touch the external id when one was sent. Clearing it on omission would break
+    // the key "/public/organization/import" matches members and groups on.
+    if data.external_id.is_some() {
+        new_member.set_external_id(data.external_id.clone());
+    }
     new_member.save(&conn).await?;
 
     if CONFIG.mail_enabled()
@@ -708,34 +740,32 @@ async fn put_member(
     let Some((new_type, access_all)) = member_type_and_access_all(data.r#type, &data.permissions) else {
         err!("Invalid type")
     };
+    deny_owner_grant(new_type)?;
 
     let Some(mut member) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
         err_code!(format!("Member {member_id} not found in organization"), 404);
     };
+    deny_owner_target(&member)?;
 
     validate_collections(&data.collections, &org_id, &conn).await?;
-    validate_groups(&data.groups, &org_id, &conn).await?;
-
-    if member.atype == MembershipType::Owner
-        && new_type != MembershipType::Owner
-        && member.status == MembershipStatus::Confirmed as i32
-    {
-        // Removing owner permission, check that there is at least one other confirmed owner
-        if Membership::count_confirmed_by_org_and_type(&org_id, MembershipType::Owner, &conn).await <= 1 {
-            err!("Can't delete the last owner")
-        }
+    if let Some(group_ids) = &data.groups {
+        validate_groups(group_ids, &org_id, &conn).await?;
     }
 
     member.access_all = access_all;
     member.atype = new_type as i32;
-    member.set_external_id(data.external_id.clone());
+    if data.external_id.is_some() {
+        member.set_external_id(data.external_id.clone());
+    }
 
     // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member,
     // admin::update_membership_type. We need to perform the check after changing the type.
     OrgPolicy::check_user_allowed(&member, "modify", &conn).await?;
 
     set_member_collections(&member, &data.collections, &org_id, &conn).await?;
-    set_member_groups(&member, &data.groups, &conn).await?;
+    if let Some(group_ids) = &data.groups {
+        set_member_groups(&member, group_ids, &conn).await?;
+    }
 
     member.save(&conn).await?;
 
@@ -757,12 +787,7 @@ async fn delete_member(
         err_code!(format!("Member {member_id} not found in organization"), 404);
     };
 
-    if member.atype == MembershipType::Owner && member.status == MembershipStatus::Confirmed as i32 {
-        // Removing owner, check that there is at least one other confirmed owner
-        if Membership::count_confirmed_by_org_and_type(&org_id, MembershipType::Owner, &conn).await <= 1 {
-            err!("Can't delete the last owner")
-        }
-    }
+    deny_owner_target(&member)?;
 
     log_public_event(EventType::OrganizationUserRemoved as i32, &member.uuid, &org_id, &ip.ip, &conn).await;
 
@@ -854,14 +879,10 @@ async fn post_member_revoke(
         err_code!(format!("Member {member_id} not found in organization"), 404);
     };
 
+    deny_owner_target(&member)?;
+
     if member.status <= MembershipStatus::Revoked as i32 {
         err!("User is already revoked")
-    }
-
-    if member.atype == MembershipType::Owner
-        && Membership::count_confirmed_by_org_and_type(&org_id, MembershipType::Owner, &conn).await <= 1
-    {
-        err!("Organization must have at least one confirmed owner")
     }
 
     member.revoke();
@@ -884,7 +905,11 @@ async fn post_member_restore(
         err_code!(format!("Member {member_id} not found in organization"), 404);
     };
 
-    if member.status >= MembershipStatus::Accepted as i32 {
+    deny_owner_target(&member)?;
+
+    // Anything above Revoked is already active. Testing against Accepted would let an
+    // invited member through, producing a no-op save and a restore event that never happened.
+    if member.status > MembershipStatus::Revoked as i32 {
         err!("User is already active")
     }
 
@@ -914,12 +939,13 @@ async fn post_group(
     let data = data.into_inner();
     validate_collections(&data.collections, &org_id, &conn).await?;
 
-    let mut group = Group::new(org_id.clone(), data.name.clone(), data.access_all, data.external_id.clone());
+    let mut group =
+        Group::new(org_id.clone(), data.name.clone(), data.access_all.unwrap_or(false), data.external_id.clone());
     group.save(&conn).await?;
 
-    set_group_collections(&group, &data.collections, &org_id, &conn).await?;
-
     log_public_event(EventType::GroupCreated as i32, &group.uuid, &org_id, &ip.ip, &conn).await;
+
+    set_group_collections(&group, &data.collections, &org_id, &conn).await?;
 
     Ok(Json(group_to_json(&group)))
 }
@@ -945,11 +971,15 @@ async fn put_group(
     validate_collections(&data.collections, &org_id, &conn).await?;
 
     group.name.clone_from(&data.name);
-    group.access_all = data.access_all;
+    if let Some(access_all) = data.access_all {
+        group.access_all = access_all;
+    }
     // Unlike the internal endpoint, the external_id is updatable here. The Public API is
     // the directory integration surface, the same one "/public/organization/import" uses
     // to assign external ids in the first place.
-    group.set_external_id(data.external_id.clone());
+    if data.external_id.is_some() {
+        group.set_external_id(data.external_id.clone());
+    }
     group.save(&conn).await?;
 
     // Member assignments are owned by "/public/groups/<group_id>/member-ids" and are

@@ -283,6 +283,20 @@ req GET "/api/public/groups/$NEWGROUP/member-ids" "$TOKEN"
 jqcheck "group update left member assignments intact" 'length' "1"
 
 echo ""
+echo "== accessAll survives an update that omits it =="
+
+reqj POST "/api/public/groups" "$TOKEN" "{\"name\":\"Full Access\",\"accessAll\":true,\"collections\":[]}"
+check_eq "create an accessAll group -> 200" "$HTTP_CODE" "200"
+jqcheck "created group has accessAll" '.accessAll' "true"
+AAGROUP=$(jqval '.id')
+
+reqj PUT "/api/public/groups/$AAGROUP" "$TOKEN" "{\"name\":\"Full Access Renamed\",\"collections\":[]}"
+check_eq "rename without accessAll -> 200" "$HTTP_CODE" "200"
+jqcheck "omitted accessAll is preserved" '.accessAll' "true"
+req DELETE "/api/public/groups/$AAGROUP" "$TOKEN"
+check_eq "clean up the accessAll group -> 200" "$HTTP_CODE" "200"
+
+echo ""
 echo "== Create a member =="
 
 reqj POST "/api/public/members" "$TOKEN" \
@@ -319,10 +333,12 @@ check_eq "member with an unknown type -> 400" "$HTTP_CODE" "400"
 echo ""
 echo "== Update a member =="
 
+# An omitted groups list must leave group membership alone, and an omitted externalId
+# must not clear the directory matching key.
 reqj PUT "/api/public/members/$NEWMEMBER" "$TOKEN" \
-    "{\"type\":2,\"externalId\":\"ext-updated\",\"collections\":[{\"id\":\"$COLLECTION\",\"readOnly\":false,\"hidePasswords\":true,\"manage\":false}],\"groups\":[]}"
+    "{\"type\":2,\"collections\":[{\"id\":\"$COLLECTION\",\"readOnly\":false,\"hidePasswords\":true,\"manage\":false}]}"
 check_eq "update member -> 200" "$HTTP_CODE" "200"
-jqcheck "updated member externalId" '.externalId' "ext-updated"
+jqcheck "omitted externalId is preserved" '.externalId' "ext-new-member"
 
 req GET "/api/public/members/$NEWMEMBER" "$TOKEN"
 jqcheck "update replaced the collection grants" '.collections | length' "1"
@@ -330,7 +346,15 @@ jqcheck "updated collection readOnly" '.collections[0].readOnly' "false"
 jqcheck "updated collection hidePasswords" '.collections[0].hidePasswords' "true"
 
 req GET "/api/public/members/$NEWMEMBER/group-ids" "$TOKEN"
-jqcheck "update cleared the group assignments" 'length' "0"
+jqcheck "omitted groups leave membership alone" 'length' "1"
+
+# An explicit empty list does clear them.
+reqj PUT "/api/public/members/$NEWMEMBER" "$TOKEN" \
+    "{\"type\":2,\"externalId\":\"ext-updated\",\"collections\":[],\"groups\":[]}"
+check_eq "update member with explicit empty groups -> 200" "$HTTP_CODE" "200"
+jqcheck "explicit externalId is applied" '.externalId' "ext-updated"
+req GET "/api/public/members/$NEWMEMBER/group-ids" "$TOKEN"
+jqcheck "explicit empty groups clears membership" 'length' "0"
 
 echo ""
 echo "== Member group ids =="
@@ -355,7 +379,7 @@ echo "== Revoke and restore =="
 req POST "/api/public/members/$MEMBER3/revoke" "$TOKEN"
 check_eq "revoke a member -> 200" "$HTTP_CODE" "200"
 req GET "/api/public/members/$MEMBER3" "$TOKEN"
-jqcheck "revoked member has a revoked status" '.status < 0' "true"
+jqcheck "revoked member reports the upstream revoked status" '.status' "-1"
 
 req POST "/api/public/members/$MEMBER3/revoke" "$TOKEN"
 check_eq "revoking twice -> 400" "$HTTP_CODE" "400"
@@ -368,21 +392,32 @@ jqcheck "restored member is confirmed again" '.status' "2"
 req POST "/api/public/members/$MEMBER3/restore" "$TOKEN"
 check_eq "restoring an active member -> 400" "$HTTP_CODE" "400"
 
+req POST "/api/public/members/$NEWMEMBER/restore" "$TOKEN"
+check_eq "restoring an invited member -> 400" "$HTTP_CODE" "400"
+
 echo ""
-echo "== The last confirmed owner is protected =="
+echo "== Ownership is out of reach for a Public API client =="
+
+reqj POST "/api/public/members" "$TOKEN" "{\"email\":\"owner@example.com\",\"type\":0}"
+check_eq "creating an Owner -> 400" "$HTTP_CODE" "400"
+
+reqj PUT "/api/public/members/$MEMBER3" "$TOKEN" "{\"type\":0}"
+check_eq "promoting a member to Owner -> 400" "$HTTP_CODE" "400"
+req GET "/api/public/members/$MEMBER3" "$TOKEN"
+jqcheck "the member was not promoted" '.type' "2"
 
 reqj PUT "/api/public/members/$MEMBER" "$TOKEN" "{\"type\":2}"
-check_eq "demoting the last owner -> 400" "$HTTP_CODE" "400"
+check_eq "demoting an owner -> 400" "$HTTP_CODE" "400"
 
 req DELETE "/api/public/members/$MEMBER" "$TOKEN"
-check_eq "deleting the last owner -> 400" "$HTTP_CODE" "400"
+check_eq "deleting an owner -> 400" "$HTTP_CODE" "400"
 
 req POST "/api/public/members/$MEMBER/revoke" "$TOKEN"
-check_eq "revoking the last owner -> 400" "$HTTP_CODE" "400"
+check_eq "revoking an owner -> 400" "$HTTP_CODE" "400"
 
 req GET "/api/public/members/$MEMBER" "$TOKEN"
-jqcheck "the last owner is untouched, type" '.type' "0"
-jqcheck "the last owner is untouched, status" '.status' "2"
+jqcheck "the owner is untouched, type" '.type' "0"
+jqcheck "the owner is untouched, status" '.status' "2"
 
 echo ""
 echo "== Organization scoping boundary =="
