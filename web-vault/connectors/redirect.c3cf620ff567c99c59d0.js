@@ -1,0 +1,2 @@
+window.addEventListener("load",()=>{const n=new URL(window.location.href).hash.substring(1);if(!n)throw new Error("No fragment found in URL. Cannot determine redirect.");const o=`${window.location.origin}/#/${n}`;window.location.href=o});
+//# sourceMappingURL=redirect.c3cf620ff567c99c59d0.js.map

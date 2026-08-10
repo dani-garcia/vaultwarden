@@ -14,3 +14,8 @@
 !Cargo.toml
 !rustfmt.toml
 !rust-toolchain.toml
+
+!web-vault
+!target/release/vaultwarden
+!Dockerfile.custom
+!Dockerfile.custom-release

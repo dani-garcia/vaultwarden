@@ -1,0 +1,103 @@
+/* @license
+Papa Parse
+v5.5.3
+https://github.com/mholt/PapaParse
+License: MIT
+*/
+
+/*!
+
+JSZip v3.10.1 - A JavaScript class for generating and reading zip files
+<http://stuartk.com/jszip>
+
+(c) 2009-2016 Stuart Knightley <stuart [at] stuartk.com>
+Dual licenced under the MIT license or GPLv3. See https://raw.github.com/Stuk/jszip/main/LICENSE.markdown.
+
+JSZip uses the library pako released under the MIT license :
+https://github.com/nodeca/pako/blob/main/LICENSE
+*/
+
+/*!
+   * lunr.Builder
+   * Copyright (C) 2020 Oliver Nightingale
+   */
+
+/*!
+   * lunr.Index
+   * Copyright (C) 2020 Oliver Nightingale
+   */
+
+/*!
+   * lunr.Pipeline
+   * Copyright (C) 2020 Oliver Nightingale
+   */
+
+/*!
+   * lunr.Set
+   * Copyright (C) 2020 Oliver Nightingale
+   */
+
+/*!
+   * lunr.TokenSet
+   * Copyright (C) 2020 Oliver Nightingale
+   */
+
+/*!
+   * lunr.Vector
+   * Copyright (C) 2020 Oliver Nightingale
+   */
+
+/*!
+   * lunr.stemmer
+   * Copyright (C) 2020 Oliver Nightingale
+   * Includes code from - http://tartarus.org/~martin/PorterStemmer/js.txt
+   */
+
+/*!
+   * lunr.stopWordFilter
+   * Copyright (C) 2020 Oliver Nightingale
+   */
+
+/*!
+   * lunr.tokenizer
+   * Copyright (C) 2020 Oliver Nightingale
+   */
+
+/*!
+   * lunr.trimmer
+   * Copyright (C) 2020 Oliver Nightingale
+   */
+
+/*!
+   * lunr.utils
+   * Copyright (C) 2020 Oliver Nightingale
+   */
+
+/*!
+ * The buffer module from node.js, for the browser.
+ *
+ * @author   Feross Aboukhadijeh <https://feross.org>
+ * @license  MIT
+ */
+
+/*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
+
+/**
+ * @license
+ * Copyright Google LLC All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.dev/license
+ */
+
+/**
+ * @license Angular v21.2.17
+ * (c) 2010-2026 Google LLC. https://angular.dev/
+ * License: MIT
+ */
+
+/**
+ * lunr - http://lunrjs.com - A bit like Solr, but much smaller and not as bright - 2.3.9
+ * Copyright (C) 2020 Oliver Nightingale
+ * @license MIT
+ */
