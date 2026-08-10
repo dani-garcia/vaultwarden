@@ -252,16 +252,43 @@ async fn member_to_json(member: &Membership, conn: &DbConn) -> Value {
         member.status
     };
 
+    // HACK: Convert the manager type to a custom type, the same way the internal
+    // serializers do. Vaultwarden has no real custom role, it links the three collection
+    // permissions to the access_all flag instead, and the write endpoints read that flag
+    // back out of exactly this shape. Emitting both is what lets a client read a member,
+    // send it back unchanged, and keep its access.
+    let membership_type = member.type_manager_as_custom();
+    let permissions = if membership_type == 4 && member.access_all {
+        json!({
+            "accessEventLogs": false,
+            "accessImportExport": false,
+            "accessReports": false,
+            // If the following 3 Collection roles are set to true a custom user has access all permission
+            "createNewCollections": true,
+            "editAnyCollection": true,
+            "deleteAnyCollection": true,
+            "manageGroups": false,
+            "managePolicies": false,
+            "manageSso": false, // Not supported
+            "manageUsers": false,
+            "manageResetPassword": false,
+            "manageScim": false // Not supported (Not AGPLv3 Licensed)
+        })
+    } else {
+        json!(null)
+    };
+
     json!({
         "object": "member",
         "id": member.uuid,
         "userId": member.user_uuid,
         "name": name,
         "email": email,
-        "type": member.atype,
+        "type": membership_type,
         "externalId": member.external_id,
         "resetPasswordEnrolled": member.reset_password_key.is_some(),
         "status": status,
+        "permissions": permissions,
     })
 }
 

@@ -396,6 +396,39 @@ req POST "/api/public/members/$NEWMEMBER/restore" "$TOKEN"
 check_eq "restoring an invited member -> 400" "$HTTP_CODE" "400"
 
 echo ""
+echo "== A manage-all member survives a read-modify-write =="
+
+# Vaultwarden stores manage-all as the access_all flag on a Manager. It is exposed as the
+# custom role plus its three collection permissions, which is the only shape a client can
+# read and send back without silently dropping the access.
+PERMS='{"accessEventLogs":false,"accessImportExport":false,"accessReports":false,"createNewCollections":true,"editAnyCollection":true,"deleteAnyCollection":true,"manageGroups":false,"managePolicies":false,"manageSso":false,"manageUsers":false,"manageResetPassword":false,"manageScim":false}'
+
+reqj POST "/api/public/members" "$TOKEN" \
+    "{\"email\":\"manageall@example.com\",\"type\":4,\"permissions\":$PERMS}"
+check_eq "create a manage-all member -> 200" "$HTTP_CODE" "200"
+MANAGEALL=$(jqval '.id')
+jqcheck "manage-all member reports the custom role" '.type' "4"
+jqcheck "manage-all member reports its permissions" '.permissions.editAnyCollection' "true"
+
+# Read it back and send exactly that back again, which is what a sync client does.
+req GET "/api/public/members/$MANAGEALL" "$TOKEN"
+jqcheck "manage-all member still reports the custom role" '.type' "4"
+ROUNDTRIP=$(jq -c '{type: .type, externalId: .externalId, permissions: .permissions}' "$TMP/body")
+reqj PUT "/api/public/members/$MANAGEALL" "$TOKEN" "$ROUNDTRIP"
+check_eq "write the member back unchanged -> 200" "$HTTP_CODE" "200"
+
+req GET "/api/public/members/$MANAGEALL" "$TOKEN"
+jqcheck "round-trip kept the custom role" '.type' "4"
+jqcheck "round-trip kept manage-all" '.permissions.editAnyCollection' "true"
+
+# A plain member carries no permissions object.
+req GET "/api/public/members/$MEMBER3" "$TOKEN"
+jqcheck "a plain member has null permissions" '.permissions' "null"
+
+req DELETE "/api/public/members/$MANAGEALL" "$TOKEN"
+check_eq "clean up the manage-all member -> 200" "$HTTP_CODE" "200"
+
+echo ""
 echo "== Ownership is out of reach for a Public API client =="
 
 reqj POST "/api/public/members" "$TOKEN" "{\"email\":\"owner@example.com\",\"type\":0}"
