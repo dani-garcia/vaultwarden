@@ -86,7 +86,11 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
                 err!("AuthRequest doesn't exist", "Invalid device, IP or code")
             }
         } else {
-            err!("No password hash has been submitted.")
+            // Allow email-only requests to trigger sending an email 2FA token.
+            // Mobile clients (e.g. iOS) may call this endpoint with only the email when
+            // the token endpoint indicated 2FA is required. In that flow the client
+            // doesn't submit the master password hash or an auth request id, so
+            // permit sending the email token based solely on the user's email.
         }
 
         user
