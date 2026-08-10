@@ -421,9 +421,14 @@ req GET "/api/public/members/$MANAGEALL" "$TOKEN"
 jqcheck "round-trip kept the custom role" '.type' "4"
 jqcheck "round-trip kept manage-all" '.permissions.editAnyCollection' "true"
 
-# A plain member carries no permissions object.
+# A plain member carries no permissions object, and must still round-trip: the read shape
+# has to be acceptable as a write body, null permissions and all.
 req GET "/api/public/members/$MEMBER3" "$TOKEN"
+jqcheck "a plain member has a permissions key" 'has("permissions")' "true"
 jqcheck "a plain member has null permissions" '.permissions' "null"
+PLAIN=$(jq -c '{type: .type, externalId: .externalId, permissions: .permissions, collections: []}' "$TMP/body")
+reqj PUT "/api/public/members/$MEMBER3" "$TOKEN" "$PLAIN"
+check_eq "a plain member round-trips too" "$HTTP_CODE" "200"
 
 req DELETE "/api/public/members/$MANAGEALL" "$TOKEN"
 check_eq "clean up the manage-all member -> 200" "$HTTP_CODE" "200"

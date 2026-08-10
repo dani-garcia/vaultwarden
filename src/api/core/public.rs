@@ -500,8 +500,10 @@ struct MemberCreateData {
     collections: Vec<AssociationData>,
     #[serde(default)]
     groups: Vec<GroupId>,
+    // Our own read shape emits null here for anyone who is not a manage-all member, and a
+    // client is expected to send a read straight back, so null has to deserialize.
     #[serde(default)]
-    permissions: HashMap<String, Value>,
+    permissions: Option<HashMap<String, Value>>,
 }
 
 #[derive(Deserialize)]
@@ -514,8 +516,10 @@ struct MemberUpdateData {
     #[serde(default)]
     collections: Vec<AssociationData>,
     groups: Option<Vec<GroupId>>,
+    // Our own read shape emits null here for anyone who is not a manage-all member, and a
+    // client is expected to send a read straight back, so null has to deserialize.
     #[serde(default)]
-    permissions: HashMap<String, Value>,
+    permissions: Option<HashMap<String, Value>>,
 }
 
 #[derive(Deserialize)]
@@ -672,7 +676,8 @@ async fn post_member(data: Json<MemberCreateData>, token: PublicToken, ip: auth:
     let org_id = token.0;
     let data = data.into_inner();
 
-    let Some((new_type, access_all)) = member_type_and_access_all(data.r#type, &data.permissions) else {
+    let permissions = data.permissions.unwrap_or_default();
+    let Some((new_type, access_all)) = member_type_and_access_all(data.r#type, &permissions) else {
         err!("Invalid type")
     };
     deny_owner_grant(new_type)?;
@@ -764,7 +769,8 @@ async fn put_member(
     let org_id = token.0;
     let data = data.into_inner();
 
-    let Some((new_type, access_all)) = member_type_and_access_all(data.r#type, &data.permissions) else {
+    let permissions = data.permissions.unwrap_or_default();
+    let Some((new_type, access_all)) = member_type_and_access_all(data.r#type, &permissions) else {
         err!("Invalid type")
     };
     deny_owner_grant(new_type)?;
@@ -865,6 +871,8 @@ async fn post_member_reinvite(member_id: MembershipId, token: PublicToken, conn:
     let Some(member) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
         err_code!(format!("Member {member_id} not found in organization"), 404);
     };
+
+    deny_owner_target(&member)?;
 
     if member.status != MembershipStatus::Invited as i32 {
         err!("The user is already accepted or confirmed to the organization")
@@ -1011,9 +1019,9 @@ async fn put_group(
 
     // Member assignments are owned by "/public/groups/<group_id>/member-ids" and are
     // deliberately left untouched here.
-    set_group_collections(&group, &data.collections, &org_id, &conn).await?;
-
     log_public_event(EventType::GroupUpdated as i32, &group.uuid, &org_id, &ip.ip, &conn).await;
+
+    set_group_collections(&group, &data.collections, &org_id, &conn).await?;
 
     Ok(Json(group_to_json(&group)))
 }
