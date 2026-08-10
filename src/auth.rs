@@ -6,7 +6,8 @@ pub type SendHeaders = send::SendHeaders;
 use std::{
     env,
     net::IpAddr,
-    sync::{LazyLock, OnceLock},
+    sync::{LazyLock, Mutex, OnceLock},
+    time::{Duration, Instant},
 };
 
 use chrono::{DateTime, TimeDelta, Utc};
@@ -1085,6 +1086,43 @@ fn ip_header_is_trusted(remote: Option<IpAddr>) -> bool {
     trusted.split(',').filter_map(parse_trusted_proxy).any(|net| net.contains(&remote))
 }
 
+/// How often to repeat the untrusted proxy warning, so a misconfiguration stays visible in the log
+/// without adding a line to every single request.
+const UNTRUSTED_PROXY_WARN_INTERVAL: Duration = Duration::from_secs(3600);
+
+/// Warns that the client IP header was dropped because it did not come from a trusted proxy.
+///
+/// Reaching here is nearly always a misconfiguration: something in front of us sets the header, but
+/// it connects from an address `ip_header_trusted_proxies` does not cover. Every client then shares
+/// that one address, which the login, admin and unauthenticated rate limits are keyed on, so this
+/// has to be more visible than a debug line. Throttled per address, as it is on the request path.
+fn warn_untrusted_ip_header(remote: Option<IpAddr>) {
+    static LAST_WARNED: Mutex<Option<(Option<IpAddr>, Instant)>> = Mutex::new(None);
+
+    // Report the canonical IP, which is what the trusted proxies list has to match against
+    let remote = remote.map(|ip| ip.to_canonical());
+
+    {
+        let mut guard = LAST_WARNED.lock().unwrap();
+        if let Some((warned, at)) = *guard
+            && warned == remote
+            && at.elapsed() < UNTRUSTED_PROXY_WARN_INTERVAL
+        {
+            return;
+        }
+        *guard = Some((remote, Instant::now()));
+    }
+
+    let remote = remote.map_or_else(|| "<unknown>".to_owned(), |ip| ip.to_string());
+    warn!(
+        "Ignoring the '{}' header sent from {remote}, which is not a trusted proxy. \
+         Every client behind it now shares that single address for the rate limits. \
+         If this is your reverse proxy, add it to `IP_HEADER_TRUSTED_PROXIES` (currently `{}`).",
+        CONFIG.ip_header(),
+        CONFIG.ip_header_trusted_proxies()
+    );
+}
+
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for ClientIp {
     type Error = ();
@@ -1104,9 +1142,7 @@ impl<'r> FromRequest<'r> for ClientIp {
             })
         } else {
             if CONFIG._ip_header_enabled() && req.headers().get_one(&CONFIG.ip_header()).is_some() {
-                // Log the canonical IP, which is what the user filter will need to match against
-                let remote = remote.map(|ip| ip.to_canonical());
-                debug!("Ignoring the '{}' header, {remote:?} is not a trusted proxy", CONFIG.ip_header());
+                warn_untrusted_ip_header(remote);
             }
             None
         };
