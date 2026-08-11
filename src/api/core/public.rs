@@ -14,7 +14,7 @@ use crate::{
     db::{
         DbConn,
         models::{
-            Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, Organization,
+            Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, OrgPolicy, Organization,
             OrganizationApiKey, OrganizationId, User,
         },
     },
@@ -84,8 +84,15 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
             }
         // If user is part of the organization, restore it
         } else if let Some(mut member) = Membership::find_by_email_and_org(&user_data.email, &org_id, &conn).await {
-            let restored = member.restore();
+            let mut restored = member.restore();
             let ext_modified = member.set_external_id(Some(user_data.external_id.clone()));
+            // Enforce org policies as every other restore path does.
+            // If the user is not allowed, we revoke again and continue so the external_id is still updated.
+            if restored && let Err(e) = OrgPolicy::check_user_allowed(&member, "restore", &conn).await {
+                warn!("Not restoring {}: {e:?}", user_data.email);
+                member.revoke();
+                restored = false;
+            }
             if restored || ext_modified {
                 member.save(&conn).await?;
             }

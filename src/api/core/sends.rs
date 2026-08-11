@@ -453,6 +453,9 @@ async fn post_access(headers: SendHeaders, conn: DbConn, nt: Notify<'_>) -> Json
     let Some(send) = Send::find_by_uuid(&headers.send_id, &conn).await else {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     };
+    if !send.is_accessible() {
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
+    }
     process_access(send, conn, nt).await
 }
 
@@ -471,6 +474,8 @@ async fn post_access_legacy(
     ip: ClientIp,
     nt: Notify<'_>,
 ) -> JsonResult {
+    crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
+
     let Some(mut send) = Send::find_by_access_id(access_id, &conn).await else {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     };
@@ -481,17 +486,7 @@ async fn post_access_legacy(
         err_code!(SEND_INACCESSIBLE_MSG, 404);
     }
 
-    if let Some(expiration) = send.expiration_date
-        && Utc::now().naive_utc() >= expiration
-    {
-        err_code!(SEND_INACCESSIBLE_MSG, 404)
-    }
-
-    if Utc::now().naive_utc() >= send.deletion_date {
-        err_code!(SEND_INACCESSIBLE_MSG, 404)
-    }
-
-    if send.disabled {
+    if !send.is_accessible() {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
@@ -505,10 +500,12 @@ async fn post_access_legacy(
 
     // Files are incremented during the download
     if send.atype == SendType::Text as i32 {
-        send.access_count += 1;
+        if !send.register_access(&conn).await? {
+            err_code!(SEND_INACCESSIBLE_MSG, 404)
+        }
+    } else {
+        send.save(&conn).await?;
     }
-
-    send.save(&conn).await?;
 
     process_access(send, conn, nt).await
 }
@@ -537,6 +534,9 @@ async fn post_access_file(
     let Some(send) = Send::find_by_uuid(&headers.send_id, &conn).await else {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     };
+    if !send.is_accessible() {
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
+    }
     process_access_file(send, file_id, host, conn, nt).await
 }
 
@@ -548,8 +548,11 @@ async fn post_access_file_legacy(
     data: Json<SendAccessData>,
     host: Host,
     conn: DbConn,
+    ip: ClientIp,
     nt: Notify<'_>,
 ) -> JsonResult {
+    crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
+
     let Some(mut send) = Send::find_by_uuid(&send_id, &conn).await else {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     };
@@ -560,17 +563,7 @@ async fn post_access_file_legacy(
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
-    if let Some(expiration) = send.expiration_date
-        && Utc::now().naive_utc() >= expiration
-    {
-        err_code!(SEND_INACCESSIBLE_MSG, 404)
-    }
-
-    if Utc::now().naive_utc() >= send.deletion_date {
-        err_code!(SEND_INACCESSIBLE_MSG, 404)
-    }
-
-    if send.disabled {
+    if !send.is_accessible() {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
 
@@ -582,9 +575,9 @@ async fn post_access_file_legacy(
         }
     }
 
-    send.access_count += 1;
-
-    send.save(&conn).await?;
+    if !send.register_access(&conn).await? {
+        err_code!(SEND_INACCESSIBLE_MSG, 404)
+    }
 
     process_access_file(send, file_id, host, conn, nt).await
 }

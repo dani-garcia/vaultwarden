@@ -268,8 +268,25 @@ impl User {
             UserStatus::Enabled
         };
 
+        let account_keys = if self.private_key.is_some() {
+            json!({
+                "publicKeyEncryptionKeyPair": {
+                    "wrappedPrivateKey": self.private_key,
+                    "publicKey": self.public_key,
+                    "signedPublicKey": null,
+                    "object": "publicKeyEncryptionKeyPair",
+                },
+                "securityState": null,
+                "signatureKeyPair": null,
+                "object": "privateKeys"
+            })
+        } else {
+            Value::Null
+        };
+
         json!({
             "_status": status as i32,
+            "accountKeys": account_keys,
             "id": self.uuid,
             "name": self.name,
             "email": self.email,

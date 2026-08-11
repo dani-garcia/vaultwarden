@@ -217,11 +217,18 @@ impl Organization {
             "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
             "selfHost": true,
             "useApi": true,
+            "useDisableSMAdsForUsers": true, // Hide Secrets Manager ads
+            "useInviteLinks": false, // Not (yet) supported
+            "useMyItems": false, // Not (yet) supported
+            "useOrganizationDomains": false, // Not supported (Linked to SSO)
+            "usePam": false, // Not supported
+            "usePhishingBlocker": false,
             "hasPublicAndPrivateKeys": self.private_key.is_some() && self.public_key.is_some(),
             "useResetPassword": CONFIG.mail_enabled(),
             "allowAdminAccessToAllCollectionItems": true,
             "limitCollectionCreation": true,
             "limitCollectionDeletion": true,
+            "limitItemDeletion": false,
 
             "businessName": self.name,
             "businessAddress1": null,
@@ -495,6 +502,12 @@ impl Membership {
             "useActivateAutofillPolicy": false,
             "useAdminSponsoredFamilies": false,
             "useRiskInsights": false, // Not supported (Not AGPLv3 Licensed)
+            "useDisableSMAdsForUsers": true, // Hide Secrets Manager ads
+            "useInviteLinks": false, // Not (yet) supported
+            "useMyItems": false, // Not (yet) supported
+            "useOrganizationDomains": false, // Not supported (Linked to SSO)
+            "usePam": false, // Not supported
+            "usePhishingBlocker": false,
 
             "organizationUserId": self.uuid,
             "providerId": null,

@@ -85,18 +85,8 @@ impl SendTokens {
             return Self::invalid_error(&format!("Send {send_id}, max access reached"), "send_id_invalid", true);
         }
 
-        if let Some(expiration) = send.expiration_date
-            && Utc::now().naive_utc() >= expiration
-        {
-            return Self::invalid_error(&format!("Send {send_id}, expired"), "send_id_invalid", true);
-        }
-
-        if Utc::now().naive_utc() >= send.deletion_date {
-            return Self::invalid_error(&format!("Send {send_id}, past deletion"), "send_id_invalid", true);
-        }
-
-        if send.disabled {
-            return Self::invalid_error(&format!("Send {send_id}, disabled"), "send_id_invalid", true);
+        if !send.is_accessible() {
+            return Self::invalid_error(&format!("Send {send_id}, not accessible"), "send_id_invalid", true);
         }
 
         if send.password_hash.is_some() {
@@ -113,8 +103,9 @@ impl SendTokens {
             }
         }
 
-        send.access_count += 1;
-        send.save(conn).await?;
+        if !send.register_access(conn).await? {
+            return Self::invalid_error(&format!("Send {send_id}, max access reached"), "send_id_invalid", true);
+        }
 
         Ok(Self {
             access_claims: generate_send_access_claims(&send_id),

@@ -271,7 +271,9 @@ impl Group {
             groups::table
                 .inner_join(groups_users::table.on(groups_users::groups_uuid.eq(groups::uuid)))
                 .inner_join(
-                    users_organizations::table.on(users_organizations::uuid.eq(groups_users::users_organizations_uuid)),
+                    users_organizations::table.on(users_organizations::uuid
+                        .eq(groups_users::users_organizations_uuid)
+                        .and(users_organizations::org_uuid.eq(groups::organizations_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
                 .filter(groups::organizations_uuid.eq(org_uuid))

@@ -174,6 +174,27 @@ pub enum CustomHttpClientError {
 }
 
 impl CustomHttpClientError {
+    /// Attach the domain that resolved to this address, which `should_block_host()` can't know.
+    fn with_domain(self, name: &str) -> Self {
+        match self {
+            Self::NonGlobalIp {
+                ip,
+                ..
+            } => Self::NonGlobalIp {
+                domain: Some(name.to_owned()),
+                ip,
+            },
+            Self::Blocked {
+                domain,
+            } => Self::Blocked {
+                domain: format!("{name} ({domain})"),
+            },
+            other @ Self::Invalid {
+                ..
+            } => other,
+        }
+    }
+
     pub fn downcast_ref(e: &dyn std::error::Error) -> Option<&Self> {
         let mut source = e.source();
 
@@ -285,14 +306,12 @@ fn pre_resolve(name: &str, enforce_block: bool) -> Result<(), CustomHttpClientEr
 }
 
 fn post_resolve(name: &str, ip: IpAddr) -> Result<(), CustomHttpClientError> {
-    if should_block_ip(ip) {
-        Err(CustomHttpClientError::NonGlobalIp {
-            domain: Some(name.to_owned()),
-            ip,
-        })
-    } else {
-        Ok(())
-    }
+    let host: Host<&str> = match ip {
+        IpAddr::V4(ip) => Host::Ipv4(ip),
+        IpAddr::V6(ip) => Host::Ipv6(ip),
+    };
+
+    should_block_host(&host).map_err(|e| e.with_domain(name))
 }
 
 impl Resolve for CustomDns {

@@ -109,6 +109,7 @@ async fn login(
         }
         "authorization_code" => err!("SSO sign-in is not available"),
         "send_access" => {
+            crate::ratelimit::check_limit_unauthenticated(&client_header.ip.ip)?;
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
             check_is_some(data.send_id.as_ref(), "send_id cannot be blank")?;
 
@@ -317,7 +318,7 @@ async fn sso_login(
         Some((user, _)) if !user.enabled => {
             err!(
                 "This user has been disabled",
-                format!("IP: {}. Username: {}.", ip.ip, user.display_name()),
+                format!("IP: {}. Username: {}.", ip.ip, user.email),
                 ErrorEvent {
                     event: EventType::UserFailedLogIn
                 }
@@ -576,7 +577,7 @@ async fn authenticated_response(
         result["TwoFactorToken"] = Value::String(token);
     }
 
-    info!("User {} logged in successfully. IP: {}", user.display_name(), ip.ip);
+    info!("User {} logged in successfully. IP: {}", user.email, ip.ip);
     Ok(Json(result))
 }
 
@@ -1055,8 +1056,11 @@ enum RegisterVerificationResponse {
 #[post("/accounts/register/send-verification-email", data = "<data>")]
 async fn register_verification_email(
     data: Json<RegisterVerificationData>,
+    ip: ClientIp,
     conn: DbConn,
 ) -> ApiResult<RegisterVerificationResponse> {
+    crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
+
     let data = data.into_inner();
 
     // the registration can only continue if signup is allowed or there exists an invitation

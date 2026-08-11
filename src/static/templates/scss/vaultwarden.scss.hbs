@@ -116,8 +116,8 @@ app-security > app-two-factor-setup > form {
 }
 
 /* Hide unsupported Custom Role options */
-bit-dialog div.tw-ml-4:has(bit-form-control input),
-bit-dialog div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcontrolname*="manage"]) {
+:is(bit-dialog, [bit-dialog]) div.tw-ml-4:has(bit-form-control input),
+:is(bit-dialog, [bit-dialog]) div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcontrolname*="manage"]) {
   @extend %vw-hide;
 }
 

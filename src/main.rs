@@ -2,7 +2,7 @@
 // The recursion_limit is mainly triggered by the json!() macro.
 // The more key/value pairs there are the more recursion occurs.
 // We want to keep this as low as possible!
-#![recursion_limit = "165"]
+#![recursion_limit = "192"]
 
 // When enabled use MiMalloc as malloc instead of the default malloc
 #[cfg(feature = "enable_mimalloc")]

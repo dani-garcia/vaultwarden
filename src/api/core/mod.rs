@@ -246,14 +246,17 @@ fn config() -> Json<Value> {
         // Version history:
         // - Individual cipher key encryption: 2024.2.0
         // - Mobile app support for MasterPasswordUnlockData: 2025.8.0
-        "version": "2025.12.0",
+        "version": "2026.6.0",
         "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",
           "url": "https://github.com/dani-garcia/vaultwarden"
         },
         "settings": {
-            "disableUserRegistration": CONFIG.is_signup_disabled()
+            "disableUserRegistration": CONFIG.is_signup_disabled(),
+            // When enabled, this setting signals to clients that onboarding interstitials
+            // (post-login welcome dialogs, extension install prompts, setup extension redirects, and premium upsell modals) should be suppressed
+            "suppressOnboardingInterstitials": CONFIG.client_suppress_onboarding(),
         },
         "environment": {
           "vault": domain,
@@ -270,6 +273,10 @@ fn config() -> Json<Value> {
           "vapidPublicKey": null
         },
         "featureStates": feature_states,
+        // Not supported right now
+        // Used for by clients to learn if the server requires extra work to establish a connection.
+        // See: https://github.com/bitwarden/server/pull/6892 | https://github.com/bitwarden/server/commit/52955d1860b4dfb905f67bbe39d9b10bbd61ded0
+        "communication": null,
         "object": "config",
     }))
 }
