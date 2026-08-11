@@ -273,10 +273,6 @@ fn config() -> Json<Value> {
           "vapidPublicKey": null
         },
         "featureStates": feature_states,
-        // Not supported right now
-        // Used for by clients to learn if the server requires extra work to establish a connection.
-        // See: https://github.com/bitwarden/server/pull/6892 | https://github.com/bitwarden/server/commit/52955d1860b4dfb905f67bbe39d9b10bbd61ded0
-        "communication": null,
         "object": "config",
     }))
 }
