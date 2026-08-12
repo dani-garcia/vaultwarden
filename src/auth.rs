@@ -1009,8 +1009,7 @@ fn collection_access_by_role(membership: &Membership, custom_has_any_access: boo
         Some(MembershipType::Owner | MembershipType::Admin) => CollectionManageAccess::Any,
         Some(MembershipType::Custom) if custom_has_any_access => CollectionManageAccess::Any,
         // A Custom member must prove an actual users_collections.manage / collections_groups.manage
-        // assignment, or the legacy organization-local `access_all` group a Manager's authority used
-        // to come from. Membership-level `access_all` is gone and never counted here.
+        // assignment. Neither membership nor group `access_all` is ever counted as one.
         Some(MembershipType::Custom) => CollectionManageAccess::ExplicitManage,
         Some(MembershipType::User) | None => CollectionManageAccess::Denied,
     }
@@ -1027,8 +1026,28 @@ fn collection_read_access(membership: &Membership) -> CollectionManageAccess {
     )
 }
 
+/// Collection deletion never falls back to a per-collection Manage grant.
+///
+/// Vaultwarden serializes `limitCollectionDeletion = true` unconditionally, and upstream gates
+/// manage-based deletion on that setting being *off* (`BulkCollectionAuthorizationHandler`): with the
+/// limit active, only Owners, Admins and holders of `Delete any collection` may delete. Accepting a
+/// stored `manage` grant here would break that promise and, worse, make the three collection
+/// permissions dependent on each other — a Custom member holding only `Create new collections`
+/// receives an automatic `users_collections.manage` row for the collection they just created, and
+/// could delete it again without `Delete any collection`.
+///
+/// A Manage grant keeps its full meaning for editing a collection and rewriting its access
+/// (`collection_edit_access`); it just is not a delete permission.
 fn collection_delete_access(membership: &Membership) -> CollectionManageAccess {
-    collection_access_by_role(membership, membership.has_delete_any_collection())
+    if !membership.has_status(MembershipStatus::Confirmed) {
+        return CollectionManageAccess::Denied;
+    }
+
+    match MembershipType::from_i32(membership.atype) {
+        Some(MembershipType::Owner | MembershipType::Admin) => CollectionManageAccess::Any,
+        Some(MembershipType::Custom) if membership.has_delete_any_collection() => CollectionManageAccess::Any,
+        Some(MembershipType::Custom | MembershipType::User) | None => CollectionManageAccess::Denied,
+    }
 }
 
 async fn can_manage_collection(
@@ -1040,7 +1059,7 @@ async fn can_manage_collection(
     match access {
         CollectionManageAccess::Any => true,
         CollectionManageAccess::ExplicitManage => {
-            membership.has_collection_manage_authority(collection_uuid, conn).await
+            membership.has_explicit_collection_manage_access(collection_uuid, conn).await
         }
         CollectionManageAccess::Denied => false,
     }
@@ -1062,6 +1081,19 @@ pub(crate) async fn can_edit_collection(
     conn: &DbConn,
 ) -> bool {
     can_manage_collection(collection_edit_access(membership), membership, collection_uuid, conn).await
+}
+
+/// Whether `membership` may read a collection's user/group access mappings.
+///
+/// Keep body/bulk endpoints on exactly the same authorization rule as `CollectionReadHeaders`:
+/// Admin/Owner, Edit-any/Delete-any, or a real per-collection Manage assignment. Ordinary read
+/// access and group `access_all` deliberately do not qualify.
+pub(crate) async fn can_read_collection_access(
+    membership: &Membership,
+    collection_uuid: &CollectionId,
+    conn: &DbConn,
+) -> bool {
+    can_manage_collection(collection_read_access(membership), membership, collection_uuid, conn).await
 }
 
 /// ManagerHeaders authorizes collection updates. A Custom member with Edit any collection can
@@ -1170,12 +1202,10 @@ impl From<CollectionReadHeaders> for Headers {
     }
 }
 
-/// Delete is intentionally independent from Edit any collection. Vaultwarden advertises
-/// limitCollectionDeletion=true, so deleting *any* collection requires the explicit Delete any
-/// collection permission (or Admin/Owner). Deleting an individual collection is additionally
-/// allowed for members holding the per-collection Manage grant on it. Custom members use the
-/// explicit assignment only; a group `access_all` grant never counts as their per-collection Manage
-/// grant.
+/// Delete is fully independent from the other two collection permissions. Vaultwarden advertises
+/// `limitCollectionDeletion = true`, so deleting a collection requires Admin/Owner or the explicit
+/// Delete any collection permission — see `collection_delete_access` for why a per-collection Manage
+/// grant deliberately does not qualify.
 pub struct CollectionDeleteHeaders {
     pub host: String,
     pub device: Device,
@@ -1194,25 +1224,17 @@ impl<'r> FromRequest<'r> for CollectionDeleteHeaders {
             err_handler!("You need collection delete permission to call this endpoint")
         }
 
-        let Some(col_id) = get_col_id(request) else {
+        // Only used to keep this guard bound to routes that actually carry a collection id.
+        if get_col_id(request).is_none() {
             err_handler!("Error getting the collection id")
-        };
+        }
 
         match collection_delete_access(&headers.membership) {
             CollectionManageAccess::Any => {}
-            CollectionManageAccess::Denied => {
-                // Custom is a distinct, fail-closed role. Edit any collection alone must not satisfy
-                // a Delete request without either Delete any or an explicit per-collection Manage.
+            // Custom is a distinct, fail-closed role: neither Edit any collection nor a stored
+            // per-collection Manage grant substitutes for Delete any collection.
+            CollectionManageAccess::ExplicitManage | CollectionManageAccess::Denied => {
                 err_handler!("You need the 'Delete any collection' permission to call this endpoint")
-            }
-            access @ CollectionManageAccess::ExplicitManage => {
-                let Outcome::Success(conn) = DbConn::from_request(request).await else {
-                    err_handler!("Error getting DB")
-                };
-
-                if !can_manage_collection(access, &headers.membership, &col_id, &conn).await {
-                    err_handler!("The current user isn't a manager for this collection")
-                }
             }
         }
 
@@ -1295,8 +1317,9 @@ impl CollectionDeleteHeaders {
         collections: &Vec<CollectionId>,
         conn: &DbConn,
     ) -> Result<CollectionDeleteHeaders, Error> {
-        let delete_access = collection_delete_access(&h.membership);
-        if delete_access == CollectionManageAccess::Denied {
+        // Bulk delete answers to the same rule as the single-collection route: blanket authority or
+        // nothing. A per-collection Manage grant is not a delete permission.
+        if collection_delete_access(&h.membership) != CollectionManageAccess::Any {
             err!("You need the 'Delete any collection' permission to call this endpoint")
         }
 
@@ -1306,11 +1329,6 @@ impl CollectionDeleteHeaders {
             }
             if Collection::find_by_uuid_and_org(col_id, &h.membership.org_uuid, conn).await.is_none() {
                 err!("Collection not found", "Collection does not exist or does not belong to this organization")
-            }
-            if delete_access != CollectionManageAccess::Any
-                && !can_manage_collection(delete_access, &h.membership, col_id, conn).await
-            {
-                err!("Collection not found", "The current user isn't a manager for this collection")
             }
         }
 
@@ -1695,16 +1713,18 @@ mod tests {
     }
 
     #[test]
-    fn flagless_custom_requires_explicit_manage_for_edit_read_and_delete() {
-        // A flagless Custom member (this is what a migrated legacy Manager becomes) never gets
-        // blanket collection authority from its role alone: every collection operation has to be
-        // answered per collection. ExplicitManage invokes the database helper that accepts a real
-        // users_collections.manage / collections_groups.manage grant, or the legacy
-        // organization-local access_all group — never the membership-level access_all that is gone.
+    fn flagless_custom_requires_explicit_manage_for_edit_and_read_and_cannot_delete() {
+        // A flagless Custom member never gets blanket collection authority from its role alone.
+        // Edit and read are answered per collection by `has_explicit_collection_manage_access`, which
+        // accepts a real users_collections.manage / collections_groups.manage grant and nothing else:
+        // membership access_all is gone, and a group's access_all is not a manage grant.
+        //
+        // Delete has no per-collection fallback at all, so the answer is Denied rather than
+        // ExplicitManage -- see `collection_delete_access`.
         let custom = membership(MembershipType::Custom);
         assert_eq!(collection_edit_access(&custom), CollectionManageAccess::ExplicitManage);
         assert_eq!(collection_read_access(&custom), CollectionManageAccess::ExplicitManage);
-        assert_eq!(collection_delete_access(&custom), CollectionManageAccess::ExplicitManage);
+        assert_eq!(collection_delete_access(&custom), CollectionManageAccess::Denied);
     }
 
     #[test]
@@ -1713,15 +1733,43 @@ mod tests {
         edit_any.edit_any_collection = true;
         assert_eq!(collection_edit_access(&edit_any), CollectionManageAccess::Any);
         assert_eq!(collection_read_access(&edit_any), CollectionManageAccess::Any);
-        // Edit-any alone is not blanket Delete. It still permits deletion of an explicitly managed
-        // collection, which is why the result is ExplicitManage rather than Denied.
-        assert_eq!(collection_delete_access(&edit_any), CollectionManageAccess::ExplicitManage);
+        // Edit any collection is never a delete permission, not even for a collection the member
+        // holds an explicit Manage grant on.
+        assert_eq!(collection_delete_access(&edit_any), CollectionManageAccess::Denied);
 
         let mut delete_any = membership(MembershipType::Custom);
         delete_any.delete_any_collection = true;
         assert_eq!(collection_edit_access(&delete_any), CollectionManageAccess::ExplicitManage);
         assert_eq!(collection_read_access(&delete_any), CollectionManageAccess::Any);
         assert_eq!(collection_delete_access(&delete_any), CollectionManageAccess::Any);
+
+        // Create new collections yields the automatic users_collections.manage row on the created
+        // collection. That row must not become a delete permission either.
+        let mut create_only = membership(MembershipType::Custom);
+        create_only.create_new_collections = true;
+        assert_eq!(collection_edit_access(&create_only), CollectionManageAccess::ExplicitManage);
+        assert_eq!(collection_delete_access(&create_only), CollectionManageAccess::Denied);
+    }
+
+    /// A stored `atype` that is not one of the four known roles must never be treated as one, in
+    /// either direction. 3 is the retired Manager discriminant, and a negative value is what a
+    /// corrupt row or a hand-written UPDATE could leave behind -- it would satisfy a numeric
+    /// `atype <= Admin` SQL predicate, which is why the queries enumerate the two admin values
+    /// instead (`ORG_ADMIN_ATYPES`).
+    #[test]
+    fn unknown_stored_role_values_fail_closed() {
+        for atype in [-1, 3, 5, i32::MAX, i32::MIN] {
+            let mut unknown = membership(MembershipType::Custom);
+            unknown.atype = atype;
+            // Even with every permission set, an unrecognized role grants nothing.
+            unknown.edit_any_collection = true;
+            unknown.delete_any_collection = true;
+            unknown.create_new_collections = true;
+
+            assert_eq!(collection_edit_access(&unknown), CollectionManageAccess::Denied, "atype {atype}");
+            assert_eq!(collection_read_access(&unknown), CollectionManageAccess::Denied, "atype {atype}");
+            assert_eq!(collection_delete_access(&unknown), CollectionManageAccess::Denied, "atype {atype}");
+        }
     }
 
     #[test]
@@ -1738,16 +1786,26 @@ mod tests {
     }
 
     #[test]
-    fn migrated_legacy_manager_retains_explicit_collection_manage() {
-        // The role migration converts legacy Managers to flagless Custom members. They retain
-        // edit/delete only for collections with a persisted per-collection Manage assignment;
-        // the restrictive helper deliberately excludes group and membership access_all.
-        let migrated_manager = membership(MembershipType::Custom);
-        assert_eq!(collection_edit_access(&migrated_manager), CollectionManageAccess::ExplicitManage);
-        assert_eq!(collection_delete_access(&migrated_manager), CollectionManageAccess::ExplicitManage);
+    fn a_migrated_legacy_manager_carries_its_authority_in_the_permission_columns() {
+        // A legacy Manager who managed every collection through a group with access_all is not
+        // recognized by its shape at runtime -- that shape is indistinguishable from a newly created
+        // flagless Custom member. The repair migration writes the authority into the permission
+        // columns instead, so the guard sees an ordinary Edit/Delete any collection holder.
+        let mut migrated_group_manager = membership(MembershipType::Custom);
+        migrated_group_manager.edit_any_collection = true;
+        migrated_group_manager.delete_any_collection = true;
+        assert_eq!(collection_edit_access(&migrated_group_manager), CollectionManageAccess::Any);
+        assert_eq!(collection_delete_access(&migrated_group_manager), CollectionManageAccess::Any);
+
+        // Without those columns nothing is derived, no matter which groups the member belongs to.
+        let flagless = membership(MembershipType::Custom);
+        assert_eq!(collection_edit_access(&flagless), CollectionManageAccess::ExplicitManage);
+        assert_eq!(collection_delete_access(&flagless), CollectionManageAccess::Denied);
 
         let mut unconfirmed = membership(MembershipType::Custom);
         unconfirmed.status = MembershipStatus::Accepted as i32;
+        unconfirmed.edit_any_collection = true;
+        unconfirmed.delete_any_collection = true;
         assert_eq!(collection_edit_access(&unconfirmed), CollectionManageAccess::Denied);
         assert_eq!(collection_delete_access(&unconfirmed), CollectionManageAccess::Denied);
     }

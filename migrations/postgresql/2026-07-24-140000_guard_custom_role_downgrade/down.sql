@@ -1,11 +1,12 @@
--- Nine independent Custom-role permissions cannot be represented losslessly by the legacy
--- role/access_all schema, so a revert is blocked here -- before any older down migration removes
--- permission data.
---
--- It is an explicit, acknowledged decision though, not a dead end. Create the marker table below
--- while every Vaultwarden instance is stopped and this guard lets the revert through:
+-- Downgrade guard. Reverting this migration destroys Custom-role permission data that the legacy
+-- role/access_all schema cannot represent, so it only runs with an explicit acknowledgement. Create
+-- the marker table below while every Vaultwarden instance is stopped:
 --
 --     CREATE TABLE __vw_allow_custom_role_downgrade (acknowledged INTEGER NOT NULL PRIMARY KEY);
+--
+-- The acknowledgement stays valid for the rest of the revert chain and is consumed by the oldest
+-- lossy migration (2026-06-30-120000), so one decision covers one downgrade -- and a re-upgrade
+-- clears it again (2026-07-24-140000/up.sql), so consent is never inherited.
 --
 -- Operators who only need the old server version to start again do not need Diesel at all --
 -- tools/custom_role_rollback/ has a self-contained script per backend.
@@ -19,6 +20,8 @@ SELECT 1
 WHERE to_regclass('__vw_allow_custom_role_downgrade') IS NULL;
 DROP TABLE __vw_custom_role_downgrade_guard;
 
--- Consume the acknowledgement: it authorized *this* revert, not every future one. After a
--- re-upgrade the next revert has to be acknowledged again.
-DROP TABLE IF EXISTS __vw_allow_custom_role_downgrade;
+-- Nothing else to undo: the acknowledgement deliberately survives this step. It has to still be here
+-- when the next revert removes the first permission column, which is what this guard exists to
+-- announce -- checking and dropping it in the same step would leave every following lossy revert
+-- unguarded.
+SELECT 1;

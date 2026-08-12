@@ -7,5 +7,7 @@
 DROP TABLE IF EXISTS __vw_custom_role_same_run_0716;
 
 -- Also clear a downgrade acknowledgement left over from an earlier revert, so consent is
--- never inherited across an upgrade.
+-- never inherited across an upgrade. Both of them: this backend's revert chain needs a second one,
+-- acknowledging that it cannot be resumed after a crash between a committed ALTER and the ledger.
 DROP TABLE IF EXISTS __vw_allow_custom_role_downgrade;
+DROP TABLE IF EXISTS __vw_allow_unresumable_mysql_downgrade;

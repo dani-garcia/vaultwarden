@@ -341,20 +341,37 @@ impl Event {
 
     pub async fn find_by_cipher_uuid(
         cipher_uuid: &CipherId,
+        org_uuid: Option<&OrganizationId>,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
         conn: &DbConn,
     ) -> Vec<Self> {
-        conn.run(move |conn| {
-            event::table
-                .filter(event::cipher_uuid.eq(cipher_uuid))
-                .filter(event::event_date.between(start, end))
-                .order_by(event::event_date.desc())
-                .limit(Self::PAGE_SIZE)
-                .load::<Self>(conn)
-                .expect("Error filtering events")
-        })
-        .await
+        conn.run(move |conn| Self::find_by_cipher_uuid_impl(cipher_uuid, org_uuid, start, end, conn)).await
+    }
+
+    fn find_by_cipher_uuid_impl(
+        cipher_uuid: &CipherId,
+        org_uuid: Option<&OrganizationId>,
+        start: &NaiveDateTime,
+        end: &NaiveDateTime,
+        conn: &mut crate::db::DbConnInner,
+    ) -> Vec<Self> {
+        let query = event::table
+            .filter(event::cipher_uuid.eq(cipher_uuid))
+            .filter(event::event_date.between(start, end))
+            .into_boxed();
+
+        // A cipher event request is authorized for exactly one scope: either the cipher's
+        // current organization or its personal owner. Apply that scope before PAGE_SIZE so
+        // rows from another scope cannot consume the page and hide older authorized events.
+        match org_uuid {
+            Some(org_uuid) => query.filter(event::org_uuid.eq(org_uuid)),
+            None => query.filter(event::org_uuid.is_null()),
+        }
+        .order_by(event::event_date.desc())
+        .limit(Self::PAGE_SIZE)
+        .load::<Self>(conn)
+        .expect("Error filtering events")
     }
 
     pub async fn clean_events(conn: &DbConn) -> EmptyResult {
@@ -374,3 +391,67 @@ impl Event {
 
 #[derive(Clone, Debug, DieselNewType, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventId(String);
+
+#[cfg(all(test, sqlite))]
+mod tests {
+    use diesel::{Connection, connection::SimpleConnection, sqlite::SqliteConnection};
+
+    use super::*;
+    use crate::db::DbConnInner;
+
+    #[test]
+    fn cipher_scope_is_applied_before_the_page_limit() {
+        let mut conn = DbConnInner::Sqlite(SqliteConnection::establish(":memory:").unwrap());
+        conn.batch_execute(
+            "CREATE TABLE event (
+                uuid TEXT NOT NULL PRIMARY KEY,
+                event_type INTEGER NOT NULL,
+                user_uuid TEXT,
+                org_uuid TEXT,
+                cipher_uuid TEXT,
+                collection_uuid TEXT,
+                group_uuid TEXT,
+                org_user_uuid TEXT,
+                act_user_uuid TEXT,
+                device_type INTEGER,
+                ip_address TEXT,
+                event_date DATETIME NOT NULL,
+                policy_uuid TEXT,
+                provider_uuid TEXT,
+                provider_user_uuid TEXT,
+                provider_org_uuid TEXT
+            );",
+        )
+        .unwrap();
+
+        // Fill an entire page with newer rows from a different scope. If scope filtering happens
+        // after LIMIT, the one older authorized row can never reach the API response.
+        for index in 0..Event::PAGE_SIZE {
+            conn.batch_execute(&format!(
+                "INSERT INTO event (uuid, event_type, org_uuid, cipher_uuid, event_date) VALUES \
+                 ('foreign-{index}', 1107, 'foreign-org', 'cipher', '2026-08-12 12:{index:02}:00');"
+            ))
+            .unwrap();
+        }
+        conn.batch_execute(
+            "INSERT INTO event (uuid, event_type, org_uuid, cipher_uuid, event_date) VALUES
+                ('authorized', 1107, 'authorized-org', 'cipher', '2026-08-12 11:00:00');
+             INSERT INTO event (uuid, event_type, org_uuid, cipher_uuid, event_date) VALUES
+                ('personal', 1107, NULL, 'cipher', '2026-08-12 10:00:00');",
+        )
+        .unwrap();
+
+        let cipher_id: CipherId = "cipher".to_owned().into();
+        let org_id: OrganizationId = "authorized-org".to_owned().into();
+        let start = NaiveDateTime::parse_from_str("2026-08-12 00:00:00", "%F %T").unwrap();
+        let end = NaiveDateTime::parse_from_str("2026-08-13 00:00:00", "%F %T").unwrap();
+
+        let organization_events = Event::find_by_cipher_uuid_impl(&cipher_id, Some(&org_id), &start, &end, &mut conn);
+        assert_eq!(organization_events.len(), 1);
+        assert_eq!(organization_events[0].uuid, EventId("authorized".to_owned()));
+
+        let personal_events = Event::find_by_cipher_uuid_impl(&cipher_id, None, &start, &end, &mut conn);
+        assert_eq!(personal_events.len(), 1);
+        assert_eq!(personal_events[0].uuid, EventId("personal".to_owned()));
+    }
+}

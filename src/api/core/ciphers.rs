@@ -392,11 +392,38 @@ async fn enforce_personal_ownership_policy(data: Option<&CipherData>, headers: &
     Ok(())
 }
 
+fn has_prevalidated_organization_write_authority(
+    allow_direct_organization_write: bool,
+    shared_to_collections: Option<&Vec<CollectionId>>,
+    member_has_full_access: bool,
+) -> bool {
+    allow_direct_organization_write
+        || shared_to_collections.is_some_and(|collections| !collections.is_empty())
+        || member_has_full_access
+}
+
 pub async fn update_cipher_from_data(
     cipher: &mut Cipher,
     data: CipherData,
     headers: &Headers,
     shared_to_collections: Option<Vec<CollectionId>>,
+    conn: &DbConn,
+    nt: &Notify<'_>,
+    ut: UpdateType,
+) -> EmptyResult {
+    update_cipher_from_data_with_authority(cipher, data, headers, shared_to_collections, false, conn, nt, ut).await
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The extra flag is a prevalidated route authority and must remain separate from client data"
+)]
+pub(super) async fn update_cipher_from_data_with_authority(
+    cipher: &mut Cipher,
+    data: CipherData,
+    headers: &Headers,
+    shared_to_collections: Option<Vec<CollectionId>>,
+    allow_direct_organization_write: bool,
     conn: &DbConn,
     nt: &Notify<'_>,
     ut: UpdateType,
@@ -452,9 +479,11 @@ pub async fn update_cipher_from_data(
             Some(member) => {
                 // A non-empty list of collections implies the caller already validated the user's write
                 // access to them, so we can move the cipher into the organization on that basis.
-                if shared_to_collections.as_ref().is_some_and(|cols| !cols.is_empty())
-                    || member.has_full_access()
-                    || cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await
+                if has_prevalidated_organization_write_authority(
+                    allow_direct_organization_write,
+                    shared_to_collections.as_ref(),
+                    member.has_full_access(),
+                ) || cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await
                 {
                     cipher.organization_uuid = Some(org_id);
                     // After some discussion in PR #1329 re-added the user_uuid = None again.
@@ -575,6 +604,25 @@ pub async fn update_cipher_from_data(
         .await;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod update_authority_tests {
+    use super::has_prevalidated_organization_write_authority;
+
+    #[test]
+    fn direct_organization_write_is_an_explicit_import_authority() {
+        // Keep the organization-import shortcut independent from the old non-empty-collection
+        // sentinel. The route may import ciphers without collections when AccessImportExport grants
+        // organization-wide import authority; every other caller passes false.
+        let no_collections: Vec<crate::db::models::CollectionId> = Vec::new();
+        assert!(has_prevalidated_organization_write_authority(true, Some(&no_collections), false));
+        assert!(!has_prevalidated_organization_write_authority(false, Some(&no_collections), false));
+
+        let collections = vec!["collection".to_owned().into()];
+        assert!(has_prevalidated_organization_write_authority(false, Some(&collections), false));
+        assert!(has_prevalidated_organization_write_authority(false, None, true));
+    }
 }
 
 #[derive(Deserialize)]

@@ -1,48 +1,76 @@
--- A normal User with the historical membership-level access_all bit reached every collection of the
--- organization with full read/write, but held no collection-management authority. Mapping that onto
--- the Custom role would add authority, clearing the bit would remove existing access — so instead,
--- materialize the reach as explicit per-collection assignments while the source bit still exists.
--- `manage` stays FALSE, so no management authority is invented. This is the same approach Bitwarden
--- took when it retired `accessAll`; the one behavioral difference is that the access is no longer
--- dynamic, i.e. collections created later are not added automatically.
+-- Repair the legacy role/permission state while membership `access_all` still exists.
 --
--- Step 1: a pre-existing assignment was overridden by access_all (full read/write regardless of
--- read_only/hide_passwords), so relax it to match what the member actually had.
-UPDATE users_collections
-SET read_only = FALSE,
-    hide_passwords = FALSE
-WHERE EXISTS (
-    SELECT 1
-    FROM users_organizations AS uo
-    INNER JOIN collections AS c ON c.org_uuid = uo.org_uuid
-    WHERE uo.atype = 2
-      AND uo.access_all = TRUE
-      AND uo.user_uuid = users_collections.user_uuid
-      AND c.uuid = users_collections.collection_uuid
+-- A plain User carrying the historical membership-level `access_all` bit is deliberately not
+-- converted: that state grants dynamic reach over every collection *without* management authority,
+-- and the new model has no equivalent. It is refused instead -- and refused *here*, not only in Rust:
+-- Vaultwarden's startup preflight already stops such a database before any migration runs and prints
+-- the two explicit choices (`RefuseLegacyUserAccessAll` in `src/db/mod.rs`), but a migration run
+-- outside that wrapper -- `diesel migration run`, a bare `MigrationHarness`, any other SQL runner
+-- -- would not consult it, and 2026-07-24-120000 removes the only source of that reach a few
+-- statements later. Repeating the check before this file's first mutation is what makes the silent
+-- loss impossible rather than unlikely.
+--
+-- The duplicate key aborts the migration. It is only inserted when such a membership exists.
+CREATE TEMPORARY TABLE __vw_legacy_user_access_all_guard (
+    blocked INTEGER NOT NULL PRIMARY KEY
 );
+INSERT INTO __vw_legacy_user_access_all_guard (blocked) VALUES (1);
+INSERT INTO __vw_legacy_user_access_all_guard (blocked)
+SELECT 1
+FROM users_organizations
+WHERE atype = 2
+  AND access_all = TRUE
+LIMIT 1;
+DROP TEMPORARY TABLE __vw_legacy_user_access_all_guard;
 
--- Step 2: add the assignments that did not exist yet. Existing rows are left to step 1.
-INSERT IGNORE INTO users_collections (user_uuid, collection_uuid, read_only, hide_passwords, manage)
-SELECT uo.user_uuid, c.uuid, FALSE, FALSE, FALSE
-FROM users_organizations AS uo
-INNER JOIN collections AS c ON c.org_uuid = uo.org_uuid
-WHERE uo.atype = 2
-  AND uo.access_all = TRUE;
+-- The legacy-Manager record has to exist already: 2026-06-30-120000 writes it, and the startup
+-- preflight refuses a database whose ledger carries that version without it. Creating it here would
+-- manufacture an empty, apparently valid history for precisely the databases that need an operator
+-- to look at them, so refuse instead -- this guard exists for a bare migration runner that never
+-- consulted the preflight. Refusing also keeps this file free of DDL, which on MySQL/MariaDB would
+-- commit implicitly and break this migration out of its transaction.
+--
+-- The duplicate key aborts the migration. It is only inserted while the record table is absent.
+CREATE TEMPORARY TABLE __vw_legacy_manager_record_guard (
+    blocked INTEGER NOT NULL PRIMARY KEY
+);
+INSERT INTO __vw_legacy_manager_record_guard (blocked) VALUES (1);
+INSERT INTO __vw_legacy_manager_record_guard (blocked)
+SELECT 1 FROM DUAL
+WHERE NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = DATABASE() AND table_name = '__vw_custom_role_legacy_manager'
+);
+DROP TEMPORARY TABLE __vw_legacy_manager_record_guard;
 
--- The current 2026-07-16 migration copied a legacy full-access group's dynamic authority to the
--- exact direct 0/1/1 pattern. While the same organization-local source group is still present,
--- remove that deterministic copy so later group removal also revokes the authority. The runtime
--- keeps deriving edit/delete from that group -- see
--- `Membership::has_legacy_group_collection_manage_access` -- so nothing is lost here.
+-- A database that reaches this file with memberships still at `atype = 3` never ran the rewritten
+-- 2026-06-30-120000 -- for instance because a runner applied the files out of order. Those rows are
+-- unambiguously legacy Managers *right now*, so record them before the conversion at the end of this
+-- file makes them indistinguishable from modern Custom members. Idempotent, and a no-op on the
+-- normal path.
+INSERT IGNORE INTO __vw_custom_role_legacy_manager (users_organizations_uuid)
+SELECT uuid FROM users_organizations WHERE atype = 3;
+
+-- Step 1: a legacy Manager who managed every collection through an organization-local group with
+-- `access_all` keeps that authority, materialized into the permission columns it now lives in.
+--
+-- Restricted to memberships recorded as legacy Managers. Matching on role and group membership
+-- alone -- which an earlier revision did -- also matches every *modern* flagless Custom member who
+-- happens to sit in an ordinary `access_all` group, because the two states are the same shape, and
+-- would hand them organization-wide collection edit and delete.
+--
+-- Earlier revisions derived this authority live from the group at request time instead, which was
+-- unsound for exactly that reason. Materializing it makes it visible to an owner in the member's
+-- permission list and revocable by clearing a checkbox. It is deliberately a one-time snapshot: the
+-- permission no longer lapses when the source group does. See tools/custom_role_rollback/README.md.
+--
+-- Deliberately not `create_new_collections`: creating collections historically required
+-- membership-level `access_all`, and it is an independent permission now.
 UPDATE users_organizations
-SET edit_any_collection = FALSE,
-    delete_any_collection = FALSE
+SET edit_any_collection = TRUE,
+    delete_any_collection = TRUE
 WHERE atype IN (3, 4)
-  AND access_all = FALSE
-  AND create_new_collections = FALSE
-  AND edit_any_collection = TRUE
-  AND delete_any_collection = TRUE
-  AND EXISTS (SELECT 1 FROM __vw_custom_role_same_run_0716 WHERE marker = 1)
+  AND uuid IN (SELECT users_organizations_uuid FROM __vw_custom_role_legacy_manager)
   AND EXISTS (
     SELECT 1
     FROM groups_users AS gu
@@ -52,30 +80,16 @@ WHERE atype IN (3, 4)
       AND g.access_all = TRUE
   );
 
--- A remaining 0/1/1 pattern may be either an intentional direct grant or an older derived grant
--- whose source group has already been removed. Do not guess which one it is.
-CREATE TEMPORARY TABLE __vw_legacy_group_access_guard (
-    blocked INTEGER NOT NULL PRIMARY KEY
-);
-INSERT INTO __vw_legacy_group_access_guard (blocked) VALUES (1);
-INSERT INTO __vw_legacy_group_access_guard (blocked)
-SELECT 1
-FROM users_organizations
-WHERE atype IN (3, 4)
-  AND access_all = FALSE
-  AND create_new_collections = FALSE
-  AND edit_any_collection = TRUE
-  AND delete_any_collection = TRUE
-LIMIT 1;
-DROP TEMPORARY TABLE __vw_legacy_group_access_guard;
-
--- Membership access_all on a legacy Manager/Custom represented all three collection capabilities.
--- Set only TRUE values so this repair never removes independently configured permissions.
+-- Step 2: membership `access_all` on a legacy Manager represented all three collection capabilities.
+-- Set only TRUE values so this repair never removes independently configured permissions, and again
+-- only for recorded legacy Managers -- an intermediate revision of this feature branch could leave a
+-- modern Custom member carrying the old column as well.
 UPDATE users_organizations
 SET create_new_collections = TRUE,
     edit_any_collection = TRUE,
     delete_any_collection = TRUE
 WHERE atype IN (3, 4)
+  AND uuid IN (SELECT users_organizations_uuid FROM __vw_custom_role_legacy_manager)
   AND access_all = TRUE;
 
 -- Convert only after the legacy bit has been copied.

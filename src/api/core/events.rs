@@ -94,10 +94,10 @@ enum CipherEventScope {
 }
 
 impl CipherEventScope {
-    fn includes(&self, event: &Event) -> bool {
+    fn organization_id(&self) -> Option<&OrganizationId> {
         match self {
-            Self::Organization(org_id) => event.org_uuid.as_ref() == Some(org_id),
-            Self::Personal => event.org_uuid.is_none(),
+            Self::Organization(org_id) => Some(org_id),
+            Self::Personal => None,
         }
     }
 }
@@ -142,10 +142,9 @@ async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Heade
         };
 
         if let Some(scope) = scope {
-            Event::find_by_cipher_uuid(&cipher_id, &start_date, &end_date, &conn)
+            Event::find_by_cipher_uuid(&cipher_id, scope.organization_id(), &start_date, &end_date, &conn)
                 .await
                 .iter()
-                .filter(|event| scope.includes(event))
                 .map(Event::to_json)
                 .collect()
         } else {
@@ -549,15 +548,11 @@ mod tests {
     }
 
     #[test]
-    fn cipher_event_rows_must_match_the_authorized_scope() {
+    fn cipher_event_scope_selects_the_database_scope_filter() {
         let org_id: OrganizationId = "test-org".to_owned().into();
-        let mut event = Event::new(EventType::CipherClientViewed as i32, None);
 
-        assert!(CipherEventScope::Personal.includes(&event));
-        event.org_uuid = Some(org_id.clone());
-        assert!(!CipherEventScope::Personal.includes(&event));
-        assert!(CipherEventScope::Organization(org_id).includes(&event));
-        assert!(!CipherEventScope::Organization("other-org".to_owned().into()).includes(&event));
+        assert_eq!(CipherEventScope::Personal.organization_id(), None);
+        assert_eq!(CipherEventScope::Organization(org_id.clone()).organization_id(), Some(&org_id));
     }
 
     #[test]
