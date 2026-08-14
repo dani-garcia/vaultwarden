@@ -43,6 +43,38 @@ CREATE TABLE IF NOT EXISTS __vw_rollback_manager_allowlist (
     users_organizations_uuid CHAR(36) NOT NULL PRIMARY KEY
 );
 
+-- `IF NOT EXISTS` accepts an already existing table without checking its definition. Validate that
+-- definition before using it for the role mapping: MySQL/MariaDB compare a character UUID with a
+-- numeric allowlist as numbers, so an INT value such as 0 could match unrelated UUIDs. The duplicate
+-- key aborts the revert before any role or permission value is changed.
+CREATE TEMPORARY TABLE __vw_rollback_manager_allowlist_guard (
+    blocked INTEGER NOT NULL PRIMARY KEY
+);
+INSERT INTO __vw_rollback_manager_allowlist_guard (blocked) VALUES (1);
+INSERT INTO __vw_rollback_manager_allowlist_guard (blocked)
+SELECT 1 FROM DUAL
+WHERE (SELECT COUNT(*)
+       FROM information_schema.columns
+       WHERE table_schema = DATABASE()
+         AND table_name = '__vw_rollback_manager_allowlist') <> 1
+   OR (SELECT COUNT(*)
+       FROM information_schema.columns
+       WHERE table_schema = DATABASE()
+         AND table_name = '__vw_rollback_manager_allowlist'
+         AND column_name = 'users_organizations_uuid'
+         AND data_type = 'char'
+         AND character_maximum_length = 36
+         AND is_nullable = 'NO') <> 1
+   OR NOT EXISTS (
+       SELECT 1
+       FROM information_schema.statistics
+       WHERE table_schema = DATABASE()
+         AND table_name = '__vw_rollback_manager_allowlist'
+         AND column_name = 'users_organizations_uuid'
+         AND non_unique = 0
+   );
+DROP TEMPORARY TABLE __vw_rollback_manager_allowlist_guard;
+
 UPDATE users_organizations SET atype = 3
 WHERE atype = 4
   AND uuid IN (SELECT users_organizations_uuid FROM __vw_rollback_manager_allowlist);

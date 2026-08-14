@@ -2960,6 +2960,46 @@ mod custom_role_rollback_sql_tests {
     }
 }
 
+/// MySQL/MariaDB use numeric comparison when one side of an equality is numeric. A malformed
+/// rollback allowlist with an INT column can consequently select UUIDs that were never placed on
+/// the list. These source-level contract tests complement the backend rollback tests: both entry
+/// points must validate the documented CHAR(36) shape before their first role-mapping query.
+#[cfg(test)]
+mod mysql_custom_role_rollback_sql_tests {
+    const STANDALONE_ROLLBACK: &str = include_str!("../../tools/custom_role_rollback/mysql.sql");
+    const DIESEL_DOWN_MIGRATION: &str =
+        include_str!("../../migrations/mysql/2026-06-30-120000_add_custom_role_permissions/down.sql");
+    const ROLE_MAPPING: &str = "uuid IN (SELECT users_organizations_uuid FROM __vw_rollback_manager_allowlist)";
+    const STANDALONE_FIRST_MUTATION: &str = "ALTER TABLE users_organizations ADD COLUMN access_all";
+    const DIESEL_FIRST_AUTHORIZATION_MUTATION: &str = "UPDATE users_organizations SET atype = 3";
+
+    fn assert_char_36_guard_precedes_mutation(sql: &str, mutation: &str, expected_guard_copies: usize) {
+        let role_mapping = sql.find(ROLE_MAPPING).expect("rollback must contain the allowlist role mapping");
+        let mutation = sql.find(mutation).expect("rollback must contain the guarded mutation");
+        assert!(mutation <= role_mapping, "the selected boundary must precede the role mapping");
+        let preconditions = &sql[..mutation];
+
+        assert_eq!(
+            preconditions.matches("data_type = 'char'").count(),
+            expected_guard_copies,
+            "every allowlist shape check must require a character column"
+        );
+        assert_eq!(
+            preconditions.matches("character_maximum_length = 36").count(),
+            expected_guard_copies,
+            "every allowlist shape check must require the complete UUID length"
+        );
+    }
+
+    #[test]
+    fn non_char_36_allowlists_are_rejected_before_mysql_role_mapping() {
+        // The standalone script duplicates each predicate: once for its readable diagnostic and
+        // once for the duplicate-key guard that actually stops execution.
+        assert_char_36_guard_precedes_mutation(STANDALONE_ROLLBACK, STANDALONE_FIRST_MUTATION, 2);
+        assert_char_36_guard_precedes_mutation(DIESEL_DOWN_MIGRATION, DIESEL_FIRST_AUTHORIZATION_MUTATION, 1);
+    }
+}
+
 #[cfg(test)]
 mod custom_role_migration_preflight_tests {
     use std::error::Error as _;

@@ -194,11 +194,13 @@ WHERE c.n <> 1;
 --    hand-written or colliding table without a usable `users_organizations_uuid` column would pass
 --    every check above and then fail on the first SELECT against it -- which happens *after* the
 --    `ADD COLUMN` below has already committed implicitly, leaving a half-converted database.
---    Require exactly one non-nullable, uniquely indexed column of that name.
+--    Require exactly one non-nullable, uniquely indexed CHAR(36) column of that name. Checking the
+--    type is part of the authorization boundary: MySQL/MariaDB compare a character UUID with a
+--    numeric allowlist as numbers, so an INT value such as 0 could match unrelated UUIDs.
 SELECT CONCAT(
     'REFUSED, nothing was changed: __vw_rollback_manager_allowlist must have exactly one column ',
-    'named users_organizations_uuid, NOT NULL and uniquely indexed. Create it as documented in ',
-    'README.md.'
+    'named users_organizations_uuid, typed CHAR(36), NOT NULL and uniquely indexed. Create it as ',
+    'documented in README.md.'
 ) AS rollback_precondition_failure
 FROM (
     SELECT
@@ -206,7 +208,9 @@ FROM (
           WHERE table_schema = DATABASE() AND table_name = '__vw_rollback_manager_allowlist') AS cols,
         (SELECT COUNT(*) FROM information_schema.columns
           WHERE table_schema = DATABASE() AND table_name = '__vw_rollback_manager_allowlist'
-            AND column_name = 'users_organizations_uuid' AND is_nullable = 'NO') AS usable,
+            AND column_name = 'users_organizations_uuid'
+            AND data_type = 'char' AND character_maximum_length = 36
+            AND is_nullable = 'NO') AS usable,
         (SELECT COUNT(*) FROM information_schema.statistics
           WHERE table_schema = DATABASE() AND table_name = '__vw_rollback_manager_allowlist'
             AND column_name = 'users_organizations_uuid' AND non_unique = 0) AS uniq
@@ -220,7 +224,9 @@ FROM (
           WHERE table_schema = DATABASE() AND table_name = '__vw_rollback_manager_allowlist') AS cols,
         (SELECT COUNT(*) FROM information_schema.columns
           WHERE table_schema = DATABASE() AND table_name = '__vw_rollback_manager_allowlist'
-            AND column_name = 'users_organizations_uuid' AND is_nullable = 'NO') AS usable,
+            AND column_name = 'users_organizations_uuid'
+            AND data_type = 'char' AND character_maximum_length = 36
+            AND is_nullable = 'NO') AS usable,
         (SELECT COUNT(*) FROM information_schema.statistics
           WHERE table_schema = DATABASE() AND table_name = '__vw_rollback_manager_allowlist'
             AND column_name = 'users_organizations_uuid' AND non_unique = 0) AS uniq
