@@ -28,8 +28,13 @@
 #     [docker.io/vaultwarden/web-vault:{{ vault_version | replace('+', '_') }}]
 #
 {% macro xx_cargo_config() -%}
-# Workaround for xx related build issues
+# Configure xx-cargo for target pkg-config and Debian transitive library lookup
     # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
+    # https://github.com/dani-garcia/vaultwarden/discussions/7522
+    if xx-info is-cross; then \
+        XX_RUSTFLAGS="-C link-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
+        export XX_RUSTFLAGS; \
+    fi && \
     PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}"
 {%- endmacro %}
 FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@{{ vault_image_digest }} AS vault
@@ -52,6 +57,7 @@ FROM --platform=$BUILDPLATFORM {{ build_stage_image[base].arch_image[arch] }} AS
 # hadolint ignore=DL3006
 FROM --platform=$BUILDPLATFORM {{ build_stage_image[base].image }} AS build
 {% if base == "debian" %}
+# hadolint ignore=DL3067
 COPY --from=xx / /
 {% endif %}
 ARG TARGETARCH
@@ -111,7 +117,7 @@ RUN echo "export CARGO_TARGET=${CARGO_BUILD_TARGET}" >> /env-cargo && \
     cat /env-cargo
 
 {% endif %}
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
 # Copies over *only* your manifests and build files
@@ -131,7 +137,7 @@ ARG DB=sqlite,mysql,postgresql,enable_mimalloc
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN source /env-cargo && \
+RUN . /env-cargo && \
 {% if base == "debian" %}
     {{ xx_cargo_config() }} && \
 {% elif base == "alpine" %}
@@ -146,7 +152,7 @@ COPY . .
 ARG VW_VERSION
 
 # Builds again, this time it will be the actual source files being build
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     # Make sure that we actually build the project by updating the src/main.rs timestamp
     # Also do this for build.rs to ensure the version is rechecked
     touch build.rs src/main.rs && \
@@ -156,7 +162,7 @@ RUN source /env-cargo && \
 {% elif base == "alpine" %}
     cargo build --features ${DB} --profile "${CARGO_PROFILE}" --target="${CARGO_TARGET}" && \
 {% endif %}
-    if [[ "${CARGO_PROFILE}" == "dev" ]] ; then \
+    if [ "${CARGO_PROFILE}" = "dev" ] ; then \
         ln -vfsr "/app/target/${CARGO_TARGET}/debug" /app/target/final ; \
     else \
         ln -vfsr "/app/target/${CARGO_TARGET}/${CARGO_PROFILE}" /app/target/final ; \
@@ -179,6 +185,7 @@ RUN source /env-cargo && \
 # To uninstall: docker run --privileged --rm tonistiigi/binfmt --uninstall 'qemu-*'
 #
 # We need to add `--platform` here, because of a podman bug: https://github.com/containers/buildah/issues/4742
+# hadolint ignore=DL3065
 FROM --platform=$TARGETPLATFORM {{ runtime_stage_image[base] }}
 
 ENV ROCKET_PROFILE="release" \

@@ -886,7 +886,7 @@ async fn put_collections_admin(
     headers: Headers,
     conn: DbConn,
     nt: Notify<'_>,
-) -> EmptyResult {
+) -> JsonResult {
     post_collections_admin(cipher_id, data, headers, conn, nt).await
 }
 
@@ -897,7 +897,7 @@ async fn post_collections_admin(
     headers: Headers,
     conn: DbConn,
     nt: Notify<'_>,
-) -> EmptyResult {
+) -> JsonResult {
     let data: CollectionsAdminData = data.into_inner();
 
     let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await else {
@@ -956,7 +956,7 @@ async fn post_collections_admin(
     )
     .await;
 
-    Ok(())
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::Organization, &conn).await?))
 }
 
 #[derive(Deserialize)]

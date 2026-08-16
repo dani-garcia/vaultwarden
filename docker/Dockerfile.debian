@@ -19,15 +19,15 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2026.6.4
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2026.6.4
-#     [docker.io/vaultwarden/web-vault@sha256:e7d3b31ec6a991a6bf447721ea341b4192ce5d3b920929211672fd4f3f891427]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2026.7.0
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2026.7.0
+#     [docker.io/vaultwarden/web-vault@sha256:ba8bab66d4330ab9dbafa8f245bcbe99cf6ee3f2c8ce9b5fbb10e9c49658451c]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:e7d3b31ec6a991a6bf447721ea341b4192ce5d3b920929211672fd4f3f891427
-#     [docker.io/vaultwarden/web-vault:v2026.6.4]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:ba8bab66d4330ab9dbafa8f245bcbe99cf6ee3f2c8ce9b5fbb10e9c49658451c
+#     [docker.io/vaultwarden/web-vault:v2026.7.0]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:e7d3b31ec6a991a6bf447721ea341b4192ce5d3b920929211672fd4f3f891427 AS vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:ba8bab66d4330ab9dbafa8f245bcbe99cf6ee3f2c8ce9b5fbb10e9c49658451c AS vault
 
 ########################## Cross Compile Docker Helper Scripts ##########################
 ## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
@@ -37,6 +37,7 @@ FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:c64defb9ed5a91eacb37f
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
 FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.97.1-slim-trixie AS build
+# hadolint ignore=DL3067
 COPY --from=xx / /
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -80,7 +81,7 @@ RUN mkdir -pv "${CARGO_HOME}" && \
 RUN USER=root cargo new --bin /app
 WORKDIR /app
 
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     rustup target add "${CARGO_TARGET}"
 
 # Copies over *only* your manifests and build files
@@ -95,9 +96,14 @@ ARG DB=sqlite,mysql,postgresql
 # Builds your dependencies and removes the
 # dummy project, except the target folder
 # This folder contains the compiled dependencies
-RUN source /env-cargo && \
-    # Workaround for xx related build issues
+RUN . /env-cargo && \
+    # Configure xx-cargo for target pkg-config and Debian transitive library lookup
     # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
+    # https://github.com/dani-garcia/vaultwarden/discussions/7522
+    if xx-info is-cross; then \
+        XX_RUSTFLAGS="-C link-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
+        export XX_RUSTFLAGS; \
+    fi && \
     PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}" && \
     find . -not -path "./target*" -delete
 
@@ -108,15 +114,20 @@ COPY . .
 ARG VW_VERSION
 
 # Builds again, this time it will be the actual source files being build
-RUN source /env-cargo && \
+RUN . /env-cargo && \
     # Make sure that we actually build the project by updating the src/main.rs timestamp
     # Also do this for build.rs to ensure the version is rechecked
     touch build.rs src/main.rs && \
     # Create a symlink to the binary target folder to easy copy the binary in the final stage
-    # Workaround for xx related build issues
+    # Configure xx-cargo for target pkg-config and Debian transitive library lookup
     # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
+    # https://github.com/dani-garcia/vaultwarden/discussions/7522
+    if xx-info is-cross; then \
+        XX_RUSTFLAGS="-C link-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
+        export XX_RUSTFLAGS; \
+    fi && \
     PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}" && \
-    if [[ "${CARGO_PROFILE}" == "dev" ]] ; then \
+    if [ "${CARGO_PROFILE}" = "dev" ] ; then \
         ln -vfsr "/app/target/${CARGO_TARGET}/debug" /app/target/final ; \
     else \
         ln -vfsr "/app/target/${CARGO_TARGET}/${CARGO_PROFILE}" /app/target/final ; \
@@ -139,6 +150,7 @@ RUN source /env-cargo && \
 # To uninstall: docker run --privileged --rm tonistiigi/binfmt --uninstall 'qemu-*'
 #
 # We need to add `--platform` here, because of a podman bug: https://github.com/containers/buildah/issues/4742
+# hadolint ignore=DL3065
 FROM --platform=$TARGETPLATFORM docker.io/library/debian:trixie-slim
 
 ENV ROCKET_PROFILE="release" \
