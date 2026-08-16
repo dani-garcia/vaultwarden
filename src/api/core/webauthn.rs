@@ -141,7 +141,7 @@ async fn post_webauthn_attestation_options(
     // requires the credential to be discoverable (resident) so the authenticator can find it
     // without the server providing allowCredentials.
     if let Some(asc) = challenge.public_key.authenticator_selection.as_mut() {
-        asc.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
+        asc.user_verification = UserVerificationPolicy::Preferred;
         asc.require_resident_key = true;
         asc.resident_key = Some(webauthn_rs_proto::ResidentKeyRequirement::Required);
     }
