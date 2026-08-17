@@ -86,11 +86,41 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
                 err!("AuthRequest doesn't exist", "Invalid device, IP or code")
             }
         } else {
-            // Allow email-only requests to trigger sending an email 2FA token.
-            // Mobile clients (e.g. iOS) may call this endpoint with only the email when
-            // the token endpoint indicated 2FA is required. In that flow the client
-            // doesn't submit the master password hash or an auth request id, so
-            // permit sending the email token based solely on the user's email.
+            // Fallback for clients (e.g. iOS) that call this endpoint with an email but
+            // without a masterPasswordHash or authRequestId. This can happen when the
+            // client receives a 2FA-required response from the token endpoint and then
+            // immediately calls send-email-login without re-submitting credentials.
+            //
+            // If the client provided a device identifier, use it to look up the most
+            // recently active device for the account and verify it matches the submitted
+            // email. This preserves a meaningful security check while remaining
+            // compatible with these clients.
+            //
+            // If no device identifier is present either, reject the request to prevent
+            // unauthenticated actors from triggering emails for arbitrary accounts.
+            if let Some(device_identifier) = &data.device_identifier {
+                match User::find_by_device_for_email2fa(device_identifier, &conn).await {
+                    Some(device_user) if device_user.email.to_lowercase() == email.to_lowercase() => {
+                        // Device matches the requested email – allow the token to be sent.
+                        // Log so operators can monitor how often this fallback path is used.
+                        debug!(
+                            "Email 2FA send-email-login: using device-identifier fallback for user '{}' \
+                             (device: {}). No masterPasswordHash or authRequestId was provided.",
+                            email, device_identifier
+                        );
+                    }
+                    Some(_) => {
+                        // Device exists but belongs to a different account – reject.
+                        err!("Username or password is incorrect. Try again.")
+                    }
+                    None => {
+                        // No device record found – cannot verify the caller.
+                        err!("No password hash has been submitted.")
+                    }
+                }
+            } else {
+                err!("No password hash has been submitted.")
+            }
         }
 
         user
