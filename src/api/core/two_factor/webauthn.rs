@@ -1,19 +1,3 @@
-use std::{str::FromStr, sync::LazyLock, time::Duration};
-
-use rocket::{Route, serde::json::Json};
-use serde_json::Value;
-use url::Url;
-use uuid::Uuid;
-use webauthn_rs::{
-    Webauthn, WebauthnBuilder,
-    prelude::{Base64UrlSafeData, Credential, Passkey, PasskeyAuthentication, PasskeyRegistration},
-};
-use webauthn_rs_proto::{
-    AuthenticationExtensionsClientOutputs, AuthenticatorAssertionResponseRaw, AuthenticatorAttestationResponseRaw,
-    PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs,
-    RequestAuthenticationExtensions, UserVerificationPolicy,
-};
-
 use crate::{
     CONFIG,
     api::{
@@ -29,17 +13,30 @@ use crate::{
     error::Error,
     util::NumberOrString,
 };
+use rocket::{Route, serde::json::Json};
+use serde_json::Value;
+use std::{str::FromStr, sync::LazyLock};
+use uuid::Uuid;
+use webauthn_rs::{
+    Webauthn, WebauthnBuilder,
+    prelude::{Base64UrlSafeData, Credential, Passkey, PasskeyAuthentication, PasskeyRegistration},
+};
+use webauthn_rs_proto::{
+    AuthenticationExtensionsClientOutputs, AuthenticatorAssertionResponseRaw, AuthenticatorAttestationResponseRaw,
+    PublicKeyCredential, RegisterPublicKeyCredential, RegistrationExtensionsClientOutputs,
+    RequestAuthenticationExtensions, UserVerificationPolicy,
+};
 
-static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
+pub static WEBAUTHN_2FA: LazyLock<Webauthn> = LazyLock::new(|| {
     let domain = CONFIG.domain();
     let domain_origin = CONFIG.domain_origin();
-    let rp_id = Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
-    let rp_origin = Url::parse(&domain_origin).unwrap();
+    let rp_id = url::Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
+    let rp_origin = url::Url::parse(&domain_origin).unwrap();
 
     let webauthn = WebauthnBuilder::new(&rp_id, &rp_origin)
         .expect("Creating WebauthnBuilder failed")
         .rp_name(&domain)
-        .timeout(Duration::from_mins(1));
+        .timeout(tokio::time::Duration::from_mins(1));
 
     webauthn.build().expect("Building Webauthn failed")
 });
@@ -142,7 +139,7 @@ async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Hea
         .map(|r| r.credential.cred_id().to_owned()) // We return the credentialIds to the clients to avoid double registering
         .collect();
 
-    let (mut challenge, state) = WEBAUTHN.start_passkey_registration(
+    let (mut challenge, state) = WEBAUTHN_2FA.start_passkey_registration(
         Uuid::from_str(&user.uuid).expect("Failed to parse UUID"), // Should never fail
         &user.email,
         user.display_name(),
@@ -181,7 +178,7 @@ struct EnableWebauthnData {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RegisterPublicKeyCredentialCopy {
+pub struct RegisterPublicKeyCredentialCopy {
     pub id: String,
     pub raw_id: Base64UrlSafeData,
     pub response: AuthenticatorAttestationResponseRawCopy,
@@ -275,7 +272,7 @@ async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, con
     };
 
     // Verify the credentials with the saved state
-    let credential = WEBAUTHN.finish_passkey_registration(&data.device_response.into(), &state)?;
+    let credential = WEBAUTHN_2FA.finish_passkey_registration(&data.device_response.into(), &state)?;
 
     let mut registrations: Vec<_> = get_webauthn_registrations(&user.uuid, &conn).await?.1;
     // TODO: Check for repeated ID's
@@ -385,7 +382,7 @@ pub async fn generate_webauthn_login(user_id: &UserId, conn: &DbConn) -> JsonRes
     }
 
     // Generate a challenge based on the credentials
-    let (mut response, state) = WEBAUTHN.start_passkey_authentication(&creds)?;
+    let (mut response, state) = WEBAUTHN_2FA.start_passkey_authentication(&creds)?;
 
     // Modify to discourage user verification
     let mut state = serde_json::to_value(&state)?;
@@ -440,7 +437,7 @@ pub async fn validate_webauthn_login(user_id: &UserId, response: &str, conn: &Db
     // Because of this we check the flag at runtime and update the registrations and state when needed
     let backup_flags_updated = check_and_update_backup_eligible(&rsp, &mut registrations, &mut state)?;
 
-    let authentication_result = WEBAUTHN.finish_passkey_authentication(&rsp, &state)?;
+    let authentication_result = WEBAUTHN_2FA.finish_passkey_authentication(&rsp, &state)?;
 
     for reg in &mut registrations {
         if ct_eq(reg.credential.cred_id(), authentication_result.cred_id()) {
