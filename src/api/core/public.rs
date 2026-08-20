@@ -125,7 +125,6 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
 
             let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), Some(org_email.clone()));
             new_member.set_external_id(Some(user_data.external_id.clone()));
-            new_member.access_all = false;
             new_member.atype = MembershipType::User as i32;
             new_member.status = member_status;
 

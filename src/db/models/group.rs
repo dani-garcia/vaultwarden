@@ -13,7 +13,7 @@ use crate::{
 };
 use macros::UuidFromParam;
 
-use super::{CollectionId, Membership, MembershipId, OrganizationId, User, UserId};
+use super::{Collection, CollectionId, Membership, MembershipId, MembershipStatus, OrganizationId, User, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = groups)]
@@ -257,6 +257,7 @@ impl Group {
                         .and(groups::organizations_uuid.eq(users_organizations::org_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(groups::access_all.eq(true))
                 .select(groups::organizations_uuid)
                 .distinct()
@@ -268,6 +269,10 @@ impl Group {
 
     pub async fn is_in_full_access_group(user_uuid: &UserId, org_uuid: &OrganizationId, conn: &DbConn) -> bool {
         conn.run(move |conn| {
+            // Security: the membership linked through `groups_users` must itself belong to the same
+            // organization as the group and must be confirmed. Otherwise a cross-organization
+            // `groups_users` row (a member of org A linked to an access-all group of org B) would let
+            // that member pass as having full access to org B (audit finding H-2).
             groups::table
                 .inner_join(groups_users::table.on(groups_users::groups_uuid.eq(groups::uuid)))
                 .inner_join(
@@ -276,6 +281,7 @@ impl Group {
                         .and(users_organizations::org_uuid.eq(groups::organizations_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(groups::organizations_uuid.eq(org_uuid))
                 .filter(groups::access_all.eq(true))
                 .select(groups::access_all)
@@ -321,6 +327,17 @@ impl Group {
 
 impl CollectionGroup {
     pub async fn save(&mut self, org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
+        // Security (audit H-3): never persist a cross-organization link between a collection and a
+        // group. Both must belong to the organization this assignment is scoped to; otherwise a
+        // caller could attach a foreign-tenant group to this organization's collection and thereby
+        // grant that group's members access to it. This is a defense-in-depth guard so no route can
+        // create such a link even if it fails to validate its inputs.
+        if Collection::find_by_uuid_and_org(&self.collections_uuid, org_uuid, conn).await.is_none()
+            || Group::find_by_uuid_and_org(&self.groups_uuid, org_uuid, conn).await.is_none()
+        {
+            err!("Collection and group must belong to the same organization")
+        }
+
         let group_users = GroupUser::find_by_group(&self.groups_uuid, org_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
@@ -495,6 +512,18 @@ impl CollectionGroup {
 
 impl GroupUser {
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+        // Security (audit H-2): never persist a cross-organization link between a group and a
+        // membership. The group must belong to the same organization as the membership; otherwise a
+        // caller could grant a member of one organization full access to another organization's
+        // collections through an access-all group. This is a defense-in-depth guard so no route can
+        // create such a link even if it fails to validate its inputs.
+        let Some(member) = Membership::find_by_uuid(&self.users_organizations_uuid, conn).await else {
+            err!("Member not found while assigning to group")
+        };
+        if Group::find_by_uuid_and_org(&self.groups_uuid, &member.org_uuid, conn).await.is_none() {
+            err!("Group and member must belong to the same organization")
+        }
+
         self.update_user_revision(conn).await;
 
         db_run! { conn:

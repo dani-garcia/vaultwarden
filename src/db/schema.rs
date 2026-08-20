@@ -236,12 +236,20 @@ table! {
         user_uuid -> Text,
         org_uuid -> Text,
         invited_by_email -> Nullable<Text>,
-        access_all -> Bool,
         akey -> Text,
         status -> Integer,
         atype -> Integer,
         reset_password_key -> Nullable<Text>,
         external_id -> Nullable<Text>,
+        manage_users -> Bool,
+        manage_groups -> Bool,
+        manage_policies -> Bool,
+        create_new_collections -> Bool,
+        edit_any_collection -> Bool,
+        delete_any_collection -> Bool,
+        access_event_logs -> Bool,
+        access_import_export -> Bool,
+        access_reports -> Bool,
     }
 }
 

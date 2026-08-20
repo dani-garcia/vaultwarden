@@ -522,8 +522,16 @@ pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
     expiry_time.to_rfc2822().replace("+0000", "GMT")
 }
 
+pub fn try_parse_date(date: &str) -> Result<NaiveDateTime, chrono::ParseError> {
+    DateTime::parse_from_rfc3339(date).map(|date| date.naive_utc())
+}
+
+/// Parse an RFC 3339 date which is known to be valid.
+///
+/// Request data should use [`try_parse_date`] so malformed input can be returned as a controlled
+/// client error instead of panicking.
 pub fn parse_date(date: &str) -> NaiveDateTime {
-    DateTime::parse_from_rfc3339(date).unwrap().naive_utc()
+    try_parse_date(date).expect("trusted date must be valid RFC 3339")
 }
 
 /// Returns true or false if an email address is valid or not

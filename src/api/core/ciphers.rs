@@ -392,6 +392,13 @@ async fn enforce_personal_ownership_policy(data: Option<&CipherData>, headers: &
     Ok(())
 }
 
+fn has_prevalidated_organization_write_authority(
+    shared_to_collections: Option<&Vec<CollectionId>>,
+    member_has_full_access: bool,
+) -> bool {
+    shared_to_collections.is_some_and(|collections| !collections.is_empty()) || member_has_full_access
+}
+
 pub async fn update_cipher_from_data(
     cipher: &mut Cipher,
     data: CipherData,
@@ -452,9 +459,10 @@ pub async fn update_cipher_from_data(
             Some(member) => {
                 // A non-empty list of collections implies the caller already validated the user's write
                 // access to them, so we can move the cipher into the organization on that basis.
-                if shared_to_collections.as_ref().is_some_and(|cols| !cols.is_empty())
-                    || member.has_full_access()
-                    || cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await
+                if has_prevalidated_organization_write_authority(
+                    shared_to_collections.as_ref(),
+                    member.has_full_access(),
+                ) || cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await
                 {
                     cipher.organization_uuid = Some(org_id);
                     // After some discussion in PR #1329 re-added the user_uuid = None again.
@@ -575,6 +583,22 @@ pub async fn update_cipher_from_data(
         .await;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod update_authority_tests {
+    use super::has_prevalidated_organization_write_authority;
+
+    #[test]
+    fn organization_write_requires_a_validated_collection_or_full_access() {
+        let no_collections: Vec<crate::db::models::CollectionId> = Vec::new();
+        assert!(!has_prevalidated_organization_write_authority(Some(&no_collections), false));
+        assert!(!has_prevalidated_organization_write_authority(None, false));
+
+        let collections = vec!["collection".to_owned().into()];
+        assert!(has_prevalidated_organization_write_authority(Some(&collections), false));
+        assert!(has_prevalidated_organization_write_authority(None, true));
+    }
 }
 
 #[derive(Deserialize)]
