@@ -49,14 +49,52 @@ pub enum OrgPolicyType {
     // AutotypeDefaultSetting = 17, // Not supported yet
     // AutoConfirm = 18, // Not supported (not implemented yet)
     // BlockClaimedDomainAccountCreation = 19, // Not supported (Not AGPLv3 Licensed)
+    // OrganizationUserNotification = 20, // Not supported (not implemented yet)
+    SendControls = 21,
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Models/Data/Organizations/Policies/SendOptionsPolicyData.cs#L5
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendOptionsPolicyData {
     #[serde(rename = "disableHideEmail", alias = "DisableHideEmail")]
     pub disable_hide_email: bool,
+}
+
+// https://github.com/bitwarden/server/blob/main/src/Core/AdminConsole/Models/Data/Organizations/Policies/SendControlsAllowedAccessControl.cs
+#[derive(Copy, Clone, Eq, PartialEq, num_derive::FromPrimitive)]
+pub enum SendWhoCanAccessType {
+    Any = 0,
+    PasswordProtected = 1,
+    SpecificPeople = 2,
+}
+
+// https://github.com/bitwarden/server/blob/main/src/Core/AdminConsole/Models/Data/Organizations/Policies/SendControlsPolicyData.cs
+//
+// The `Send controls` policy absorbs `DisableSend` and `SendOptions` and adds restrictions of its
+// own. The web vault we ship only renders the first four fields so far, the last two are already
+// part of the data model upstream and are parsed and enforced here as well.
+#[derive(Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendControlsPolicyData {
+    #[serde(rename = "disableSend", alias = "DisableSend", default)]
+    pub disable_send: bool,
+    #[serde(rename = "disableHideEmail", alias = "DisableHideEmail", default)]
+    pub disable_hide_email: bool,
+    #[serde(rename = "whoCanAccess", alias = "WhoCanAccess", default)]
+    pub who_can_access: Option<i32>,
+    #[serde(rename = "allowedDomains", alias = "AllowedDomains", default)]
+    pub allowed_domains: Option<String>,
+    #[serde(rename = "deletionHours", alias = "DeletionHours", default)]
+    pub deletion_hours: Option<i32>,
+    #[serde(rename = "allowedSendTypes", alias = "AllowedSendTypes", default)]
+    pub allowed_send_types: Option<Vec<i32>>,
+}
+
+impl SendControlsPolicyData {
+    pub fn required_access_type(&self) -> Option<SendWhoCanAccessType> {
+        self.who_can_access.and_then(num_traits::FromPrimitive::from_i32)
+    }
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Models/Data/Organizations/Policies/ResetPasswordDataModel.cs
@@ -352,6 +390,43 @@ impl OrgPolicy {
         false
     }
 
+    /// Reads the `Send controls` data of this policy, falling back to the defaults when the stored
+    /// data is missing or unreadable. A policy row without data means "no restrictions", so a
+    /// broken payload must not accidentally lock users out of creating Sends.
+    pub fn send_controls_data(&self) -> SendControlsPolicyData {
+        if let Ok(data) = serde_json::from_str::<SendControlsPolicyData>(&self.data) {
+            return data;
+        }
+
+        if self.data != "null" && !self.data.is_empty() {
+            error!("Failed to deserialize SendControlsPolicyData: {}", self.data);
+        }
+        SendControlsPolicyData::default()
+    }
+
+    /// Combines the `Send controls` policies of every organization the user is a plain member of.
+    /// Mirrors upstreams `SendControlsPolicyRequirementFactory`: the two toggles are ORed, the
+    /// remaining restrictions are taken from the first organization that sets them.
+    pub async fn send_controls_for_user(user_uuid: &UserId, conn: &DbConn) -> SendControlsPolicyData {
+        let mut result = SendControlsPolicyData::default();
+        for policy in
+            OrgPolicy::find_confirmed_by_user_and_active_policy(user_uuid, OrgPolicyType::SendControls, conn).await
+        {
+            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await
+                && user.atype < MembershipType::Admin
+            {
+                let data = policy.send_controls_data();
+                result.disable_send |= data.disable_send;
+                result.disable_hide_email |= data.disable_hide_email;
+                result.who_can_access = result.who_can_access.or(data.who_can_access);
+                result.allowed_domains = result.allowed_domains.or(data.allowed_domains);
+                result.deletion_hours = result.deletion_hours.or(data.deletion_hours);
+                result.allowed_send_types = result.allowed_send_types.or(data.allowed_send_types);
+            }
+        }
+        result
+    }
+
     pub async fn is_enabled_for_member(member_uuid: &MembershipId, policy_type: OrgPolicyType, conn: &DbConn) -> bool {
         if let Some(member) = Membership::find_by_uuid(member_uuid, conn).await
             && let Some(policy) = OrgPolicy::find_by_org_and_type(&member.org_uuid, policy_type, conn).await
@@ -364,3 +439,44 @@ impl OrgPolicy {
 
 #[derive(Clone, Debug, AsRef, DieselNewType, From, FromForm, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OrgPolicyId(String);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn send_controls_data_parses_the_payload_the_clients_send() {
+        let data: SendControlsPolicyData = serde_json::from_str(
+            r#"{"disableSend":true,"disableHideEmail":true,"whoCanAccess":1,"allowedDomains":null}"#,
+        )
+        .unwrap();
+
+        assert!(data.disable_send);
+        assert!(data.disable_hide_email);
+        assert!(data.required_access_type() == Some(SendWhoCanAccessType::PasswordProtected));
+        assert!(data.allowed_domains.is_none());
+        assert!(data.deletion_hours.is_none());
+        assert!(data.allowed_send_types.is_none());
+    }
+
+    #[test]
+    fn send_controls_data_accepts_the_pascal_case_aliases_and_fills_in_defaults() {
+        let data: SendControlsPolicyData = serde_json::from_str(r#"{"DisableSend":true}"#).unwrap();
+
+        assert!(data.disable_send);
+        assert!(!data.disable_hide_email);
+        assert!(data.required_access_type().is_none());
+    }
+
+    #[test]
+    fn a_policy_without_readable_data_restricts_nothing() {
+        let org_uuid = OrganizationId::from(String::from("00000000-0000-0000-0000-000000000000"));
+        let policy = OrgPolicy::new(org_uuid, OrgPolicyType::SendControls, true, "null".to_owned());
+        let data = policy.send_controls_data();
+
+        assert!(!data.disable_send);
+        assert!(!data.disable_hide_email);
+        assert!(data.required_access_type().is_none());
+        assert!(data.deletion_hours.is_none());
+    }
+}

@@ -16,7 +16,7 @@ use crate::{
     config::PathType,
     db::{
         DbConn, DbPool,
-        models::{Device, OrgPolicy, OrgPolicyType, Send, SendFileId, SendId, SendType, UserId},
+        models::{Device, OrgPolicy, OrgPolicyType, Send, SendFileId, SendId, SendType, SendWhoCanAccessType, UserId},
     },
     util::{NumberOrString, save_temp_file},
 };
@@ -129,6 +129,60 @@ async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, c
     Ok(())
 }
 
+/// Enforces the restrictions that only exist on the `Send controls` policy.
+///
+/// `DisableSend` and `DisableHideEmail` are deliberately not checked here. Upstream keeps enforcing
+/// those two through the legacy `DisableSend` and `Send Options` policies and mirrors them into
+/// `Send controls`, which `put_policy` does as well, so the two functions above stay authoritative.
+///
+/// `has_password` and `creation_date` describe the Send as it will look after the request: on an
+/// update the client may leave the password out to keep the existing one.
+///
+/// Ref: https://github.com/bitwarden/server/blob/main/src/Core/Tools/SendFeatures/Services/SendValidationService.cs
+async fn enforce_send_controls_policy(
+    data: &SendData,
+    has_password: bool,
+    creation_date: DateTime<Utc>,
+    headers: &Headers,
+    conn: &DbConn,
+) -> EmptyResult {
+    let controls = OrgPolicy::send_controls_for_user(&headers.user.uuid, conn).await;
+
+    match controls.required_access_type() {
+        Some(SendWhoCanAccessType::PasswordProtected) if !has_password => {
+            err!("Due to an Enterprise Policy, your Sends have to be protected by a password.")
+        }
+        // Vaultwarden rejects Sends that carry recipient emails, so this can never be satisfied.
+        // `put_policy` already refuses to store such a policy, this only guards rows that were
+        // written before or outside of that check.
+        Some(SendWhoCanAccessType::SpecificPeople) => {
+            err!(
+                "Due to an Enterprise Policy, your Sends have to be protected by email verification, \
+                  which is not supported."
+            )
+        }
+        _ => (),
+    }
+
+    if let Some(allowed_types) = &controls.allowed_send_types
+        && !allowed_types.contains(&data.r#type)
+    {
+        err!("Due to an Enterprise Policy, your Sends have to be of a type the organization allows.")
+    }
+
+    if let Some(hours) = controls.deletion_hours {
+        // Upstream allows for up to a minute of skew between the deletion and the creation date.
+        let lifetime = data.deletion_date - creation_date - TimeDelta::minutes(1);
+        if lifetime.num_minutes() > i64::from(hours) * 60 {
+            err!(format!(
+                "Due to an Enterprise Policy, the deletion date of your Sends has to be within {hours} hours of their creation date."
+            ))
+        }
+    }
+
+    Ok(())
+}
+
 fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
     let data_val = if data.r#type == SendType::Text as i32 {
         data.text
@@ -199,6 +253,7 @@ async fn post_send(data: Json<SendData>, headers: Headers, conn: DbConn, nt: Not
 
     let data: SendData = data.into_inner();
     enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
+    enforce_send_controls_policy(&data, data.password.is_some(), Utc::now(), &headers, &conn).await?;
 
     if data.r#type == SendType::File as i32 {
         err!("File sends should use /api/sends/file")
@@ -252,6 +307,7 @@ async fn post_send_file(data: Form<UploadData<'_>>, headers: Headers, conn: DbCo
     }
 
     enforce_disable_hide_email_policy(&model, &headers, &conn).await?;
+    enforce_send_controls_policy(&model, model.password.is_some(), Utc::now(), &headers, &conn).await?;
 
     let size_limit = match CONFIG.user_send_limit() {
         Some(0) => err!("File uploads are disabled"),
@@ -317,6 +373,7 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn)
     }
 
     enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
+    enforce_send_controls_policy(&data, data.password.is_some(), Utc::now(), &headers, &conn).await?;
 
     let file_length = if let Some(m) = &data.file_length {
         m.into_i64()?
@@ -637,6 +694,11 @@ async fn put_send(send_id: SendId, data: Json<SendData>, headers: Headers, conn:
         err!("Sends with email verification is not supported");
     }
 
+    // Leaving out the password keeps the existing one, and the deletion date is measured against
+    // the date the Send was originally created on.
+    let has_password = data.password.is_some() || send.password_hash.is_some();
+    enforce_send_controls_policy(&data, has_password, send.creation_date.and_utc(), &headers, &conn).await?;
+
     update_send_from_data(&mut send, data, &headers, &conn, &nt, UpdateType::SyncSendUpdate).await?;
 
     Ok(Json(send.to_json()))
@@ -722,6 +784,13 @@ async fn delete_send(send_id: SendId, headers: Headers, conn: DbConn, nt: Notify
 #[put("/sends/<send_id>/remove-password")]
 async fn put_remove_password(send_id: SendId, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     enforce_disable_send_policy(&headers, &conn).await?;
+
+    // Removing the password would leave the Send non compliant with a policy that requires one.
+    if OrgPolicy::send_controls_for_user(&headers.user.uuid, &conn).await.required_access_type()
+        == Some(SendWhoCanAccessType::PasswordProtected)
+    {
+        err!("Due to an Enterprise Policy, your Sends have to be protected by a password.")
+    }
 
     let Some(mut send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await else {
         err!("Send not found", "Invalid send uuid, or does not belong to user")
