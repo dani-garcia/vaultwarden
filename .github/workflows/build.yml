@@ -179,6 +179,15 @@ jobs:
       # End Run cargo fmt
 
 
+      # Run cargo deny (supply-chain: advisories, licenses, bans, sources)
+      # Only run on rust-toolchain channel — deny.toml pins the feature set.
+      - name: "cargo deny"
+        id: deny
+        if: ${{ !cancelled() && matrix.channel == 'rust-toolchain' }}
+        uses: EmbarkStudios/cargo-deny-action@175dc7fd4fb85ec8f46948fb98f44db001149081 # v2.0.16
+      # End Run cargo deny
+
+
       # Check for any previous failures, if there are stop, else continue.
       # This is useful so all test/clippy/fmt actions are done, and they can all be addressed
       - name: "Some checks failed"
@@ -192,6 +201,7 @@ jobs:
           TEST_POSTGRESQL: ${{ steps.test_postgresql.outcome }}
           CLIPPY: ${{ steps.clippy.outcome }}
           FMT: ${{ steps.formatting.outcome }}
+          DENY: ${{ steps.deny.outcome }}
         run: |
           echo "### :x: Checks Failed!" >> "${GITHUB_STEP_SUMMARY}"
           echo "" >> "${GITHUB_STEP_SUMMARY}"
@@ -205,6 +215,7 @@ jobs:
           echo "|test (postgresql)|${TEST_POSTGRESQL}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|clippy (sqlite,mysql,postgresql,enable_mimalloc,s3)|${CLIPPY}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|fmt|${FMT}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|cargo deny|${DENY}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "" >> "${GITHUB_STEP_SUMMARY}"
           echo "Please check the failed jobs and fix where needed." >> "${GITHUB_STEP_SUMMARY}"
           echo "" >> "${GITHUB_STEP_SUMMARY}"
