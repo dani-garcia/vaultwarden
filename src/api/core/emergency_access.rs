@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{TimeDelta, Utc};
 use rocket::{Route, serde::json::Json};
 use serde_json::Value;
@@ -19,6 +21,58 @@ use crate::{
     mail,
     util::NumberOrString,
 };
+
+/// Drops every emergency access of `user_id`, the ones it granted as well as the ones it holds, and tells
+/// the grantors which contacts they lost. The grantor of the second group is somebody else, so without a
+/// mail that user would silently lose a part of its account setup.
+/// Bitwarden notifies the same way, one mail per grantor listing all of its removed contacts.
+/// https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/Auth/UserFeatures/EmergencyAccess/Commands/DeleteEmergencyAccessCommand.cs
+pub async fn delete_all_emergency_access_of_user(user_id: &UserId, conn: &DbConn) -> EmptyResult {
+    // Read before deleting, afterwards the rows are gone.
+    let mut removed = EmergencyAccess::find_all_by_grantor_uuid(user_id, conn).await;
+    removed.extend(EmergencyAccess::find_all_by_grantee_uuid(user_id, conn).await);
+
+    EmergencyAccess::delete_all_by_user(user_id, conn).await?;
+
+    if !CONFIG.mail_enabled() || removed.is_empty() {
+        return Ok(());
+    }
+
+    // Group by grantor so that each of them gets a single mail listing all of its removed contacts.
+    let mut by_grantor: HashMap<UserId, Vec<String>> = HashMap::new();
+    for emergency_access in removed {
+        // An invitation that was never accepted only carries the address, the uuid is stored on accept.
+        let grantee_email = match &emergency_access.grantee_uuid {
+            Some(grantee_uuid) => User::find_by_uuid(grantee_uuid, conn).await.map(|u| u.email),
+            None => emergency_access.email.clone(),
+        };
+        let Some(grantee_email) = grantee_email else {
+            warn!(
+                "Not naming the grantee of emergency access {} in the removal notification, it has neither a known user nor an address",
+                emergency_access.uuid
+            );
+            continue;
+        };
+        by_grantor.entry(emergency_access.grantor_uuid).or_default().push(grantee_email);
+    }
+
+    for (grantor_uuid, mut grantee_emails) in by_grantor {
+        let Some(grantor) = User::find_by_uuid(&grantor_uuid, conn).await else {
+            warn!("Skipping the emergency access removal notification for {grantor_uuid}, the account is gone");
+            continue;
+        };
+
+        grantee_emails.sort_unstable();
+        grantee_emails.dedup();
+
+        // The rows are already gone, so a failing mail must not take the whole request down with it.
+        if let Err(e) = mail::send_emergency_access_grantees_removed(&grantor.email, &grantee_emails).await {
+            error!("Failed to notify {} about its removed emergency access contacts: {e:?}", grantor.email);
+        }
+    }
+
+    Ok(())
+}
 
 pub fn routes() -> Vec<Route> {
     routes![
@@ -222,6 +276,12 @@ async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, co
         err!("You can not set yourself as an emergency contact.")
     }
 
+    // Emergency access would hand this account to somebody the organization never vetted, which is why
+    // Bitwarden forbids it for members of an organization which confirms its members automatically.
+    if OrgPolicy::is_user_in_auto_confirm_org(&grantor_user.uuid, &conn).await {
+        err!("You are a member of an organization which does not allow emergency access.")
+    }
+
     let (grantee_user, new_user) = match User::find_by_mail(&email, &conn).await {
         None => {
             if !CONFIG.invitations_allowed() {
@@ -353,6 +413,11 @@ async fn accept_invite(
     } else {
         err!("Invited user not found")
     };
+
+    // See `send_invite`, the same restriction applies to the grantee side of an emergency access.
+    if OrgPolicy::is_user_in_auto_confirm_org(&grantee_user.uuid, &conn).await {
+        err!("You are a member of an organization which does not allow emergency access.")
+    }
 
     // We need to search for the uuid in combination with the email, since we do not yet store the uuid of the grantee in the database.
     // The uuid of the grantee gets stored once accepted.

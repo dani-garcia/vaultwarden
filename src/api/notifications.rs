@@ -15,7 +15,10 @@ use crate::{
     auth::{ClientIp, WsAccessTokenHeader},
     db::{
         DbConn,
-        models::{AuthRequestId, Cipher, CollectionId, Device, DeviceId, Folder, PushId, Send as DbSend, User, UserId},
+        models::{
+            AuthRequestId, Cipher, CollectionId, Device, DeviceId, Folder, MembershipId, OrganizationId, PushId,
+            Send as DbSend, User, UserId,
+        },
     },
 };
 
@@ -510,6 +513,33 @@ impl WebSocketUsers {
         }
     }
 
+    /// Tells the clients of `recipient_id` that `member_id` accepted an invitation and is waiting to be
+    /// confirmed. Only the browser extension acts upon this, it holds the organization key needed to
+    /// confirm the member, which the server never has. Because of that this is WebSocket only.
+    /// https://github.com/bitwarden/clients/blob/main/libs/auto-confirm/README.md
+    pub async fn send_auto_confirm_member(
+        &self,
+        recipient_id: &UserId,
+        org_id: &OrganizationId,
+        member_id: &MembershipId,
+        member_user_id: &UserId,
+    ) {
+        if !CONFIG.enable_websocket() {
+            return;
+        }
+        let data = create_update(
+            vec![
+                ("UserId".into(), recipient_id.to_string().into()),
+                ("OrganizationId".into(), org_id.to_string().into()),
+                ("TargetUserId".into(), member_user_id.to_string().into()),
+                ("TargetOrganizationUserId".into(), member_id.to_string().into()),
+            ],
+            UpdateType::AutoConfirmMember,
+            None,
+        );
+        self.send_update(recipient_id, &data).await;
+    }
+
     pub async fn send_auth_request(&self, user_id: &UserId, auth_request_uuid: &str, device: &Device, conn: &DbConn) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
@@ -700,6 +730,13 @@ pub enum UpdateType {
     // NotificationStatus = 21, // Not supported
 
     // RefreshSecurityTasks = 22, // Not supported
+
+    // OrganizationBankAccountVerified = 23, // Not supported (Not AGPLv3 Licensed)
+    // ProviderBankAccountVerified = 24, // Not supported (Not AGPLv3 Licensed)
+
+    // SyncPolicy = 25, // Not supported
+    AutoConfirmMember = 26,
+    // PremiumStatusChanged = 27, // Not supported
     None = 100,
 }
 

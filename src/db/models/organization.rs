@@ -204,6 +204,7 @@ impl Organization {
             "maxCollections": null,
             "maxStorageGb": i16::MAX, // The value doesn't matter, we don't check server-side
             "use2fa": true,
+            "useAutomaticUserConfirmation": CONFIG.org_auto_confirm_enabled(),
             "useCustomPermissions": true,
             "useDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
             "useEvents": CONFIG.org_events_enabled(),
@@ -498,6 +499,7 @@ impl Membership {
             "useKeyConnector": false,
             "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
             "usePasswordManager": true,
+            "useAutomaticUserConfirmation": CONFIG.org_auto_confirm_enabled(),
             "useCustomPermissions": true,
             "useActivateAutofillPolicy": false,
             "useAdminSponsoredFamilies": false,

@@ -47,7 +47,7 @@ pub enum OrgPolicyType {
     RestrictedItemTypes = 15,
     UriMatchDefaults = 16,
     // AutotypeDefaultSetting = 17, // Not supported yet
-    // AutoConfirm = 18, // Not supported (not implemented yet)
+    AutomaticUserConfirmation = 18,
     // BlockClaimedDomainAccountCreation = 19, // Not supported (Not AGPLv3 Licensed)
 }
 
@@ -280,6 +280,50 @@ impl OrgPolicy {
         false
     }
 
+    /// Returns true if the user is a member of an organization other than `exclude_org_uuid` which has the
+    /// automatic user confirmation policy enabled. Contrary to `is_applicable_to_user` this does not exempt
+    /// owners and admins, the policy applies to every role and every status.
+    /// https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/PolicyRequirements/AutomaticUserConfirmationPolicyRequirement.cs
+    pub async fn auto_confirm_enabled_for_other_org(
+        user_uuid: &UserId,
+        exclude_org_uuid: &OrganizationId,
+        conn: &DbConn,
+    ) -> bool {
+        CONFIG.org_auto_confirm_enabled()
+            && Self::find_accepted_and_confirmed_by_user_and_active_policy(
+                user_uuid,
+                OrgPolicyType::AutomaticUserConfirmation,
+                conn,
+            )
+            .await
+            .iter()
+            .any(|policy| &policy.org_uuid != exclude_org_uuid)
+    }
+
+    /// Returns true if the user is a member of an organization which confirms its members automatically.
+    /// Such a membership also restricts what the user may do outside of that organization.
+    pub async fn is_user_in_auto_confirm_org(user_uuid: &UserId, conn: &DbConn) -> bool {
+        CONFIG.org_auto_confirm_enabled()
+            && !Self::find_accepted_and_confirmed_by_user_and_active_policy(
+                user_uuid,
+                OrgPolicyType::AutomaticUserConfirmation,
+                conn,
+            )
+            .await
+            .is_empty()
+    }
+
+    /// Returns true if members of this organization may be confirmed automatically. This requires both the
+    /// server wide config option and the policy of this organization to be enabled, which mirrors Bitwarden
+    /// where the organization needs the feature enabled by support on top of the policy.
+    pub async fn is_auto_confirm_enabled(org_uuid: &OrganizationId, conn: &DbConn) -> bool {
+        CONFIG.org_auto_confirm_enabled()
+            && match Self::find_by_org_and_type(org_uuid, OrgPolicyType::AutomaticUserConfirmation, conn).await {
+                Some(p) => p.enabled,
+                None => false,
+            }
+    }
+
     pub async fn check_user_allowed(m: &Membership, action: &str, conn: &DbConn) -> EmptyResult {
         if m.atype < MembershipType::Admin && m.status > (MembershipStatus::Invited as i32) {
             // Enforce TwoFactor/TwoStep login
@@ -311,6 +355,26 @@ impl OrgPolicy {
                     action, m.uuid
                 ));
             }
+        }
+
+        // The automatic user confirmation policy is a stricter variant of the SingleOrg policy, it does not
+        // exempt owners and admins and it applies to every status. Therefore it is checked outside of the
+        // block above.
+        // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/Enforcement/AutoConfirm/AutomaticUserConfirmationPolicyEnforcementHandler.cs
+        if Self::auto_confirm_enabled_for_other_org(&m.user_uuid, &m.org_uuid, conn).await {
+            err!(format!(
+                "Cannot {} because another organization confirms its members automatically and forbids other memberships (membership {})",
+                action, m.uuid
+            ));
+        }
+
+        if Self::is_auto_confirm_enabled(&m.org_uuid, conn).await
+            && Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await > 0
+        {
+            err!(format!(
+                "Cannot {} because the organization confirms its members automatically and forbids being part of other organizations (membership {})",
+                action, m.uuid
+            ));
         }
 
         Ok(())
