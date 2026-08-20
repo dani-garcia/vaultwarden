@@ -317,6 +317,13 @@ impl OrgPolicy {
     }
 
     pub async fn org_is_reset_password_auto_enroll(org_uuid: &OrganizationId, conn: &DbConn) -> bool {
+        // Account recovery depends on outbound mail. When SMTP is disabled, treat the
+        // auto-enroll policy as inactive so invites/registration are not forced to
+        // supply a reset-password key (see check_reset_password_applicable).
+        if !CONFIG.mail_enabled() {
+            return false;
+        }
+
         match OrgPolicy::find_by_org_and_type(org_uuid, OrgPolicyType::ResetPassword, conn).await {
             Some(policy) => match serde_json::from_str::<ResetPasswordDataModel>(&policy.data) {
                 Ok(opts) => {
