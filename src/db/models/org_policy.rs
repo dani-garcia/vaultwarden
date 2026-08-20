@@ -91,6 +91,7 @@ impl OrgPolicy {
             "type": self.atype,
             "data": data_json,
             "enabled": self.enabled,
+            "revisionDate": null,
             "object": "policy",
         });
 
