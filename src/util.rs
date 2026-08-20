@@ -543,6 +543,95 @@ pub fn is_valid_email(email: &str) -> bool {
     true
 }
 
+/// The most an `EncString` we are willing to store may weigh. The largest legitimate one is an
+/// RSA-4096 envelope with a MAC, which stays an order of magnitude below this.
+const MAX_ENC_STRING_LENGTH: usize = 4096;
+
+/// Whether a value has the shape of a Bitwarden `EncString`: `<type>.<part>|<part>...`.
+///
+/// The server cannot tell whether a blob decrypts, but it can refuse everything that is not even
+/// of the right form, which keeps unbounded junk out of the columns that hold key material.
+/// Mirrors `EncryptedStringAttribute` upstream.
+/// https://github.com/bitwarden/server/blob/main/src/Core/Utilities/EncryptedStringAttribute.cs
+pub fn is_valid_enc_string(value: &str) -> bool {
+    if value.is_empty() || value.len() > MAX_ENC_STRING_LENGTH {
+        return false;
+    }
+
+    let Some((enc_type, data)) = value.split_once('.') else {
+        return false;
+    };
+
+    // The number of `|` separated parts each type is made of.
+    let parts = match enc_type {
+        // An RSA envelope is the ciphertext by itself.
+        "3" | "4" => 1,
+        // An AES value carries its IV, an RSA one from type 5 on carries a MAC.
+        "0" | "5" | "6" => 2,
+        // And an AES value from type 1 on carries both.
+        "1" | "2" => 3,
+        _ => return false,
+    };
+
+    let mut seen = 0;
+    for part in data.split('|') {
+        seen += 1;
+        if seen > parts || part.is_empty() || data_encoding::BASE64.decode(part.as_bytes()).is_err() {
+            return false;
+        }
+    }
+
+    seen == parts
+}
+
+#[cfg(test)]
+mod enc_string_tests {
+    use super::is_valid_enc_string;
+
+    #[test]
+    fn a_well_formed_enc_string_of_every_type_is_accepted() {
+        for value in [
+            "0.aXY=|Y2lwaGVy",
+            "1.aXY=|Y2lwaGVy|bWFj",
+            "2.aXY=|Y2lwaGVy|bWFj",
+            "3.Y2lwaGVy",
+            "4.Y2lwaGVy",
+            "5.Y2lwaGVy|bWFj",
+            "6.Y2lwaGVy|bWFj",
+        ] {
+            assert!(is_valid_enc_string(value), "{value}");
+        }
+    }
+
+    #[test]
+    fn anything_that_is_not_one_is_refused() {
+        for value in [
+            "",
+            "   ",
+            "not-an-enc-string",
+            "2",
+            "2.",
+            ".aXY=|Y2lwaGVy|bWFj",
+            "7.Y2lwaGVy",             // no such type
+            "-1.Y2lwaGVy",            // and none below zero either
+            "2.aXY=|Y2lwaGVy",        // type 2 without its mac
+            "2.aXY=|Y2lwaGVy|bWFj|x", // or with one part too many
+            "4.Y2lwaGVy|bWFj",        // type 4 carries no mac
+            "2.aXY=||bWFj",           // an empty part is not base64
+            "4.not base64!",
+        ] {
+            assert!(!is_valid_enc_string(value), "{value}");
+        }
+    }
+
+    #[test]
+    fn an_oversized_value_is_refused() {
+        let payload = "A".repeat(4096);
+        assert!(is_valid_enc_string(&format!("4.{}", &payload[..4000])));
+        assert!(!is_valid_enc_string(&format!("4.{payload}")), "must not grow without bound");
+    }
+}
+
 //
 // Deployment environment methods
 //

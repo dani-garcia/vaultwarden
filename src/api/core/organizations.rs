@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use chrono::Utc;
 use num_traits::FromPrimitive;
 use rocket::{Route, serde::json::Json};
 use serde_json::Value;
@@ -8,16 +9,17 @@ use crate::{
     CONFIG,
     api::admin::FAKE_ADMIN_UUID,
     api::{
-        EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
+        AnonymousNotify, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
     auth::{AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite},
     db::{
         DbConn,
         models::{
-            Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
-            Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User, UserId,
+            AuthRequest, AuthRequestId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId,
+            CollectionUser, Device, DeviceType, EventType, Group, GroupId, GroupUser, Invitation, Membership,
+            MembershipId, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
+            OrganizationId, User, UserId,
         },
     },
     mail,
@@ -97,6 +99,10 @@ pub fn routes() -> Vec<Route> {
         get_reset_password_details,
         put_reset_password,
         put_recover_account,
+        get_organization_auth_requests,
+        deny_organization_auth_requests,
+        update_organization_auth_request,
+        update_many_organization_auth_requests,
         get_org_export,
         post_api_key,
         rotate_api_key,
@@ -3153,7 +3159,14 @@ async fn put_reset_password_enrollment(
         err!("Reset password can't be withdrawn due to an enterprise policy");
     }
 
-    if reset_password_key.is_some() {
+    // An account that unlocks with a trusted device has no master password to verify against, and
+    // the clients send nothing but the key when they enroll as part of that flow. Upstream carves
+    // out the same exception, keyed on the organization's SSO configuration rather than on a
+    // server-wide setting as here.
+    // https://github.com/bitwarden/server/blob/main/src/Api/AdminConsole/Controllers/OrganizationUsersController.cs
+    let trusted_device_enrollment = CONFIG.sso_trusted_device_encryption() && headers.user.password_hash.is_empty();
+
+    if reset_password_key.is_some() && !trusted_device_enrollment {
         PasswordOrOtpData {
             master_password_hash: reset_request.master_password_hash,
             otp: reset_request.otp,
@@ -3162,17 +3175,313 @@ async fn put_reset_password_enrollment(
         .await?;
     }
 
-    membership.reset_password_key = reset_password_key;
-    membership.save(&conn).await?;
+    let enrolled = reset_password_key.is_some();
+    let membership_id = membership.uuid.clone();
 
-    let event_type = if membership.reset_password_key.is_some() {
+    // Enrolling is where a member who was invited into a trusted device organization turns into a
+    // real one; upstream accepts the invitation at this point as well. Without it they would stay
+    // invited forever and no admin could ever confirm them.
+    //
+    // Tied to the same condition as the exception above, so that turning the feature off leaves the
+    // invitation flow exactly as it was: an invitation is otherwise accepted only against the token
+    // that was mailed out, and that is the only thing proving the address belongs to the account.
+    if enrolled && trusted_device_enrollment && membership.status == MembershipStatus::Invited as i32 {
+        // Do not leave the open invitation behind, it would keep the address signup-eligible.
+        Invitation::take(&headers.user.email, &conn).await;
+        accept_org_invite(&headers.user, membership, reset_password_key, &conn).await?;
+    } else {
+        membership.reset_password_key = reset_password_key;
+        membership.save(&conn).await?;
+    }
+
+    let event_type = if enrolled {
         EventType::OrganizationUserResetPasswordEnroll as i32
     } else {
         EventType::OrganizationUserResetPasswordWithdraw as i32
     };
 
-    log_event(event_type, &membership.uuid, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
+    log_event(event_type, &membership_id, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
         .await;
+
+    Ok(())
+}
+
+// Device approvals. A member who unlocks with a trusted device and has no other device of their own
+// left to ask can turn to the administrators of their organization instead. Answering means handing
+// them their own user key, encrypted for the key pair of the asking device, which is only possible
+// because the member enrolled into account recovery beforehand.
+// https://github.com/bitwarden/server/blob/main/src/Api/AdminConsole/Controllers/OrganizationAuthRequestsController.cs
+
+/// The requests waiting for an answer in this organization.
+#[get("/organizations/<org_id>/auth-requests")]
+async fn get_organization_auth_requests(org_id: OrganizationId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+
+    let mut requests = Vec::new();
+    for auth_request in AuthRequest::find_pending_admin_approval_by_org(&org_id, &conn).await {
+        if auth_request.is_expired() {
+            continue;
+        }
+
+        // A request whose asker is not a confirmed member of this organization is none of its
+        // business, so it is quietly left out instead of being offered for approval. Same condition
+        // as when answering, so nothing is shown here that would be refused there.
+        let (Some(member), Some(user)) = (
+            Membership::find_by_user_and_org(&auth_request.user_uuid, &org_id, &conn).await,
+            User::find_by_uuid(&auth_request.user_uuid, &conn).await,
+        ) else {
+            continue;
+        };
+        if member.status != MembershipStatus::Confirmed as i32 {
+            continue;
+        }
+
+        requests.push(auth_request.to_json_for_organization(&user.email, &member.uuid));
+    }
+
+    Ok(Json(json!({
+        "data": requests,
+        "continuationToken": null,
+        "object": "list"
+    })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminAuthRequestUpdateData {
+    request_approved: bool,
+    encrypted_user_key: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BulkDenyAuthRequestData {
+    ids: Vec<AuthRequestId>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OrganizationAuthRequestUpdateData {
+    id: AuthRequestId,
+    approved: bool,
+    key: Option<String>,
+}
+
+/// How many requests one call may answer. A screen full of pending approvals is a handful.
+const MAX_BULK_AUTH_REQUESTS: usize = 500;
+
+/// Whether one entry that cannot be answered takes the whole call down with it.
+///
+/// A single request is addressed by its id, so a caller that names a request nobody can answer
+/// deserves to hear about it. A batch is a list of what an administrator saw a moment ago, where an
+/// entry may well have expired or been answered by a colleague since; upstream processes those as
+/// far as it can and passes over the rest. Failing the batch instead would report an error while
+/// having already answered everything before the bad entry.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OnUnanswerable {
+    Fail,
+    Skip,
+}
+
+#[post("/organizations/<org_id>/auth-requests/<request_id>", data = "<data>", rank = 2)]
+async fn update_organization_auth_request(
+    org_id: OrganizationId,
+    request_id: AuthRequestId,
+    data: Json<AdminAuthRequestUpdateData>,
+    headers: AdminHeaders,
+    conn: DbConn,
+    ant: AnonymousNotify<'_>,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    let data = data.into_inner();
+    answer_organization_auth_request(
+        &org_id,
+        &request_id,
+        data.request_approved,
+        data.encrypted_user_key,
+        OnUnanswerable::Fail,
+        &headers,
+        &conn,
+        &ant,
+        &nt,
+    )
+    .await
+}
+
+#[post("/organizations/<org_id>/auth-requests/deny", data = "<data>", rank = 1)]
+async fn deny_organization_auth_requests(
+    org_id: OrganizationId,
+    data: Json<BulkDenyAuthRequestData>,
+    headers: AdminHeaders,
+    conn: DbConn,
+    ant: AnonymousNotify<'_>,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    let ids = data.into_inner().ids;
+    if ids.len() > MAX_BULK_AUTH_REQUESTS {
+        err!(format!("At most {MAX_BULK_AUTH_REQUESTS} requests can be answered at once"))
+    }
+
+    for request_id in ids {
+        answer_organization_auth_request(
+            &org_id,
+            &request_id,
+            false,
+            None,
+            OnUnanswerable::Skip,
+            &headers,
+            &conn,
+            &ant,
+            &nt,
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[post("/organizations/<org_id>/auth-requests", data = "<data>")]
+async fn update_many_organization_auth_requests(
+    org_id: OrganizationId,
+    data: Json<Vec<OrganizationAuthRequestUpdateData>>,
+    headers: AdminHeaders,
+    conn: DbConn,
+    ant: AnonymousNotify<'_>,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    let updates = data.into_inner();
+    if updates.len() > MAX_BULK_AUTH_REQUESTS {
+        err!(format!("At most {MAX_BULK_AUTH_REQUESTS} requests can be answered at once"))
+    }
+
+    for update in updates {
+        answer_organization_auth_request(
+            &org_id,
+            &update.id,
+            update.approved,
+            update.key,
+            OnUnanswerable::Skip,
+            &headers,
+            &conn,
+            &ant,
+            &nt,
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[expect(clippy::too_many_arguments, reason = "Rocket request guards have to be passed through")]
+async fn answer_organization_auth_request(
+    org_id: &OrganizationId,
+    request_id: &AuthRequestId,
+    approved: bool,
+    encrypted_user_key: Option<String>,
+    on_unanswerable: OnUnanswerable,
+    headers: &AdminHeaders,
+    conn: &DbConn,
+    ant: &AnonymousNotify<'_>,
+    nt: &Notify<'_>,
+) -> EmptyResult {
+    if org_id != &headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+
+    // Everything below this point is a request that this administrator cannot answer, whether it
+    // never existed, was already dealt with, or ran out. In a batch that is expected and skipped.
+    macro_rules! unanswerable {
+        ($($err:tt)*) => {{
+            if on_unanswerable == OnUnanswerable::Skip {
+                return Ok(());
+            }
+            err!($($err)*)
+        }};
+    }
+
+    // Only ever reachable through the organization it was addressed to, so an administrator cannot
+    // answer for an organization they have no say in.
+    let Some(mut auth_request) = AuthRequest::find_admin_approval_by_org_and_uuid(request_id, org_id, conn).await
+    else {
+        unanswerable!("AuthRequest doesn't exist", "Record not found or not addressed to this organization")
+    };
+
+    if auth_request.approved.is_some() {
+        unanswerable!("This request has already been answered");
+    }
+
+    if auth_request.is_expired() {
+        unanswerable!("AuthRequest doesn't exist", "Request has expired");
+    }
+
+    // Answering means acting for a member of this organization, so it has to be one: an invitation
+    // that was never accepted is not a membership yet, and a revoked one is not one anymore.
+    let member = match Membership::find_by_user_and_org(&auth_request.user_uuid, org_id, conn).await {
+        Some(member) if member.status == MembershipStatus::Confirmed as i32 => member,
+        _ => unanswerable!("AuthRequest doesn't exist", "The requesting user is not a member of this organization"),
+    };
+
+    if approved {
+        // Without the wrapped user key the answer is worthless: it is the whole point of approving.
+        let Some(key) = encrypted_user_key.filter(|key| !key.is_empty()) else {
+            unanswerable!("An approved request needs the encrypted user key")
+        };
+        if !crate::util::is_valid_enc_string(&key) {
+            unanswerable!("encryptedUserKey is not a valid encrypted string");
+        }
+        auth_request.enc_key = Some(key);
+    }
+
+    auth_request.approved = Some(approved);
+    auth_request.response_date = Some(Utc::now().naive_utc());
+    auth_request.save(conn).await?;
+
+    let event_type = if approved {
+        EventType::OrganizationUserApprovedAuthRequest as i32
+    } else {
+        EventType::OrganizationUserRejectedAuthRequest as i32
+    };
+    log_event(event_type, &member.uuid, org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, conn).await;
+
+    // A denial is deliberately not announced. If the request came from somebody who is not the
+    // member, telling them that it was seen and refused is more than they should learn.
+    if !approved {
+        return Ok(());
+    }
+
+    ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
+
+    // The device that asked, not the one the administrator happens to be answering from: that one
+    // belongs to somebody else, and naming it here would both address the notification at a device
+    // of the wrong account and hand its identifiers to the push relay under a foreign user id.
+    if let Some(device) =
+        Device::find_by_uuid_and_user(&auth_request.request_device_identifier, &auth_request.user_uuid, conn).await
+    {
+        nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, &device, conn).await;
+    }
+
+    if CONFIG.mail_enabled()
+        && let Some(user) = User::find_by_uuid(&auth_request.user_uuid, conn).await
+        && let Some(org) = Organization::find_by_uuid(org_id, conn).await
+    {
+        let device =
+            format!("{} - {}", DeviceType::from_i32(auth_request.device_type), auth_request.request_device_identifier);
+        let approved_at = auth_request.response_date.unwrap_or_else(|| Utc::now().naive_utc());
+
+        if let Err(e) = mail::send_trusted_device_admin_approval(
+            &user.email,
+            &org.name,
+            &approved_at,
+            &auth_request.request_ip,
+            &device,
+        )
+        .await
+        {
+            error!("Error sending trusted device approval email: {e:#?}");
+        }
+    }
 
     Ok(())
 }
@@ -3214,7 +3523,7 @@ async fn api_key(
     let org_api_key = if let Some(mut org_api_key) = OrganizationApiKey::find_by_org_uuid(org_id, &conn).await {
         if rotate {
             org_api_key.api_key = crate::crypto::generate_api_key();
-            org_api_key.revision_date = chrono::Utc::now().naive_utc();
+            org_api_key.revision_date = Utc::now().naive_utc();
             org_api_key.save(&conn).await.expect("Error rotating organization API Key");
         }
         org_api_key

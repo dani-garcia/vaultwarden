@@ -55,6 +55,9 @@ table! {
         push_token -> Nullable<Text>,
         refresh_token -> Text,
         twofactor_remember -> Nullable<Text>,
+        encrypted_user_key -> Nullable<Text>,
+        encrypted_public_key -> Nullable<Text>,
+        encrypted_private_key -> Nullable<Text>,
     }
 }
 
@@ -328,6 +331,7 @@ table! {
         uuid -> Text,
         user_uuid -> Text,
         organization_uuid -> Nullable<Text>,
+        atype -> Integer,
         request_device_identifier -> Text,
         device_type -> Integer,
         request_ip -> Text,
