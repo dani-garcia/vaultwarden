@@ -54,9 +54,11 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
 });
 
 pub type Pass = String;
+pub type AdminTotpSecret = String;
 
 macro_rules! make_config {
     // Support string print
+    ( @supportstr $name:ident, $value:expr, AdminTotpSecret, option ) => { serde_json::to_value(&$value.as_ref().map(|_| String::from("***"))).unwrap() };
     ( @supportstr $name:ident, $value:expr, Pass, option ) => { serde_json::to_value(&$value.as_ref().map(|_| String::from("***"))).unwrap() }; // Optional pass, we map to an Option<String> with "***"
     ( @supportstr $name:ident, $value:expr, Pass, $none_action:ident ) => { "***".into() }; // Required pass, we return "***"
     ( @supportstr $name:ident, $value:expr, $ty:ty, option ) => { serde_json::to_value(&$value).unwrap() }; // Optional other or string, we convert to json
@@ -66,6 +68,18 @@ macro_rules! make_config {
     // Group or empty string
     ( @show ) => { "" };
     ( @show $lit:literal ) => { $lit };
+
+    // Write-only values are shown as empty inputs and never serialized to the admin settings page.
+    ( @formvalue $value:expr, AdminTotpSecret ) => { serde_json::Value::Null };
+    ( @formvalue $value:expr, $ty:ident ) => { serde_json::to_value($value).unwrap_or_default() };
+    ( @writeonly AdminTotpSecret ) => { true };
+    ( @writeonly $ty:ident ) => { false };
+    ( @configured $value:expr, AdminTotpSecret ) => {
+        $value.as_ref().is_some_and(|value| !value.trim().is_empty())
+    };
+    ( @configured $value:expr, $ty:ident ) => { false };
+    ( @userconfigured $value:expr, AdminTotpSecret ) => { $value.is_some() };
+    ( @userconfigured $value:expr, $ty:ident ) => { false };
 
     // Wrap the optionals in an Option type
     ( @type $ty:ty, option) => { Option<$ty> };
@@ -336,6 +350,9 @@ macro_rules! make_config {
             name: &'static str,
             value: serde_json::Value,
             default: serde_json::Value,
+            write_only: bool,
+            configured: bool,
+            user_configured: bool,
             #[serde(rename = "type")]
             r#type: &'static str,
             doc: ElementDoc,
@@ -362,7 +379,7 @@ macro_rules! make_config {
             pub fn prepare_json(&self) -> serde_json::Value {
                 fn get_form_type(rust_type: &'static str) -> &'static str {
                     match rust_type {
-                        "Pass" => "password",
+                        "Pass" | "AdminTotpSecret" => "password",
                         "String" => "text",
                         "bool" => "checkbox",
                         _ => "number"
@@ -377,10 +394,10 @@ macro_rules! make_config {
                     }
                 }
 
-                let (def, cfg, overridden) = {
+                let (def, cfg, usr, overridden) = {
                     // Lock the inner as short as possible and clone what is needed to prevent deadlocks
                     let inner = &self.inner.read().unwrap();
-                    (inner._env.build(), inner.config.clone(), inner._overrides.clone())
+                    (inner._env.build(), inner.config.clone(), inner._usr.clone(), inner._overrides.clone())
                 };
 
                 let data: Vec<GroupData> = vec![
@@ -395,8 +412,11 @@ macro_rules! make_config {
                             ElementData {
                                 editable: $editable,
                                 name: stringify!($name),
-                                value: serde_json::to_value(&cfg.$name).unwrap_or_default(),
-                                default: serde_json::to_value(&def.$name).unwrap_or_default(),
+                                value: make_config! { @formvalue &cfg.$name, $ty },
+                                default: make_config! { @formvalue &def.$name, $ty },
+                                write_only: make_config! { @writeonly $ty },
+                                configured: make_config! { @configured &cfg.$name, $ty },
+                                user_configured: make_config! { @userconfigured &usr.$name, $ty },
                                 r#type: get_form_type(stringify!($ty)),
                                 doc: get_doc(concat!($($doc),+)),
                                 overridden: overridden.contains(&pastey::paste!(stringify!([<$name:upper>]))),
@@ -651,6 +671,9 @@ make_config! {
 
         /// Admin token/Argon2 PHC |> The plain text token or Argon2 PHC string used to authenticate in this very same page. Changing it here will not deauthorize the current session!
         admin_token:            Pass,   true,   option;
+
+        /// Admin TOTP secret |> Base32-encoded secret containing at least 16 bytes of secret data. When set, logging in to the admin page additionally requires a time-based one-time code. Leave blank to keep the saved secret. Has no effect when DISABLE_ADMIN_TOKEN is enabled!
+        admin_totp_secret:      AdminTotpSecret, true, option;
 
         /// Invitation organization name |> Name shown in the invitation emails that don't come from a specific organization
         invitation_org_name:    String, true,   def,    "Vaultwarden".to_owned();
@@ -934,6 +957,30 @@ make_config! {
         /// Auto-enable 2FA (Know the risks!) |> Automatically setup email 2FA as fallback provider when needed
         email_2fa_auto_fallback: bool,  true,   def,      false;
     },
+}
+
+impl ConfigBuilder {
+    /// Applies the write-only admin form semantics for the TOTP secret:
+    /// - an omitted value keeps the value currently stored in `config.json`;
+    /// - an empty value removes the stored override;
+    /// - a non-empty value replaces it.
+    fn prepare_admin_update(&mut self, current_user_config: &Self) {
+        self.admin_totp_secret = match self.admin_totp_secret.take() {
+            None => current_user_config.admin_totp_secret.clone(),
+            Some(secret) if secret.trim().is_empty() => None,
+            Some(secret) => Some(secret.trim().to_uppercase()),
+        };
+    }
+}
+
+fn validate_admin_totp_secret(secret: &str) -> Result<(), Error> {
+    let Ok(decoded_secret) = data_encoding::BASE32.decode(secret.trim().to_uppercase().as_bytes()) else {
+        err!("`ADMIN_TOTP_SECRET` is not a valid base32-encoded string")
+    };
+    if decoded_secret.len() < 16 {
+        err!("`ADMIN_TOTP_SECRET` must contain at least 128 bits (16 bytes) of secret data")
+    }
+    Ok(())
 }
 
 fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
@@ -1283,6 +1330,10 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
             }
             _ => {}
         }
+
+        if let Some(ref secret) = cfg.admin_totp_secret {
+            validate_admin_totp_secret(secret)?;
+        }
     }
 
     if cfg.increase_note_size_limit {
@@ -1475,8 +1526,11 @@ impl Config {
         // TODO: Remove values that are defaults, above only checks those set by env and not the defaults
         let mut builder = other;
 
-        // Remove values that are not editable
+        // Remove values that are not editable. Preserve an omitted write-only TOTP value,
+        // while still allowing an explicit empty value to remove the saved override.
         if ignore_non_editable {
+            let current_user_config = self.inner.read().unwrap()._usr.clone();
+            builder.prepare_admin_update(&current_user_config);
             builder.clear_non_editable();
         }
 
@@ -1768,7 +1822,6 @@ where
     reg!("admin/users");
     reg!("admin/organizations");
     reg!("admin/diagnostics");
-
     reg!("404");
 
     reg!(@withfallback "scss/vaultwarden.scss");
@@ -1855,3 +1908,189 @@ handlebars::handlebars_helper!(webver: | web_vault_version: String |
 handlebars::handlebars_helper!(vwver: | vw_version: String |
     semver::VersionReq::parse(&vw_version).expect("Invalid Vaultwarden version compare string").matches(&VW_VERSION)
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ENV_TOTP_SECRET: &str = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+    const USER_TOTP_SECRET: &str = "KRSXG5DSNFXGOIDBKRSXG5DSNFXGOIDB";
+
+    fn config_with(env: ConfigBuilder, usr: ConfigBuilder) -> Config {
+        let mut overrides = Vec::new();
+        let config = env.merge(&usr, false, &mut overrides).build();
+
+        Config {
+            inner: RwLock::new(Inner {
+                rocket_shutdown_handle: None,
+                templates: Handlebars::new(),
+                config,
+                _env: env,
+                _usr: usr,
+                _overrides: overrides,
+            }),
+        }
+    }
+
+    fn admin_totp_element(config: &Config) -> serde_json::Value {
+        config
+            .prepare_json()
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|group| group["elements"].as_array().unwrap())
+            .find(|element| element["name"] == "admin_totp_secret")
+            .unwrap()
+            .clone()
+    }
+
+    #[test]
+    fn config_file_admin_totp_secret_overrides_environment() {
+        let env = ConfigBuilder {
+            admin_totp_secret: Some(ENV_TOTP_SECRET.to_owned()),
+            ..Default::default()
+        };
+        let usr = ConfigBuilder {
+            admin_totp_secret: Some(USER_TOTP_SECRET.to_owned()),
+            ..Default::default()
+        };
+        let config = config_with(env, usr);
+
+        assert_eq!(config.admin_totp_secret().as_deref(), Some(USER_TOTP_SECRET));
+        assert!(config.inner.read().unwrap()._overrides.contains(&"ADMIN_TOTP_SECRET"));
+    }
+
+    #[test]
+    fn admin_totp_secret_is_write_only_in_settings_json() {
+        let env = ConfigBuilder {
+            admin_totp_secret: Some(ENV_TOTP_SECRET.to_owned()),
+            ..Default::default()
+        };
+        let usr = ConfigBuilder {
+            admin_totp_secret: Some(USER_TOTP_SECRET.to_owned()),
+            ..Default::default()
+        };
+        let config = config_with(env, usr);
+        let json = config.prepare_json();
+        let serialized = json.to_string();
+        let support_json = config.get_support_json().to_string();
+
+        assert!(!serialized.contains(ENV_TOTP_SECRET));
+        assert!(!serialized.contains(USER_TOTP_SECRET));
+        assert!(!support_json.contains(ENV_TOTP_SECRET));
+        assert!(!support_json.contains(USER_TOTP_SECRET));
+
+        let element = admin_totp_element(&config);
+        assert_eq!(element["value"], serde_json::Value::Null);
+        assert_eq!(element["default"], serde_json::Value::Null);
+        assert_eq!(element["write_only"], true);
+        assert_eq!(element["configured"], true);
+        assert_eq!(element["user_configured"], true);
+        assert_eq!(element["overridden"], true);
+
+        let empty_override = config_with(
+            ConfigBuilder {
+                admin_totp_secret: Some(ENV_TOTP_SECRET.to_owned()),
+                ..Default::default()
+            },
+            ConfigBuilder {
+                admin_totp_secret: Some(String::new()),
+                ..Default::default()
+            },
+        );
+        let element = admin_totp_element(&empty_override);
+        assert_eq!(element["configured"], false);
+        assert_eq!(element["user_configured"], true);
+        assert_eq!(element["overridden"], true);
+    }
+
+    #[test]
+    fn admin_settings_template_never_renders_admin_totp_secret() {
+        let env = ConfigBuilder {
+            admin_totp_secret: Some(ENV_TOTP_SECRET.to_owned()),
+            ..Default::default()
+        };
+        let usr = ConfigBuilder {
+            admin_totp_secret: Some(USER_TOTP_SECRET.to_owned()),
+            ..Default::default()
+        };
+        let config = config_with(env, usr);
+
+        let mut handlebars = Handlebars::new();
+        handlebars.set_strict_mode(true);
+        handlebars.register_helper("case", Box::new(case_helper));
+        handlebars
+            .register_template_string("admin/settings", include_str!("static/templates/admin/settings.hbs"))
+            .unwrap();
+
+        let rendered = handlebars
+            .render(
+                "admin/settings",
+                &serde_json::json!({
+                    "page_data": {
+                        "config": config.prepare_json(),
+                        "can_backup": false,
+                    },
+                    "urlpath": "",
+                }),
+            )
+            .unwrap();
+
+        assert!(!rendered.contains(ENV_TOTP_SECRET));
+        assert!(!rendered.contains(USER_TOTP_SECRET));
+        assert!(rendered.contains("id=\"input_admin_totp_secret\""));
+        assert!(rendered.contains("placeholder=\"Configured — enter a new value to replace it\""));
+        assert!(rendered.contains("data-bs-target=\"#adminTotpQrDialog\""));
+        assert!(rendered.contains("id=\"adminTotpQrCode\""));
+        assert!(rendered.contains("/vw_static/qrcode-generator-2.0.4.js"));
+        assert!(rendered.find("</form>").unwrap() < rendered.find("id=\"adminTotpQrDialog\"").unwrap());
+    }
+
+    #[test]
+    fn admin_totp_secret_form_supports_keep_set_and_clear() {
+        let current = ConfigBuilder {
+            admin_totp_secret: Some(USER_TOTP_SECRET.to_owned()),
+            ..Default::default()
+        };
+
+        let mut keep = ConfigBuilder::default();
+        keep.prepare_admin_update(&current);
+        assert_eq!(keep.admin_totp_secret.as_deref(), Some(USER_TOTP_SECRET));
+
+        let mut no_saved_override = ConfigBuilder::default();
+        no_saved_override.prepare_admin_update(&ConfigBuilder::default());
+        assert_eq!(no_saved_override.admin_totp_secret, None);
+
+        let mut replace = ConfigBuilder {
+            admin_totp_secret: Some(format!("  {}  ", ENV_TOTP_SECRET.to_lowercase())),
+            ..Default::default()
+        };
+        replace.prepare_admin_update(&current);
+        assert_eq!(replace.admin_totp_secret.as_deref(), Some(ENV_TOTP_SECRET));
+
+        let mut clear = ConfigBuilder {
+            admin_totp_secret: Some("   ".to_owned()),
+            ..Default::default()
+        };
+        clear.prepare_admin_update(&current);
+        assert_eq!(clear.admin_totp_secret, None);
+
+        let env = ConfigBuilder {
+            admin_totp_secret: Some(ENV_TOTP_SECRET.to_owned()),
+            ..Default::default()
+        };
+        let mut overrides = Vec::new();
+        assert_eq!(
+            env.merge(&clear, false, &mut overrides).build().admin_totp_secret.as_deref(),
+            Some(ENV_TOTP_SECRET)
+        );
+    }
+
+    #[test]
+    fn admin_totp_secret_validation_rejects_empty_short_and_invalid_values() {
+        for secret in ["", "JBSWY3DPEHPK3PXP", "not-base32"] {
+            assert!(validate_admin_totp_secret(secret).is_err(), "secret should be rejected: {secret:?}");
+        }
+        assert!(validate_admin_totp_secret(USER_TOTP_SECRET).is_ok());
+    }
+}

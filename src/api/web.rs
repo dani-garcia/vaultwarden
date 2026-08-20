@@ -289,6 +289,9 @@ pub fn static_files(filename: &str) -> Result<(ContentType, &'static [u8]), Erro
         "admin.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/admin.css"))),
         "admin.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin.js"))),
         "admin_settings.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_settings.js"))),
+        "qrcode-generator-2.0.4.js" => {
+            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/qrcode-generator-2.0.4.js")))
+        }
         "admin_users.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_users.js"))),
         "admin_organizations.js" => {
             Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_organizations.js")))
@@ -305,5 +308,18 @@ pub fn static_files(filename: &str) -> Result<(ContentType, &'static [u8]), Erro
             Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jquery-4.0.0.slim.js")))
         }
         _ => err!(format!("Static file not found: {filename}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn qrcode_generator_is_available_in_production_assets() {
+        let (content_type, body) = static_files("qrcode-generator-2.0.4.js").unwrap();
+
+        assert_eq!(content_type, ContentType::JavaScript);
+        assert!(body.starts_with(b"/*! qrcode-generator 2.0.4"));
     }
 }

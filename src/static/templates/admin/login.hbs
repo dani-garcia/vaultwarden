@@ -14,6 +14,9 @@
 
             <form class="form-inline" method="post" action="{{urlpath}}/admin">
                 <input type="password" autocomplete="password" class="form-control w-50 mr-2" name="token" placeholder="Enter admin token" autofocus="autofocus">
+                {{#if totp_enabled}}
+                <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" class="form-control w-50 mr-2 mt-2" name="totp" placeholder="Enter 2FA code">
+                {{/if}}
                 {{#if redirect}}
                 <input type="hidden" id="redirect" name="redirect" value="/{{redirect}}">
                 {{/if}}
