@@ -1,4 +1,4 @@
-use std::{sync::LazyLock, time::Duration};
+use std::{net::IpAddr, sync::LazyLock, time::Duration};
 
 use chrono::Utc;
 use derive_more::{AsRef, Deref, Display, From, Into};
@@ -7,12 +7,15 @@ use url::Url;
 
 use crate::{
     CONFIG,
-    api::ApiResult,
+    api::{ApiResult, core::log_event},
     auth,
     auth::{AuthMethod, AuthTokens, BW_EXPIRATION, DEFAULT_REFRESH_VALIDITY, TokenWrapper},
     db::{
         DbConn,
-        models::{Device, OIDCAuthenticatedUser, SsoAuth, SsoUser, User},
+        models::{
+            Device, EventType, Membership, MembershipStatus, MembershipType, OIDCAuthenticatedUser, Organization,
+            OrganizationId, SsoAuth, SsoUser, User,
+        },
     },
     sso_client::Client,
 };
@@ -316,6 +319,7 @@ pub async fn exchange_code(
 }
 
 // User has passed 2FA flow we can delete auth info from database
+#[expect(clippy::too_many_arguments)]
 pub async fn redeem(
     device: &Device,
     user: &User,
@@ -323,11 +327,14 @@ pub async fn redeem(
     sso_user: Option<SsoUser>,
     sso_auth: SsoAuth,
     auth_user: OIDCAuthenticatedUser,
+    ip: &IpAddr,
     conn: &DbConn,
 ) -> ApiResult<AuthTokens> {
     sso_auth.delete(conn).await?;
 
     if sso_user.is_none() {
+        invite_user_to_default_organization(user, device.atype, ip, conn).await?;
+
         let user_sso = SsoUser {
             user_uuid: user.uuid.clone(),
             identifier: auth_user.identifier.clone(),
@@ -352,6 +359,46 @@ pub async fn redeem(
 
         create_auth_tokens_impl(device, auth_user.refresh_token, access_claims, auth_user.access_token)
     }
+}
+
+async fn invite_user_to_default_organization(
+    user: &User,
+    device_type: i32,
+    ip: &IpAddr,
+    conn: &DbConn,
+) -> ApiResult<()> {
+    let Some(org_uuid) = CONFIG.sso_default_organization_uuid() else {
+        return Ok(());
+    };
+    let org_id = normalize_organization_uuid(&org_uuid)?;
+
+    if Membership::find_by_user_and_org(&user.uuid, &org_id, conn).await.is_some() {
+        return Ok(());
+    }
+
+    if Organization::find_by_uuid(&org_id, conn).await.is_none() {
+        err!("The organization configured in `SSO_DEFAULT_ORGANIZATION_UUID` does not exist")
+    }
+
+    let mut membership = Membership::new(user.uuid.clone(), org_id.clone(), None);
+    membership.status = MembershipStatus::Invited as i32;
+    membership.atype = MembershipType::User as i32;
+    membership.save(conn).await?;
+
+    log_event(EventType::OrganizationUserInvited as i32, &membership.uuid, &org_id, &user.uuid, device_type, ip, conn)
+        .await;
+
+    info!("Invited SSO user {} to default organization {}", user.uuid, org_id);
+    Ok(())
+}
+
+// `Uuid::parse_str` also accepts non-canonical forms (uppercase, braced, without hyphens),
+// while stored organization uuids are always lowercase hyphenated and compared as strings.
+pub(crate) fn normalize_organization_uuid(org_uuid: &str) -> ApiResult<OrganizationId> {
+    let Ok(parsed) = uuid::Uuid::parse_str(org_uuid) else {
+        err!("`SSO_DEFAULT_ORGANIZATION_UUID` must be a valid UUID")
+    };
+    Ok(OrganizationId::from(parsed.to_string()))
 }
 
 // We always return a refresh_token (with no refresh_token some secrets are not displayed in the web front).
@@ -469,5 +516,27 @@ pub async fn exchange_refresh_token(
             create_auth_tokens_impl(device, None, access_claims, access_token)
         }
         None => err!("No token present while in SSO"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_organization_uuid_to_canonical_form() {
+        for input in [
+            "1B2C3D4E-5F60-7182-93A4-B5C6D7E8F901",
+            "{1b2c3d4e-5f60-7182-93a4-b5c6d7e8f901}",
+            "1b2c3d4e5f60718293a4b5c6d7e8f901",
+        ] {
+            let org_id = normalize_organization_uuid(input).expect("valid UUID form should be accepted");
+            assert_eq!(org_id.to_string(), "1b2c3d4e-5f60-7182-93a4-b5c6d7e8f901");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_organization_uuid() {
+        assert!(normalize_organization_uuid("not-a-uuid").is_err());
     }
 }

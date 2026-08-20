@@ -821,6 +821,8 @@ make_config! {
         sso_signups_match_email:        bool,   true,   def,    true;
         /// Allow unknown email verification status |> Allowing this with `SSO_SIGNUPS_MATCH_EMAIL=true` open potential account takeover.
         sso_allow_unknown_email_verification: bool, true, def, false;
+        /// Default organization UUID |> Automatically add users on their first SSO sign-in as accepted members of this organization. An administrator must confirm them and assign collections or groups. No invitation email is sent.
+        sso_default_organization_uuid: String, true, option;
         /// Client ID
         sso_client_id:                  String, true,   def,    String::new();
         /// Client Key
@@ -1112,6 +1114,10 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
         validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
+    }
+
+    if let Some(org_uuid) = &cfg.sso_default_organization_uuid {
+        crate::sso::normalize_organization_uuid(org_uuid)?;
     }
 
     if cfg._enable_yubico {

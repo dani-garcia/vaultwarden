@@ -917,18 +917,22 @@ async fn get_org_details_impl(
     Ok(json!(ciphers_json))
 }
 
-// Returning a Domain/Organization here allow to prefill it and prevent prompting the user
-// So we return a dummy value, since we only support a single SSO integration, and do not use the response anywhere
-// In use since `v2025.6.0`, appears to use only the first `organizationIdentifier`
+// Returning a Domain/Organization here allows the client to prefill it and prevents prompting the user.
+// Use the configured default organization so its policies apply during SSO enrollment; otherwise return a dummy value.
+// In use since `v2025.6.0`, the client appears to use only the first `organizationIdentifier`.
 #[post("/organizations/domain/sso/verified")]
 fn get_org_domain_sso_verified() -> JsonResult {
-    // Always return a dummy value, no matter if SSO is enabled or not
+    let organization_identifier = match CONFIG.sso_default_organization_uuid() {
+        Some(org_uuid) => crate::sso::normalize_organization_uuid(&org_uuid)?.to_string(),
+        None => FAKE_SSO_IDENTIFIER.to_owned(),
+    };
+
     Ok(Json(json!({
         "object": "list",
         "data": [{
-            "organizationIdentifier": FAKE_SSO_IDENTIFIER,
-            // These appear to be unused
-            "organizationName": FAKE_SSO_IDENTIFIER,
+            "organizationIdentifier": organization_identifier,
+            // This appears to be unused.
+            "organizationName": organization_identifier,
             "domainName": CONFIG.domain()
         }],
         "continuationToken": null
