@@ -16,8 +16,9 @@ use crate::{
         DbConn,
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
-            Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User, UserId,
+            Group, GroupId, GroupUser, Invitation, MaximumVaultTimeoutPolicyData, Membership, MembershipId,
+            MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
+            OrganizationId, User, UserId,
         },
     },
     mail,
@@ -2075,11 +2076,39 @@ async fn put_policy(
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let data: PolicyData = data.into_inner().policy;
+    let mut data: PolicyData = data.into_inner().policy;
 
     let Some(pol_type_enum) = OrgPolicyType::from_i32(pol_type) else {
         err!("Invalid or unsupported policy type")
     };
+
+    if pol_type_enum == OrgPolicyType::MaximumVaultTimeout && data.enabled {
+        let single_org_policy_enabled = OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::SingleOrg, &conn)
+            .await
+            .is_some_and(|policy| policy.enabled);
+        if !single_org_policy_enabled {
+            err!("Single Organization policy is not enabled. It is mandatory for this policy to be enabled.")
+        }
+
+        let Some(timeout_data) = data.data.take() else {
+            err!("Vault Timeout policy data is required.")
+        };
+        let mut timeout_data: MaximumVaultTimeoutPolicyData = serde_json::from_value(timeout_data)?;
+        if let Err(message) = timeout_data.validate_and_normalize() {
+            err!(message)
+        }
+        data.data = Some(serde_json::to_value(timeout_data)?);
+    }
+
+    if pol_type_enum == OrgPolicyType::SingleOrg && !data.enabled {
+        let maximum_vault_timeout_enabled =
+            OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::MaximumVaultTimeout, &conn)
+                .await
+                .is_some_and(|policy| policy.enabled);
+        if maximum_vault_timeout_enabled {
+            err!("Vault Timeout policy is enabled. It is not allowed to disable this policy.")
+        }
+    }
 
     // Bitwarden only allows the Reset Password policy when Single Org policy is enabled
     // Vaultwarden encouraged to use multiple orgs instead of groups because groups were not available in the past

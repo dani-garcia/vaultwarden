@@ -29,6 +29,95 @@ function deleteOrganization(event) {
     }
 }
 
+function updateVaultTimeoutControls() {
+    const enabled = document.getElementById("vault-timeout-enabled").checked;
+    const timeoutType = document.getElementById("vault-timeout-type");
+    const timeoutAction = document.getElementById("vault-timeout-action");
+    const customFields = document.getElementById("vault-timeout-custom-fields");
+    const hours = document.getElementById("vault-timeout-hours");
+    const minutes = document.getElementById("vault-timeout-minutes");
+
+    timeoutType.disabled = !enabled;
+    timeoutAction.disabled = !enabled;
+    const customEnabled = enabled && timeoutType.value === "custom";
+    customFields.classList.toggle("d-none", !customEnabled);
+    hours.disabled = !customEnabled;
+    minutes.disabled = !customEnabled;
+
+    const singleOrgEnabled = document.getElementById("org-policies-form").dataset.vwSingleOrgEnabled === "true";
+    document.getElementById("vault-timeout-single-org-warning").classList.toggle("d-none", !enabled || singleOrgEnabled);
+}
+
+function loadOrganizationPolicies(event) {
+    const button = event.relatedTarget;
+    if (!button) {
+        return;
+    }
+
+    const form = document.getElementById("org-policies-form");
+    form.classList.remove("was-validated");
+    form.dataset.vwSingleOrgEnabled = button.dataset.vwSingleOrgEnabled;
+    document.getElementById("org-policies-org-uuid").value = button.dataset.vwOrgUuid;
+    document.getElementById("org-policies-org-name").textContent = button.dataset.vwOrgName;
+    document.getElementById("vault-timeout-enabled").checked = button.dataset.vwTimeoutEnabled === "true";
+    document.getElementById("vault-timeout-type").value = button.dataset.vwTimeoutType || "custom";
+    document.getElementById("vault-timeout-action").value = button.dataset.vwTimeoutAction || "";
+    document.getElementById("disable-personal-vault-export").checked = button.dataset.vwExportDisabled === "true";
+
+    const totalMinutes = Number.parseInt(button.dataset.vwTimeoutMinutes, 10) || 480;
+    document.getElementById("vault-timeout-hours").value = Math.floor(totalMinutes / 60);
+    document.getElementById("vault-timeout-minutes").value = totalMinutes % 60;
+    document.getElementById("vault-timeout-minutes").setCustomValidity("");
+    updateVaultTimeoutControls();
+}
+
+function saveOrganizationPolicies(event) {
+    event.preventDefault();
+    const form = event.target;
+    const timeoutEnabled = document.getElementById("vault-timeout-enabled").checked;
+    const singleOrgEnabled = form.dataset.vwSingleOrgEnabled === "true";
+    if (timeoutEnabled && !singleOrgEnabled) {
+        document.getElementById("vault-timeout-single-org-warning").classList.remove("d-none");
+        return;
+    }
+
+    const timeoutType = document.getElementById("vault-timeout-type").value;
+    const hours = Number.parseInt(document.getElementById("vault-timeout-hours").value, 10);
+    const minutes = Number.parseInt(document.getElementById("vault-timeout-minutes").value, 10);
+    let totalMinutes = 480;
+    document.getElementById("vault-timeout-minutes").setCustomValidity("");
+    if (timeoutType === "custom") {
+        totalMinutes = hours * 60 + minutes;
+        if (!Number.isInteger(hours) || hours < 0 || !Number.isInteger(minutes) || minutes < 0 || minutes > 59 || totalMinutes < 1) {
+            document.getElementById("vault-timeout-minutes").setCustomValidity("Invalid custom timeout");
+        } else {
+            document.getElementById("vault-timeout-minutes").setCustomValidity("");
+        }
+    }
+
+    form.classList.add("was-validated");
+    if (!form.checkValidity()) {
+        return;
+    }
+
+    const action = document.getElementById("vault-timeout-action").value || null;
+    const body = JSON.stringify({
+        maximumVaultTimeout: {
+            enabled: timeoutEnabled,
+            type: timeoutType,
+            minutes: totalMinutes,
+            action: action
+        },
+        disablePersonalVaultExport: document.getElementById("disable-personal-vault-export").checked
+    });
+    const orgUuid = document.getElementById("org-policies-org-uuid").value;
+    _post(`${BASE_URL}/admin/organizations/${orgUuid}/policies`,
+        "Organization policies saved correctly",
+        "Error saving organization policies",
+        body
+    );
+}
+
 function initActions() {
     document.querySelectorAll("button[vw-delete-organization]").forEach(btn => {
         btn.addEventListener("click", deleteOrganization);
@@ -41,6 +130,12 @@ function initActions() {
 
 // onLoad events
 document.addEventListener("DOMContentLoaded", (/*event*/) => {
+    const policiesModal = document.getElementById("orgPoliciesModal");
+    policiesModal.addEventListener("show.bs.modal", loadOrganizationPolicies);
+    document.getElementById("org-policies-form").addEventListener("submit", saveOrganizationPolicies);
+    document.getElementById("vault-timeout-enabled").addEventListener("change", updateVaultTimeoutControls);
+    document.getElementById("vault-timeout-type").addEventListener("change", updateVaultTimeoutControls);
+
     jQuery("#orgs-table").DataTable({
         "drawCallback": function() {
             initActions();
