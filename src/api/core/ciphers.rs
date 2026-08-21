@@ -25,7 +25,7 @@ use crate::{
             MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
         },
     },
-    util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
+    util::{NumberOrString, deser_double_opt_str, deser_opt_nonempty_str, save_temp_file},
 };
 
 use super::folders::FolderData;
@@ -297,7 +297,9 @@ pub struct CipherData {
     // when using older client versions, or if the operation doesn't involve
     // updating an existing cipher.
     last_known_revision_date: Option<String>,
-    archived_date: Option<String>,
+    // Absent = leave archive state unchanged; null = unarchive; string = set archived date.
+    #[serde(default, deserialize_with = "deser_double_opt_str")]
+    archived_date: Option<Option<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -537,11 +539,17 @@ pub async fn update_cipher_from_data(
     cipher.move_to_folder(data.folder_id, &headers.user.uuid, conn).await?;
     cipher.set_favorite(data.favorite, &headers.user.uuid, conn).await?;
 
-    if let Some(dt_str) = data.archived_date {
-        match NaiveDateTime::parse_from_str(&dt_str, "%+") {
+    match &data.archived_date {
+        // Field omitted: leave archive state unchanged.
+        None => {}
+        // Explicit JSON null: unarchive (matches Bitwarden cloud).
+        Some(None) => {
+            cipher.unarchive(&headers.user.uuid, conn).await?;
+        }
+        Some(Some(dt_str)) => match NaiveDateTime::parse_from_str(dt_str, "%+") {
             Ok(dt) => cipher.set_archived_at(dt, &headers.user.uuid, conn).await?,
             Err(err) => warn!("Error parsing ArchivedDate '{dt_str}': {err}"),
-        }
+        },
     }
 
     if ut != UpdateType::None {
