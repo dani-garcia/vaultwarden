@@ -98,8 +98,11 @@ static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| ACTIVE_DB_TYPE.get().is_som
 static CAN_BACKUP: LazyLock<bool> = LazyLock::new(|| false);
 
 #[get("/")]
-fn admin_disabled() -> &'static str {
-    "The admin panel is disabled, please configure the 'ADMIN_TOKEN' variable to enable it"
+fn admin_disabled() -> (Status, &'static str) {
+    (
+        Status::ServiceUnavailable,
+        "The admin panel is disabled, please configure the 'ADMIN_TOKEN' variable to enable it"
+    )
 }
 
 const COOKIE_NAME: &str = "VW_ADMIN";
