@@ -190,8 +190,8 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                         event.r#type,
                         org_id,
                         org_id,
-                        &headers.user.uuid,
-                        headers.device.atype,
+                        Some(&headers.user.uuid),
+                        Some(headers.device.atype),
                         Some(event_date),
                         &headers.ip.ip,
                         &conn,
@@ -211,8 +211,8 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                         event.r#type,
                         cipher_uuid,
                         &org_id,
-                        &headers.user.uuid,
-                        headers.device.atype,
+                        Some(&headers.user.uuid),
+                        Some(headers.device.atype),
                         Some(event_date),
                         &headers.ip.ip,
                         &conn,
@@ -278,7 +278,17 @@ pub async fn log_event(
     if !CONFIG.org_events_enabled() {
         return;
     }
-    log_event_impl(event_type, source_uuid, org_id, act_user_id, device_type, None, ip, conn).await;
+    log_event_impl(event_type, source_uuid, org_id, Some(act_user_id), Some(device_type), None, ip, conn).await;
+}
+
+/// Log an organization event that was triggered through the Public API.
+/// These are performed by an organization API client instead of a user, so there is
+/// no acting user or device to record and both are stored as null.
+pub async fn log_public_event(event_type: i32, source_uuid: &str, org_id: &OrganizationId, ip: &IpAddr, conn: &DbConn) {
+    if !CONFIG.org_events_enabled() {
+        return;
+    }
+    log_event_impl(event_type, source_uuid, org_id, None, None, None, ip, conn).await;
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -286,8 +296,8 @@ async fn log_event_impl(
     event_type: i32,
     source_uuid: &str,
     org_id: &OrganizationId,
-    act_user_id: &UserId,
-    device_type: i32,
+    act_user_id: Option<&UserId>,
+    device_type: Option<i32>,
     event_date: Option<NaiveDateTime>,
     ip: &IpAddr,
     conn: &DbConn,
@@ -322,8 +332,8 @@ async fn log_event_impl(
     }
 
     event.org_uuid = Some(org_id.clone());
-    event.act_user_uuid = Some(act_user_id.clone());
-    event.device_type = Some(device_type);
+    event.act_user_uuid = act_user_id.cloned();
+    event.device_type = device_type;
     event.ip_address = Some(ip.to_string());
     event.save(conn).await.unwrap_or(());
 }
