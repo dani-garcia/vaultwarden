@@ -534,18 +534,7 @@ async fn authenticated_response(
         Value::Null
     };
 
-    let account_keys = if user.private_key.is_some() {
-        json!({
-            "publicKeyEncryptionKeyPair": {
-                "wrappedPrivateKey": user.private_key,
-                "publicKey": user.public_key,
-                "Object": "publicKeyEncryptionKeyPair"
-            },
-            "Object": "privateKeys"
-        })
-    } else {
-        Value::Null
-    };
+    let account_keys = user.account_keys_json(conn).await;
 
     let mut result = json!({
         "access_token": auth_tokens.access_token(),
@@ -685,18 +674,7 @@ async fn user_api_key_login(
         Value::Null
     };
 
-    let account_keys = if user.private_key.is_some() {
-        json!({
-            "publicKeyEncryptionKeyPair": {
-                "wrappedPrivateKey": user.private_key,
-                "publicKey": user.public_key,
-                "Object": "publicKeyEncryptionKeyPair"
-            },
-            "Object": "privateKeys"
-        })
-    } else {
-        Value::Null
-    };
+    let account_keys = user.account_keys_json(conn).await;
 
     // Note: No refresh_token is returned. The CLI just repeats the
     // client_credentials login flow when the existing token expires.
