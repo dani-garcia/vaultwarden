@@ -917,16 +917,21 @@ async fn get_org_details_impl(
     Ok(json!(ciphers_json))
 }
 
+#[derive(Deserialize)]
+struct DomainSSoVerifiedData {
+    email: String,
+}
+
 // Returning a Domain/Organization here allow to prefill it and prevent prompting the user
-// So we return a dummy value, since we only support a single SSO integration, and do not use the response anywhere
-// In use since `v2025.6.0`, appears to use only the first `organizationIdentifier`
-#[post("/organizations/domain/sso/verified")]
-fn get_org_domain_sso_verified() -> JsonResult {
-    // Always return a dummy value, no matter if SSO is enabled or not
+#[post("/organizations/domain/sso/verified", data = "<data>")]
+fn get_org_domain_sso_verified(data: Json<DomainSSoVerifiedData>) -> JsonResult {
+    let data = data.into_inner();
+
     Ok(Json(json!({
         "object": "list",
         "data": [{
-            "organizationIdentifier": FAKE_SSO_IDENTIFIER,
+            // The given email is passed to the identity authorize endpoint through the org identifier
+            "organizationIdentifier": format!("{FAKE_SSO_IDENTIFIER}+{}", data.email),
             // These appear to be unused
             "organizationName": FAKE_SSO_IDENTIFIER,
             "domainName": CONFIG.domain()

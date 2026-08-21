@@ -24,8 +24,9 @@ use crate::{
         master_password_policy,
         push::register_push_device,
     },
-    auth,
-    auth::{AuthMethod, ClientHeaders, ClientIp, ClientVersion, Secure, generate_organization_api_key_login_claims},
+    auth::{
+        self, AuthMethod, ClientHeaders, ClientIp, ClientVersion, Secure, generate_organization_api_key_login_claims,
+    },
     crypto,
     db::{
         DbConn,
@@ -36,8 +37,8 @@ use crate::{
         },
     },
     error::MapResult,
-    mail, sso,
-    sso::{OIDCCode, OIDCCodeChallenge, OIDCCodeVerifier, OIDCState},
+    mail,
+    sso::{self, FAKE_SSO_IDENTIFIER, OIDCCode, OIDCCodeChallenge, OIDCCodeVerifier, OIDCState},
     util,
 };
 
@@ -1281,7 +1282,6 @@ struct AuthorizeData {
     code_challenge_method: String,
     #[allow(unused)]
     response_mode: Option<String>,
-    #[allow(unused)]
     domain_hint: Option<String>,
     #[allow(unused)]
     #[field(name = uncased("ssoToken"))]
@@ -1297,6 +1297,7 @@ async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure,
         state,
         code_challenge,
         code_challenge_method,
+        domain_hint,
         ..
     } = data;
 
@@ -1309,8 +1310,14 @@ async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure,
     let binding_token = data_encoding::BASE64URL_NOPAD.encode(&crypto::get_random_bytes::<32>());
     let binding_hash = crypto::sha256_hex(binding_token.as_bytes());
 
+    let login_hint = domain_hint.and_then(|hint| {
+        let (sso_org_id, email) = hint.split_once('+')?;
+        (sso_org_id == FAKE_SSO_IDENTIFIER && !email.is_empty()).then(|| email.to_owned())
+    });
+
     let auth_url =
-        sso::authorize_url(state, code_challenge, &client_id, &redirect_uri, Some(binding_hash), conn).await?;
+        sso::authorize_url(state, code_challenge, &client_id, &redirect_uri, Some(binding_hash), login_hint, conn)
+            .await?;
 
     cookies.add(
         Cookie::build((SSO_BINDING_COOKIE, binding_token))

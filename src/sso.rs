@@ -191,6 +191,7 @@ pub async fn authorize_url(
     client_id: &str,
     raw_redirect_uri: &str,
     binding_hash: Option<String>,
+    login_hint: Option<String>,
     conn: DbConn,
 ) -> ApiResult<Url> {
     let redirect_uri = match client_id {
@@ -209,7 +210,8 @@ pub async fn authorize_url(
         _ => err!(format!("Unsupported client {client_id}")),
     };
 
-    let (auth_url, sso_auth) = Client::authorize_url(state, client_challenge, redirect_uri, binding_hash).await?;
+    let (auth_url, sso_auth) =
+        Client::authorize_url(state, client_challenge, redirect_uri, binding_hash, login_hint).await?;
     sso_auth.save(&conn).await?;
     Ok(auth_url)
 }

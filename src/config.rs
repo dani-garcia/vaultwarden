@@ -831,6 +831,8 @@ make_config! {
         sso_scopes:                     String, true,  def,   "email profile".to_owned();
         /// Authorization request extra parameters
         sso_authorize_extra_params:     String, true,  def,    String::new();
+        /// Use login hint in authorization request |> Use the email provided during SSO logon to indicate the account to use to the OIDC provider.
+        sso_login_hint:                 bool,   true,   def,    true;
         /// Use PKCE during Authorization flow
         sso_pkce:                       bool,   true,   def,    true;
         /// Regex for additional trusted Id token audience |> By default only the client_id is trusted.
