@@ -10,6 +10,11 @@ CloudFront CDN
 └─ Web-vault static assets S3 Bucket
 ```
 
+For upgrades of an existing deployment, follow the
+[serverless release runbook](RELEASE_RUNBOOK.md). It records the required
+branch order, build and changeset workflow, web-vault compatibility rule,
+verification gates, and rollback precautions.
+
 ## A Note On AWS Accounts and Security
 It is common to have one AWS account host multiple services. But it's easy, and doesn't cost any additional amount, to separate workloads into their own accounts. Doing so makes it easier to control for security concerns and monitor costs. AWS Identity and Access Management (IAM) enforces additional controls for cross-account access than for within-account access, for example, making it harder for security attacks to hop from workload to workload when they are in separate accounts.
 
