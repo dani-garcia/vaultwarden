@@ -149,6 +149,11 @@ cargo fmt --all -- --check
 cargo check --locked --features aws
 ```
 
+The S3 feature deliberately disables OpenDAL's defaults. If the rebase changes
+OpenDAL, confirm that `s3` still enables an HTTP transport and that the S3
+operator installs it before its first request. A compile check cannot detect a
+missing process-wide transport; that failure appears only at runtime.
+
 Build from `main`, test the archive, and record its checksum:
 
 ```sh
@@ -249,13 +254,19 @@ rewrite the bucket. Otherwise:
 
 1. Download the current bucket into a newly created temporary rollback
    directory.
-2. Run `aws s3 sync ... --delete --dryrun` and inspect uploads and deletions.
-3. Sync the extracted `web-vault/` directory with `--delete`.
-4. Repeat the dry run with `--size-only`; it must report no changes.
-5. Invalidate `/*` on the resolved CloudFront distribution and wait for it.
-6. Verify the public version marker, `index.html`, primary JavaScript bundle,
-   and WASM module. The live index must match the release artifact byte for
-   byte.
+2. Compare the rollback copy with the extracted release by content. Do not
+   trust `aws s3 sync` as a byte comparison: a changed file with the same size
+   is skipped when the release archive's timestamp is older than S3. Normalize
+   timestamps in the temporary extracted copy, or otherwise force every
+   content difference to appear in the dry run.
+3. Run `aws s3 sync ... --delete --dryrun` and inspect uploads and deletions.
+4. Sync the extracted `web-vault/` directory with `--delete`.
+5. Repeat the dry run with `--size-only`; it must report no changes. Download
+   the resulting bucket into a separate temporary directory and compare the
+   complete directory with the extracted release byte for byte.
+6. Invalidate `/*` on the resolved CloudFront distribution and wait for it.
+7. Verify the public version marker, `index.html`, primary JavaScript bundle,
+   and WASM module against the release artifact byte for byte.
 
 Keep the rollback directory until all live checks succeed. Never use a bucket
 name or distribution ID copied from an earlier release.
