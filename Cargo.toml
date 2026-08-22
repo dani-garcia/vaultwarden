@@ -43,6 +43,7 @@ aws = ["dsql", "s3", "ses"]
 dsql = ["postgresql", "dep:aws-config", "dep:aws-sdk-dsql", "dep:aws-smithy-runtime-api"]
 s3 = [
     "opendal/services-s3",
+    "dep:opendal-http-transport-reqwest",
     "dep:aws-config",
     "dep:aws-credential-types",
     "dep:aws-smithy-runtime-api",
@@ -261,6 +262,7 @@ grass_compiler = { version = "0.13.4", default-features = false }
 
 # File are accessed through Apache OpenDAL
 opendal = { version = "0.58.1", default-features = false, features = ["services-fs"] }
+opendal-http-transport-reqwest = { version = "0.58.1", default-features = false, features = ["rustls-no-provider"], optional = true }
 
 # For retrieving AWS credentials, including temporary SSO credentials
 aws-config = { version = "1.10.1", optional = true, default-features = false, features = [

@@ -156,6 +156,10 @@ mod s3 {
         use reqsign_aws_v4::Credential;
         use reqsign_core::{Context, ProvideCredential, ProvideCredentialChain};
 
+        // OpenDAL 0.58 decouples service builders from HTTP transports. Install
+        // the explicitly enabled reqwest transport before constructing S3.
+        opendal_http_transport_reqwest::install_default();
+
         // This is a custom AWS credential loader that uses the official AWS Rust
         // SDK config crate to load credentials. This ensures maximum compatibility
         // with AWS credential configurations. For example, OpenDAL doesn't support
