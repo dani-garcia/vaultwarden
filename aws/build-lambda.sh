@@ -8,18 +8,19 @@ image="${VAULTWARDEN_LAMBDA_BUILD_IMAGE:-public.ecr.aws/codebuild/amazonlinux2-a
 platform="${VAULTWARDEN_LAMBDA_BUILD_PLATFORM:-linux/arm64}"
 package_path="${repo_root}/aws/vaultwarden-lambda.zip"
 
-docker_tty_args=()
+docker_args=(
+    run
+    --rm
+    --pull=missing
+    --platform "${platform}"
+)
 if [ -t 1 ]; then
-    docker_tty_args=(-t)
+    docker_args+=(-t)
 fi
 
 printf 'Building Lambda package with %s for %s\n' "${image}" "${platform}"
 
-docker run \
-    --rm \
-    --pull=missing \
-    --platform "${platform}" \
-    "${docker_tty_args[@]}" \
+docker "${docker_args[@]}" \
     --entrypoint /bin/bash \
     -e HOST_UID="$(id -u)" \
     -e HOST_GID="$(id -g)" \
@@ -55,7 +56,7 @@ if ! command -v cargo-lambda >/dev/null 2>&1; then
     curl -fsSL https://cargo-lambda.info/install.sh | sh
 fi
 
-cargo lambda build --verbose
+cargo lambda build --verbose --locked --features aws
 
 cp /lib64/{libcrypt.so.2,liblber-2.4.so.2,libldap_r-2.4.so.2,libpq.so.5,libsasl2.so.3} \
     target/lambda/vaultwarden/

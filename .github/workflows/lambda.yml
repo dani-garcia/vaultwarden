@@ -30,7 +30,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build with Cargo
-        run: cargo lambda build --verbose
+        run: cargo lambda build --verbose --locked --features aws
 
       - name: Copy libpq and its dependencies
         run: cp /lib64/{libcrypt.so.2,liblber-2.4.so.2,libldap_r-2.4.so.2,libpq.so.5,libsasl2.so.3} target/lambda/vaultwarden/
