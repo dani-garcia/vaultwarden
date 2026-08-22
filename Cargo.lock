@@ -3521,6 +3521,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "opendal-http-transport-reqwest"
+version = "0.59.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "401999057db611e592f883fcf2cbd6754ff37af587deaadd07b8c1398b2b6b06"
+dependencies = [
+ "bytes",
+ "futures",
+ "http 1.5.0",
+ "http-body 1.1.0",
+ "opendal-core",
+ "reqwest",
+]
+
+[[package]]
 name = "opendal-service-fs"
 version = "0.59.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5989,6 +6003,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "opendal",
+ "opendal-http-transport-reqwest",
  "openidconnect",
  "openssl",
  "pastey 0.2.3",
