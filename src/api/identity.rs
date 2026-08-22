@@ -507,7 +507,12 @@ async fn authenticated_response(
 
     // register push device
     if !device.is_new() {
-        register_push_device(device, conn).await?;
+        // Registering the device for push is best-effort: a failure talking to the
+        // push relay/identity server must not turn a successful authentication into
+        // an error (see #7371). This mirrors the new-device email handling above.
+        if let Err(e) = register_push_device(device, conn).await {
+            error!("An error occurred while registering the device for push notifications: {e}");
+        }
     }
 
     // Save to update `device.updated_at` to track usage and toggle new status
