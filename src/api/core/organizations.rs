@@ -20,8 +20,8 @@ use crate::{
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
             Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId,
-            OrganizationUserPermissions, User, UserId,
+            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, OrganizationUserPermissions,
+            User, UserId,
         },
     },
     mail,
@@ -133,9 +133,7 @@ fn resolve_membership_custom_permissions(
     let custom_permissions = parse_custom_permissions(raw_type, permissions)?;
 
     let access_all = new_type >= MembershipType::Admin
-        || custom_permissions
-            .as_ref()
-            .is_some_and(OrganizationUserPermissions::has_manage_all_collections);
+        || custom_permissions.as_ref().is_some_and(OrganizationUserPermissions::has_manage_all_collections);
 
     let permissions_json = match custom_permissions {
         Some(custom_permissions) => match custom_permissions.to_db_json() {
@@ -1194,8 +1192,7 @@ async fn send_invite(
         err!("Only Owners can invite Managers, Admins or Owners")
     }
 
-    let (access_all, permissions_json) =
-        resolve_membership_custom_permissions(raw_type, new_type, &data.permissions)?;
+    let (access_all, permissions_json) = resolve_membership_custom_permissions(raw_type, new_type, &data.permissions)?;
 
     let mut user_created: bool = false;
     for email in &data.emails {
