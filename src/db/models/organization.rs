@@ -78,9 +78,45 @@ pub struct OrganizationUserPermissions {
     pub manage_scim: bool,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum OrganizationUserPermission {
+    AccessEventLogs,
+    AccessImportExport,
+    AccessReports,
+    CreateNewCollections,
+    EditAnyCollection,
+    DeleteAnyCollection,
+    ManageGroups,
+    ManagePolicies,
+    ManageSso,
+    ManageUsers,
+    ManageResetPassword,
+    ManageScim,
+}
+
+impl OrganizationUserPermission {
+    pub fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "accessEventLogs" | "access_event_logs" => Some(Self::AccessEventLogs),
+            "accessImportExport" | "access_import_export" => Some(Self::AccessImportExport),
+            "accessReports" | "access_reports" => Some(Self::AccessReports),
+            "createNewCollections" | "create_new_collections" => Some(Self::CreateNewCollections),
+            "editAnyCollection" | "edit_any_collection" => Some(Self::EditAnyCollection),
+            "deleteAnyCollection" | "delete_any_collection" => Some(Self::DeleteAnyCollection),
+            "manageGroups" | "manage_groups" => Some(Self::ManageGroups),
+            "managePolicies" | "manage_policies" => Some(Self::ManagePolicies),
+            "manageSso" | "manage_sso" => Some(Self::ManageSso),
+            "manageUsers" | "manage_users" => Some(Self::ManageUsers),
+            "manageResetPassword" | "manage_reset_password" => Some(Self::ManageResetPassword),
+            "manageScim" | "manage_scim" => Some(Self::ManageScim),
+            _ => None,
+        }
+    }
+}
+
 impl OrganizationUserPermissions {
-    pub fn from_payload_map(payload: HashMap<String, Value>) -> serde_json::Result<Self> {
-        let value = Value::Object(payload.into_iter().collect());
+    pub fn from_payload_map(payload: &HashMap<String, Value>) -> serde_json::Result<Self> {
+        let value = Value::Object(payload.clone().into_iter().collect());
         serde_json::from_value(value)
     }
 
@@ -92,8 +128,38 @@ impl OrganizationUserPermissions {
         serde_json::to_string(self)
     }
 
+    pub fn is_enabled(&self, permission: OrganizationUserPermission) -> bool {
+        match permission {
+            OrganizationUserPermission::AccessEventLogs => self.access_event_logs,
+            OrganizationUserPermission::AccessImportExport => self.access_import_export,
+            OrganizationUserPermission::AccessReports => self.access_reports,
+            OrganizationUserPermission::CreateNewCollections => self.create_new_collections,
+            OrganizationUserPermission::EditAnyCollection => self.edit_any_collection,
+            OrganizationUserPermission::DeleteAnyCollection => self.delete_any_collection,
+            OrganizationUserPermission::ManageGroups => self.manage_groups,
+            OrganizationUserPermission::ManagePolicies => self.manage_policies,
+            OrganizationUserPermission::ManageSso => self.manage_sso,
+            OrganizationUserPermission::ManageUsers => self.manage_users,
+            OrganizationUserPermission::ManageResetPassword => self.manage_reset_password,
+            OrganizationUserPermission::ManageScim => self.manage_scim,
+        }
+    }
+
     pub fn has_manage_all_collections(&self) -> bool {
         self.edit_any_collection && self.delete_any_collection && self.create_new_collections
+    }
+
+    pub fn from_legacy_access_all(access_all: bool) -> Option<Self> {
+        if !access_all {
+            return None;
+        }
+
+        Some(Self {
+            create_new_collections: true,
+            edit_any_collection: true,
+            delete_any_collection: true,
+            ..Self::default()
+        })
     }
 }
 
@@ -361,6 +427,39 @@ impl Membership {
             _ => self.atype,
         }
     }
+
+    pub fn custom_permissions(&self) -> Option<OrganizationUserPermissions> {
+        let legacy_permissions = OrganizationUserPermissions::from_legacy_access_all(self.access_all);
+
+        match OrganizationUserPermissions::from_db_json(self.permissions.as_deref()) {
+            Ok(Some(permissions)) => Some(permissions),
+            Ok(None) => legacy_permissions,
+            Err(error) => {
+                warn!("Invalid custom permissions for membership {}: {error:#}", self.uuid);
+                legacy_permissions
+            }
+        }
+    }
+
+    pub fn has_permission(&self, permission: OrganizationUserPermission) -> bool {
+        if !self.has_status(MembershipStatus::Confirmed) {
+            return false;
+        }
+
+        if self.atype >= MembershipType::Admin {
+            return true;
+        }
+
+        if self.atype != MembershipType::Manager {
+            return false;
+        }
+
+        self.custom_permissions().is_some_and(|permissions| permissions.is_enabled(permission))
+    }
+
+    pub fn has_permission_key(&self, key: &str) -> bool {
+        OrganizationUserPermission::from_key(key).is_some_and(|permission| self.has_permission(permission))
+    }
 }
 
 impl OrganizationApiKey {
@@ -493,24 +592,11 @@ impl Membership {
         // It will be converted back on other locations
         let membership_type = self.type_manager_as_custom();
 
-        let permissions = json!({
-                // TODO: Add full support for Custom User Roles
-                // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
-                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
-                "accessEventLogs": false,
-                "accessImportExport": false,
-                "accessReports": false,
-                // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": membership_type == 4 && self.access_all,
-                "editAnyCollection": membership_type == 4 && self.access_all,
-                "deleteAnyCollection": membership_type == 4 && self.access_all,
-                "manageGroups": false,
-                "managePolicies": false,
-                "manageSso": false, // Not supported
-                "manageUsers": false,
-                "manageResetPassword": false,
-                "manageScim": false // Not supported (Not AGPLv3 Licensed)
-        });
+        let permissions = if membership_type == 4 {
+            json!(self.custom_permissions().unwrap_or_default())
+        } else {
+            json!(OrganizationUserPermissions::default())
+        };
 
         // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/ProfileOrganizationResponseModel.cs
         json!({
@@ -663,27 +749,10 @@ impl Membership {
         // It will be converted back on other locations
         let membership_type = self.type_manager_as_custom();
 
-        // HACK: Only return permissions if the user is of type custom and has access_all
-        // Else Bitwarden will assume the defaults of all false
-        let permissions = if membership_type == 4 && self.access_all {
-            json!({
-                // TODO: Add full support for Custom User Roles
-                // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
-                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
-                "accessEventLogs": false,
-                "accessImportExport": false,
-                "accessReports": false,
-                // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": true,
-                "editAnyCollection": true,
-                "deleteAnyCollection": true,
-                "manageGroups": false,
-                "managePolicies": false,
-                "manageSso": false, // Not supported
-                "manageUsers": false,
-                "manageResetPassword": false,
-                "manageScim": false // Not supported (Not AGPLv3 Licensed)
-            })
+        // HACK: Keep the Manager->Custom response conversion. If no stored permissions exist,
+        // preserve the old access_all-based fallback behavior.
+        let permissions = if membership_type == 4 {
+            self.custom_permissions().map_or_else(|| json!(null), |permissions| json!(permissions))
         } else {
             json!(null)
         };

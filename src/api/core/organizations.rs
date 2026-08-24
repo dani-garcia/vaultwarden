@@ -11,13 +11,17 @@ use crate::{
         EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
-    auth::{AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite},
+    auth::{
+        AdminHeaders, Headers, ManageGroupsHeaders, ManagePoliciesHeaders, ManageResetPasswordHeaders,
+        ManageUsersHeaders, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite,
+    },
     db::{
         DbConn,
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
             Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User, UserId,
+            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId,
+            OrganizationUserPermissions, User, UserId,
         },
     },
     mail,
@@ -105,6 +109,130 @@ pub fn routes() -> Vec<Route> {
         get_auto_enroll_status,
         get_self_host_billing_metadata,
     ]
+}
+
+fn parse_custom_permissions(
+    raw_type: &str,
+    permissions: &HashMap<String, Value>,
+) -> Result<Option<OrganizationUserPermissions>, crate::Error> {
+    if raw_type != "4" && raw_type != "Custom" {
+        return Ok(None);
+    }
+
+    match OrganizationUserPermissions::from_payload_map(permissions) {
+        Ok(parsed) => Ok(Some(parsed)),
+        Err(error) => err!(format!("Invalid custom role permissions payload: {error:#}")),
+    }
+}
+
+fn resolve_membership_custom_permissions(
+    raw_type: &str,
+    new_type: i32,
+    permissions: &HashMap<String, Value>,
+) -> Result<(bool, Option<String>), crate::Error> {
+    let custom_permissions = parse_custom_permissions(raw_type, permissions)?;
+
+    let access_all = new_type >= MembershipType::Admin
+        || custom_permissions
+            .as_ref()
+            .is_some_and(OrganizationUserPermissions::has_manage_all_collections);
+
+    let permissions_json = match custom_permissions {
+        Some(custom_permissions) => match custom_permissions.to_db_json() {
+            Ok(serialized) => Some(serialized),
+            Err(error) => err!(format!("Invalid custom role permissions payload: {error:#}")),
+        },
+        None => None,
+    };
+
+    Ok((access_all, permissions_json))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn custom_permissions_payload() -> HashMap<String, Value> {
+        HashMap::from([
+            ("accessEventLogs".to_owned(), json!(true)),
+            ("accessImportExport".to_owned(), json!(false)),
+            ("accessReports".to_owned(), json!(true)),
+            ("createNewCollections".to_owned(), json!(true)),
+            ("editAnyCollection".to_owned(), json!(true)),
+            ("deleteAnyCollection".to_owned(), json!(true)),
+            ("manageGroups".to_owned(), json!(true)),
+            ("managePolicies".to_owned(), json!(false)),
+            ("manageSso".to_owned(), json!(false)),
+            ("manageUsers".to_owned(), json!(true)),
+            ("manageResetPassword".to_owned(), json!(false)),
+            ("manageScim".to_owned(), json!(false)),
+        ])
+    }
+
+    #[test]
+    fn invite_edit_store_custom_permissions_and_get_user_round_trip() {
+        let payload = custom_permissions_payload();
+
+        let (access_all, serialized_permissions) =
+            resolve_membership_custom_permissions("4", MembershipType::Manager as i32, &payload).unwrap();
+
+        assert!(access_all);
+
+        let stored_json = serialized_permissions.expect("custom role payload should be persisted");
+        let parsed = OrganizationUserPermissions::from_db_json(Some(&stored_json)).unwrap().unwrap();
+
+        assert_eq!(
+            json!(parsed),
+            json!({
+                "accessEventLogs": true,
+                "accessImportExport": false,
+                "accessReports": true,
+                "createNewCollections": true,
+                "editAnyCollection": true,
+                "deleteAnyCollection": true,
+                "manageGroups": true,
+                "managePolicies": false,
+                "manageSso": false,
+                "manageUsers": true,
+                "manageResetPassword": false,
+                "manageScim": false
+            })
+        );
+    }
+
+    #[test]
+    fn invite_edit_non_custom_role_keeps_permissions_unset() {
+        let payload = custom_permissions_payload();
+
+        let (access_all, serialized_permissions) =
+            resolve_membership_custom_permissions("3", MembershipType::Manager as i32, &payload).unwrap();
+
+        assert!(!access_all);
+        assert!(serialized_permissions.is_none());
+    }
+
+    #[test]
+    fn invite_edit_custom_partial_collection_permissions_do_not_grant_access_all() {
+        let payload = HashMap::from([
+            ("createNewCollections".to_owned(), json!(true)),
+            ("editAnyCollection".to_owned(), json!(true)),
+            ("deleteAnyCollection".to_owned(), json!(false)),
+            ("manageUsers".to_owned(), json!(true)),
+        ]);
+
+        let (access_all, serialized_permissions) =
+            resolve_membership_custom_permissions("Custom", MembershipType::Manager as i32, &payload).unwrap();
+
+        assert!(!access_all);
+
+        let stored_json = serialized_permissions.expect("custom role payload should be persisted");
+        let parsed = OrganizationUserPermissions::from_db_json(Some(&stored_json)).unwrap().unwrap();
+
+        assert!(parsed.manage_users);
+        assert!(parsed.create_new_collections);
+        assert!(parsed.edit_any_collection);
+        assert!(!parsed.delete_any_collection);
+    }
 }
 
 #[derive(Deserialize)]
@@ -1043,7 +1171,7 @@ impl InviteData {
 async fn send_invite(
     org_id: OrganizationId,
     data: Json<InviteData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
@@ -1066,14 +1194,8 @@ async fn send_invite(
         err!("Only Owners can invite Managers, Admins or Owners")
     }
 
-    // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
-    // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
-    // If the box is not checked, the user will still be a manager, but not with the access_all permission
-    let access_all = new_type >= MembershipType::Admin
-        || (raw_type.eq("4")
-            && data.permissions.get("editAnyCollection") == Some(&json!(true))
-            && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
-            && data.permissions.get("createNewCollections") == Some(&json!(true)));
+    let (access_all, permissions_json) =
+        resolve_membership_custom_permissions(raw_type, new_type, &data.permissions)?;
 
     let mut user_created: bool = false;
     for email in &data.emails {
@@ -1118,6 +1240,7 @@ async fn send_invite(
         new_member.access_all = access_all;
         new_member.atype = new_type;
         new_member.status = member_status;
+        new_member.permissions = permissions_json.clone();
         new_member.save(&conn).await?;
 
         if CONFIG.mail_enabled() {
@@ -1194,7 +1317,7 @@ async fn send_invite(
 async fn bulk_reinvite_members(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -1229,7 +1352,7 @@ async fn bulk_reinvite_members(
 async fn reinvite_member(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
@@ -1360,7 +1483,7 @@ struct BulkConfirmData {
 async fn bulk_confirm_invite(
     org_id: OrganizationId,
     data: Json<BulkConfirmData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
@@ -1404,7 +1527,7 @@ async fn confirm_invite(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: Json<ConfirmData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
@@ -1417,7 +1540,7 @@ async fn confirm_invite_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
     key: &str,
-    headers: &AdminHeaders,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
@@ -1502,7 +1625,7 @@ async fn get_user(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: GetOrgUserData,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -1533,7 +1656,7 @@ async fn put_member(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: Json<EditUserData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     edit_member(org_id, member_id, data, headers, conn).await
@@ -1544,7 +1667,7 @@ async fn edit_member(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: Json<EditUserData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
@@ -1560,14 +1683,8 @@ async fn edit_member(
         err!("Invalid type")
     };
 
-    // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
-    // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
-    // If the box is not checked, the user will still be a manager, but not with the access_all permission
-    let access_all = new_type >= MembershipType::Admin
-        || (raw_type.eq("4")
-            && data.permissions.get("editAnyCollection") == Some(&json!(true))
-            && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
-            && data.permissions.get("createNewCollections") == Some(&json!(true)));
+    let (access_all, permissions_json) =
+        resolve_membership_custom_permissions(raw_type, new_type as i32, &data.permissions)?;
 
     let Some(mut member_to_edit) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
         err!("The specified user isn't member of the organization")
@@ -1596,6 +1713,7 @@ async fn edit_member(
 
     member_to_edit.access_all = access_all;
     member_to_edit.atype = new_type as i32;
+    member_to_edit.permissions = permissions_json;
 
     // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
     // We need to perform the check after changing the type since `admin` is exempt.
@@ -1654,7 +1772,7 @@ async fn edit_member(
 async fn bulk_delete_member(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
@@ -1690,7 +1808,7 @@ async fn bulk_delete_member(
 async fn delete_member(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
@@ -1700,7 +1818,7 @@ async fn delete_member(
 async fn delete_member_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    headers: &AdminHeaders,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
@@ -1754,7 +1872,7 @@ async fn delete_member_impl(
 async fn bulk_public_keys(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -1966,7 +2084,7 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
 }
 
 #[get("/organizations/<org_id>/policies")]
-async fn list_policies(org_id: OrganizationId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn list_policies(org_id: OrganizationId, headers: ManagePoliciesHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -2032,7 +2150,7 @@ async fn get_master_password_policy(org_id: OrganizationId, _headers: OrgMemberH
 }
 
 #[get("/organizations/<org_id>/policies/<pol_type>", rank = 3)]
-async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: ManagePoliciesHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -2069,7 +2187,7 @@ async fn put_policy(
     org_id: OrganizationId,
     pol_type: i32,
     data: Json<PutPolicy>,
-    headers: AdminHeaders,
+    headers: ManagePoliciesHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2189,7 +2307,7 @@ async fn put_policy_vnext(
     org_id: OrganizationId,
     pol_type: i32,
     data: Json<PutPolicy>,
-    headers: AdminHeaders,
+    headers: ManagePoliciesHeaders,
     conn: DbConn,
 ) -> JsonResult {
     put_policy(org_id, pol_type, data, headers, conn).await
@@ -2266,7 +2384,7 @@ struct BulkRevokeMembershipIds {
 async fn revoke_member(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     revoke_member_impl(&org_id, &member_id, &headers, &conn).await
@@ -2276,7 +2394,7 @@ async fn revoke_member(
 async fn bulk_revoke_members(
     org_id: OrganizationId,
     data: Json<BulkRevokeMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2315,7 +2433,7 @@ async fn bulk_revoke_members(
 async fn revoke_member_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    headers: &AdminHeaders,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
     if org_id != &headers.org_id {
@@ -2328,6 +2446,9 @@ async fn revoke_member_impl(
             }
             if member.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
                 err!("Only owners can revoke other owners")
+            }
+            if !headers.is_admin_or_owner && member.atype != MembershipType::User {
+                err!("Custom roles can only revoke users")
             }
             if member.atype == MembershipType::Owner
                 && Membership::count_confirmed_by_org_and_type(org_id, MembershipType::Owner, conn).await <= 1
@@ -2359,7 +2480,7 @@ async fn revoke_member_impl(
 async fn restore_member_vnext(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     // Vaultwarden does not (yet) support the per User Collection linked to the `Enforce organization data ownership` policy.
@@ -2371,7 +2492,7 @@ async fn restore_member_vnext(
 async fn restore_member(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     restore_member_impl(&org_id, &member_id, &headers, &conn).await
@@ -2381,7 +2502,7 @@ async fn restore_member(
 async fn bulk_restore_members(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2415,7 +2536,7 @@ async fn bulk_restore_members(
 async fn restore_member_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    headers: &AdminHeaders,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
     if org_id != &headers.org_id {
@@ -2428,6 +2549,9 @@ async fn restore_member_impl(
             }
             if member.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
                 err!("Only owners can restore other owners")
+            }
+            if !headers.is_admin_or_owner && member.atype != MembershipType::User {
+                err!("Custom roles can only restore users")
             }
 
             member.restore();
@@ -2579,7 +2703,7 @@ async fn post_group(
     org_id: OrganizationId,
     group_id: GroupId,
     data: Json<GroupRequest>,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> JsonResult {
     put_group(org_id, group_id, data, headers, conn).await
@@ -2588,7 +2712,7 @@ async fn post_group(
 #[post("/organizations/<org_id>/groups", data = "<data>")]
 async fn post_groups(
     org_id: OrganizationId,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     data: Json<GroupRequest>,
     conn: DbConn,
 ) -> JsonResult {
@@ -2623,7 +2747,7 @@ async fn put_group(
     org_id: OrganizationId,
     group_id: GroupId,
     data: Json<GroupRequest>,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2664,7 +2788,7 @@ async fn add_update_group(
     collections: Vec<CollectionData>,
     members: Vec<MembershipId>,
     org_id: OrganizationId,
-    headers: &AdminHeaders,
+    headers: &ManageGroupsHeaders,
     conn: &DbConn,
 ) -> JsonResult {
     group.save(conn).await?;
@@ -2704,7 +2828,7 @@ async fn add_update_group(
 async fn get_group_details(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2725,21 +2849,26 @@ async fn get_group_details(
 async fn post_delete_group(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     delete_group_impl(&org_id, &group_id, &headers, &conn).await
 }
 
 #[delete("/organizations/<org_id>/groups/<group_id>")]
-async fn delete_group(org_id: OrganizationId, group_id: GroupId, headers: AdminHeaders, conn: DbConn) -> EmptyResult {
+async fn delete_group(
+    org_id: OrganizationId,
+    group_id: GroupId,
+    headers: ManageGroupsHeaders,
+    conn: DbConn,
+) -> EmptyResult {
     delete_group_impl(&org_id, &group_id, &headers, &conn).await
 }
 
 async fn delete_group_impl(
     org_id: &OrganizationId,
     group_id: &GroupId,
-    headers: &AdminHeaders,
+    headers: &ManageGroupsHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
     if org_id != &headers.org_id {
@@ -2771,7 +2900,7 @@ async fn delete_group_impl(
 async fn bulk_delete_groups(
     org_id: OrganizationId,
     data: Json<BulkGroupIds>,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
@@ -2790,7 +2919,12 @@ async fn bulk_delete_groups(
 }
 
 #[get("/organizations/<org_id>/groups/<group_id>", rank = 2)]
-async fn get_group(org_id: OrganizationId, group_id: GroupId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn get_group(
+    org_id: OrganizationId,
+    group_id: GroupId,
+    headers: ManageGroupsHeaders,
+    conn: DbConn,
+) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -2809,7 +2943,7 @@ async fn get_group(org_id: OrganizationId, group_id: GroupId, headers: AdminHead
 async fn get_group_members(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2836,7 +2970,7 @@ async fn get_group_members(
 async fn put_group_members(
     org_id: OrganizationId,
     group_id: GroupId,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     data: Json<Vec<MembershipId>>,
     conn: DbConn,
 ) -> EmptyResult {
@@ -2884,7 +3018,7 @@ async fn post_delete_group_member(
     org_id: OrganizationId,
     group_id: GroupId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageGroupsHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
@@ -2967,7 +3101,7 @@ async fn get_organization_keys(org_id: OrganizationId, headers: OrgMemberHeaders
 async fn put_recover_account(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     data: Json<OrganizationUserRecoverAccountRequest>,
     conn: DbConn,
     nt: Notify<'_>,
@@ -2985,7 +3119,7 @@ async fn put_recover_account(
 async fn put_reset_password(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     data: Json<OrganizationUserRecoverAccountRequest>,
     conn: DbConn,
     nt: Notify<'_>,
@@ -2996,7 +3130,7 @@ async fn put_reset_password(
 async fn recover_account(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     reset_request: OrganizationUserRecoverAccountRequest,
     conn: DbConn,
     nt: Notify<'_>,
@@ -3056,7 +3190,7 @@ async fn recover_account(
 async fn get_reset_password_details(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -3092,7 +3226,7 @@ async fn get_reset_password_details(
 async fn check_reset_password_applicable_and_permissions(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    headers: &AdminHeaders,
+    headers: &ManageResetPasswordHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
     check_reset_password_applicable(org_id, conn).await?;
@@ -3105,6 +3239,7 @@ async fn check_reset_password_applicable_and_permissions(
     match headers.membership_type {
         MembershipType::Owner => Ok(()),
         MembershipType::Admin if target_user.atype <= MembershipType::Admin => Ok(()),
+        MembershipType::Manager if !headers.is_admin_or_owner && target_user.atype == MembershipType::User => Ok(()),
         _ => err!("No permission to reset this user's password"),
     }
 }

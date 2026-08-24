@@ -29,8 +29,8 @@ use crate::{
         DbConn,
         models::{
             AttachmentId, CipherId, Collection, CollectionId, Device, DeviceId, DeviceType, EmergencyAccessId,
-            Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, OrganizationId, SendFileId,
-            SendId, User, UserId, UserStampException,
+            Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, OrganizationId,
+            OrganizationUserPermission, SendFileId, SendId, User, UserId, UserStampException,
         },
     },
     error::Error,
@@ -730,6 +730,10 @@ impl OrgHeaders {
     fn is_confirmed_and_owner(&self) -> bool {
         self.membership_status == MembershipStatus::Confirmed && self.membership_type == MembershipType::Owner
     }
+
+    fn has_permission(&self, permission: OrganizationUserPermission) -> bool {
+        self.membership.has_permission(permission)
+    }
 }
 
 // org_id is usually the second path param ("/organizations/<org_id>"),
@@ -839,6 +843,138 @@ impl<'r> FromRequest<'r> for AdminHeaders {
             })
         } else {
             err_handler!("You need to be Admin or Owner to call this endpoint")
+        }
+    }
+}
+
+pub struct ManageUsersHeaders {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+    pub membership_type: MembershipType,
+    pub is_admin_or_owner: bool,
+    pub ip: ClientIp,
+    pub org_id: OrganizationId,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ManageUsersHeaders {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        let is_admin_or_owner = headers.is_confirmed_and_admin();
+        if is_admin_or_owner || headers.has_permission(OrganizationUserPermission::ManageUsers) {
+            Outcome::Success(Self {
+                host: headers.host,
+                device: headers.device,
+                user: headers.user,
+                membership_type: headers.membership_type,
+                is_admin_or_owner,
+                ip: headers.ip,
+                org_id: headers.membership.org_uuid,
+            })
+        } else {
+            err_handler!("You need to be Admin/Owner or have Manage Users permission to call this endpoint")
+        }
+    }
+}
+
+pub struct ManageResetPasswordHeaders {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+    pub membership_type: MembershipType,
+    pub is_admin_or_owner: bool,
+    pub ip: ClientIp,
+    pub org_id: OrganizationId,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ManageResetPasswordHeaders {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        let is_admin_or_owner = headers.is_confirmed_and_admin();
+        if is_admin_or_owner || headers.has_permission(OrganizationUserPermission::ManageResetPassword) {
+            Outcome::Success(Self {
+                host: headers.host,
+                device: headers.device,
+                user: headers.user,
+                membership_type: headers.membership_type,
+                is_admin_or_owner,
+                ip: headers.ip,
+                org_id: headers.membership.org_uuid,
+            })
+        } else {
+            err_handler!("You need to be Admin/Owner or have Manage Reset Password permission to call this endpoint")
+        }
+    }
+}
+
+pub struct ManageGroupsHeaders {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+    pub membership_type: MembershipType,
+    pub is_admin_or_owner: bool,
+    pub ip: ClientIp,
+    pub org_id: OrganizationId,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ManageGroupsHeaders {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        let is_admin_or_owner = headers.is_confirmed_and_admin();
+        if is_admin_or_owner || headers.has_permission(OrganizationUserPermission::ManageGroups) {
+            Outcome::Success(Self {
+                host: headers.host,
+                device: headers.device,
+                user: headers.user,
+                membership_type: headers.membership_type,
+                is_admin_or_owner,
+                ip: headers.ip,
+                org_id: headers.membership.org_uuid,
+            })
+        } else {
+            err_handler!("You need to be Admin/Owner or have Manage Groups permission to call this endpoint")
+        }
+    }
+}
+
+pub struct ManagePoliciesHeaders {
+    pub host: String,
+    pub device: Device,
+    pub user: User,
+    pub membership_type: MembershipType,
+    pub is_admin_or_owner: bool,
+    pub ip: ClientIp,
+    pub org_id: OrganizationId,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ManagePoliciesHeaders {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        let is_admin_or_owner = headers.is_confirmed_and_admin();
+        if is_admin_or_owner || headers.has_permission(OrganizationUserPermission::ManagePolicies) {
+            Outcome::Success(Self {
+                host: headers.host,
+                device: headers.device,
+                user: headers.user,
+                membership_type: headers.membership_type,
+                is_admin_or_owner,
+                ip: headers.ip,
+                org_id: headers.membership.org_uuid,
+            })
+        } else {
+            err_handler!("You need to be Admin/Owner or have Manage Policies permission to call this endpoint")
         }
     }
 }
