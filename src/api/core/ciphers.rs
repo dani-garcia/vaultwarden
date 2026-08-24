@@ -513,14 +513,28 @@ pub async fn update_cipher_from_data(
         _ => err!("Invalid type"),
     };
 
-    let type_data = if let Some(mut data) = type_data_opt {
+    let type_data = if let Some(mut type_value) = type_data_opt {
         // Remove the 'Response' key from the base object.
-        data.as_object_mut().unwrap().remove("response");
+        type_value.as_object_mut().unwrap().remove("response");
         // Remove the 'Response' key from every Uri.
-        if data["uris"].is_array() {
-            data["uris"] = clean_cipher_data(data["uris"].clone());
+        if type_value["uris"].is_array() {
+            type_value["uris"] = clean_cipher_data(type_value["uris"].clone());
         }
-        data
+        // An SSH Key cipher (type 5) requires all three key members to be
+        // non-empty strings. Bitwarden's server rejects the request otherwise;
+        // accepting it here would store a cipher whose sshKey payload is
+        // dropped by clients on read, which looks like a successful save but
+        // silently loses the key material.
+        if data.r#type == 5 {
+            let obj = type_value.as_object().unwrap();
+            for member in ["privateKey", "publicKey", "keyFingerprint"] {
+                let valid = matches!(obj.get(member), Some(Value::String(s)) if !s.is_empty());
+                if !valid {
+                    err!(format!("SshKey.{member} is required and must be a non-empty string"));
+                }
+            }
+        }
+        type_value
     } else {
         err!("Data missing")
     };
