@@ -7,6 +7,7 @@ use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
 use num_traits::FromPrimitive;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
@@ -57,6 +58,43 @@ pub struct Membership {
     pub atype: i32,
     pub reset_password_key: Option<String>,
     pub external_id: Option<String>,
+    pub permissions: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct OrganizationUserPermissions {
+    pub access_event_logs: bool,
+    pub access_import_export: bool,
+    pub access_reports: bool,
+    pub create_new_collections: bool,
+    pub edit_any_collection: bool,
+    pub delete_any_collection: bool,
+    pub manage_groups: bool,
+    pub manage_policies: bool,
+    pub manage_sso: bool,
+    pub manage_users: bool,
+    pub manage_reset_password: bool,
+    pub manage_scim: bool,
+}
+
+impl OrganizationUserPermissions {
+    pub fn from_payload_map(payload: HashMap<String, Value>) -> serde_json::Result<Self> {
+        let value = Value::Object(payload.into_iter().collect());
+        serde_json::from_value(value)
+    }
+
+    pub fn from_db_json(raw: Option<&str>) -> serde_json::Result<Option<Self>> {
+        raw.map(serde_json::from_str).transpose()
+    }
+
+    pub fn to_db_json(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
+    }
+
+    pub fn has_manage_all_collections(&self) -> bool {
+        self.edit_any_collection && self.delete_any_collection && self.create_new_collections
+    }
 }
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -274,6 +312,7 @@ impl Membership {
             atype: MembershipType::User as i32,
             reset_password_key: None,
             external_id: None,
+            permissions: None,
         }
     }
 
