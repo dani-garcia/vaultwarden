@@ -36,7 +36,7 @@ pub fn get_reqwest_client_builder(enforce_block: bool) -> ClientBuilder {
     let mut headers = header::HeaderMap::new();
     headers.insert(header::USER_AGENT, header::HeaderValue::from_static("Vaultwarden"));
 
-    let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
+    let redirect_policy = reqwest::redirect::Policy::custom(move |attempt| {
         if attempt.previous().len() >= 5 {
             return attempt.error("Too many redirects");
         }
@@ -45,7 +45,7 @@ pub fn get_reqwest_client_builder(enforce_block: bool) -> ClientBuilder {
             return attempt.error("Invalid host");
         };
 
-        if let Err(e) = should_block_host(&host) {
+        if enforce_block && let Err(e) = should_block_host(&host) {
             return attempt.error(e);
         }
 
