@@ -595,29 +595,52 @@ async fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> Json
 #[serde(rename_all = "camelCase")]
 struct ChangePassData {
     master_password_hash: String,
-    new_master_password_hash: String,
     master_password_hint: Option<String>,
-    key: String,
+    authentication_data: Option<AuthenticationData>,
+    unlock_data: Option<UnlockData>,
+
+    // Outdated values, might still be used by older clients
+    new_master_password_hash: Option<String>,
+    key: Option<String>,
 }
 
 #[post("/accounts/password", data = "<data>")]
 async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let data: ChangePassData = data.into_inner();
-    let mut user = headers.user;
+    let user = headers.user;
 
     if !user.check_valid_password(&data.master_password_hash) {
         err!("Invalid password")
     }
 
-    user.password_hint = clean_password_hint(data.master_password_hint.as_ref());
-    enforce_password_hint_setting(user.password_hint.as_ref())?;
-
     log_user_event(EventType::UserChangedPassword as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)
         .await;
 
+    let (new_master_password_hash, new_key) =
+        if let (Some(unlock_data), Some(authentication_data)) = (data.unlock_data, data.authentication_data) {
+            if authentication_data.kdf != unlock_data.kdf {
+                err!("KDF settings must be equal for authentication and unlock")
+            }
+
+            if user.email != authentication_data.salt || user.email != unlock_data.salt {
+                err!("Invalid master password salt")
+            }
+
+            (authentication_data.master_password_authentication_hash, unlock_data.master_key_wrapped_user_key)
+        } else if let (Some(new_master_password_hash), Some(new_key)) = (data.new_master_password_hash, data.key) {
+            (new_master_password_hash, new_key)
+        } else {
+            err!("Invalid request!")
+        };
+
+    let mut user = user;
+
+    user.password_hint = clean_password_hint(data.master_password_hint.as_ref());
+    enforce_password_hint_setting(user.password_hint.as_ref())?;
+
     user.set_password(
-        &data.new_master_password_hash,
-        Some(data.key),
+        &new_master_password_hash,
+        Some(new_key),
         true,
         Some(vec![
             String::from("post_rotatekey"),
