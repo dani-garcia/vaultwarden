@@ -356,10 +356,29 @@ pub(crate) mod aws {
     };
     use reqwest::Client;
 
+    use super::get_reqwest_client_builder;
+
     // Adapter that wraps reqwest to be compatible with the AWS SDK
     #[derive(Debug)]
     pub(crate) struct AwsReqwestConnector {
-        pub(crate) client: Client,
+        client: Client,
+    }
+
+    impl AwsReqwestConnector {
+        pub(crate) fn new() -> Self {
+            let client = get_reqwest_client_builder(false).build().expect("Failed to build AWS HTTP client");
+            Self {
+                client,
+            }
+        }
+    }
+
+    fn connector_error(error: reqwest::Error) -> ConnectorError {
+        if error.is_timeout() {
+            ConnectorError::timeout(Box::new(error))
+        } else {
+            ConnectorError::io(Box::new(error))
+        }
     }
 
     impl HttpConnector for AwsReqwestConnector {
@@ -379,10 +398,10 @@ pub(crate) mod aws {
                     req_builder = req_builder.body(body_bytes.to_vec());
                 }
 
-                let response = req_builder.send().await.map_err(|e| ConnectorError::io(Box::new(e)))?;
+                let response = req_builder.send().await.map_err(connector_error)?;
 
                 let status = response.status().into();
-                let bytes = response.bytes().await.map_err(|e| ConnectorError::io(Box::new(e)))?;
+                let bytes = response.bytes().await.map_err(connector_error)?;
 
                 Ok(HttpResponse::new(status, bytes.into()))
             };
