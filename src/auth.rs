@@ -819,10 +819,7 @@ impl<'r> FromRequest<'r> for OrgHeaders {
 
 pub struct AdminHeaders {
     pub host: String,
-    pub device: Device,
     pub user: User,
-    pub membership_type: MembershipType,
-    pub ip: ClientIp,
     pub org_id: OrganizationId,
 }
 
@@ -835,10 +832,7 @@ impl<'r> FromRequest<'r> for AdminHeaders {
         if headers.is_confirmed_and_admin() {
             Outcome::Success(Self {
                 host: headers.host,
-                device: headers.device,
                 user: headers.user,
-                membership_type: headers.membership_type,
-                ip: headers.ip,
                 org_id: headers.membership.org_uuid,
             })
         } else {
@@ -848,7 +842,6 @@ impl<'r> FromRequest<'r> for AdminHeaders {
 }
 
 pub struct ManageUsersHeaders {
-    pub host: String,
     pub device: Device,
     pub user: User,
     pub membership_type: MembershipType,
@@ -866,7 +859,6 @@ impl<'r> FromRequest<'r> for ManageUsersHeaders {
         let is_admin_or_owner = headers.is_confirmed_and_admin();
         if is_admin_or_owner || headers.has_permission(OrganizationUserPermission::ManageUsers) {
             Outcome::Success(Self {
-                host: headers.host,
                 device: headers.device,
                 user: headers.user,
                 membership_type: headers.membership_type,
@@ -881,7 +873,6 @@ impl<'r> FromRequest<'r> for ManageUsersHeaders {
 }
 
 pub struct ManageResetPasswordHeaders {
-    pub host: String,
     pub device: Device,
     pub user: User,
     pub membership_type: MembershipType,
@@ -899,7 +890,6 @@ impl<'r> FromRequest<'r> for ManageResetPasswordHeaders {
         let is_admin_or_owner = headers.is_confirmed_and_admin();
         if is_admin_or_owner || headers.has_permission(OrganizationUserPermission::ManageResetPassword) {
             Outcome::Success(Self {
-                host: headers.host,
                 device: headers.device,
                 user: headers.user,
                 membership_type: headers.membership_type,
@@ -914,11 +904,8 @@ impl<'r> FromRequest<'r> for ManageResetPasswordHeaders {
 }
 
 pub struct ManageGroupsHeaders {
-    pub host: String,
     pub device: Device,
     pub user: User,
-    pub membership_type: MembershipType,
-    pub is_admin_or_owner: bool,
     pub ip: ClientIp,
     pub org_id: OrganizationId,
 }
@@ -932,11 +919,8 @@ impl<'r> FromRequest<'r> for ManageGroupsHeaders {
         let is_admin_or_owner = headers.is_confirmed_and_admin();
         if is_admin_or_owner || headers.has_permission(OrganizationUserPermission::ManageGroups) {
             Outcome::Success(Self {
-                host: headers.host,
                 device: headers.device,
                 user: headers.user,
-                membership_type: headers.membership_type,
-                is_admin_or_owner,
                 ip: headers.ip,
                 org_id: headers.membership.org_uuid,
             })
@@ -947,11 +931,8 @@ impl<'r> FromRequest<'r> for ManageGroupsHeaders {
 }
 
 pub struct ManagePoliciesHeaders {
-    pub host: String,
     pub device: Device,
     pub user: User,
-    pub membership_type: MembershipType,
-    pub is_admin_or_owner: bool,
     pub ip: ClientIp,
     pub org_id: OrganizationId,
 }
@@ -965,11 +946,8 @@ impl<'r> FromRequest<'r> for ManagePoliciesHeaders {
         let is_admin_or_owner = headers.is_confirmed_and_admin();
         if is_admin_or_owner || headers.has_permission(OrganizationUserPermission::ManagePolicies) {
             Outcome::Success(Self {
-                host: headers.host,
                 device: headers.device,
                 user: headers.user,
-                membership_type: headers.membership_type,
-                is_admin_or_owner,
                 ip: headers.ip,
                 org_id: headers.membership.org_uuid,
             })
