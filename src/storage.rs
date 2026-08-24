@@ -185,12 +185,7 @@ mod s3 {
 
                 let chain = DEFAULT_CREDENTIAL_CHAIN
                     .get_or_init(|| {
-                        let reqwest_client = reqwest::Client::builder().build().unwrap();
-                        let connector = AwsReqwestConnector {
-                            client: reqwest_client,
-                        };
-
-                        let conf = ProviderConfig::default().with_http_client(connector);
+                        let conf = ProviderConfig::default().with_http_client(AwsReqwestConnector::new());
 
                         DefaultCredentialsChain::builder().configure(conf).build()
                     })
