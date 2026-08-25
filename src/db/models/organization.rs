@@ -96,6 +96,8 @@ pub enum OrganizationUserPermission {
 }
 
 impl OrganizationUserPermission {
+    // Stable bit layout persisted in users_organizations.permissions.
+    // Do not reorder or reuse these bit positions for different semantics.
     pub const ACCESS_EVENT_LOGS_BIT: i32 = 1 << 0;
     pub const ACCESS_IMPORT_EXPORT_BIT: i32 = 1 << 1;
     pub const ACCESS_REPORTS_BIT: i32 = 1 << 2;
@@ -108,6 +110,18 @@ impl OrganizationUserPermission {
     pub const MANAGE_USERS_BIT: i32 = 1 << 9;
     pub const MANAGE_RESET_PASSWORD_BIT: i32 = 1 << 10;
     pub const MANAGE_SCIM_BIT: i32 = 1 << 11;
+    pub const KNOWN_BITS_MASK: i32 = Self::ACCESS_EVENT_LOGS_BIT
+        | Self::ACCESS_IMPORT_EXPORT_BIT
+        | Self::ACCESS_REPORTS_BIT
+        | Self::CREATE_NEW_COLLECTIONS_BIT
+        | Self::EDIT_ANY_COLLECTION_BIT
+        | Self::DELETE_ANY_COLLECTION_BIT
+        | Self::MANAGE_GROUPS_BIT
+        | Self::MANAGE_POLICIES_BIT
+        | Self::MANAGE_SSO_BIT
+        | Self::MANAGE_USERS_BIT
+        | Self::MANAGE_RESET_PASSWORD_BIT
+        | Self::MANAGE_SCIM_BIT;
 
     pub fn from_key(key: &str) -> Option<Self> {
         match key {
@@ -127,7 +141,7 @@ impl OrganizationUserPermission {
         }
     }
 
-    pub fn bit(self) -> i32 {
+    pub const fn bit(self) -> i32 {
         match self {
             Self::AccessEventLogs => Self::ACCESS_EVENT_LOGS_BIT,
             Self::AccessImportExport => Self::ACCESS_IMPORT_EXPORT_BIT,
@@ -152,19 +166,27 @@ impl OrganizationUserPermissions {
     }
 
     pub fn from_mask(mask: i32) -> Self {
+        let sanitized_mask = mask & OrganizationUserPermission::KNOWN_BITS_MASK;
+        if sanitized_mask != mask {
+            debug!(
+                "Ignoring unknown organization permission bits in mask {mask:#x} (known bits {:#x})",
+                OrganizationUserPermission::KNOWN_BITS_MASK
+            );
+        }
+
         Self {
-            access_event_logs: mask & OrganizationUserPermission::AccessEventLogs.bit() != 0,
-            access_import_export: mask & OrganizationUserPermission::AccessImportExport.bit() != 0,
-            access_reports: mask & OrganizationUserPermission::AccessReports.bit() != 0,
-            create_new_collections: mask & OrganizationUserPermission::CreateNewCollections.bit() != 0,
-            edit_any_collection: mask & OrganizationUserPermission::EditAnyCollection.bit() != 0,
-            delete_any_collection: mask & OrganizationUserPermission::DeleteAnyCollection.bit() != 0,
-            manage_groups: mask & OrganizationUserPermission::ManageGroups.bit() != 0,
-            manage_policies: mask & OrganizationUserPermission::ManagePolicies.bit() != 0,
-            manage_sso: mask & OrganizationUserPermission::ManageSso.bit() != 0,
-            manage_users: mask & OrganizationUserPermission::ManageUsers.bit() != 0,
-            manage_reset_password: mask & OrganizationUserPermission::ManageResetPassword.bit() != 0,
-            manage_scim: mask & OrganizationUserPermission::ManageScim.bit() != 0,
+            access_event_logs: sanitized_mask & OrganizationUserPermission::AccessEventLogs.bit() != 0,
+            access_import_export: sanitized_mask & OrganizationUserPermission::AccessImportExport.bit() != 0,
+            access_reports: sanitized_mask & OrganizationUserPermission::AccessReports.bit() != 0,
+            create_new_collections: sanitized_mask & OrganizationUserPermission::CreateNewCollections.bit() != 0,
+            edit_any_collection: sanitized_mask & OrganizationUserPermission::EditAnyCollection.bit() != 0,
+            delete_any_collection: sanitized_mask & OrganizationUserPermission::DeleteAnyCollection.bit() != 0,
+            manage_groups: sanitized_mask & OrganizationUserPermission::ManageGroups.bit() != 0,
+            manage_policies: sanitized_mask & OrganizationUserPermission::ManagePolicies.bit() != 0,
+            manage_sso: sanitized_mask & OrganizationUserPermission::ManageSso.bit() != 0,
+            manage_users: sanitized_mask & OrganizationUserPermission::ManageUsers.bit() != 0,
+            manage_reset_password: sanitized_mask & OrganizationUserPermission::ManageResetPassword.bit() != 0,
+            manage_scim: sanitized_mask & OrganizationUserPermission::ManageScim.bit() != 0,
         }
     }
 
@@ -210,20 +232,7 @@ impl OrganizationUserPermissions {
     }
 
     pub fn is_enabled(&self, permission: OrganizationUserPermission) -> bool {
-        match permission {
-            OrganizationUserPermission::AccessEventLogs => self.access_event_logs,
-            OrganizationUserPermission::AccessImportExport => self.access_import_export,
-            OrganizationUserPermission::AccessReports => self.access_reports,
-            OrganizationUserPermission::CreateNewCollections => self.create_new_collections,
-            OrganizationUserPermission::EditAnyCollection => self.edit_any_collection,
-            OrganizationUserPermission::DeleteAnyCollection => self.delete_any_collection,
-            OrganizationUserPermission::ManageGroups => self.manage_groups,
-            OrganizationUserPermission::ManagePolicies => self.manage_policies,
-            OrganizationUserPermission::ManageSso => self.manage_sso,
-            OrganizationUserPermission::ManageUsers => self.manage_users,
-            OrganizationUserPermission::ManageResetPassword => self.manage_reset_password,
-            OrganizationUserPermission::ManageScim => self.manage_scim,
-        }
+        self.to_mask() & permission.bit() != 0
     }
 
     pub fn has_manage_all_collections(&self) -> bool {
@@ -1466,5 +1475,19 @@ mod tests {
         assert!(MembershipType::Admin > MembershipType::Manager);
         assert!(MembershipType::Manager > MembershipType::User);
         assert!(MembershipType::Manager == MembershipType::from_str("4").unwrap());
+    }
+
+    #[test]
+    fn organization_user_permissions_round_trip_all_known_bits() {
+        for mask in 0..=OrganizationUserPermission::KNOWN_BITS_MASK {
+            let permissions = OrganizationUserPermissions::from_mask(mask);
+            assert_eq!(permissions.to_mask(), mask);
+        }
+    }
+
+    #[test]
+    fn organization_user_permissions_ignore_unknown_bits() {
+        let permissions = OrganizationUserPermissions::from_mask(-1);
+        assert_eq!(permissions.to_mask(), OrganizationUserPermission::KNOWN_BITS_MASK);
     }
 }

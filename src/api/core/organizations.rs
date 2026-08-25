@@ -144,6 +144,7 @@ fn resolve_membership_custom_permissions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::models::OrganizationUserPermission;
 
     fn custom_permissions_payload() -> HashMap<String, Value> {
         HashMap::from([
@@ -172,7 +173,14 @@ mod tests {
         assert!(access_all);
 
         let stored_mask = permission_mask.expect("custom role payload should be persisted");
-        assert_eq!(stored_mask, 637);
+        let expected_mask = OrganizationUserPermission::AccessEventLogs.bit()
+            | OrganizationUserPermission::AccessReports.bit()
+            | OrganizationUserPermission::CreateNewCollections.bit()
+            | OrganizationUserPermission::EditAnyCollection.bit()
+            | OrganizationUserPermission::DeleteAnyCollection.bit()
+            | OrganizationUserPermission::ManageGroups.bit()
+            | OrganizationUserPermission::ManageUsers.bit();
+        assert_eq!(stored_mask, expected_mask);
 
         let parsed = OrganizationUserPermissions::from_mask(stored_mask);
         assert_eq!(stored_mask, parsed.to_mask());
@@ -222,7 +230,10 @@ mod tests {
         assert!(!access_all);
 
         let stored_mask = permission_mask.expect("custom role payload should be persisted");
-        assert_eq!(stored_mask, 536);
+        let expected_mask = OrganizationUserPermission::CreateNewCollections.bit()
+            | OrganizationUserPermission::EditAnyCollection.bit()
+            | OrganizationUserPermission::ManageUsers.bit();
+        assert_eq!(stored_mask, expected_mask);
 
         let parsed = OrganizationUserPermissions::from_mask(stored_mask);
 
@@ -230,6 +241,20 @@ mod tests {
         assert!(parsed.create_new_collections);
         assert!(parsed.edit_any_collection);
         assert!(!parsed.delete_any_collection);
+    }
+
+    #[test]
+    fn invite_edit_custom_empty_permissions_persist_zero_mask() {
+        let payload = HashMap::new();
+
+        let (access_all, permission_mask) =
+            resolve_membership_custom_permissions("Custom", MembershipType::Manager as i32, &payload).unwrap();
+
+        assert!(!access_all);
+        assert_eq!(permission_mask, Some(0));
+
+        let parsed = OrganizationUserPermissions::from_mask(permission_mask.unwrap());
+        assert_eq!(parsed, OrganizationUserPermissions::default());
     }
 }
 
