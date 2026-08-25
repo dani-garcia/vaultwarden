@@ -1,1 +1,1 @@
-ALTER TABLE users_organizations ADD COLUMN permissions TEXT DEFAULT NULL;
+ALTER TABLE users_organizations ADD COLUMN permissions INTEGER DEFAULT NULL;

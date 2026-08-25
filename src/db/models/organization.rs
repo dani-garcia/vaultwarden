@@ -58,7 +58,7 @@ pub struct Membership {
     pub atype: i32,
     pub reset_password_key: Option<String>,
     pub external_id: Option<String>,
-    pub permissions: Option<String>,
+    pub permissions: Option<i32>,
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -96,6 +96,19 @@ pub enum OrganizationUserPermission {
 }
 
 impl OrganizationUserPermission {
+    pub const ACCESS_EVENT_LOGS_BIT: i32 = 1 << 0;
+    pub const ACCESS_IMPORT_EXPORT_BIT: i32 = 1 << 1;
+    pub const ACCESS_REPORTS_BIT: i32 = 1 << 2;
+    pub const CREATE_NEW_COLLECTIONS_BIT: i32 = 1 << 3;
+    pub const EDIT_ANY_COLLECTION_BIT: i32 = 1 << 4;
+    pub const DELETE_ANY_COLLECTION_BIT: i32 = 1 << 5;
+    pub const MANAGE_GROUPS_BIT: i32 = 1 << 6;
+    pub const MANAGE_POLICIES_BIT: i32 = 1 << 7;
+    pub const MANAGE_SSO_BIT: i32 = 1 << 8;
+    pub const MANAGE_USERS_BIT: i32 = 1 << 9;
+    pub const MANAGE_RESET_PASSWORD_BIT: i32 = 1 << 10;
+    pub const MANAGE_SCIM_BIT: i32 = 1 << 11;
+
     pub fn from_key(key: &str) -> Option<Self> {
         match key {
             "accessEventLogs" | "access_event_logs" => Some(Self::AccessEventLogs),
@@ -113,6 +126,23 @@ impl OrganizationUserPermission {
             _ => None,
         }
     }
+
+    pub fn bit(self) -> i32 {
+        match self {
+            Self::AccessEventLogs => Self::ACCESS_EVENT_LOGS_BIT,
+            Self::AccessImportExport => Self::ACCESS_IMPORT_EXPORT_BIT,
+            Self::AccessReports => Self::ACCESS_REPORTS_BIT,
+            Self::CreateNewCollections => Self::CREATE_NEW_COLLECTIONS_BIT,
+            Self::EditAnyCollection => Self::EDIT_ANY_COLLECTION_BIT,
+            Self::DeleteAnyCollection => Self::DELETE_ANY_COLLECTION_BIT,
+            Self::ManageGroups => Self::MANAGE_GROUPS_BIT,
+            Self::ManagePolicies => Self::MANAGE_POLICIES_BIT,
+            Self::ManageSso => Self::MANAGE_SSO_BIT,
+            Self::ManageUsers => Self::MANAGE_USERS_BIT,
+            Self::ManageResetPassword => Self::MANAGE_RESET_PASSWORD_BIT,
+            Self::ManageScim => Self::MANAGE_SCIM_BIT,
+        }
+    }
 }
 
 impl OrganizationUserPermissions {
@@ -121,12 +151,62 @@ impl OrganizationUserPermissions {
         serde_json::from_value(value)
     }
 
-    pub fn from_db_json(raw: Option<&str>) -> serde_json::Result<Option<Self>> {
-        raw.map(serde_json::from_str).transpose()
+    pub fn from_mask(mask: i32) -> Self {
+        Self {
+            access_event_logs: mask & OrganizationUserPermission::AccessEventLogs.bit() != 0,
+            access_import_export: mask & OrganizationUserPermission::AccessImportExport.bit() != 0,
+            access_reports: mask & OrganizationUserPermission::AccessReports.bit() != 0,
+            create_new_collections: mask & OrganizationUserPermission::CreateNewCollections.bit() != 0,
+            edit_any_collection: mask & OrganizationUserPermission::EditAnyCollection.bit() != 0,
+            delete_any_collection: mask & OrganizationUserPermission::DeleteAnyCollection.bit() != 0,
+            manage_groups: mask & OrganizationUserPermission::ManageGroups.bit() != 0,
+            manage_policies: mask & OrganizationUserPermission::ManagePolicies.bit() != 0,
+            manage_sso: mask & OrganizationUserPermission::ManageSso.bit() != 0,
+            manage_users: mask & OrganizationUserPermission::ManageUsers.bit() != 0,
+            manage_reset_password: mask & OrganizationUserPermission::ManageResetPassword.bit() != 0,
+            manage_scim: mask & OrganizationUserPermission::ManageScim.bit() != 0,
+        }
     }
 
-    pub fn to_db_json(&self) -> serde_json::Result<String> {
-        serde_json::to_string(self)
+    pub fn to_mask(&self) -> i32 {
+        let mut mask = 0;
+        if self.access_event_logs {
+            mask |= OrganizationUserPermission::AccessEventLogs.bit();
+        }
+        if self.access_import_export {
+            mask |= OrganizationUserPermission::AccessImportExport.bit();
+        }
+        if self.access_reports {
+            mask |= OrganizationUserPermission::AccessReports.bit();
+        }
+        if self.create_new_collections {
+            mask |= OrganizationUserPermission::CreateNewCollections.bit();
+        }
+        if self.edit_any_collection {
+            mask |= OrganizationUserPermission::EditAnyCollection.bit();
+        }
+        if self.delete_any_collection {
+            mask |= OrganizationUserPermission::DeleteAnyCollection.bit();
+        }
+        if self.manage_groups {
+            mask |= OrganizationUserPermission::ManageGroups.bit();
+        }
+        if self.manage_policies {
+            mask |= OrganizationUserPermission::ManagePolicies.bit();
+        }
+        if self.manage_sso {
+            mask |= OrganizationUserPermission::ManageSso.bit();
+        }
+        if self.manage_users {
+            mask |= OrganizationUserPermission::ManageUsers.bit();
+        }
+        if self.manage_reset_password {
+            mask |= OrganizationUserPermission::ManageResetPassword.bit();
+        }
+        if self.manage_scim {
+            mask |= OrganizationUserPermission::ManageScim.bit();
+        }
+        mask
     }
 
     pub fn is_enabled(&self, permission: OrganizationUserPermission) -> bool {
@@ -432,14 +512,7 @@ impl Membership {
     pub fn custom_permissions(&self) -> Option<OrganizationUserPermissions> {
         let legacy_permissions = OrganizationUserPermissions::from_legacy_access_all(self.access_all);
 
-        match OrganizationUserPermissions::from_db_json(self.permissions.as_deref()) {
-            Ok(Some(permissions)) => Some(permissions),
-            Ok(None) => legacy_permissions,
-            Err(error) => {
-                warn!("Invalid custom permissions for membership {}: {error:#}", self.uuid);
-                legacy_permissions
-            }
-        }
+        self.permissions.map(OrganizationUserPermissions::from_mask).or(legacy_permissions)
     }
 
     pub fn has_permission(&self, permission: OrganizationUserPermission) -> bool {

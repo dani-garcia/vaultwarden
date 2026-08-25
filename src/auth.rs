@@ -818,7 +818,6 @@ impl<'r> FromRequest<'r> for OrgHeaders {
 }
 
 pub struct AdminHeaders {
-    pub host: String,
     pub user: User,
     pub org_id: OrganizationId,
 }
@@ -831,7 +830,6 @@ impl<'r> FromRequest<'r> for AdminHeaders {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
         if headers.is_confirmed_and_admin() {
             Outcome::Success(Self {
-                host: headers.host,
                 user: headers.user,
                 org_id: headers.membership.org_uuid,
             })
@@ -953,6 +951,52 @@ impl<'r> FromRequest<'r> for ManagePoliciesHeaders {
             })
         } else {
             err_handler!("You need to be Admin/Owner or have Manage Policies permission to call this endpoint")
+        }
+    }
+}
+
+pub struct AccessEventLogsHeaders {
+    pub org_id: OrganizationId,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for AccessEventLogsHeaders {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        let is_admin_or_owner = headers.is_confirmed_and_admin();
+        if is_admin_or_owner || headers.has_permission(OrganizationUserPermission::AccessEventLogs) {
+            Outcome::Success(Self {
+                org_id: headers.membership.org_uuid,
+            })
+        } else {
+            err_handler!("You need to be Admin/Owner or have Access Event Logs permission to call this endpoint")
+        }
+    }
+}
+
+pub struct AccessImportExportHeaders {
+    pub host: String,
+    pub user: User,
+    pub org_id: OrganizationId,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for AccessImportExportHeaders {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        let is_admin_or_owner = headers.is_confirmed_and_admin();
+        if is_admin_or_owner || headers.has_permission(OrganizationUserPermission::AccessImportExport) {
+            Outcome::Success(Self {
+                host: headers.host,
+                user: headers.user,
+                org_id: headers.membership.org_uuid,
+            })
+        } else {
+            err_handler!("You need to be Admin/Owner or have Access Import Export permission to call this endpoint")
         }
     }
 }

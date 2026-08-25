@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::{EmptyResult, JsonResult},
-    auth::{AdminHeaders, Headers},
+    auth::{AccessEventLogsHeaders, Headers},
     db::{
         DbConn, DbPool,
         models::{Cipher, CipherId, Event, Membership, MembershipId, OrganizationId, UserId},
@@ -31,7 +31,12 @@ struct EventRange {
 
 // Upstream: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Controllers/EventsController.cs#L87
 #[get("/organizations/<org_id>/events?<data..>")]
-async fn get_org_events(org_id: OrganizationId, data: EventRange, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn get_org_events(
+    org_id: OrganizationId,
+    data: EventRange,
+    headers: AccessEventLogsHeaders,
+    conn: DbConn,
+) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -93,7 +98,7 @@ async fn get_user_events(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: EventRange,
-    headers: AdminHeaders,
+    headers: AccessEventLogsHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {

@@ -12,8 +12,9 @@ use crate::{
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
     auth::{
-        AdminHeaders, Headers, ManageGroupsHeaders, ManagePoliciesHeaders, ManageResetPasswordHeaders,
-        ManageUsersHeaders, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite,
+        AccessImportExportHeaders, AdminHeaders, Headers, ManageGroupsHeaders, ManagePoliciesHeaders,
+        ManageResetPasswordHeaders, ManageUsersHeaders, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders,
+        OwnerHeaders, decode_invite,
     },
     db::{
         DbConn,
@@ -129,21 +130,15 @@ fn resolve_membership_custom_permissions(
     raw_type: &str,
     new_type: i32,
     permissions: &HashMap<String, Value>,
-) -> Result<(bool, Option<String>), crate::Error> {
+) -> Result<(bool, Option<i32>), crate::Error> {
     let custom_permissions = parse_custom_permissions(raw_type, permissions)?;
 
     let access_all = new_type >= MembershipType::Admin
         || custom_permissions.as_ref().is_some_and(OrganizationUserPermissions::has_manage_all_collections);
 
-    let permissions_json = match custom_permissions {
-        Some(custom_permissions) => match custom_permissions.to_db_json() {
-            Ok(serialized) => Some(serialized),
-            Err(error) => err!(format!("Invalid custom role permissions payload: {error:#}")),
-        },
-        None => None,
-    };
+    let permissions_mask = custom_permissions.map(|custom_permissions| custom_permissions.to_mask());
 
-    Ok((access_all, permissions_json))
+    Ok((access_all, permissions_mask))
 }
 
 #[cfg(test)]
@@ -171,13 +166,16 @@ mod tests {
     fn invite_edit_store_custom_permissions_and_get_user_round_trip() {
         let payload = custom_permissions_payload();
 
-        let (access_all, serialized_permissions) =
+        let (access_all, permission_mask) =
             resolve_membership_custom_permissions("4", MembershipType::Manager as i32, &payload).unwrap();
 
         assert!(access_all);
 
-        let stored_json = serialized_permissions.expect("custom role payload should be persisted");
-        let parsed = OrganizationUserPermissions::from_db_json(Some(&stored_json)).unwrap().unwrap();
+        let stored_mask = permission_mask.expect("custom role payload should be persisted");
+        assert_eq!(stored_mask, 637);
+
+        let parsed = OrganizationUserPermissions::from_mask(stored_mask);
+        assert_eq!(stored_mask, parsed.to_mask());
 
         assert_eq!(
             json!(parsed),
@@ -202,11 +200,11 @@ mod tests {
     fn invite_edit_non_custom_role_keeps_permissions_unset() {
         let payload = custom_permissions_payload();
 
-        let (access_all, serialized_permissions) =
+        let (access_all, permission_mask) =
             resolve_membership_custom_permissions("3", MembershipType::Manager as i32, &payload).unwrap();
 
         assert!(!access_all);
-        assert!(serialized_permissions.is_none());
+        assert!(permission_mask.is_none());
     }
 
     #[test]
@@ -218,13 +216,15 @@ mod tests {
             ("manageUsers".to_owned(), json!(true)),
         ]);
 
-        let (access_all, serialized_permissions) =
+        let (access_all, permission_mask) =
             resolve_membership_custom_permissions("Custom", MembershipType::Manager as i32, &payload).unwrap();
 
         assert!(!access_all);
 
-        let stored_json = serialized_permissions.expect("custom role payload should be persisted");
-        let parsed = OrganizationUserPermissions::from_db_json(Some(&stored_json)).unwrap().unwrap();
+        let stored_mask = permission_mask.expect("custom role payload should be persisted");
+        assert_eq!(stored_mask, 536);
+
+        let parsed = OrganizationUserPermissions::from_mask(stored_mask);
 
         assert!(parsed.manage_users);
         assert!(parsed.create_new_collections);
@@ -1192,7 +1192,7 @@ async fn send_invite(
         err!("Only Owners can invite Managers, Admins or Owners")
     }
 
-    let (access_all, permissions_json) = resolve_membership_custom_permissions(raw_type, new_type, &data.permissions)?;
+    let (access_all, permissions_mask) = resolve_membership_custom_permissions(raw_type, new_type, &data.permissions)?;
 
     let mut user_created: bool = false;
     for email in &data.emails {
@@ -1237,7 +1237,7 @@ async fn send_invite(
         new_member.access_all = access_all;
         new_member.atype = new_type;
         new_member.status = member_status;
-        new_member.permissions = permissions_json.clone();
+        new_member.permissions = permissions_mask;
         new_member.save(&conn).await?;
 
         if CONFIG.mail_enabled() {
@@ -1680,7 +1680,7 @@ async fn edit_member(
         err!("Invalid type")
     };
 
-    let (access_all, permissions_json) =
+    let (access_all, permissions_mask) =
         resolve_membership_custom_permissions(raw_type, new_type as i32, &data.permissions)?;
 
     let Some(mut member_to_edit) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
@@ -1710,7 +1710,7 @@ async fn edit_member(
 
     member_to_edit.access_all = access_all;
     member_to_edit.atype = new_type as i32;
-    member_to_edit.permissions = permissions_json;
+    member_to_edit.permissions = permissions_mask;
 
     // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
     // We need to perform the check after changing the type since `admin` is exempt.
@@ -3316,7 +3316,7 @@ async fn put_reset_password_enrollment(
 // Vaultwarden does not yet support exporting only managed collections!
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Tools/Controllers/OrganizationExportController.cs#L52
 #[get("/organizations/<org_id>/export")]
-async fn get_org_export(org_id: OrganizationId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn get_org_export(org_id: OrganizationId, headers: AccessImportExportHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
