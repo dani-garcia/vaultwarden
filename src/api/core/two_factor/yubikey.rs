@@ -152,20 +152,22 @@ async fn activate_yubikey(data: Json<EnableYubikeyData>, headers: Headers, conn:
     let yubikeys = parse_yubikeys(&data);
     let mut user = headers.user;
 
-    two_factor::validate_yubikey(&data.user_verification_token, &user.uuid, &yubikeys, yubikeys.is_empty())?;
-
-    // Check if we already have some data
-    let mut yubikey_data =
-        match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey as i32, &conn).await {
-            Some(data) => data,
-            None => TwoFactor::new(user.uuid.clone(), TwoFactorType::YubiKey, String::new()),
-        };
-
     if yubikeys.is_empty() {
         // Return an error to prevent saving empty keys which would cause users not being able to login anymore.
         // To remove all keys users should click the `Deactivate all keys` button
         err!("A key is required.");
     }
+
+    // Check if we already have some data
+    let mut yubikey_data =
+        if let Some(yd) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey as i32, &conn).await {
+            let ym: YubikeyMetadata = serde_json::from_str(&yd.data)?;
+            two_factor::validate_yubikey(&data.user_verification_token, &user.uuid, &ym.keys, !ym.keys.is_empty())?;
+            yd
+        } else {
+            two_factor::validate_yubikey(&data.user_verification_token, &user.uuid, &Vec::new(), false)?;
+            TwoFactor::new(user.uuid.clone(), TwoFactorType::YubiKey, String::new())
+        };
 
     // Ensure they are valid OTPs
     for yubikey in &yubikeys {
