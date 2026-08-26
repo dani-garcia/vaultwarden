@@ -993,7 +993,7 @@ async fn json_err_twofactor(
             }
 
             Some(tf_type @ TwoFactorType::YubiKey) => {
-                let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, tf_type as i32, conn).await else {
+                let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, tf_type, conn).await else {
                     err!("No YubiKey devices registered")
                 };
 
@@ -1005,7 +1005,7 @@ async fn json_err_twofactor(
             }
 
             Some(tf_type @ TwoFactorType::Email) => {
-                let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, tf_type as i32, conn).await else {
+                let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, tf_type, conn).await else {
                     err!("No twofactor email registered")
                 };
 
