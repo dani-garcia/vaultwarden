@@ -74,7 +74,7 @@ async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: He
 
     generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+    log_user_event(EventType::UserUpdated2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(Json(json!({
         "authenticator": json!({
@@ -186,8 +186,7 @@ async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: He
     if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Authenticator, &conn).await {
         if twofactor.data == data.key {
             twofactor.delete(&conn).await?;
-            log_user_event(EventType::UserDisabled2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-                .await;
+            log_user_event(EventType::UserDisabled2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
         } else {
             err!(format!("TOTP key for user {} does not match recorded value, cannot deactivate", &user.email));
         }

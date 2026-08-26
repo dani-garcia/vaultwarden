@@ -189,7 +189,7 @@ async fn activate_yubikey(data: Json<EnableYubikeyData>, headers: Headers, conn:
 
     generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+    log_user_event(EventType::UserUpdated2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     let mut result = jsonify_yubikeys(yubikey_metadata.keys);
     result["enabled"] = Value::Bool(true);
@@ -211,8 +211,7 @@ async fn delete_yubikeys(data: Json<VerificationTokenData>, headers: Headers, co
         two_factor::validate_yubikey(&data.user_verification_token, &user.uuid, &yubikey_metadata.keys, true)?;
 
         r.delete(&conn).await?;
-        log_user_event(EventType::UserDisabled2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-            .await;
+        log_user_event(EventType::UserDisabled2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
     }
 
     if TwoFactor::find_by_user(&user.uuid, &conn).await.is_empty() {

@@ -224,7 +224,7 @@ async fn email(data: Json<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
 
     generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+    log_user_event(EventType::UserUpdated2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(Json(json!({})))
 }
@@ -238,8 +238,7 @@ async fn disable_email(data: Json<VerificationTokenData>, headers: Headers, conn
         two_factor::validate_email(&data.user_verification_token, &user.uuid, twofactor_data.email, true)?;
 
         twofactor.delete(&conn).await?;
-        log_user_event(EventType::UserDisabled2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-            .await;
+        log_user_event(EventType::UserDisabled2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
     }
 
     if TwoFactor::find_by_user(&user.uuid, &conn).await.is_empty() {
