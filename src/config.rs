@@ -1731,7 +1731,7 @@ where
     reg!("email/email_footer");
     reg!("email/email_footer_text");
 
-    reg!("email/admin_reset_password", ".html");
+    reg!("email/admin_account_recovery", ".html");
     reg!("email/change_email_existing", ".html");
     reg!("email/change_email_invited", ".html");
     reg!("email/change_email", ".html");
