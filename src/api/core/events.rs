@@ -225,11 +225,11 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
     Ok(())
 }
 
-pub async fn log_user_event(event_type: i32, user_id: &UserId, device_type: i32, ip: &IpAddr, conn: &DbConn) {
+pub async fn log_user_event(event_type: EventType, user_id: &UserId, device_type: i32, ip: &IpAddr, conn: &DbConn) {
     if !CONFIG.org_events_enabled() {
         return;
     }
-    log_user_event_impl(event_type, user_id, device_type, None, ip, conn).await;
+    log_user_event_impl(event_type as i32, user_id, device_type, None, ip, conn).await;
 }
 
 async fn log_user_event_impl(

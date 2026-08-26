@@ -297,7 +297,7 @@ async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, con
         .await?;
     generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+    log_user_event(EventType::UserUpdated2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     let keys_json: Vec<Value> = registrations.iter().map(WebauthnRegistration::to_json).collect();
 
@@ -328,7 +328,7 @@ async fn delete_webauthn(data: Json<VerificationTokenData>, headers: Headers, co
     two_factor::validate_webauthn(&data.user_verification_token, &user.uuid, &keys, true)?;
     tf.delete(&conn).await?;
 
-    log_user_event(EventType::UserDisabled2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+    log_user_event(EventType::UserDisabled2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     let migrated: Vec<WebauthnRegistration> = removed.into_iter().filter(|r| r.migrated).collect();
     // If entry is migrated from u2f, delete the u2f entry as well
