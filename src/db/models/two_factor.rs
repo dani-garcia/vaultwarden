@@ -137,11 +137,11 @@ impl TwoFactor {
         .await
     }
 
-    pub async fn find_by_user_and_type(user_uuid: &UserId, atype: i32, conn: &DbConn) -> Option<Self> {
+    pub async fn find_by_user_and_type(user_uuid: &UserId, atype: TwoFactorType, conn: &DbConn) -> Option<Self> {
         conn.run(move |conn| {
             twofactor::table
                 .filter(twofactor::user_uuid.eq(user_uuid))
-                .filter(twofactor::atype.eq(atype))
+                .filter(twofactor::atype.eq(atype as i32))
                 .first::<Self>(conn)
                 .ok()
         })

@@ -24,8 +24,7 @@ async fn generate_authenticator(data: Json<PasswordOrOtpData>, headers: Headers,
 
     data.validate(&user, false, &conn).await?;
 
-    let type_ = TwoFactorType::Authenticator as i32;
-    let twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await;
+    let twofactor = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Authenticator, &conn).await;
 
     let (enabled, key) = match twofactor {
         Some(tf) => (true, tf.data),
@@ -117,8 +116,7 @@ pub async fn validate_totp_code(
         err!("Invalid TOTP secret")
     };
 
-    let mut twofactor = match TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Authenticator as i32, conn).await
-    {
+    let mut twofactor = match TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Authenticator, conn).await {
         Some(tf) => tf,
         _ => TwoFactor::new(user_id.clone(), TwoFactorType::Authenticator, secret.to_owned()),
     };
@@ -185,9 +183,7 @@ async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: He
 
     two_factor::validate_authenticator(&data.user_verification_token, &user.uuid, &data.key, true)?;
 
-    if let Some(twofactor) =
-        TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Authenticator as i32, &conn).await
-    {
+    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Authenticator, &conn).await {
         if twofactor.data == data.key {
             twofactor.delete(&conn).await?;
             log_user_event(EventType::UserDisabled2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)

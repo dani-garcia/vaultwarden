@@ -72,8 +72,7 @@ async fn request_otp(headers: Headers, conn: DbConn) -> EmptyResult {
     let user = headers.user;
 
     // Only one Protected Action per user is allowed to take place, delete the previous one
-    if let Some(pa) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::ProtectedActions as i32, &conn).await
-    {
+    if let Some(pa) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::ProtectedActions, &conn).await {
         let pa_data = ProtectedActionData::from_json(&pa.data)?;
         let elapsed = pa_data.time_since_sent().num_seconds();
         let delay = 30;
@@ -125,7 +124,7 @@ pub async fn validate_protected_action_otp(
     delete_if_valid: bool,
     conn: &DbConn,
 ) -> EmptyResult {
-    let mut pa = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::ProtectedActions as i32, conn)
+    let mut pa = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::ProtectedActions, conn)
         .await
         .map_res("Protected action token not found, try sending the code again or restart the process")?;
     let mut pa_data = ProtectedActionData::from_json(&pa.data)?;
