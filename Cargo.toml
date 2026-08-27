@@ -58,6 +58,7 @@ oidc-accept-string-booleans = ["openidconnect/accept-string-booleans"]
 unstable = []
 
 [target."cfg(unix)".dependencies]
+nix = { version = "0.31.3", features = ["fs"] }
 # Logging
 syslog = "7.0.0"
 
