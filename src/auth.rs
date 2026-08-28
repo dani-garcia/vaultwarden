@@ -749,15 +749,6 @@ impl OrgHeaders {
     fn can_manage_policies(&self) -> bool {
         self.is_confirmed() && (self.membership_type >= MembershipType::Admin || self.membership.has_manage_policies())
     }
-    // Reading the full member/group *details* (PII, 2FA status, permission flags, access mappings)
-    // requires the ability to manage users or groups, matching Bitwarden's `ReadAll`/`ReadAllWithAccess`
-    // authorization. Basic member mini-details and the plain group list remain member-readable.
-    fn can_manage_users_or_groups(&self) -> bool {
-        self.is_confirmed()
-            && (self.membership_type >= MembershipType::Admin
-                || self.membership.has_manage_users()
-                || self.membership.has_manage_groups())
-    }
     fn can_access_event_logs(&self) -> bool {
         self.is_confirmed()
             && (self.membership_type >= MembershipType::Admin || self.membership.has_access_event_logs())
@@ -766,11 +757,10 @@ impl OrgHeaders {
         self.is_confirmed()
             && (self.membership_type >= MembershipType::Admin || self.membership.has_access_import_export())
     }
-    // NOTE: there is deliberately no `can_access_reports` guard helper. Vaultwarden has no
-    // server-side report endpoints — the clients compute every report locally from the
-    // organization cipher list — so `accessReports` is enforced inline where that list is served
-    // (`get_org_details`), not through a request guard. A guard here would be dead code that
-    // invites gating an endpoint on "may call reports" instead of "may read these ciphers".
+    // NOTE: no `can_access_reports` helper on purpose. Vaultwarden has no server-side report endpoints --
+    // clients compute reports from the organization cipher list -- so `accessReports` is enforced where
+    // that list is served (`get_org_details`). A guard here would invite gating an endpoint on "may call
+    // reports" instead of "may read these ciphers".
 }
 
 // org_id is usually the second path param ("/organizations/<org_id>"),
@@ -956,11 +946,9 @@ generate_manage_headers!(
     can_manage_policies,
     "You need the 'Manage Policies' permission, or to be an Admin or Owner, to call this endpoint"
 );
-generate_manage_headers!(
-    ManageUsersOrGroupsHeaders,
-    can_manage_users_or_groups,
-    "You need the 'Manage Users' or 'Manage Groups' permission, or to be an Admin or Owner, to call this endpoint"
-);
+// NOTE: no `ManageUsersOrGroupsHeaders`. Reading group *details* is not a single-permission question
+// -- organization-wide collection reach grants it too -- so both routes take `ManagerHeadersLoose`
+// and ask `can_read_group_details`. The full *member* list is, and keeps `ManageUsersHeaders`.
 generate_manage_headers!(
     AccessEventLogsHeaders,
     can_access_event_logs,
@@ -1029,15 +1017,12 @@ fn collection_read_access(membership: &Membership) -> CollectionManageAccess {
 /// Collection deletion never falls back to a per-collection Manage grant.
 ///
 /// Vaultwarden serializes `limitCollectionDeletion = true` unconditionally, and upstream gates
-/// manage-based deletion on that setting being *off* (`BulkCollectionAuthorizationHandler`): with the
-/// limit active, only Owners, Admins and holders of `Delete any collection` may delete. Accepting a
-/// stored `manage` grant here would break that promise and, worse, make the three collection
-/// permissions dependent on each other — a Custom member holding only `Create new collections`
-/// receives an automatic `users_collections.manage` row for the collection they just created, and
-/// could delete it again without `Delete any collection`.
-///
-/// A Manage grant keeps its full meaning for editing a collection and rewriting its access
-/// (`collection_edit_access`); it just is not a delete permission.
+/// manage-based deletion on that setting being *off*: with the limit active only Owners, Admins and
+/// holders of `Delete any collection` may delete. Accepting a stored `manage` grant here would break
+/// that promise and make the three collection permissions depend on each other — `Create new
+/// collections` alone receives an automatic `manage` row for the collection it just created, and
+/// could then delete it. A Manage grant keeps its full meaning for editing (`collection_edit_access`);
+/// it just is not a delete permission.
 fn collection_delete_access(membership: &Membership) -> CollectionManageAccess {
     if !membership.has_status(MembershipStatus::Confirmed) {
         return CollectionManageAccess::Denied;
@@ -1065,16 +1050,13 @@ async fn can_manage_collection(
     }
 }
 
-/// Whether `membership` may edit (rewrite the access of) `collection_uuid`, using exactly the same
-/// Custom-aware rules as the path-based `ManagerHeaders` guard (`collection_edit_access`): Edit any
-/// collection (or Admin/Owner) may edit every collection, otherwise only collections on which the
-/// member holds a real per-collection Manage grant. In particular, a Custom member's membership or
-/// group `access_all` does NOT satisfy this — it must be an explicit `users_collections.manage` /
-/// `collections_groups.manage` assignment, exactly as an in-path collection edit would require.
+/// Whether `membership` may edit (rewrite the access of) `collection_uuid`, on exactly the same rules
+/// as the path-based `ManagerHeaders` guard: Edit-any (or Admin/Owner) reaches every collection,
+/// otherwise only those carrying a real per-collection Manage grant. Group `access_all` deliberately
+/// does not qualify.
 ///
-/// Body-param endpoints (e.g. bulk collection access) take collection ids in the request body and
-/// therefore cannot use `ManagerHeaders`; they must run this per collection to stay consistent with
-/// the single-collection edit endpoint.
+/// Body-param endpoints take collection ids in the request body and so cannot use `ManagerHeaders`;
+/// they run this per collection instead, so the two cannot diverge.
 pub(crate) async fn can_edit_collection(
     membership: &Membership,
     collection_uuid: &CollectionId,
@@ -1085,9 +1067,8 @@ pub(crate) async fn can_edit_collection(
 
 /// Whether `membership` may read a collection's user/group access mappings.
 ///
-/// Keep body/bulk endpoints on exactly the same authorization rule as `CollectionReadHeaders`:
-/// Admin/Owner, Edit-any/Delete-any, or a real per-collection Manage assignment. Ordinary read
-/// access and group `access_all` deliberately do not qualify.
+/// The same rule as `CollectionReadHeaders`: Admin/Owner, Edit-any/Delete-any, or a real
+/// per-collection Manage assignment. Ordinary read access and group `access_all` do not qualify.
 pub(crate) async fn can_read_collection_access(
     membership: &Membership,
     collection_uuid: &CollectionId,
@@ -1714,13 +1695,10 @@ mod tests {
 
     #[test]
     fn flagless_custom_requires_explicit_manage_for_edit_and_read_and_cannot_delete() {
-        // A flagless Custom member never gets blanket collection authority from its role alone.
-        // Edit and read are answered per collection by `has_explicit_collection_manage_access`, which
-        // accepts a real users_collections.manage / collections_groups.manage grant and nothing else:
-        // membership access_all is gone, and a group's access_all is not a manage grant.
-        //
-        // Delete has no per-collection fallback at all, so the answer is Denied rather than
-        // ExplicitManage -- see `collection_delete_access`.
+        // A flagless Custom member gets no blanket collection authority from its role. Edit and read are
+        // answered per collection by `has_explicit_collection_manage_access`, which accepts a real manage
+        // grant and nothing else -- a group's `access_all` is not one. Delete has no per-collection fallback
+        // at all, hence Denied rather than ExplicitManage; see `collection_delete_access`.
         let custom = membership(MembershipType::Custom);
         assert_eq!(collection_edit_access(&custom), CollectionManageAccess::ExplicitManage);
         assert_eq!(collection_read_access(&custom), CollectionManageAccess::ExplicitManage);

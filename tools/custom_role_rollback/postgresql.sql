@@ -18,7 +18,6 @@ DECLARE
     memberships regclass := to_regclass('users_organizations');
     ledger      regclass := to_regclass('__diesel_schema_migrations');
     allowlist   regclass := to_regclass('__vw_rollback_manager_allowlist');
-    history     regclass := to_regclass('__vw_custom_role_history_verified');
     ns oid;
     ns_name text;
     access_all_present int;
@@ -44,13 +43,6 @@ BEGIN
                         'is reachable through the current search_path.';
     END IF;
 
-    IF history IS NULL THEN
-        RAISE EXCEPTION 'Rollback refused, nothing was changed: __vw_custom_role_history_verified '
-                        'does not exist, so this database was migrated by an earlier revision of the '
-                        'Custom-role change, whose migrations had different effects. Start '
-                        'Vaultwarden once and follow the recovery it prints before rolling back.';
-    END IF;
-
     IF allowlist IS NULL THEN
         RAISE EXCEPTION 'Rollback refused, nothing was changed: __vw_rollback_manager_allowlist does '
                         'not exist. Which memberships come back as legacy Manager has to be decided '
@@ -62,21 +54,17 @@ BEGIN
     SELECT relnamespace INTO ns FROM pg_class WHERE oid = memberships;
 
     IF (SELECT relnamespace FROM pg_class WHERE oid = ledger) <> ns
-       OR (SELECT relnamespace FROM pg_class WHERE oid = allowlist) <> ns
-       OR (SELECT relnamespace FROM pg_class WHERE oid = history) <> ns THEN
+       OR (SELECT relnamespace FROM pg_class WHERE oid = allowlist) <> ns THEN
         RAISE EXCEPTION 'Rollback refused, nothing was changed: the tables this script needs resolve '
                         'to different schemas through the current search_path -- '
                         'users_organizations in "%", __diesel_schema_migrations in "%", '
-                        '__vw_rollback_manager_allowlist in "%", '
-                        '__vw_custom_role_history_verified in "%". Set search_path to exactly the '
+                        '__vw_rollback_manager_allowlist in "%". Set search_path to exactly the '
                         'schema Vaultwarden uses and run this again.',
                         (SELECT nspname FROM pg_namespace WHERE oid = ns),
                         (SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
                           WHERE c.oid = ledger),
                         (SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-                          WHERE c.oid = allowlist),
-                        (SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-                          WHERE c.oid = history);
+                          WHERE c.oid = allowlist);
     END IF;
 
     SELECT nspname INTO ns_name FROM pg_namespace WHERE oid = ns;
@@ -109,15 +97,12 @@ BEGIN
       AND attname = 'users_organizations_uuid';
 
     EXECUTE format(
-        'SELECT count(*) FROM %I.__diesel_schema_migrations WHERE version IN ('
-        '''20260630120000'', ''20260715120000'', ''20260716120000'', ''20260723120000'','
-        '''20260724120000'', ''20260724130000'', ''20260724140000'', ''20260809120000'','
-        '''20260810120000'')',
+        'SELECT count(*) FROM %I.__diesel_schema_migrations WHERE version = ''20260630120000''',
         ns_name
     ) INTO ledger_rows;
 
     EXECUTE format(
-        'SELECT count(*) FROM %I.__diesel_schema_migrations WHERE version > ''20260810120000''',
+        'SELECT count(*) FROM %I.__diesel_schema_migrations WHERE version > ''20260630120000''',
         ns_name
     ) INTO future_rows;
 
@@ -139,17 +124,17 @@ BEGIN
                         'no users_organizations_uuid column. Create it as documented in README.md.';
     END IF;
 
-    IF ledger_rows <> 9 THEN
-        RAISE EXCEPTION 'Rollback refused, nothing was changed: expected all nine Custom-role '
-                        'migrations in __diesel_schema_migrations, found %. Schema and ledger '
-                        'disagree, so restore the backup taken before the upgrade and start over.',
+    IF ledger_rows <> 1 THEN
+        RAISE EXCEPTION 'Rollback refused, nothing was changed: expected the Custom-role migration '
+                        'in __diesel_schema_migrations, found %. Schema and ledger disagree, so '
+                        'restore the backup taken before the upgrade and start over.',
                         ledger_rows;
     END IF;
 
     IF future_rows <> 0 THEN
         RAISE EXCEPTION 'Rollback refused, nothing was changed: % migration(s) newer than the '
                         'Custom-role change are recorded. This script does not know what they '
-                        'changed, and removing only the nine Custom-role versions would leave the '
+                        'changed, and removing only the Custom-role version would leave the '
                         'ledger inconsistent. Use the rollback script shipped with that newer '
                         'version.',
                         future_rows;
@@ -170,9 +155,9 @@ BEGIN
     -- reads member and collection ACL details through `ManagerHeadersLoose`, none of which needs a
     -- permission flag in the old schema -- so handing it out on anything less than a current,
     -- deliberate decision would *grant* authority during a downgrade.
-    -- `__vw_custom_role_legacy_manager` is not that decision: it records who was a Manager before the
-    -- first upgrade and is never updated afterwards, so a member whose powers an owner has since
-    -- reduced would get all of them back.
+    -- Historical provenance would not be that decision either: a record of who was a Manager
+    -- before the first upgrade is never updated afterwards, so a member whose powers an owner has
+    -- since reduced would get all of them back.
     --
     -- Everything else becomes a plain User and keeps its per-collection assignments.
     --
@@ -219,23 +204,15 @@ BEGIN
         ns_name
     );
 
-    -- Bookkeeping tables this feature may have left behind. A later re-upgrade rebuilds the
-    -- provenance record and the history marker from the very `atype = 3` rows this script just
-    -- restored, so the round trip converges.
-    EXECUTE format('DROP TABLE IF EXISTS %I.__vw_custom_role_same_run_0716', ns_name);
+    -- The two decisions this rollback required. A later re-upgrade needs neither: it reads the
+    -- restored `atype = 3` rows directly and converts them deterministically.
     EXECUTE format('DROP TABLE IF EXISTS %I.__vw_allow_custom_role_downgrade', ns_name);
-    EXECUTE format('DROP TABLE IF EXISTS %I.__vw_ack_permanent_collection_authority', ns_name);
     EXECUTE format('DROP TABLE IF EXISTS %I.__vw_rollback_manager_allowlist', ns_name);
-    EXECUTE format('DROP TABLE IF EXISTS %I.__vw_custom_role_legacy_manager', ns_name);
-    EXECUTE format('DROP TABLE IF EXISTS %I.__vw_custom_role_history_verified', ns_name);
 
-    -- Finally forget the nine migrations, so the older binary does not see a ledger from the future
-    -- and a later upgrade applies them again from a clean state.
+    -- Finally forget the migration, so the older binary does not see a ledger from the future and a
+    -- later upgrade applies it again from a clean state.
     EXECUTE format(
-        'DELETE FROM %I.__diesel_schema_migrations WHERE version IN ('
-        '''20260630120000'', ''20260715120000'', ''20260716120000'', ''20260723120000'','
-        '''20260724120000'', ''20260724130000'', ''20260724140000'', ''20260809120000'','
-        '''20260810120000'')',
+        'DELETE FROM %I.__diesel_schema_migrations WHERE version = ''20260630120000''',
         ns_name
     );
 END $$;

@@ -269,10 +269,9 @@ impl Group {
 
     pub async fn is_in_full_access_group(user_uuid: &UserId, org_uuid: &OrganizationId, conn: &DbConn) -> bool {
         conn.run(move |conn| {
-            // Security: the membership linked through `groups_users` must itself belong to the same
-            // organization as the group and must be confirmed. Otherwise a cross-organization
-            // `groups_users` row (a member of org A linked to an access-all group of org B) would let
-            // that member pass as having full access to org B (audit finding H-2).
+            // Security: the membership linked through `groups_users` must be confirmed and belong to the
+            // same organization as the group, or a cross-organization row would pass as full access to
+            // that organization.
             groups::table
                 .inner_join(groups_users::table.on(groups_users::groups_uuid.eq(groups::uuid)))
                 .inner_join(
@@ -327,11 +326,9 @@ impl Group {
 
 impl CollectionGroup {
     pub async fn save(&mut self, org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
-        // Security (audit H-3): never persist a cross-organization link between a collection and a
-        // group. Both must belong to the organization this assignment is scoped to; otherwise a
-        // caller could attach a foreign-tenant group to this organization's collection and thereby
-        // grant that group's members access to it. This is a defense-in-depth guard so no route can
-        // create such a link even if it fails to validate its inputs.
+        // Security: never persist a cross-organization link between a collection and a group --
+        // attaching a foreign-tenant group to this organization's collection would grant its members
+        // access. Defense in depth, so no route can create one even if its own validation is wrong.
         if Collection::find_by_uuid_and_org(&self.collections_uuid, org_uuid, conn).await.is_none()
             || Group::find_by_uuid_and_org(&self.groups_uuid, org_uuid, conn).await.is_none()
         {
@@ -512,11 +509,9 @@ impl CollectionGroup {
 
 impl GroupUser {
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
-        // Security (audit H-2): never persist a cross-organization link between a group and a
-        // membership. The group must belong to the same organization as the membership; otherwise a
-        // caller could grant a member of one organization full access to another organization's
-        // collections through an access-all group. This is a defense-in-depth guard so no route can
-        // create such a link even if it fails to validate its inputs.
+        // Security: never persist a cross-organization link between a group and a membership -- that
+        // would grant a member of one organization access to another's collections through an
+        // access-all group. Defense in depth, so no route can create one even if its own validation is wrong.
         let Some(member) = Membership::find_by_uuid(&self.users_organizations_uuid, conn).await else {
             err!("Member not found while assigning to group")
         };

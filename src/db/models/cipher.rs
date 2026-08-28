@@ -601,17 +601,13 @@ impl Cipher {
         cipher_sync_data: Option<&CipherSyncData>,
         conn: &DbConn,
     ) -> Option<(bool, bool, bool)> {
-        // Security: central fail-closed check binding cipher -> organization -> confirmed membership.
+        // Security: central fail-closed check binding cipher -> organization -> *confirmed* membership.
+        // It denies access from assignment rows that outlived a revoke (or are still only
+        // invited/accepted) and from cross-organization assignments another path might have persisted;
+        // without it the queries below would keep honouring them.
         //
-        // In the direct (non-sync) authorization path an organization cipher is only accessible to a
-        // user who has a *confirmed* membership in that same organization. This denies access to
-        // members whose collection/group assignment rows still exist after they were revoked (or are
-        // still only invited/accepted), and to cross-organization collection/group assignments that
-        // another code path might have persisted. Without it, the queries below would keep granting
-        // access from those stale or cross-tenant rows (security audit findings H-1, H-2, H-3).
-        //
-        // The sync path (cipher_sync_data is Some) is intentionally left to the caller: it is built
-        // only from confirmed memberships and evaluated below against that cached data.
+        // The sync path (cipher_sync_data is Some) is left to the caller: it is built only from
+        // confirmed memberships and evaluated below against that cached data.
         if cipher_sync_data.is_none()
             && let Some(ref org_uuid) = self.organization_uuid
             && Membership::find_confirmed_by_user_and_org(user_uuid, org_uuid, conn).await.is_none()
@@ -690,10 +686,9 @@ impl Cipher {
             // Check whether this cipher is in any collections accessible to the
             // user. If so, retrieve the access flags for each collection.
             //
-            // Security: bind the assignment to a *confirmed* membership in the same organization as
-            // both the cipher and the collection. Without this, a `users_collections` row left behind
-            // after a revoke, or an assignment pointing at a collection in a different organization,
-            // would keep granting access (defense in depth for audit findings H-1 and H-3).
+            // Security: bind the assignment to a *confirmed* membership in the same organization as both
+            // the cipher and the collection, so a row left behind by a revoke, or pointing at another
+            // organization's collection, grants nothing. Defense in depth.
             ciphers::table
                 .filter(ciphers::uuid.eq(cipher_uuid))
                 .inner_join(ciphers_collections::table.on(ciphers::uuid.eq(ciphers_collections::cipher_uuid)))
@@ -727,11 +722,9 @@ impl Cipher {
         let cipher_uuid = self.uuid.clone();
         let user_uuid = user_uuid.clone();
         conn.run(move |conn| {
-            // Security: bind the group assignment to a *confirmed* membership and require that the
-            // cipher, the collection, the group and the membership all belong to the same
-            // organization. The `collections` join in particular prevents a cross-organization
-            // collection<->group assignment from granting access to a foreign organization's ciphers
-            // (defense in depth for audit findings H-1, H-2 and H-3).
+            // Security: bind the group assignment to a *confirmed* membership and require cipher,
+            // collection, group and membership to share one organization. The `collections` join is what
+            // stops a cross-organization collection<->group assignment reaching foreign ciphers.
             ciphers::table
                 .filter(ciphers::uuid.eq(cipher_uuid))
                 .inner_join(ciphers_collections::table.on(ciphers::uuid.eq(ciphers_collections::cipher_uuid)))

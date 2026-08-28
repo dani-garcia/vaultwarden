@@ -2,9 +2,9 @@
 -- change expects, so that older binary starts again. Read README.md in this directory first --
 -- it lists exactly what is lost and how to run this safely.
 --
--- `ALTER TABLE ... DROP COLUMN` is avoided on purpose: it only exists since SQLite 3.35, and this
--- script has to work on the same older system SQLite the forward migrations support. Rebuilding the
--- table also recreates `access_all` and drops all nine permission columns in one step.
+-- `ALTER TABLE ... DROP COLUMN` is avoided on purpose -- it needs SQLite 3.35, and this script has to
+-- work on the same older system SQLite the forward migrations support. The rebuild recreates
+-- `access_all` and drops all nine permission columns in one step.
 
 -- Stop at the first error. Without this the sqlite3 shell keeps going after a failed statement,
 -- and a second run -- where the SELECT below can no longer see the permission columns -- would
@@ -99,27 +99,19 @@ DROP TABLE __vw_rollback_precondition_objects;
 
 CREATE TEMPORARY TABLE __vw_rollback_precondition_ledger (
     ok INTEGER NOT NULL CONSTRAINT
-        refused_all_nine_custom_role_migrations_must_be_recorded_schema_and_ledger_disagree
-        CHECK (ok = 9)
+        refused_the_custom_role_migration_must_be_recorded_schema_and_ledger_disagree
+        CHECK (ok = 1)
 );
 INSERT INTO __vw_rollback_precondition_ledger (ok)
 SELECT COUNT(*)
 FROM __diesel_schema_migrations
 WHERE version IN (
-  '20260630120000',
-  '20260715120000',
-  '20260716120000',
-  '20260723120000',
-  '20260724120000',
-  '20260724130000',
-  '20260724140000',
-  '20260809120000',
-  '20260810120000'
+  '20260630120000'
 );
 DROP TABLE __vw_rollback_precondition_ledger;
 
--- A migration newer than the last Custom-role one has run, so this script cannot know what it changed
--- or whether the rebuild below would undo it. Removing only the nine versions would also leave the
+-- A migration newer than the Custom-role one has run, so this script cannot know what it changed
+-- or whether the rebuild below would undo it. Removing only that one version would also leave the
 -- ledger claiming a migration whose schema objects are gone.
 CREATE TEMPORARY TABLE __vw_rollback_precondition_future_ledger (
     ok INTEGER NOT NULL CONSTRAINT
@@ -127,22 +119,8 @@ CREATE TEMPORARY TABLE __vw_rollback_precondition_future_ledger (
         CHECK (ok = 0)
 );
 INSERT INTO __vw_rollback_precondition_future_ledger (ok)
-SELECT COUNT(*) FROM __diesel_schema_migrations WHERE version > '20260810120000';
+SELECT COUNT(*) FROM __diesel_schema_migrations WHERE version > '20260630120000';
 DROP TABLE __vw_rollback_precondition_future_ledger;
-
--- The upgrade records that this database's Custom-role history is accounted for. Without it the
--- database was migrated by an earlier revision of the change, whose migrations had different
--- effects -- start Vaultwarden once and follow the recovery it prints before rolling anything back.
-CREATE TEMPORARY TABLE __vw_rollback_precondition_history (
-    ok INTEGER NOT NULL CONSTRAINT
-        refused_custom_role_history_not_verified_start_vaultwarden_once_and_follow_its_recovery
-        CHECK (ok = 1)
-);
-INSERT INTO __vw_rollback_precondition_history (ok)
-SELECT COUNT(*)
-FROM sqlite_master
-WHERE type = 'table' AND name = '__vw_custom_role_history_verified';
-DROP TABLE __vw_rollback_precondition_history;
 
 -- Which memberships come back as Manager has to be decided *for this rollback*. See README.md; an
 -- empty list is a valid answer and maps every Custom member to plain User.
@@ -175,24 +153,16 @@ CREATE TABLE users_organizations_rollback (
 -- Roles and the legacy flag are recomputed together, because in the old schema they are not
 -- independent.
 --
--- Only a membership on the allowlist comes back as Manager. The legacy Manager role is not a subset
--- of what a Custom member holds -- it manages, and deletes, every collection reachable through
--- `users_collections.manage`, `collections_groups.manage` or `groups.access_all`, and reads member
--- and collection ACL details through `ManagerHeadersLoose`, none of which needs a permission flag in
--- the old schema -- so handing it out on anything less than a current, deliberate decision would
--- *grant* authority during a downgrade. `__vw_custom_role_legacy_manager` is not that decision: it
--- records who was a Manager before the first upgrade and is never updated afterwards, so a member
--- whose powers an owner has since reduced would get all of them back.
+-- Only a membership on the allowlist comes back as Manager; everything else becomes a plain User and
+-- keeps every grant `users_collections` and `collections_groups` carry. The legacy role is not a
+-- subset of what a Custom member holds, so handing it out on less than a current, deliberate decision
+-- would *grant* authority during a downgrade -- and historical provenance is not that decision. See
+-- README.md.
 --
--- Everything else becomes a plain User. Per-collection assignments are untouched, so those members
--- keep every grant `users_collections` and `collections_groups` carry.
---
--- `access_all` follows the same mapping the down migrations use: everyone who reached every
--- collection keeps that reach, and a Custom member has to hold all three collection permissions --
--- Edit-only must not silently turn into the legacy "manage all collections" authority, which in that
--- older schema also carried collection deletion. A member mapped to plain User never keeps it:
--- `User + access_all` is the one legacy state the upgrade refuses, so leaving it set would make this
--- database unable to move forward again.
+-- `access_all` follows the mapping the down migrations use: a Custom member has to hold all three
+-- collection permissions, because in the old schema the bit also carried collection deletion. A
+-- member mapped to plain User never keeps it: `User + access_all` is the one state the upgrade
+-- refuses, so leaving it set would strand this database.
 INSERT INTO users_organizations_rollback (
   uuid, user_uuid, org_uuid, access_all, akey, status, atype,
   reset_password_key, external_id, invited_by_email
@@ -224,29 +194,16 @@ DROP TABLE users_organizations;
 
 ALTER TABLE users_organizations_rollback RENAME TO users_organizations;
 
--- Bookkeeping tables this feature may have left behind. A later re-upgrade rebuilds the provenance
--- record and the history marker from the very `atype = 3` rows this script just restored, so the
--- round trip converges.
-DROP TABLE IF EXISTS __vw_custom_role_same_run_0716;
+-- The two decisions this rollback required. A later re-upgrade needs neither: it reads the restored
+-- `atype = 3` rows directly and converts them deterministically.
 DROP TABLE IF EXISTS __vw_allow_custom_role_downgrade;
-DROP TABLE IF EXISTS __vw_ack_permanent_collection_authority;
 DROP TABLE IF EXISTS __vw_rollback_manager_allowlist;
-DROP TABLE IF EXISTS __vw_custom_role_legacy_manager;
-DROP TABLE IF EXISTS __vw_custom_role_history_verified;
 
--- Finally forget the nine migrations, so the older binary does not see a ledger from the future
--- and a later upgrade applies them again from a clean state.
+-- Finally forget the migration, so the older binary does not see a ledger from the future and a
+-- later upgrade applies it again from a clean state.
 DELETE FROM __diesel_schema_migrations
 WHERE version IN (
-  '20260630120000',
-  '20260715120000',
-  '20260716120000',
-  '20260723120000',
-  '20260724120000',
-  '20260724130000',
-  '20260724140000',
-  '20260809120000',
-  '20260810120000'
+  '20260630120000'
 );
 
 COMMIT;

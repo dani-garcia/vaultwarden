@@ -151,11 +151,9 @@ impl MembershipType {
 
 /// The stored `users_organizations.atype` values that carry organization-wide authority by role.
 ///
-/// Queries use this set instead of the numeric `atype <= Admin` comparison the removal of
-/// membership-level `access_all` would otherwise have left behind in them. `<=` also matches every
-/// value *below* `Owner`, so a corrupt or hand-written negative `atype` would satisfy an SQL check
-/// while every Rust guard rejects it -- `MembershipType::from_i32` returns `None` there and the
-/// request guards fail closed. Enumerating the two values keeps both layers on the same answer.
+/// Queries enumerate the two values instead of comparing `atype <= Admin`: `<=` also matches every
+/// value *below* `Owner`, so a corrupt or negative `atype` would satisfy the SQL check while every
+/// Rust guard rejects it. Enumerating keeps both layers on the same answer.
 pub(crate) const ORG_ADMIN_ATYPES: &[i32] = &[MembershipType::Owner as i32, MembershipType::Admin as i32];
 
 impl Ord for MembershipType {
@@ -869,6 +867,23 @@ impl Membership {
         self.atype >= MembershipType::Admin || self.has_edit_any_collection()
     }
 
+    /// Whether enabling an organization policy may revoke this membership as part of enforcing it.
+    ///
+    /// Two exclusions, both applying to every policy whose enforcement revokes non-compliant members
+    /// (Two-Factor Authentication and Single Organization):
+    ///
+    /// * Admins and Owners are never revoked. `atype < Admin` is deliberately the *ceiling* comparison
+    ///   used everywhere else, so an unknown stored role stays sweepable.
+    /// * Nor is the member who made the change. Until the Custom role this was implied by the first
+    ///   rule, since only Admins and Owners reached the policy endpoints; `managePolicies` can now be
+    ///   held by a Custom member, who *is* sweepable and would otherwise revoke themselves mid-request.
+    ///   Bitwarden excludes the acting user for the same reason.
+    ///
+    /// Peers are still revoked exactly as before.
+    pub fn is_policy_enforcement_target(&self, acting_user: &UserId) -> bool {
+        self.atype < MembershipType::Admin && &self.user_uuid != acting_user
+    }
+
     // The granular custom permission flags are only meaningful while the membership is of
     // the Custom type. Gating them on the type here ensures that a stale flag left over from
     // a type change (e.g. via the admin panel) can never grant anything.
@@ -912,14 +927,12 @@ impl Membership {
     /// such a grant. This is the *only* per-collection authority a Custom member can hold: neither
     /// membership nor group `access_all` may manufacture one.
     ///
-    /// No live exception exists for legacy Managers whose authority came from an organization-local
-    /// `access_all` group. Deriving one from the membership's shape ("Custom, no collection
-    /// permissions, member of such a group") was not sound — that shape is also what every newly
-    /// created flagless Custom member has, so assigning one to an ordinary `access_all` group handed
-    /// out organization-wide collection edit and delete, and *removing* a collection permission
-    /// activated it. The repair migration `2026-07-23-120000` materializes that authority into the
-    /// visible `edit_any_collection` / `delete_any_collection` columns instead, where an owner can
-    /// see and revoke it.
+    /// There is deliberately no live exception for legacy Managers whose authority came from an
+    /// organization-local `access_all` group: deriving one from the membership's shape ("Custom, no
+    /// collection permissions, member of such a group") would also match every newly created flagless
+    /// Custom member, so joining one to an ordinary `access_all` group would hand out organization-wide
+    /// edit and delete. The migration writes that authority into the visible `edit_any_collection` /
+    /// `delete_any_collection` columns instead, where an owner can see and revoke it.
     pub async fn has_explicit_collection_manage_access(&self, collection_uuid: &CollectionId, conn: &DbConn) -> bool {
         let membership_uuid = self.uuid.clone();
         let user_uuid = self.user_uuid.clone();
@@ -1498,20 +1511,18 @@ mod tests {
         }
     }
 
-    /// A stored `atype` that no role maps to is *incomparable*, and the two directions of the
-    /// comparison resolve that deliberately differently. Both overrides exist to keep the answer
-    /// fail-closed; neither was pinned by a test, and the asymmetry is easy to "tidy up" into a
-    /// silent authorization change.
+    /// A stored `atype` that no role maps to is *incomparable*, and the two directions resolve that
+    /// differently on purpose — both fail-closed, and the asymmetry is easy to "tidy up" into a silent
+    /// authorization change.
     ///
-    /// `MembershipType op i32` — "does the caller outrank this role?" — answers no: `gt`/`ge` are
-    /// false for an unknown value, so nothing is ever granted on the strength of one.
+    /// `MembershipType op i32` — "does the caller outrank this role?" — answers no: `gt`/`ge` are false
+    /// for an unknown value, so nothing is granted on the strength of one.
     ///
-    /// `i32 op MembershipType` — "is this membership at most that role?" — answers yes: `lt`/`le`
-    /// are true. Every use of it is a *ceiling* (`atype < Admin`, `atype <= Admin`), so treating an
-    /// unrecognized value as low-ranked is the restrictive reading. It also cannot smuggle anything
-    /// past the one place that phrases a permission this way
-    /// (`check_reset_password_applicable_and_permissions`): the role an Admin must not reach is
-    /// `Owner`, whose discriminant is 0 and therefore never unknown.
+    /// `i32 op MembershipType` — "is this membership at most that role?" — answers yes: `lt`/`le` are
+    /// true. Every use is a *ceiling* (`atype < Admin`), so treating an unrecognized value as low-ranked
+    /// is the restrictive reading, and the one place that phrases a permission this way
+    /// (`check_reset_password_applicable_and_permissions`) guards against `Owner`, whose discriminant is
+    /// 0 and therefore never unknown.
     #[test]
     #[expect(
         clippy::nonminimal_bool,
@@ -1544,6 +1555,44 @@ mod tests {
         assert!(MembershipType::Admin > MembershipType::Custom as i32);
         assert!((MembershipType::Custom as i32) < MembershipType::Admin);
         assert!(MembershipType::Custom >= MembershipType::Custom as i32);
+    }
+
+    /// Policy enforcement revokes non-compliant peers, never Admins/Owners, and never the member
+    /// who enabled the policy. Before `managePolicies` existed the last rule was implied by the
+    /// second one; a Custom member can now trigger a sweep it would otherwise be caught by.
+    #[test]
+    fn policy_enforcement_never_targets_admins_or_the_acting_member() {
+        let actor: UserId = "actor".to_owned().into();
+        let other: UserId = "other".to_owned().into();
+
+        for role in [MembershipType::Owner, MembershipType::Admin] {
+            let mut member = membership(role);
+            member.user_uuid = other.clone();
+            assert!(!member.is_policy_enforcement_target(&actor), "admins and owners are never swept");
+            member.user_uuid = actor.clone();
+            assert!(!member.is_policy_enforcement_target(&actor));
+        }
+
+        for role in [MembershipType::User, MembershipType::Custom] {
+            let mut member = membership(role);
+
+            // A peer of that role is still a target -- enforcement itself is unchanged.
+            member.user_uuid = other.clone();
+            assert!(member.is_policy_enforcement_target(&actor), "peers must still be revoked");
+
+            // The member performing the policy change is not.
+            member.user_uuid = actor.clone();
+            assert!(!member.is_policy_enforcement_target(&actor), "the acting member must be excluded");
+        }
+
+        // An unknown stored role keeps the pre-existing fail-closed behaviour of the `< Admin`
+        // ceiling: it is still a target, and the actor exclusion still applies to it.
+        let mut corrupt = membership(MembershipType::User);
+        corrupt.atype = 42;
+        corrupt.user_uuid = other;
+        assert!(corrupt.is_policy_enforcement_target(&actor));
+        corrupt.user_uuid = actor.clone();
+        assert!(!corrupt.is_policy_enforcement_target(&actor));
     }
 
     #[test]
