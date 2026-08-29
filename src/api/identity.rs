@@ -31,8 +31,8 @@ use crate::{
         DbConn,
         models::{
             AuthRequest, AuthRequestId, Device, DeviceId, DeviceType, EventType, Invitation, Membership,
-            MembershipStatus, OIDCCodeResponseError, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
-            OrganizationId, SendId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
+            OIDCCodeResponseError, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, SendId,
+            SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
     },
     error::MapResult,
@@ -507,6 +507,15 @@ async fn account_creation_can_succeed(user: &User, conn: &DbConn) -> bool {
         return false;
     };
 
+    // That lookup only rules out the `Revoked` status itself, which revoking never actually writes:
+    // it shifts the status out of the active range instead, so a revoked membership comes back from
+    // it like any other. The enrolment endpoint runs behind `OrgMemberHeaders` and turns exactly
+    // those away, so offering the flow on the strength of one would walk the client into the half
+    // built account this whole function exists to avoid.
+    if !membership.is_active() {
+        return false;
+    }
+
     // What `check_reset_password_applicable` demands of that organization.
     if !CONFIG.mail_enabled() {
         return false;
@@ -602,13 +611,10 @@ async fn trusted_device_option(user: &User, device: &Device, conn: &DbConn) -> O
     let memberships = Membership::find_by_user(&user.uuid, conn).await;
 
     // An admin can only take over the approval once the member handed them a key to work with,
-    // which is what enrolling into account recovery does. Only a confirmed membership counts, the
-    // same condition the request itself is created and answered under, so this does not announce a
-    // way out that would be refused the moment it is taken.
-    ways_in.has_admin_approval = memberships.iter().any(|member| {
-        member.status == MembershipStatus::Confirmed as i32
-            && member.reset_password_key.as_ref().is_some_and(|key| !key.is_empty())
-    });
+    // which is what enrolling into account recovery does. The same condition the request itself is
+    // created and answered under, so this does not announce a way out that would be refused the
+    // moment it is taken.
+    ways_in.has_admin_approval = memberships.iter().any(Membership::can_use_admin_approval);
 
     // Only worth asking when nothing cheaper already lets the client in.
     if !(ways_in.device_is_trusted || ways_in.has_admin_approval || ways_in.has_master_password) {
@@ -628,7 +634,13 @@ async fn trusted_device_option(user: &User, device: &Device, conn: &DbConn) -> O
     // could approve others, but has no master password themselves, into setting one. Upstream reads
     // a `ManageResetPassword` permission here, which in Vaultwarden's role model only the
     // administrators of an organization have.
-    let has_manage_reset_password_permission = memberships.iter().any(Membership::has_manage_reset_password_permission);
+    //
+    // Every active membership counts, not only the confirmed one that may act on the permission
+    // today: an administrator provisioned into the organization by this very login holds the role
+    // before anybody has confirmed them, and this is the login that has to tell them to set a
+    // master password. See `has_manage_reset_password_role_for_tde`.
+    let has_manage_reset_password_permission =
+        memberships.iter().any(Membership::has_manage_reset_password_role_for_tde);
 
     Some(json!({
         "HasAdminApproval": ways_in.has_admin_approval,
@@ -1495,6 +1507,7 @@ async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::models::MembershipStatus;
 
     /// A `TrustedDeviceWaysIn` plus the server setting, so the cases below read as what they are.
     #[expect(clippy::struct_excessive_bools, reason = "Mirrors the struct under test")]
@@ -1623,5 +1636,61 @@ mod tests {
             ..Account::new()
         };
         assert_eq!(account.offer(), None);
+    }
+
+    /// What `trusted_device_option` reads off the memberships of the user logging in.
+    fn has_admin_approval(memberships: &[Membership]) -> bool {
+        memberships.iter().any(Membership::can_use_admin_approval)
+    }
+
+    fn membership(org: &str, status: MembershipStatus, enrolled: bool) -> Membership {
+        let mut membership = Membership::new(String::from("user").into(), org.to_owned().into(), None);
+        membership.status = status as i32;
+        membership.reset_password_key = enrolled.then(|| String::from("2.aXY=|Y2lwaGVy|bWFj"));
+        membership
+    }
+
+    #[test]
+    fn enrolling_into_trusted_devices_leaves_an_administrator_to_ask() {
+        // Invited into an organization that unlocks with trusted devices, before enrolling: nobody
+        // holds a key to approve with yet.
+        let mut memberships = [membership("org", MembershipStatus::Invited, false)];
+        assert!(!has_admin_approval(&memberships));
+
+        // Enrolling is what `put_reset_password_enrollment` does for an account without a master
+        // password: it writes the key and accepts the invitation in the same step. Confirming the
+        // member is an administrator's own, later decision, and until they get round to it the
+        // member is stuck here.
+        memberships[0].status = MembershipStatus::Accepted as i32;
+        memberships[0].reset_password_key = Some(String::from("2.aXY=|Y2lwaGVy|bWFj"));
+
+        assert!(has_admin_approval(&memberships), "the enrolment is what an administrator answers with");
+
+        // Losing the trusted device at that point is the case this covers: no master password, no
+        // device that unlocks, and an administrator to ask is the only way back in.
+        let account = Account {
+            has_admin_approval: has_admin_approval(&memberships),
+            ..Account::new()
+        };
+        assert_eq!(account.offer(), Some(false), "the flow leads somewhere, so it is offered");
+    }
+
+    #[test]
+    fn one_organization_that_could_approve_is_enough() {
+        // A member of several organizations only needs one of them to hold a key for them.
+        let memberships = [
+            membership("invited", MembershipStatus::Invited, true),
+            membership("not-enrolled", MembershipStatus::Confirmed, false),
+            membership("enrolled", MembershipStatus::Accepted, true),
+        ];
+        assert!(has_admin_approval(&memberships));
+
+        // Take that one away and there is nobody left to ask, however many organizations remain.
+        let memberships = [
+            membership("invited", MembershipStatus::Invited, true),
+            membership("not-enrolled", MembershipStatus::Confirmed, false),
+            membership("revoked", MembershipStatus::Revoked, true),
+        ];
+        assert!(!has_admin_approval(&memberships));
     }
 }

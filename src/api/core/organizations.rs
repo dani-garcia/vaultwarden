@@ -3232,16 +3232,16 @@ async fn get_organization_auth_requests(
             continue;
         }
 
-        // A request whose asker is not a confirmed member of this organization is none of its
-        // business, so it is quietly left out instead of being offered for approval. Same condition
-        // as when answering, so nothing is shown here that would be refused there.
+        // A request this organization could not answer anyway is none of its business, so it is
+        // quietly left out instead of being offered for approval. Same condition as when answering,
+        // so nothing is shown here that would be refused there.
         let (Some(member), Some(user)) = (
             Membership::find_by_user_and_org(&auth_request.user_uuid, &org_id, &conn).await,
             User::find_by_uuid(&auth_request.user_uuid, &conn).await,
         ) else {
             continue;
         };
-        if member.status != MembershipStatus::Confirmed as i32 {
+        if !member.can_use_admin_approval() {
             continue;
         }
 
@@ -3423,10 +3423,11 @@ async fn answer_organization_auth_request(
         unanswerable!("AuthRequest doesn't exist", "Request has expired");
     }
 
-    // Answering means acting for a member of this organization, so it has to be one: an invitation
-    // that was never accepted is not a membership yet, and a revoked one is not one anymore.
+    // Answering means acting for a member of this organization with the key their enrollment into
+    // account recovery left behind: an invitation that was never accepted is not a membership yet,
+    // a revoked one is not one anymore, and without that key there is nothing to answer with.
     let member = match Membership::find_by_user_and_org(&auth_request.user_uuid, org_id, conn).await {
-        Some(member) if member.status == MembershipStatus::Confirmed as i32 => member,
+        Some(member) if member.can_use_admin_approval() => member,
         _ => unanswerable!("AuthRequest doesn't exist", "The requesting user is not a member of this organization"),
     };
 

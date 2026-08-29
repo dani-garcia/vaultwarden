@@ -847,7 +847,7 @@ impl<'r> FromRequest<'r> for AdminHeaders {
 /// its device approvals comes down to.
 ///
 /// Upstream guards those endpoints on a permission, `ManageResetPassword`, rather than on a role,
-/// so this asks `Membership::has_manage_reset_password_permission` instead of naming roles here.
+/// so this asks `Membership::can_manage_reset_password_now` instead of naming roles here.
 /// Today that permission belongs to the administrators of an organization and to nobody else, which
 /// makes this the same set of callers as `AdminHeaders`; keeping it apart is what lets a custom role
 /// hold the permission later without every endpoint having to be revisited.
@@ -865,7 +865,7 @@ impl<'r> FromRequest<'r> for ManageResetPasswordHeaders {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.membership.has_manage_reset_password_permission() {
+        if headers.membership.can_manage_reset_password_now() {
             Outcome::Success(Self {
                 device: headers.device,
                 user: headers.user,
