@@ -12,13 +12,16 @@ use crate::{
         AnonymousNotify, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
-    auth::{AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite},
+    auth::{
+        AdminHeaders, Headers, ManageResetPasswordHeaders, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders,
+        OwnerHeaders, decode_invite,
+    },
     db::{
         DbConn,
         models::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId,
-            CollectionUser, Device, DeviceType, EventType, Group, GroupId, GroupUser, Invitation, Membership,
-            MembershipId, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
+            CollectionUser, DeviceType, EventType, Group, GroupId, GroupUser, Invitation, Membership, MembershipId,
+            MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
             OrganizationId, User, UserId,
         },
     },
@@ -3214,7 +3217,11 @@ async fn put_reset_password_enrollment(
 
 /// The requests waiting for an answer in this organization.
 #[get("/organizations/<org_id>/auth-requests")]
-async fn get_organization_auth_requests(org_id: OrganizationId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn get_organization_auth_requests(
+    org_id: OrganizationId,
+    headers: ManageResetPasswordHeaders,
+    conn: DbConn,
+) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -3290,7 +3297,7 @@ async fn update_organization_auth_request(
     org_id: OrganizationId,
     request_id: AuthRequestId,
     data: Json<AdminAuthRequestUpdateData>,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     conn: DbConn,
     ant: AnonymousNotify<'_>,
     nt: Notify<'_>,
@@ -3314,7 +3321,7 @@ async fn update_organization_auth_request(
 async fn deny_organization_auth_requests(
     org_id: OrganizationId,
     data: Json<BulkDenyAuthRequestData>,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     conn: DbConn,
     ant: AnonymousNotify<'_>,
     nt: Notify<'_>,
@@ -3346,7 +3353,7 @@ async fn deny_organization_auth_requests(
 async fn update_many_organization_auth_requests(
     org_id: OrganizationId,
     data: Json<Vec<OrganizationAuthRequestUpdateData>>,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     conn: DbConn,
     ant: AnonymousNotify<'_>,
     nt: Notify<'_>,
@@ -3381,7 +3388,7 @@ async fn answer_organization_auth_request(
     approved: bool,
     encrypted_user_key: Option<String>,
     on_unanswerable: OnUnanswerable,
-    headers: &AdminHeaders,
+    headers: &ManageResetPasswordHeaders,
     conn: &DbConn,
     ant: &AnonymousNotify<'_>,
     nt: &Notify<'_>,
@@ -3453,14 +3460,11 @@ async fn answer_organization_auth_request(
 
     ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
 
-    // The device that asked, not the one the administrator happens to be answering from: that one
-    // belongs to somebody else, and naming it here would both address the notification at a device
-    // of the wrong account and hand its identifiers to the push relay under a foreign user id.
-    if let Some(device) =
-        Device::find_by_uuid_and_user(&auth_request.request_device_identifier, &auth_request.user_uuid, conn).await
-    {
-        nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, &device, conn).await;
-    }
+    // No acting device: the answer did not come from one of this user's devices, so every one of
+    // them, the one that asked above all, should hear about it. Naming the administrator's device
+    // here would leave it out of a notification meant for somebody else's account and hand its
+    // identifiers to the push relay under a foreign user id.
+    nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, None, conn).await;
 
     if CONFIG.mail_enabled()
         && let Some(user) = User::find_by_uuid(&auth_request.user_uuid, conn).await

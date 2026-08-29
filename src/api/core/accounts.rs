@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use chrono::Utc;
 use rocket::{
@@ -22,8 +22,8 @@ use crate::{
         models::{
             AuthRequest, AuthRequestId, AuthRequestType, Cipher, CipherId, Device, DeviceId, DeviceType,
             DeviceWithAuthRequest, EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation,
-            Membership, MembershipId, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization,
-            OrganizationId, Send, SendId, User, UserId, UserKdfType,
+            Membership, MembershipId, MembershipStatus, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send,
+            SendId, User, UserId, UserKdfType,
         },
     },
     mail,
@@ -816,6 +816,20 @@ struct RotateAccountUnlockData {
     emergency_access_unlock_data: Vec<UpdateEmergencyAccessData>,
     master_password_unlock_data: MasterPasswordUnlockData,
     organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
+    /// The user key, re-wrapped for every device that unlocks the vault without a master password.
+    ///
+    /// Absent rather than empty tells the two generations of clients apart: one that sends this
+    /// rotates the trust of its devices right here, an older one does it afterwards through
+    /// `POST /devices/update-trust` and leaves this out entirely. See `post_rotatekey`.
+    device_key_unlock_data: Option<Vec<UpdateDeviceKeysData>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateDeviceKeysData {
+    device_id: DeviceId,
+    encrypted_user_key: String,
+    encrypted_public_key: String,
 }
 
 #[derive(Deserialize)]
@@ -843,6 +857,55 @@ struct RotateAccountData {
     ciphers: Vec<CipherData>,
     folders: Vec<UpdateFolderData>,
     sends: Vec<SendData>,
+}
+
+/// Works out what a key rotation has to write to the user's devices.
+///
+/// Returns the devices that keep their trust, each with the user key freshly wrapped for it.
+/// Whatever the user owns beyond that list ends up untrusted, so the caller can hand the result to
+/// `Device::replace_trust` and be done in one transaction.
+///
+/// Mirrors `DeviceRotationValidator` upstream, which refuses a rotation that would quietly drop the
+/// trust of a device the user still relies on. Untrusting is the client's own separate step, and
+/// the current ones take it before they get here.
+/// https://github.com/bitwarden/server/blob/main/src/Api/KeyManagement/Validators/DeviceRotationValidator.cs
+fn validate_device_keydata(
+    updates: &[UpdateDeviceKeysData],
+    existing_devices: &[Device],
+) -> ApiResult<Vec<(DeviceId, String, String)>> {
+    let mut listed: HashSet<&DeviceId> = HashSet::with_capacity(updates.len());
+    let mut rotated = Vec::with_capacity(updates.len());
+
+    for update in updates {
+        if !listed.insert(&update.device_id) {
+            err!("A device was listed more than once in the rotation")
+        }
+
+        let Some(device) = existing_devices.iter().find(|device| device.uuid == update.device_id) else {
+            err!(format!("Device {} does not belong to this user", update.device_id))
+        };
+
+        validate_enc_strings(&[
+            ("encryptedUserKey", &update.encrypted_user_key),
+            ("encryptedPublicKey", &update.encrypted_public_key),
+        ])?;
+
+        // Without its own key pair a device has nothing these two keys could belong to, so it
+        // cannot be put back into a trust and is left to be untrusted instead.
+        if device.holds_private_key() {
+            rotated.push((
+                update.device_id.clone(),
+                update.encrypted_user_key.clone(),
+                update.encrypted_public_key.clone(),
+            ));
+        }
+    }
+
+    if existing_devices.iter().any(|device| device.is_trusted() && !listed.contains(&device.uuid)) {
+        err!("All existing trusted devices must be included in the rotation")
+    }
+
+    Ok(rotated)
 }
 
 fn validate_keydata(
@@ -949,6 +1012,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // We only rotate the reset password key if it is set.
     existing_memberships.retain(|m| m.reset_password_key.is_some());
     let mut existing_sends = Send::find_by_user(user_id, &conn).await;
+    let existing_devices = Device::find_by_user(user_id, &conn).await;
 
     validate_keydata(
         &data,
@@ -959,6 +1023,11 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         &existing_sends,
         &headers.user,
     )?;
+
+    let rotated_devices = match data.account_unlock_data.device_key_unlock_data.as_deref() {
+        Some(updates) => Some(validate_device_keydata(updates, &existing_devices)?),
+        None => None,
+    };
 
     // Update folder data
     for folder_data in data.account_data.folders {
@@ -1023,12 +1092,19 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     }
 
     // Every device holds the previous user key wrapped for itself, which unlocks nothing anymore.
-    // Drop those copies before the new key is written, never after: the other order leaves a window
-    // in which a device still counts as trusted and hands its owner a key that no longer opens the
-    // vault. This way a failure here means the rotation simply did not happen.
-    // The clients re-wrap the new user key for every device right after this via
-    // `POST /devices/update-trust`; whatever they leave out stays untrusted.
-    Device::invalidate_wrapped_user_keys(&headers.user.uuid, &conn).await?;
+    // Settle that here rather than after the account itself: by this point the ciphers have already
+    // been rewritten under the new user key, so a device that holds the new one is the half that
+    // still works if what follows fails. The other order would leave a device counting itself
+    // trusted while handing its owner the key it just stopped needing.
+    match rotated_devices {
+        // The current clients send the re-wrapped user key for every trusted device along with the
+        // rotation, so their trust survives it. Anything they left out is untrusted here.
+        Some(rotated) => Device::replace_trust(&headers.user.uuid, rotated, &conn).await?,
+        // A client old enough to leave the field out does this afterwards through
+        // `POST /devices/update-trust`. Until it does, no device counts as trusted, so the worst it
+        // costs its owner is another login rather than an unlock that fails.
+        None => Device::invalidate_wrapped_user_keys(&headers.user.uuid, &conn).await?,
+    }
 
     // Update user data
     let mut user = headers.user;
@@ -1707,6 +1783,10 @@ struct UpdateDevicesTrustData {
 ///
 /// Every trusted device that is not listed loses its trust: its stored copy of the user key is the
 /// old one and would no longer unlock anything.
+///
+/// The current clients do this as part of the rotation itself and never come here; this is the
+/// route the older ones take, and the only one that can rotate the trust of a single device without
+/// rotating the account. See `post_rotatekey`.
 #[post("/devices/update-trust", data = "<data>")]
 async fn post_devices_update_trust(data: Json<UpdateDevicesTrustData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data = data.into_inner();
@@ -1718,55 +1798,48 @@ async fn post_devices_update_trust(data: Json<UpdateDevicesTrustData>, headers: 
         ("encryptedPublicKey", &data.current_device.encrypted_public_key),
     ])?;
 
-    let mut updates: HashMap<DeviceId, DeviceTrustUpdateData> = HashMap::new();
-    for other in data.other_devices {
-        if other.device_id == headers.device.uuid {
-            err!("The current device cannot also be part of the optional rotation")
-        }
-        validate_enc_strings(&[
-            ("encryptedUserKey", &other.keys.encrypted_user_key),
-            ("encryptedPublicKey", &other.keys.encrypted_public_key),
-        ])?;
-        if updates.insert(other.device_id, other.keys).is_some() {
-            err!("A device was listed more than once in the rotation")
-        }
-    }
-
     let devices = Device::find_by_user(&headers.user.uuid, &conn).await;
     if !devices.iter().any(|device| device.uuid == headers.device.uuid) {
         err!("No device found")
     }
 
-    // Validate everything before writing anything: a rotation that stops halfway would leave the
-    // devices wrapping a mix of the old and the new user key.
-    if let Some(unknown) = updates.keys().find(|device_id| !devices.iter().any(|device| device.uuid == **device_id)) {
-        err!(format!("Device {unknown} does not belong to this user"))
-    }
+    // The current device is written whatever it holds now, as upstream does: it is the one the
+    // caller is speaking from and just proved it can unlock.
+    let mut updates = vec![(
+        headers.device.uuid.clone(),
+        data.current_device.encrypted_user_key,
+        data.current_device.encrypted_public_key,
+    )];
+    let mut listed: HashSet<DeviceId> = HashSet::from([headers.device.uuid.clone()]);
 
-    for mut device in devices {
-        if device.uuid == headers.device.uuid {
-            device.encrypted_user_key = Some(data.current_device.encrypted_user_key.clone());
-            device.encrypted_public_key = Some(data.current_device.encrypted_public_key.clone());
-        } else if let Some(keys) = updates.remove(&device.uuid) {
-            // A rotation clears the wrapped user key of every device, so the listed ones are not
-            // trusted at this point; their key pair is what they are restored from. Without it
-            // there is nothing the two keys could belong to.
-            if !device.holds_private_key() {
-                continue;
+    // Validate everything before writing anything, so one bad entry cannot leave the devices
+    // wrapping a mix of the old and the new user key.
+    for other in data.other_devices {
+        if !listed.insert(other.device_id.clone()) {
+            if other.device_id == headers.device.uuid {
+                err!("The current device cannot also be part of the optional rotation")
             }
-            device.encrypted_user_key = Some(keys.encrypted_user_key);
-            device.encrypted_public_key = Some(keys.encrypted_public_key);
-        } else if device.holds_any_key() {
-            // Not listed, so whatever it still holds wraps the previous user key.
-            device.untrust();
-        } else {
-            continue;
+            err!("A device was listed more than once in the rotation")
         }
 
-        device.save(true, &conn).await?;
+        let Some(device) = devices.iter().find(|device| device.uuid == other.device_id) else {
+            err!(format!("Device {} does not belong to this user", other.device_id))
+        };
+
+        validate_enc_strings(&[
+            ("encryptedUserKey", &other.keys.encrypted_user_key),
+            ("encryptedPublicKey", &other.keys.encrypted_public_key),
+        ])?;
+
+        // A rotation clears the wrapped user key of every device, so the listed ones are not
+        // trusted at this point; their key pair is what they are restored from. Without it there is
+        // nothing the two keys could belong to, so the device is left to be untrusted instead.
+        if device.holds_private_key() {
+            updates.push((other.device_id, other.keys.encrypted_user_key, other.keys.encrypted_public_key));
+        }
     }
 
-    Ok(())
+    Device::replace_trust(&headers.user.uuid, updates, &conn).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -1779,22 +1852,16 @@ struct UntrustDevicesData {
 async fn post_devices_untrust(data: Json<UntrustDevicesData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data = data.into_inner();
 
-    let mut devices = Device::find_by_user(&headers.user.uuid, &conn).await;
+    let owned: HashSet<DeviceId> =
+        Device::find_by_user(&headers.user.uuid, &conn).await.into_iter().map(|device| device.uuid).collect();
 
     // Check that the user owns all of them first, so a single foreign id does not leave the request
     // half applied.
-    if let Some(unknown) =
-        data.devices.iter().find(|device_id| !devices.iter().any(|device| &device.uuid == *device_id))
-    {
+    if let Some(unknown) = data.devices.iter().find(|device_id| !owned.contains(*device_id)) {
         err!(format!("Device {unknown} does not belong to this user"))
     }
 
-    for device in devices.iter_mut().filter(|device| data.devices.contains(&device.uuid)) {
-        device.untrust();
-        device.save(true, &conn).await?;
-    }
-
-    Ok(())
+    Device::untrust_many(&headers.user.uuid, data.devices, &conn).await
 }
 
 /// Reported by a client that still holds a device key but did not get any keys back from us.
@@ -1834,14 +1901,46 @@ struct AuthRequestRequest {
     atype: i32,
 }
 
+/// Upstream puts `[StringLength(25)]` on the access code, so no client sends more than that.
+/// https://github.com/bitwarden/server/blob/main/src/Core/Auth/Models/Api/Request/AuthRequest/AuthRequestCreateRequestModel.cs
+const MAX_ACCESS_CODE_LENGTH: usize = 25;
+
+/// A base64 SPKI RSA-4096 public key is under a kilobyte; this leaves room for whatever comes next.
+const MAX_REQUEST_PUBLIC_KEY_LENGTH: usize = 4096;
+
+impl AuthRequestRequest {
+    /// Both of these end up stored, and the admin approval route stores a copy per organization the
+    /// user belongs to, so neither may be unbounded. The public key is handed to the answering
+    /// client as base64 to wrap a key against; one that is not base64 at all would break the page
+    /// listing the requests rather than just this one.
+    fn validate(&self) -> EmptyResult {
+        if self.access_code.is_empty() || self.access_code.len() > MAX_ACCESS_CODE_LENGTH {
+            err!("Invalid access code")
+        }
+
+        if self.public_key.is_empty()
+            || self.public_key.len() > MAX_REQUEST_PUBLIC_KEY_LENGTH
+            || data_encoding::BASE64.decode(self.public_key.as_bytes()).is_err()
+        {
+            err!("Invalid public key")
+        }
+
+        Ok(())
+    }
+}
+
 fn auth_request_json(auth_request: &AuthRequest) -> Value {
     json!({
         "id": auth_request.uuid,
         "publicKey": auth_request.public_key,
         "type": auth_request.atype,
         "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
+        // The clients read the raw enum value as well, to pick an icon for the asking device.
+        "requestDeviceTypeValue": auth_request.device_type,
         "requestDeviceIdentifier": auth_request.request_device_identifier,
         "requestIpAddress": auth_request.request_ip,
+        // Not recorded here, but the clients read it, so it is answered rather than missing.
+        "requestCountryName": null,
         "key": auth_request.enc_key,
         "masterPasswordHash": auth_request.master_password_hash,
         "creationDate": format_date(&auth_request.creation_date),
@@ -1866,6 +1965,8 @@ async fn post_auth_request(
     if AuthRequestType::from_i32(data.atype) == Some(AuthRequestType::AdminApproval) {
         err!("You must be authenticated to create a request of that type")
     }
+
+    data.validate()?;
 
     let Some(user) = User::find_by_mail(&data.email, &conn).await else {
         err!("AuthRequest doesn't exist", "User not found")
@@ -1927,6 +2028,8 @@ async fn post_admin_auth_request(data: Json<AuthRequestRequest>, headers: Header
     if data.device_identifier != headers.device.uuid {
         err!("AuthRequest doesn't exist", "Device verification failed")
     }
+
+    data.validate()?;
 
     // Only an organization the user really belongs to can answer for them. A pending invitation is
     // not a membership yet, and a revoked one is not one anymore; sending either of them the email
@@ -2009,10 +2112,12 @@ async fn notify_device_approval_requested(user: &User, org_id: &OrganizationId, 
         return;
     };
 
+    // The same set that may answer the request, see `ManageResetPasswordHeaders`. Mailing anyone
+    // else would tell them who is asking for something they cannot do anything about.
     let approvers = Membership::find_confirmed_by_org(org_id, conn)
         .await
         .into_iter()
-        .filter(|member| member.atype <= MembershipType::Admin as i32);
+        .filter(Membership::has_manage_reset_password_permission);
 
     for approver in approvers {
         let Some(admin) = User::find_by_uuid(&approver.user_uuid, conn).await else {
@@ -2112,7 +2217,7 @@ async fn put_auth_request(
         auth_request.save(&conn).await?;
 
         ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
-        nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, &headers.device, &conn).await;
+        nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, Some(&headers.device), &conn).await;
 
         log_user_event(
             EventType::OrganizationUserApprovedAuthRequest as i32,
@@ -2207,5 +2312,118 @@ pub async fn purge_auth_requests(pool: DbPool) {
         AuthRequest::purge_expired_auth_requests(&conn).await;
     } else {
         error!("Failed to get DB connection while purging auth requests");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(id: &str, trusted: bool) -> Device {
+        let mut device = Device::new(id.to_owned().into(), String::from("user").into(), String::new(), 9);
+        if trusted {
+            device.encrypted_user_key = Some(String::from("4.b2xkdXNlcmtleQ=="));
+            device.encrypted_public_key = Some(String::from("2.aXY=|Y2lwaGVy|bWFj"));
+            device.encrypted_private_key = Some(String::from("2.aXY=|Y2lwaGVy|bWFj"));
+        }
+        device
+    }
+
+    fn update(device_id: &str) -> UpdateDeviceKeysData {
+        UpdateDeviceKeysData {
+            device_id: device_id.to_owned().into(),
+            encrypted_user_key: String::from("4.bmV3dXNlcmtleQ=="),
+            encrypted_public_key: String::from("2.aXY=|bmV3|bWFj"),
+        }
+    }
+
+    /// The ids and keys the rotation would write, so a test can say what it expects in one line.
+    fn rotated(result: &[(DeviceId, String, String)]) -> Vec<String> {
+        result.iter().map(|(device_id, user_key, _)| format!("{device_id}={user_key}")).collect()
+    }
+
+    #[test]
+    fn a_trusted_device_that_is_listed_keeps_its_trust() {
+        let devices = [device("a", true), device("b", true)];
+        let updates = [update("a"), update("b")];
+
+        let result = validate_device_keydata(&updates, &devices).unwrap();
+        assert_eq!(
+            rotated(&result),
+            ["a=4.bmV3dXNlcmtleQ==", "b=4.bmV3dXNlcmtleQ=="],
+            "both are re-wrapped, neither keeps the previous user key"
+        );
+    }
+
+    #[test]
+    fn a_trusted_device_that_is_left_out_takes_the_rotation_down_with_it() {
+        // Silently dropping the trust of a device the user still relies on is not the server's call
+        // to make; the client untrusts it first if that is what it means.
+        let devices = [device("a", true), device("b", true)];
+
+        let err = validate_device_keydata(&[update("a")], &devices).unwrap_err();
+        assert!(format!("{err}").contains("All existing trusted devices must be included"));
+    }
+
+    #[test]
+    fn a_device_of_somebody_else_is_refused() {
+        let devices = [device("a", true)];
+
+        let err = validate_device_keydata(&[update("a"), update("stranger")], &devices).unwrap_err();
+        assert!(format!("{err}").contains("does not belong to this user"));
+    }
+
+    #[test]
+    fn the_same_device_may_not_be_listed_twice() {
+        // Two entries for one device means one of the two keys is dropped without anyone noticing
+        // which, so neither is taken.
+        let devices = [device("a", true)];
+
+        let err = validate_device_keydata(&[update("a"), update("a")], &devices).unwrap_err();
+        assert!(format!("{err}").contains("listed more than once"));
+    }
+
+    #[test]
+    fn a_key_that_is_not_an_encrypted_string_is_refused() {
+        let devices = [device("a", true)];
+
+        let mut broken = update("a");
+        broken.encrypted_user_key = String::from("not an enc string");
+        let err = validate_device_keydata(&[broken], &devices).unwrap_err();
+        assert!(format!("{err}").contains("encryptedUserKey"));
+
+        let mut broken = update("a");
+        broken.encrypted_public_key = String::new();
+        let err = validate_device_keydata(&[broken], &devices).unwrap_err();
+        assert!(format!("{err}").contains("encryptedPublicKey"));
+    }
+
+    #[test]
+    fn a_device_without_its_own_key_pair_is_not_given_a_user_key() {
+        // Half a trust is worth nothing to the client and would only fail at the next unlock, so
+        // the device is dropped from the rotation and ends up untrusted instead.
+        let devices = [device("a", true), device("b", false)];
+
+        let result = validate_device_keydata(&[update("a"), update("b")], &devices).unwrap();
+        assert_eq!(rotated(&result), ["a=4.bmV3dXNlcmtleQ=="]);
+    }
+
+    #[test]
+    fn a_user_who_trusts_no_device_rotates_nothing() {
+        let devices = [device("a", false)];
+
+        let result = validate_device_keydata(&[], &devices).unwrap();
+        assert!(result.is_empty(), "and the leftovers of `a` are cleared by the write that follows");
+    }
+
+    #[test]
+    fn a_partially_trusted_device_does_not_have_to_be_listed() {
+        // It cannot unlock anything as it stands, so leaving it out is not the loss of a trust.
+        let mut half = device("b", true);
+        half.encrypted_user_key = None;
+        let devices = [device("a", true), half];
+
+        let result = validate_device_keydata(&[update("a")], &devices).unwrap();
+        assert_eq!(rotated(&result), ["a=4.bmV3dXNlcmtleQ=="]);
     }
 }

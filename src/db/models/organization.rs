@@ -277,6 +277,20 @@ impl Membership {
         }
     }
 
+    /// Whether this membership may act on the account recovery of the organization's members:
+    /// reset their master password, and answer the device approvals they ask their organization for.
+    ///
+    /// Upstream is a permission of its own, `ManageResetPassword`, which an administrator has by
+    /// virtue of the role and a custom role can be granted separately. Vaultwarden folds the custom
+    /// role into `Manager` and drops the permissions that came with it, so only the administrators
+    /// are left holding it. Asking here rather than comparing roles at each call site keeps that one
+    /// decision in one place for when custom roles arrive.
+    /// https://github.com/bitwarden/server/blob/main/src/Core/Context/CurrentContext.cs
+    pub fn has_manage_reset_password_permission(&self) -> bool {
+        self.status == MembershipStatus::Confirmed as i32
+            && MembershipType::from_i32(self.atype).is_some_and(|atype| atype >= MembershipType::Admin)
+    }
+
     pub fn restore(&mut self) -> bool {
         if self.status < MembershipStatus::Invited as i32 {
             self.status += ACTIVATE_REVOKE_DIFF;
@@ -1284,5 +1298,33 @@ mod tests {
         assert!(MembershipType::Admin > MembershipType::Manager);
         assert!(MembershipType::Manager > MembershipType::User);
         assert!(MembershipType::Manager == MembershipType::from_str("4").unwrap());
+    }
+
+    #[test]
+    fn only_a_confirmed_administrator_manages_account_recovery() {
+        let mut membership = Membership::new(String::from("user").into(), String::from("org").into(), None);
+
+        for (atype, expected) in [
+            (MembershipType::Owner, true),
+            (MembershipType::Admin, true),
+            // The custom role is folded into the manager one, losing whatever permissions came
+            // with it, so it cannot be assumed to hold this one.
+            (MembershipType::Manager, false),
+            (MembershipType::User, false),
+        ] {
+            membership.atype = atype as i32;
+
+            for status in [MembershipStatus::Revoked, MembershipStatus::Invited, MembershipStatus::Accepted] {
+                let status = status as i32;
+                membership.status = status;
+                assert!(
+                    !membership.has_manage_reset_password_permission(),
+                    "a membership that is not confirmed manages nothing, status {status}"
+                );
+            }
+
+            membership.status = MembershipStatus::Confirmed as i32;
+            assert_eq!(membership.has_manage_reset_password_permission(), expected, "type {}", atype as i32);
+        }
     }
 }

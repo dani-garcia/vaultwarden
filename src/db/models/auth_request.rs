@@ -142,8 +142,13 @@ impl AuthRequest {
         })
     }
 
-    /// What an administrator gets to see about a request. Deliberately without the access code:
-    /// that one is the requesting device's proof, not something the answering side needs.
+    /// What an administrator gets to see about a request that is waiting for them, which is the
+    /// public key of the asking device and enough about it to recognise it. Same shape as
+    /// `PendingOrganizationAuthRequestResponseModel` upstream.
+    ///
+    /// Deliberately no access code, which is the asking device's own proof, and no wrapped key: a
+    /// request that is still waiting has none, and handing one out here would be crypto material
+    /// the answering side has no use for.
     pub fn to_json_for_organization(&self, email: &str, member_id: &MembershipId) -> Value {
         json!({
             "id": self.uuid,
@@ -154,11 +159,10 @@ impl AuthRequest {
             "requestDeviceIdentifier": self.request_device_identifier,
             "requestDeviceType": DeviceType::from_i32(self.device_type).to_string(),
             "requestIpAddress": self.request_ip,
-            "key": self.enc_key,
+            // Not recorded here, but the clients read it, so it is answered rather than missing.
+            "requestCountryName": null,
             "creationDate": format_date(&self.creation_date),
-            "requestApproved": self.approved,
-            "responseDate": self.response_date.as_ref().map(format_date),
-            "object": "organizationAuthRequest",
+            "object": "pending-org-auth-request",
         })
     }
 }
@@ -252,12 +256,18 @@ impl AuthRequest {
     ///
     /// Asking again from the same device updates that one instead of adding another, so a client
     /// that retries cannot fill the table or mail the administrators over and over.
+    ///
+    /// A request past its window does not count: it is one nobody can answer any more, and reviving
+    /// it by moving its date forward would leave the user waiting on a request the administrators
+    /// were never told about. Asking again after it ran out is a new request, and is announced.
     pub async fn find_pending_admin_approval(
         user_uuid: &UserId,
         device_uuid: &DeviceId,
         org_uuid: &OrganizationId,
         conn: &DbConn,
     ) -> Option<Self> {
+        let oldest = Utc::now().naive_utc() - Self::admin_request_expiration();
+
         conn.run(move |conn| {
             auth_requests::table
                 .filter(auth_requests::user_uuid.eq(user_uuid))
@@ -265,6 +275,7 @@ impl AuthRequest {
                 .filter(auth_requests::organization_uuid.eq(org_uuid))
                 .filter(auth_requests::atype.eq(AuthRequestType::AdminApproval as i32))
                 .filter(auth_requests::approved.is_null())
+                .filter(auth_requests::creation_date.gt(oldest))
                 .order_by(auth_requests::creation_date.desc())
                 .first::<Self>(conn)
                 .ok()
@@ -419,6 +430,24 @@ mod tests {
     fn an_administrator_gets_a_week_to_answer() {
         assert!(!request(AuthRequestType::AdminApproval, TimeDelta::try_days(6).unwrap()).is_expired());
         assert!(request(AuthRequestType::AdminApproval, TimeDelta::try_days(8).unwrap()).is_expired());
+    }
+
+    #[test]
+    fn a_request_nobody_answered_in_time_is_not_still_pending() {
+        // `find_pending_admin_approval` decides whether asking again reuses the open request or
+        // starts a new one, and filters on the same window as this. A request past it must not come
+        // back: reviving it by moving its date forward would leave the user waiting on something
+        // the administrators were never told about, because only a new request mails them.
+        let mut auth_request =
+            request(AuthRequestType::AdminApproval, AuthRequest::admin_request_expiration() + TimeDelta::seconds(1));
+        assert_eq!(auth_request.approved, None, "still unanswered");
+        assert!(auth_request.is_expired());
+
+        // One minute short of the window is still the same request, and asking again updates it
+        // rather than mailing everyone a second time.
+        auth_request.creation_date =
+            Utc::now().naive_utc() - AuthRequest::admin_request_expiration() + TimeDelta::minutes(1);
+        assert!(!auth_request.is_expired());
     }
 
     #[test]

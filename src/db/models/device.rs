@@ -116,19 +116,6 @@ impl Device {
         Self::present(self.encrypted_private_key.as_ref()).is_some()
     }
 
-    /// Whether any part of a trust is stored, complete or not.
-    pub fn holds_any_key(&self) -> bool {
-        Self::present(self.encrypted_user_key.as_ref()).is_some()
-            || Self::present(self.encrypted_public_key.as_ref()).is_some()
-            || self.holds_private_key()
-    }
-
-    pub fn untrust(&mut self) {
-        self.encrypted_user_key = None;
-        self.encrypted_public_key = None;
-        self.encrypted_private_key = None;
-    }
-
     pub fn to_json(&self) -> Value {
         json!({
             "id": self.uuid,
@@ -264,12 +251,13 @@ impl Device {
 
     /// Invalidates every copy of the user key that is wrapped for one of the user's devices.
     ///
-    /// Called when the user key itself is replaced, which leaves all of those copies pointing at a
-    /// key that no longer unlocks anything. No device counts as trusted afterwards, so a client
-    /// that stops here ends up with an extra login rather than a broken unlock. The device key
-    /// pairs are deliberately left alone: they are wrapped with the device key, which a rotation
-    /// does not touch, so `POST /devices/update-trust` can hand every device the new user key and
-    /// restore its trust. Whatever it does not list is dropped there.
+    /// Called when the user key itself is replaced and the client did not say what to put in their
+    /// place, which leaves all of those copies pointing at a key that no longer unlocks anything. No
+    /// device counts as trusted afterwards, so a client that stops here ends up with an extra login
+    /// rather than a broken unlock. The device key pairs are deliberately left alone: they are
+    /// wrapped with the device key, which a rotation does not touch, so `POST /devices/update-trust`
+    /// can hand every device the new user key and restore its trust. Whatever it does not list is
+    /// dropped there.
     ///
     /// One statement, so there is no half applied state to reason about.
     pub async fn invalidate_wrapped_user_keys(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
@@ -281,6 +269,82 @@ impl Device {
                 ))
                 .execute(conn)
                 .map_res("Error invalidating the wrapped user keys of the devices")
+        })
+        .await
+    }
+
+    /// Drops every stored key of the named devices, in one statement so it cannot half apply.
+    ///
+    /// The caller has already checked that each id belongs to this user.
+    pub async fn untrust_many(user_uuid: &UserId, device_ids: Vec<DeviceId>, conn: &DbConn) -> EmptyResult {
+        if device_ids.is_empty() {
+            return Ok(());
+        }
+
+        conn.run(move |conn| {
+            diesel::update(
+                devices::table.filter(devices::user_uuid.eq(user_uuid)).filter(devices::uuid.eq_any(device_ids)),
+            )
+            .set((
+                devices::encrypted_user_key.eq::<Option<String>>(None),
+                devices::encrypted_public_key.eq::<Option<String>>(None),
+                devices::encrypted_private_key.eq::<Option<String>>(None),
+            ))
+            .execute(conn)
+            .map_res("Error untrusting the devices")
+        })
+        .await
+    }
+
+    /// Replaces the trust of every device of the user in one go: the listed ones are re-wrapped for
+    /// the current user key, everything else loses whatever it still holds.
+    ///
+    /// This is what both a key rotation and `POST /devices/update-trust` come down to. The caller
+    /// has already checked that every id belongs to this user, that none is listed twice, and that
+    /// no device is asked to keep a trust it cannot complete; this only writes.
+    ///
+    /// One transaction, so the devices cannot be left split between the old and the new user key,
+    /// which is a state no client can tell apart from a working one until an unlock fails.
+    pub async fn replace_trust(
+        user_uuid: &UserId,
+        updates: Vec<(DeviceId, String, String)>,
+        conn: &DbConn,
+    ) -> EmptyResult {
+        conn.run(move |conn| {
+            conn.transaction(|conn| -> EmptyResult {
+                let keep: Vec<DeviceId> = updates.iter().map(|(device_id, ..)| device_id.clone()).collect();
+
+                // Whatever the untouched devices hold wraps the previous user key, or is one half of
+                // a trust that was never finished. Either way it unlocks nothing and must not stay.
+                let cleared = (
+                    devices::encrypted_user_key.eq::<Option<String>>(None),
+                    devices::encrypted_public_key.eq::<Option<String>>(None),
+                    devices::encrypted_private_key.eq::<Option<String>>(None),
+                );
+                let outdated = devices::table.filter(devices::user_uuid.eq(&user_uuid));
+                let _: () = if keep.is_empty() {
+                    diesel::update(outdated).set(cleared).execute(conn)
+                } else {
+                    diesel::update(outdated.filter(devices::uuid.ne_all(keep))).set(cleared).execute(conn)
+                }
+                .map_res("Error untrusting the devices left out of the rotation")?;
+
+                // The device key pair is deliberately not touched here: it is wrapped with the
+                // device key, which the server never sees and a rotation never changes.
+                for (device_id, encrypted_user_key, encrypted_public_key) in updates {
+                    let _: () = diesel::update(
+                        devices::table.filter(devices::uuid.eq(device_id)).filter(devices::user_uuid.eq(&user_uuid)),
+                    )
+                    .set((
+                        devices::encrypted_user_key.eq(Some(encrypted_user_key)),
+                        devices::encrypted_public_key.eq(Some(encrypted_public_key)),
+                    ))
+                    .execute(conn)
+                    .map_res("Error rotating the wrapped user key of a device")?;
+                }
+
+                Ok(())
+            })
         })
         .await
     }
@@ -550,30 +614,16 @@ mod tests {
 
         assert!(!device.is_trusted(), "nothing may unlock until the client re-wraps");
         assert!(device.holds_private_key(), "but the device can still be handed a new user key");
-        assert!(device.holds_any_key());
     }
 
     #[test]
     fn a_device_that_never_had_a_trust_holds_nothing() {
         let device = Device::new(String::from("device").into(), String::from("user").into(), String::new(), 9);
         assert!(!device.holds_private_key());
-        assert!(!device.holds_any_key());
 
         let mut device = trusted_device();
         device.encrypted_private_key = Some(String::new());
         assert!(!device.holds_private_key(), "an empty key is as good as a missing one");
-    }
-
-    #[test]
-    fn untrusting_clears_every_key() {
-        let mut device = trusted_device();
-        device.untrust();
-
-        assert!(!device.is_trusted());
-        assert!(!device.holds_any_key());
-        assert_eq!(device.encrypted_user_key, None);
-        assert_eq!(device.encrypted_public_key, None);
-        assert_eq!(device.encrypted_private_key, None);
     }
 
     #[test]
