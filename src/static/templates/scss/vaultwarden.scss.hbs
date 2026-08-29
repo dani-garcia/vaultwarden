@@ -89,6 +89,16 @@ app-root ng-component > form > div:nth-child(1) > div:nth-child(3) > div:nth-chi
 }
 {{/if}}
 
+/* When SSO is the only login option, also hide the email input field and the
+   `Remember email` checkbox: the email is not required to start the SSO flow
+   in vaultwarden (single-tenant, FAKE_SSO_IDENTIFIER is used server-side). */
+{{#if sso_only}}
+.vw-email-form-field,
+.vw-remember-email {
+  @extend %vw-hide;
+}
+{{/if}}
+
 /* Hide Two-Factor menu in Organization settings */
 bit-nav-item[route="settings/two-factor"],
 a[href$="/settings/two-factor"] {
