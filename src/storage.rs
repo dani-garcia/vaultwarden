@@ -77,9 +77,17 @@ pub(crate) fn operator_for_path(path: &str) -> Result<opendal::Operator, crate::
 
 #[cfg(s3)]
 mod s3 {
+    use std::sync::LazyLock;
+
+    use opendal_http_transport_reqwest::ReqwestTransport;
     use reqwest::Url;
 
     use crate::error::Error;
+
+    static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+        // Storage endpoints are administrator-configured and may be private.
+        crate::http_client::get_reqwest_client_builder(false).build().expect("Failed to build OpenDAL HTTP client")
+    });
 
     pub(super) fn is_uri(path: &str) -> bool {
         path.starts_with("s3://")
@@ -152,8 +160,6 @@ mod s3 {
     }
 
     pub(super) fn operator_for_path(path: &str) -> Result<opendal::Operator, Error> {
-        use crate::http_client::aws::AwsReqwestConnector;
-        use aws_config::{default_provider::credentials::DefaultCredentialsChain, provider_config::ProviderConfig};
         use opendal::Configurator;
         use reqsign_aws_v4::Credential;
         use reqsign_core::{Context, ProvideCredential, ProvideCredentialChain};
@@ -171,24 +177,12 @@ mod s3 {
             async fn provide_credential(&self, _ctx: &Context) -> reqsign_core::Result<Option<Self::Credential>> {
                 use aws_credential_types::provider::ProvideCredentials as _;
                 use reqsign_core::time::Timestamp;
-                use tokio::sync::OnceCell;
 
-                static DEFAULT_CREDENTIAL_CHAIN: OnceCell<DefaultCredentialsChain> = OnceCell::const_new();
-
-                let chain = DEFAULT_CREDENTIAL_CHAIN
-                    .get_or_init(|| {
-                        let reqwest_client = reqwest::Client::builder().build().unwrap();
-                        let connector = AwsReqwestConnector {
-                            client: reqwest_client,
-                        };
-
-                        let conf = ProviderConfig::default().with_http_client(connector);
-
-                        DefaultCredentialsChain::builder().configure(conf).build()
-                    })
-                    .await;
-
-                let creds = chain.provide_credentials().await.map_err(|e| {
+                let credentials_provider =
+                    crate::aws::aws_sdk_config().await.credentials_provider().ok_or_else(|| {
+                        reqsign_core::Error::unexpected("failed to load AWS credentials provider from AWS SDK config")
+                    })?;
+                let creds = credentials_provider.provide_credentials().await.map_err(|e| {
                     reqsign_core::Error::unexpected("failed to load AWS credentials via AWS SDK").with_source(e)
                 })?;
 
@@ -236,7 +230,9 @@ mod s3 {
                 builder.credential_provider_chain(ProvideCredentialChain::new().push(OpenDALS3CredentialProvider));
         }
 
-        Ok(opendal::Operator::new(builder)?)
+        let http_transport = opendal::HttpTransporter::new(ReqwestTransport::new(HTTP_CLIENT.clone()));
+        let context = opendal::OperationContext::new().with_http_transport(http_transport);
+        Ok(opendal::Operator::new(builder)?.with_context(context))
     }
 
     fn uri_has_option(uri: &opendal::OperatorUri, names: &[&str]) -> bool {

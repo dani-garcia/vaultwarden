@@ -14,7 +14,10 @@ use reqwest::{
 };
 use url::Host;
 
-use crate::{CONFIG, util::is_global};
+use crate::{
+    CONFIG,
+    util::{get_env_bool, is_global},
+};
 
 pub fn make_http_request(method: reqwest::Method, url: &str) -> Result<reqwest::RequestBuilder, crate::Error> {
     static INSTANCE: LazyLock<Client> =
@@ -36,7 +39,7 @@ pub fn get_reqwest_client_builder(enforce_block: bool) -> ClientBuilder {
     let mut headers = header::HeaderMap::new();
     headers.insert(header::USER_AGENT, header::HeaderValue::from_static("Vaultwarden"));
 
-    let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
+    let redirect_policy = reqwest::redirect::Policy::custom(move |attempt| {
         if attempt.previous().len() >= 5 {
             return attempt.error("Too many redirects");
         }
@@ -45,7 +48,7 @@ pub fn get_reqwest_client_builder(enforce_block: bool) -> ClientBuilder {
             return attempt.error("Invalid host");
         };
 
-        if let Err(e) = should_block_host(&host) {
+        if enforce_block && let Err(e) = should_block_host(&host) {
             return attempt.error(e);
         }
 
@@ -57,6 +60,14 @@ pub fn get_reqwest_client_builder(enforce_block: bool) -> ClientBuilder {
         .redirect(redirect_policy)
         .dns_resolver(CustomDns::instance(enforce_block))
         .timeout(Duration::from_secs(10))
+}
+
+fn dns_prefer_ipv6() -> bool {
+    // CONFIG may require DNS to initialize, so avoid forcing it during bootstrap.
+    match LazyLock::get(&CONFIG) {
+        Some(config) => config.dns_prefer_ipv6(),
+        None => get_env_bool("DNS_PREFER_IPV6").unwrap_or(false),
+    }
 }
 
 fn should_block_ip(ip: IpAddr) -> bool {
@@ -258,12 +269,8 @@ impl CustomDnsResolver {
     fn new() -> Arc<Self> {
         TokioResolver::builder(TokioRuntimeProvider::default())
             .and_then(|mut builder| {
-                // Hickory's default since v0.26 is `Ipv6AndIpv4`, which sorts IPv6 first
-                // This might cause issues on IPv4 only systems or containers
-                // Unless someone enabled DNS_PREFER_IPV6, use Ipv4AndIpv6, which returns IPv4 first which was our previous default
-                if !CONFIG.dns_prefer_ipv6() {
-                    builder.options_mut().ip_strategy = hickory_resolver::config::LookupIpStrategy::Ipv4AndIpv6;
-                }
+                // Query both families; the preferred order is applied per lookup below.
+                builder.options_mut().ip_strategy = hickory_resolver::config::LookupIpStrategy::Ipv4AndIpv6;
                 builder.build()
             })
             .inspect_err(|e| warn!("Error creating Hickory resolver, falling back to default: {e:?}"))
@@ -286,6 +293,14 @@ impl CustomDnsResolver {
         }
 
         Ok(results)
+    }
+}
+
+fn sort_addresses(addresses: &mut [SocketAddr], prefer_ipv6: bool) {
+    if prefer_ipv6 {
+        addresses.sort_by_key(SocketAddr::is_ipv4);
+    } else {
+        addresses.sort_by_key(SocketAddr::is_ipv6);
     }
 }
 
@@ -320,7 +335,9 @@ impl Resolve for CustomDns {
         let this = Arc::clone(&self.resolver);
         Box::pin(async move {
             let name = name.as_str();
-            let results = this.resolve_domain(name, enforce_block).await?;
+            let mut results = this.resolve_domain(name, enforce_block).await?;
+            // Recheck after bootstrap so long-lived clients adopt the loaded config.
+            sort_addresses(&mut results, dns_prefer_ipv6());
             if results.is_empty() {
                 warn!("Unable to resolve {name} to any valid IP address");
             }
@@ -329,7 +346,7 @@ impl Resolve for CustomDns {
     }
 }
 
-#[cfg(s3)]
+#[cfg(any(s3, ses))]
 pub(crate) mod aws {
     use aws_smithy_runtime_api::client::{
         http::{HttpClient, HttpConnector, HttpConnectorFuture, HttpConnectorSettings, SharedHttpConnector},
@@ -339,10 +356,29 @@ pub(crate) mod aws {
     };
     use reqwest::Client;
 
+    use super::get_reqwest_client_builder;
+
     // Adapter that wraps reqwest to be compatible with the AWS SDK
     #[derive(Debug)]
     pub(crate) struct AwsReqwestConnector {
-        pub(crate) client: Client,
+        client: Client,
+    }
+
+    impl AwsReqwestConnector {
+        pub(crate) fn new() -> Self {
+            let client = get_reqwest_client_builder(false).build().expect("Failed to build AWS HTTP client");
+            Self {
+                client,
+            }
+        }
+    }
+
+    fn connector_error(error: reqwest::Error) -> ConnectorError {
+        if error.is_timeout() {
+            ConnectorError::timeout(Box::new(error))
+        } else {
+            ConnectorError::io(Box::new(error))
+        }
     }
 
     impl HttpConnector for AwsReqwestConnector {
@@ -362,10 +398,10 @@ pub(crate) mod aws {
                     req_builder = req_builder.body(body_bytes.to_vec());
                 }
 
-                let response = req_builder.send().await.map_err(|e| ConnectorError::io(Box::new(e)))?;
+                let response = req_builder.send().await.map_err(connector_error)?;
 
                 let status = response.status().into();
-                let bytes = response.bytes().await.map_err(|e| ConnectorError::io(Box::new(e)))?;
+                let bytes = response.bytes().await.map_err(connector_error)?;
 
                 Ok(HttpResponse::new(status, bytes.into()))
             };
@@ -391,7 +427,7 @@ pub(crate) mod aws {
 mod tests {
     use super::*;
     use crate::util::is_global_hardcoded;
-    use std::net::Ipv4Addr;
+    use std::net::{Ipv4Addr, Ipv6Addr};
     use url::Host;
 
     // ===
@@ -402,6 +438,26 @@ mod tests {
             Host::Ipv6(v6) => Some(IpAddr::V6(v6)),
             Host::Domain(_) => None,
         }
+    }
+
+    #[test]
+    fn dns_setup_does_not_initialize_config() {
+        assert!(LazyLock::get(&CONFIG).is_none());
+        drop(CustomDns::instance(false));
+        assert!(LazyLock::get(&CONFIG).is_none());
+    }
+
+    #[test]
+    fn dns_preference_orders_addresses() {
+        let ipv4 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
+        let ipv6 = SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 0);
+        let mut addresses = [ipv6, ipv4];
+
+        sort_addresses(&mut addresses, false);
+        assert_eq!(addresses, [ipv4, ipv6]);
+
+        sort_addresses(&mut addresses, true);
+        assert_eq!(addresses, [ipv6, ipv4]);
     }
 
     #[test]
