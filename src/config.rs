@@ -817,6 +817,8 @@ make_config! {
         sso_enabled:                    bool,   true,   def,    false;
         /// Only SSO login |> Disable Email+Master Password login
         sso_only:                       bool,   true,   def,    false;
+        /// Allow SSO flow to create account |> You probably want to disable it when using a public provider
+        sso_signups_allowed:            bool,   true,   def,    true;
         /// Allow email association |> Associate existing non-SSO user based on email
         sso_signups_match_email:        bool,   true,   def,    true;
         /// Allow unknown email verification status |> Allowing this with `SSO_SIGNUPS_MATCH_EMAIL=true` open potential account takeover.
@@ -1170,11 +1172,8 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                     }
 
                     #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        if !metadata.permissions().mode() & 0o111 != 0 {
-                            err!(format!("sendmail command at `{path:?}` isn't executable"));
-                        }
+                    if nix::unistd::access(&path, nix::unistd::AccessFlags::X_OK).is_err() {
+                        err!(format!("sendmail command at `{path:?}` isn't executable"));
                     }
                 }
             }
@@ -1549,6 +1548,17 @@ impl Config {
     pub fn is_signup_allowed(&self, email: &str) -> bool {
         if self.signups_domains_whitelist().is_empty() {
             self.signups_allowed()
+        } else {
+            // The whitelist setting overrides the signups_allowed setting.
+            self.is_email_domain_allowed(email)
+        }
+    }
+
+    /// Tests whether SSO signup is allowed for an email address, taking into
+    /// account the sso_signups_allowed and signups_domains_whitelist settings.
+    pub fn is_sso_signup_allowed(&self, email: &str) -> bool {
+        if self.signups_domains_whitelist().is_empty() {
+            self.sso_signups_allowed()
         } else {
             // The whitelist setting overrides the signups_allowed setting.
             self.is_email_domain_allowed(email)

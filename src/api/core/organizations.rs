@@ -278,7 +278,7 @@ async fn leave_organization(org_id: OrganizationId, headers: OrgMemberHeaders, c
     }
 
     log_event(
-        EventType::OrganizationUserLeft as i32,
+        EventType::OrganizationUserLeft,
         &membership.uuid,
         &org_id,
         &headers.user.uuid,
@@ -336,7 +336,7 @@ async fn post_organization(
     org.save(&conn).await?;
 
     log_event(
-        EventType::OrganizationUpdated as i32,
+        EventType::OrganizationUpdated,
         org_id.as_ref(),
         &org_id,
         &headers.user.uuid,
@@ -523,7 +523,7 @@ async fn post_organization_collections(
     collection.save(&conn).await?;
 
     log_event(
-        EventType::CollectionCreated as i32,
+        EventType::CollectionCreated,
         &collection.uuid,
         &org_id,
         &headers.user.uuid,
@@ -606,7 +606,7 @@ async fn post_bulk_access_collections(
         collection.save(&conn).await?;
 
         log_event(
-            EventType::CollectionUpdated as i32,
+            EventType::CollectionUpdated,
             &collection.uuid,
             &org_id,
             &headers.user.uuid,
@@ -683,7 +683,7 @@ async fn post_organization_collection_update(
     collection.save(&conn).await?;
 
     log_event(
-        EventType::CollectionUpdated as i32,
+        EventType::CollectionUpdated,
         &collection.uuid,
         &org_id,
         &headers.user.uuid,
@@ -732,7 +732,7 @@ async fn delete_organization_collection_impl(
         err!("Collection not found", "Collection does not exist or does not belong to this organization")
     };
     log_event(
-        EventType::CollectionDeleted as i32,
+        EventType::CollectionDeleted,
         &collection.uuid,
         org_id,
         &headers.user.uuid,
@@ -1157,7 +1157,7 @@ async fn send_invite(
         }
 
         log_event(
-            EventType::OrganizationUserInvited as i32,
+            EventType::OrganizationUserInvited,
             &new_member.uuid,
             &org_id,
             &headers.user.uuid,
@@ -1456,7 +1456,7 @@ async fn confirm_invite_impl(
     OrgPolicy::check_user_allowed(&member_to_confirm, "confirm", conn).await?;
 
     log_event(
-        EventType::OrganizationUserConfirmed as i32,
+        EventType::OrganizationUserConfirmed,
         &member_to_confirm.uuid,
         org_id,
         &headers.user.uuid,
@@ -1646,7 +1646,7 @@ async fn edit_member(
     }
 
     log_event(
-        EventType::OrganizationUserUpdated as i32,
+        EventType::OrganizationUserUpdated,
         &member_to_edit.uuid,
         &org_id,
         &headers.user.uuid,
@@ -1733,7 +1733,7 @@ async fn delete_member_impl(
     }
 
     log_event(
-        EventType::OrganizationUserRemoved as i32,
+        EventType::OrganizationUserRemoved,
         &member_to_delete.uuid,
         org_id,
         &headers.user.uuid,
@@ -2153,7 +2153,7 @@ async fn put_policy(
                 }
 
                 log_event(
-                    EventType::OrganizationUserRemoved as i32,
+                    EventType::OrganizationUserRemoved,
                     &member.uuid,
                     &org_id,
                     &headers.user.uuid,
@@ -2179,7 +2179,7 @@ async fn put_policy(
     policy.save(&conn).await?;
 
     log_event(
-        EventType::PolicyUpdated as i32,
+        EventType::PolicyUpdated,
         policy.uuid.as_ref(),
         &org_id,
         &headers.user.uuid,
@@ -2348,7 +2348,7 @@ async fn revoke_member_impl(
             member.save(conn).await?;
 
             log_event(
-                EventType::OrganizationUserRevoked as i32,
+                EventType::OrganizationUserRevoked,
                 &member.uuid,
                 org_id,
                 &headers.user.uuid,
@@ -2446,7 +2446,7 @@ async fn restore_member_impl(
             member.save(conn).await?;
 
             log_event(
-                EventType::OrganizationUserRestored as i32,
+                EventType::OrganizationUserRestored,
                 &member.uuid,
                 org_id,
                 &headers.user.uuid,
@@ -2614,7 +2614,7 @@ async fn post_groups(
     let group = group_request.to_group(&org_id);
 
     log_event(
-        EventType::GroupCreated as i32,
+        EventType::GroupCreated,
         &group.uuid,
         &org_id,
         &headers.user.uuid,
@@ -2655,7 +2655,7 @@ async fn put_group(
     GroupUser::delete_all_by_group(&group_id, &org_id, &conn).await?;
 
     log_event(
-        EventType::GroupUpdated as i32,
+        EventType::GroupUpdated,
         &updated_group.uuid,
         &org_id,
         &headers.user.uuid,
@@ -2688,7 +2688,7 @@ async fn add_update_group(
         user_entry.save(conn).await?;
 
         log_event(
-            EventType::OrganizationUserUpdatedGroups as i32,
+            EventType::OrganizationUserUpdatedGroups,
             &assigned_member,
             &org_id,
             &headers.user.uuid,
@@ -2763,7 +2763,7 @@ async fn delete_group_impl(
     };
 
     log_event(
-        EventType::GroupDeleted as i32,
+        EventType::GroupDeleted,
         &group.uuid,
         org_id,
         &headers.user.uuid,
@@ -2874,7 +2874,7 @@ async fn put_group_members(
         user_entry.save(&conn).await?;
 
         log_event(
-            EventType::OrganizationUserUpdatedGroups as i32,
+            EventType::OrganizationUserUpdatedGroups,
             &assigned_member,
             &org_id,
             &headers.user.uuid,
@@ -2912,7 +2912,7 @@ async fn post_delete_group_member(
     }
 
     log_event(
-        EventType::OrganizationUserUpdatedGroups as i32,
+        EventType::OrganizationUserUpdatedGroups,
         &member_id,
         &org_id,
         &headers.user.uuid,
@@ -3048,7 +3048,7 @@ async fn recover_account(
     nt.send_logout(&user, None, &conn).await;
 
     log_event(
-        EventType::OrganizationUserAdminResetPassword as i32,
+        EventType::OrganizationUserAdminResetPassword,
         &member_id,
         &org_id,
         &headers.user.uuid,
@@ -3197,10 +3197,12 @@ async fn put_reset_password_enrollment(
         membership.save(&conn).await?;
     }
 
+    // Asked of the key that was just written rather than of the membership, which the branch above
+    // may have handed to `accept_org_invite`.
     let event_type = if enrolled {
-        EventType::OrganizationUserResetPasswordEnroll as i32
+        EventType::OrganizationUserResetPasswordEnroll
     } else {
-        EventType::OrganizationUserResetPasswordWithdraw as i32
+        EventType::OrganizationUserResetPasswordWithdraw
     };
 
     log_event(event_type, &membership_id, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
@@ -3447,9 +3449,9 @@ async fn answer_organization_auth_request(
     auth_request.save(conn).await?;
 
     let event_type = if approved {
-        EventType::OrganizationUserApprovedAuthRequest as i32
+        EventType::OrganizationUserApprovedAuthRequest
     } else {
-        EventType::OrganizationUserRejectedAuthRequest as i32
+        EventType::OrganizationUserRejectedAuthRequest
     };
     log_event(event_type, &member.uuid, org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, conn).await;
 
