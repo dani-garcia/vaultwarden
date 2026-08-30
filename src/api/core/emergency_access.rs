@@ -14,8 +14,8 @@ use crate::{
     db::{
         DbConn, DbPool,
         models::{
-            Cipher, EmergencyAccess, EmergencyAccessId, EmergencyAccessStatus, EmergencyAccessType, Invitation,
-            Membership, MembershipType, OrgPolicy, TwoFactor, User, UserId,
+            AutoConfirmRequirement, Cipher, EmergencyAccess, EmergencyAccessId, EmergencyAccessStatus,
+            EmergencyAccessType, Invitation, Membership, MembershipType, OrgPolicy, TwoFactor, User, UserId,
         },
     },
     mail,
@@ -278,7 +278,7 @@ async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, co
 
     // Emergency access would hand this account to somebody the organization never vetted, which is why
     // Bitwarden forbids it for members of an organization which confirms its members automatically.
-    if OrgPolicy::is_user_in_auto_confirm_org(&grantor_user.uuid, &conn).await {
+    if AutoConfirmRequirement::for_user(&grantor_user.uuid, &conn).await.forbids_emergency_access() {
         err!("You are a member of an organization which does not allow emergency access.")
     }
 
@@ -415,7 +415,7 @@ async fn accept_invite(
     };
 
     // See `send_invite`, the same restriction applies to the grantee side of an emergency access.
-    if OrgPolicy::is_user_in_auto_confirm_org(&grantee_user.uuid, &conn).await {
+    if AutoConfirmRequirement::for_user(&grantee_user.uuid, &conn).await.forbids_emergency_access() {
         err!("You are a member of an organization which does not allow emergency access.")
     }
 

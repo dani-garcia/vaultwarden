@@ -18,9 +18,10 @@ use crate::{
     db::{
         DbConn,
         models::{
-            Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
-            Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User, UserId,
+            AutoConfirmRequirement, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId,
+            CollectionUser, EventType, Group, GroupId, GroupUser, Invitation, Membership, MembershipId,
+            MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
+            OrganizationId, User, UserId,
         },
     },
     mail,
@@ -201,6 +202,15 @@ struct BulkMembershipIds {
 async fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn) -> JsonResult {
     if !CONFIG.is_org_creation_allowed(&headers.user.email) {
         err!("User not allowed to create organizations")
+    }
+    // Stricter than the SingleOrg policy below, which exempts owners and admins: an organization which
+    // confirms its members automatically forbids every one of its members, in any role and in any status,
+    // to be part of another organization, so it may not create one either.
+    // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Organizations/SelfHostedOrganizationSignUpCommand.cs
+    if AutoConfirmRequirement::for_user(&headers.user.uuid, &conn).await.forbids_creating_organization() {
+        err!(
+            "You may not create an organization. You belong to an organization which confirms its members automatically and prohibits you from being a member of any other organization."
+        )
     }
     if OrgPolicy::is_applicable_to_user(&headers.user.uuid, OrgPolicyType::SingleOrg, None, &conn).await {
         err!(
@@ -2682,6 +2692,20 @@ async fn restore_member_impl(
             // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
             // This check need to be done after restoring to work with the correct status
             OrgPolicy::check_user_allowed(&member, "restore", conn).await?;
+
+            // A revoked membership is restored without another accept step, so the member is back inside the
+            // organization with whatever it set up while it was revoked. Emergency access created in that
+            // window would therefore outlive the revocation, which the policy must not allow, so it is
+            // dropped here before the membership becomes active again. Like enabling the policy this leaves
+            // a member which is only invited alone, an invitation must never delete data of an account that
+            // never joined.
+            // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/OrganizationUsers/RestoreUser/v1/RestoreOrganizationUserCommand.cs
+            if member.status != MembershipStatus::Invited as i32
+                && OrgPolicy::is_auto_confirm_enabled(org_id, conn).await
+            {
+                delete_all_emergency_access_of_user(&member.user_uuid, conn).await?;
+            }
+
             member.save(conn).await?;
 
             log_event(
