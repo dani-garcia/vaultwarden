@@ -419,7 +419,7 @@ async fn log_user_event_impl(
 }
 
 pub async fn log_event(
-    event_type: i32,
+    event_type: EventType,
     source_uuid: &str,
     org_id: &OrganizationId,
     act_user_id: &UserId,
@@ -430,7 +430,7 @@ pub async fn log_event(
     if !CONFIG.org_events_enabled() {
         return;
     }
-    log_event_impl(event_type, source_uuid, org_id, act_user_id, device_type, None, ip, conn).await;
+    log_event_impl(event_type as i32, source_uuid, org_id, act_user_id, device_type, None, ip, conn).await;
 }
 
 #[expect(clippy::too_many_arguments)]

@@ -190,7 +190,7 @@ pub async fn enforce_2fa_policy(
             member.save(conn).await?;
 
             log_event(
-                EventType::OrganizationUserRevoked as i32,
+                EventType::OrganizationUserRevoked,
                 &member.uuid,
                 &member.org_uuid,
                 act_user_id,
@@ -228,16 +228,8 @@ pub async fn enforce_2fa_policy_for_org(
             member.revoke();
             member.save(conn).await?;
 
-            log_event(
-                EventType::OrganizationUserRevoked as i32,
-                &member.uuid,
-                org_id,
-                act_user_id,
-                device_type,
-                ip,
-                conn,
-            )
-            .await;
+            log_event(EventType::OrganizationUserRevoked, &member.uuid, org_id, act_user_id, device_type, ip, conn)
+                .await;
         }
     }
 
