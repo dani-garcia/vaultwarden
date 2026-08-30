@@ -362,7 +362,7 @@ impl OrgPolicy {
         }
 
         if Self::is_auto_confirm_enabled(&m.org_uuid, conn).await
-            && Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await > 0
+            && Membership::count_accepted_confirmed_and_revoked_by_user(&m.user_uuid, &m.org_uuid, conn).await > 0
         {
             err!(format!(
                 "Cannot {} because the organization confirms its members automatically and forbids being part of other organizations (membership {})",
@@ -465,13 +465,12 @@ impl AutoConfirmRequirement {
     /// The user may neither grant nor accept emergency access, which would hand its account, and with it
     /// the organization vault, to somebody the organization never vetted.
     ///
-    /// An open invitation does not count, that account did not join yet and may still decline. A revoked
-    /// membership does count: it is restored without another accept step, so an emergency access created
-    /// while revoked would outlive the revocation. Vaultwarden stores a revoked membership as its previous
-    /// status minus 128, hence the comparison against the unrevoked status.
+    /// Bitwarden restricts the accepted, the confirmed and the revoked status, and exempts only an open
+    /// invitation. See [`Membership::counts_for_auto_confirm`] for why a revoked membership is restricted
+    /// no matter which status it was revoked from.
     /// Mirrors `GrantorCannotInviteToEmergencyAccess()` and `GranteeCannotAcceptEmergencyAccess()`.
     pub fn forbids_emergency_access(&self) -> bool {
-        self.0.iter().any(|m| m.get_unrevoked_status() != MembershipStatus::Invited as i32)
+        self.0.iter().any(Membership::counts_for_auto_confirm)
     }
 }
 
@@ -559,7 +558,7 @@ mod tests {
         assert!(requirement.forbids_membership_outside(&org("other")));
     }
 
-    /// Accepted, confirmed and revoked memberships all block emergency access. The revoked ones matter
+    /// Accepted, confirmed and every revoked membership block emergency access. The revoked ones matter
     /// because a membership is restored without another accept step, so an emergency access created while
     /// revoked would survive the restore.
     #[test]
@@ -582,22 +581,22 @@ mod tests {
         }
     }
 
-    /// An invitation is the one membership emergency access is not restricted by, that account did not
-    /// join yet and may still decline. Revoking an invitation does not change that.
+    /// A revoked invitation is revoked like any other membership, so it is restricted too. Bitwarden
+    /// stores one `Revoked` status without looking at what it was revoked from and restricts all of it.
     #[test]
-    fn an_invitation_does_not_forbid_emergency_access() {
-        let auto_confirm_org = org("auto-confirm");
+    fn a_revoked_invitation_forbids_emergency_access() {
+        let member = revoked(&org("auto-confirm"), MembershipType::User, MembershipStatus::Invited as i32);
 
-        for member in [
-            membership(&auto_confirm_org, MembershipType::User, MembershipStatus::Invited as i32),
-            revoked(&auto_confirm_org, MembershipType::User, MembershipStatus::Invited as i32),
-        ] {
-            let status = member.status;
-            assert!(
-                !AutoConfirmRequirement(vec![member]).forbids_emergency_access(),
-                "status {status} must keep its emergency access"
-            );
-        }
+        assert!(AutoConfirmRequirement(vec![member]).forbids_emergency_access());
+    }
+
+    /// An open invitation is the only membership emergency access is not restricted by, that account did
+    /// not join yet and may still decline.
+    #[test]
+    fn an_open_invitation_does_not_forbid_emergency_access() {
+        let member = membership(&org("auto-confirm"), MembershipType::User, MembershipStatus::Invited as i32);
+
+        assert!(!AutoConfirmRequirement(vec![member]).forbids_emergency_access());
     }
 
     /// One joined membership is enough, even next to an invitation which does not restrict by itself.

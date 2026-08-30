@@ -2332,8 +2332,8 @@ async fn put_policy(
         // the members that are not, because this policy also applies to owners and admins and revoking those
         // could lock the organization out of itself.
         for member in Membership::find_by_org(&org_id, &conn).await {
-            if member.status != MembershipStatus::Invited as i32
-                && Membership::count_accepted_and_confirmed_by_user(&member.user_uuid, &org_id, &conn).await > 0
+            if member.counts_for_auto_confirm()
+                && Membership::count_accepted_confirmed_and_revoked_by_user(&member.user_uuid, &org_id, &conn).await > 0
             {
                 err!("This policy forbids members to be part of other organizations, but at least one member still is.")
             }
