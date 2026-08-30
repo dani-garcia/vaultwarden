@@ -377,17 +377,6 @@ async fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn, nt
 /// Enforces the personal ownership policy on user-owned ciphers, if applicable.
 /// A non-owner/admin user belonging to an org with the personal ownership policy
 /// enabled isn't allowed to create new user-owned ciphers or modify existing ones
-/// Ensure SSH key type-data has the required non-empty string fields.
-fn validate_ssh_key_data(type_data: &Value) -> EmptyResult {
-    for field in ["privateKey", "publicKey", "keyFingerprint"] {
-        match type_data.get(field).and_then(Value::as_str) {
-            Some(value) if !value.is_empty() => {}
-            _ => err!(format!("SSH key field '{field}' must be a non-empty string")),
-        }
-    }
-    Ok(())
-}
-
 /// (that were created before the policy was applicable to the user). The user is
 /// allowed to delete or share such ciphers to an org, however.
 ///
@@ -398,6 +387,20 @@ async fn enforce_personal_ownership_policy(data: Option<&CipherData>, headers: &
         let policy_type = OrgPolicyType::PersonalOwnership;
         if OrgPolicy::is_applicable_to_user(user_id, policy_type, None, conn).await {
             err!("Due to an Enterprise Policy, you are restricted from saving items to your personal vault.")
+        }
+    }
+    Ok(())
+}
+
+/// Ensure SSH key type-data carries the mandatory non-empty string fields.
+///
+/// `Cipher::to_json` already discards the type-data of stored SSH ciphers whose
+/// fields are missing or empty; rejecting them here keeps such ciphers from
+/// being written in the first place.
+fn validate_ssh_key_data(type_data: &Value) -> EmptyResult {
+    for field in ["privateKey", "publicKey", "keyFingerprint"] {
+        if type_data[field].as_str().is_none_or(str::is_empty) {
+            err!(format!("SSH key field '{field}' must be a non-empty string"))
         }
     }
     Ok(())
@@ -2246,41 +2249,18 @@ mod ssh_key_validation_tests {
     use serde_json::json;
 
     #[test]
-    fn accepts_non_empty_required_fields() {
-        let data = json!({
-            "privateKey": "priv",
-            "publicKey": "pub",
-            "keyFingerprint": "fp"
-        });
-        assert!(validate_ssh_key_data(&data).is_ok());
-    }
+    fn validate_ssh_key_data_required_fields() {
+        let cases = [
+            ("all fields present", json!({"privateKey": "priv", "publicKey": "pub", "keyFingerprint": "fp"}), true),
+            ("null private key", json!({"privateKey": null, "publicKey": "pub", "keyFingerprint": "fp"}), false),
+            ("empty public key", json!({"privateKey": "priv", "publicKey": "", "keyFingerprint": "fp"}), false),
+            ("missing fingerprint", json!({"privateKey": "priv", "publicKey": "pub"}), false),
+            ("non-string fingerprint", json!({"privateKey": "priv", "publicKey": "pub", "keyFingerprint": 42}), false),
+            ("no fields at all", json!({}), false),
+        ];
 
-    #[test]
-    fn rejects_null_private_key() {
-        let data = json!({
-            "privateKey": null,
-            "publicKey": "pub",
-            "keyFingerprint": "fp"
-        });
-        assert!(validate_ssh_key_data(&data).is_err());
-    }
-
-    #[test]
-    fn rejects_empty_public_key() {
-        let data = json!({
-            "privateKey": "priv",
-            "publicKey": "",
-            "keyFingerprint": "fp"
-        });
-        assert!(validate_ssh_key_data(&data).is_err());
-    }
-
-    #[test]
-    fn rejects_missing_fingerprint() {
-        let data = json!({
-            "privateKey": "priv",
-            "publicKey": "pub"
-        });
-        assert!(validate_ssh_key_data(&data).is_err());
+        for (case, type_data, expected_ok) in cases {
+            assert_eq!(validate_ssh_key_data(&type_data).is_ok(), expected_ok, "case: {case}");
+        }
     }
 }
