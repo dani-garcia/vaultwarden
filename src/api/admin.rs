@@ -425,7 +425,7 @@ async fn delete_user(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyR
 
     for membership in memberships {
         log_event(
-            EventType::OrganizationUserDeleted as i32,
+            EventType::OrganizationUserDeleted,
             &membership.uuid,
             &membership.org_uuid,
             &ACTING_ADMIN_USER.into(),
@@ -446,7 +446,7 @@ async fn delete_sso_user(user_id: UserId, token: AdminToken, conn: DbConn) -> Em
 
     for membership in memberships {
         log_event(
-            EventType::OrganizationUserUnlinkedSso as i32,
+            EventType::OrganizationUserUnlinkedSso,
             &membership.uuid,
             &membership.org_uuid,
             &ACTING_ADMIN_USER.into(),
@@ -571,7 +571,7 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
     OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
     log_event(
-        EventType::OrganizationUserUpdated as i32,
+        EventType::OrganizationUserUpdated,
         &member_to_edit.uuid,
         &data.org_uuid,
         &ACTING_ADMIN_USER.into(),
