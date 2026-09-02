@@ -1272,7 +1272,7 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     if !cfg.disable_admin_token {
         match cfg.admin_token.as_ref() {
             Some(t) if t.starts_with("$argon2") => {
-                if let Err(e) = argon2::password_hash::PasswordHash::new(t) {
+                if let Err(e) = argon2::password_hash::phc::PasswordHash::new(t) {
                     err!(format!("The configured Argon2 PHC in `ADMIN_TOKEN` is invalid: '{e}'"))
                 }
             }
