@@ -1,0 +1,17 @@
+DROP INDEX idx_ciphers_user_uuid ON ciphers;
+DROP INDEX idx_ciphers_organization_uuid ON ciphers;
+DROP INDEX idx_attachments_cipher_uuid ON attachments;
+DROP INDEX idx_folders_user_uuid ON folders;
+DROP INDEX idx_folders_ciphers_folder_uuid ON folders_ciphers;
+DROP INDEX idx_ciphers_collections_collection_uuid ON ciphers_collections;
+DROP INDEX idx_favorites_cipher_uuid ON favorites;
+DROP INDEX idx_devices_user_uuid ON devices;
+DROP INDEX idx_collections_org_uuid ON collections;
+DROP INDEX idx_users_collections_collection_uuid ON users_collections;
+DROP INDEX idx_users_organizations_org_uuid ON users_organizations;
+DROP INDEX idx_groups_organizations_uuid ON `groups`;
+DROP INDEX idx_groups_users_users_organizations_uuid ON groups_users;
+DROP INDEX idx_collections_groups_groups_uuid ON collections_groups;
+DROP INDEX idx_event_org_uuid_event_date ON event;
+DROP INDEX idx_event_cipher_uuid_event_date ON event;
+DROP INDEX idx_event_event_date ON event;
