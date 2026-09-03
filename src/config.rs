@@ -649,6 +649,9 @@ make_config! {
         /// because this provides unauthenticated access to potentially sensitive data.
         show_password_hint:     bool,   true,   def,    false;
 
+        /// Allow passkey login |> Controls whether users can setup and use passkeys to log in, which also bypasses 2FA. This setting applies globally to all users.
+        passkey_login_allowed:  bool,   true,  def,    true;
+
         /// Admin token/Argon2 PHC |> The plain text token or Argon2 PHC string used to authenticate in this very same page. Changing it here will not deauthorize the current session!
         admin_token:            Pass,   true,   option;
 
@@ -1430,6 +1433,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "ssh-agent-v2",
     // Key Management Team
     "ssh-key-vault-item",
+    "pm-2035-passkey-unlock",
     "pm-25373-windows-biometrics-v2",
     "pm-26340-linux-biometrics-v2",
     // Mobile Team
