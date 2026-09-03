@@ -6,6 +6,7 @@ use rocket::{
     Route,
     form::{Form, FromForm},
     fs::TempFile,
+    http::Status,
     serde::json::Json,
 };
 use serde_json::Value;
@@ -21,8 +22,8 @@ use crate::{
         DbConn, DbPool,
         models::{
             Archive, Attachment, AttachmentId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup,
-            CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, Membership,
-            MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
+            CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, KeyId,
+            Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
         },
     },
     util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
@@ -198,6 +199,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "sends": sends_json,
         "userDecryption": {
             "masterPasswordUnlock": master_password_unlock,
+            "userKeyId": headers.user.key_id,
         },
         "object": "sync"
     })))
@@ -259,6 +261,10 @@ pub struct CipherData {
     pub organization_id: Option<OrganizationId>,
 
     key: Option<String>,
+
+    pub encrypted_for: UserId, // Added in web-v2025.6.0
+    // Added in web-v2025.8.1, Optional for compat
+    pub encrypted_by_key_id: Option<KeyId>,
 
     /*
     Login = 1,
@@ -333,6 +339,10 @@ async fn post_ciphers_create(
 ) -> JsonResult {
     let mut data: ShareCipherData = data.into_inner();
 
+    if data.cipher.encrypted_for != headers.user.uuid {
+        err_code!("Invalid user cipher", Status::UnprocessableEntity.code);
+    }
+
     // This check is usually only needed in update_cipher_from_data(), but we
     // need it here as well to avoid creating an empty cipher in the call to
     // cipher.save() below.
@@ -361,6 +371,17 @@ async fn post_ciphers_create(
 #[post("/ciphers", data = "<data>")]
 async fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     let mut data: CipherData = data.into_inner();
+
+    if data.encrypted_for != headers.user.uuid {
+        err_code!("Invalid user cipher", Status::UnprocessableEntity.code);
+    }
+
+    if let Some(cipher_key_id) = &data.encrypted_by_key_id
+        && let Some(user_key_id) = &headers.user.key_id
+        && cipher_key_id != user_key_id
+    {
+        err_code!("Invalid key cipher", Status::UnprocessableEntity.code);
+    }
 
     // The web/browser clients set this field to null as expected, but the
     // mobile clients seem to set the invalid value `0001-01-01T00:00:00`,
