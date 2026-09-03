@@ -30,9 +30,9 @@ use crate::{
     db::{
         DbConn,
         models::{
-            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeResponseError,
-            OrganizationApiKey, OrganizationId, SendId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete,
-            TwoFactorType, User, UserId,
+            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, Membership, MembershipType,
+            OIDCCodeResponseError, OrganizationApiKey, OrganizationId, SendId, SsoAuth, SsoUser, TwoFactor,
+            TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
     },
     error::MapResult,
@@ -597,8 +597,13 @@ async fn authenticated_response(
     // Also advertised to users without a master password, that is how the client
     // knows to enroll a new SSO user with the connector
     if CONFIG.key_connector_enabled() && !has_master_password {
-        result["UserDecryptionOptions"]["KeyConnectorOption"] =
-            crate::api::core::key_connector::key_connector_user_decryption_option();
+        let advertise = uses_key_connector
+            || !CONFIG.key_connector_exempt_admins()
+            || !Membership::find_by_user(&user.uuid, conn).await.iter().any(|m| m.atype >= MembershipType::Admin);
+        if advertise {
+            result["UserDecryptionOptions"]["KeyConnectorOption"] =
+                crate::api::core::key_connector::key_connector_user_decryption_option();
+        }
     }
 
     if let Some(token) = twofactor_token {

@@ -805,6 +805,8 @@ make_config! {
         key_connector_url:              String, true,   def,    String::new();
         /// Key Connector org name |> Name shown in the client's domain-confirmation dialog
         key_connector_org_name:         String, true,   def,    String::from("Key Connector");
+        /// Key Connector exempt admins |> Do not advertise the Key Connector to owners and admins so they set a master password instead. Users already enrolled keep using key connector
+        key_connector_exempt_admins:    bool,   true,   def,    true;
         /// Only SSO login |> Disable Email+Master Password login
         sso_only:                       bool,   true,   def,    false;
         /// Allow email association |> Associate existing non-SSO user based on email
