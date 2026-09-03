@@ -905,6 +905,12 @@ async fn twofactor_auth(
 
             // Remove all twofactors from the user
             TwoFactor::delete_all_by_user(&user.uuid, conn).await?;
+
+            // No device may keep skipping 2FA once every second factor is gone.
+            // `device` is cleared in memory too, since saving it later would restore its token.
+            Device::clear_twofactor_remember_by_user(&user.uuid, conn).await?;
+            device.delete_twofactor_remember();
+
             enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, conn).await?;
 
             log_user_event(EventType::UserRecovered2fa as i32, &user.uuid, device.atype, &ip.ip, conn).await;
