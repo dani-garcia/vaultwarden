@@ -1050,13 +1050,13 @@ async fn json_err_twofactor(
 }
 
 #[post("/accounts/prelogin", data = "<data>")]
-async fn post_prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
-    prelogin(data, conn).await
+async fn post_prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+    prelogin(data, ip, conn).await
 }
 
 #[post("/accounts/prelogin/password", data = "<data>")]
-async fn prelogin_password(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
-    prelogin(data, conn).await
+async fn prelogin_password(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+    prelogin(data, ip, conn).await
 }
 
 #[post("/accounts/register", data = "<data>")]

@@ -1340,11 +1340,13 @@ pub struct PreloginData {
 }
 
 #[post("/accounts/prelogin", data = "<data>")]
-async fn post_prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
-    prelogin(data, conn).await
+async fn post_prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+    prelogin(data, ip, conn).await
 }
 
-pub async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
+pub async fn prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+    crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
+
     let data: PreloginData = data.into_inner();
 
     let (kdf_type, kdf_iter, kdf_mem, kdf_para) = match User::find_by_mail(&data.email, &conn).await {
@@ -1352,7 +1354,7 @@ pub async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
         None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
     };
 
-    Json(json!({
+    Ok(Json(json!({
         "kdf": kdf_type,
         "kdfIterations": kdf_iter,
         "kdfMemory": kdf_mem,
@@ -1364,7 +1366,7 @@ pub async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
             "parallelism": kdf_para
         },
         "salt": null,
-    }))
+    })))
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Auth/Models/Request/Accounts/SecretVerificationRequestModel.cs
@@ -1595,6 +1597,8 @@ async fn post_auth_request(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    crate::ratelimit::check_limit_unauthenticated(&client_headers.ip.ip)?;
+
     let data = data.into_inner();
 
     let Some(user) = User::find_by_mail(&data.email, &conn).await else {
@@ -1756,6 +1760,8 @@ async fn get_auth_request_response(
     client_headers: ClientHeaders,
     conn: DbConn,
 ) -> JsonResult {
+    crate::ratelimit::check_limit_unauthenticated(&client_headers.ip.ip)?;
+
     let Some(auth_request) = AuthRequest::find_by_uuid(&auth_request_id, &conn).await else {
         err!("AuthRequest doesn't exist", "User not found")
     };
