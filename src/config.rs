@@ -567,6 +567,9 @@ make_config! {
         /// Purge incomplete SSO auth. |> Cron schedule of the job that cleans leftover auth in db due to incomplete SSO login.
         /// Defaults to daily. Set blank to disable this job.
         purge_incomplete_sso_auth: String, false,  def,   "0 20 0 * * *".to_owned();
+        /// Purge expired sends OTP |> Cron schedule of the job that cleans the sends email verification OTP.
+        /// Defaults to daily. Set blank to disable this job.
+        purge_sends_otp: String, false,  def,   "0 22 0 * * *".to_owned();
     },
 
     /// General settings
@@ -1768,6 +1771,7 @@ where
     reg!("email/send_emergency_access_invite", ".html");
     reg!("email/send_org_invite", ".html");
     reg!("email/send_single_org_removed_from_org", ".html");
+    reg!("email/sends_otp", ".html");
     reg!("email/smtp_test", ".html");
     reg!("email/sso_change_email", ".html");
     reg!("email/twofactor_email", ".html");
