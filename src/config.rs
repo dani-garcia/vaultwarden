@@ -716,6 +716,8 @@ make_config! {
         /// Disable Two-Factor remember |> Enabling this would force the users to use a second factor to login every time.
         /// Note that the checkbox would still be present, but ignored.
         disable_2fa_remember:   bool,   true,   def,    false;
+        /// Two-Factor remember duration |> Number of days before a remembered Two-Factor login expires (min: 1, max: 90).
+        two_factor_remember_days: i64,  true,   def,    30;
 
         /// Disable authenticator time drifted codes to be valid |> Enabling this only allows the current TOTP code to be valid
         /// TOTP codes of the previous and next 30 seconds will be invalid.
@@ -1234,6 +1236,10 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
 
     if cfg.invitation_expiration_hours < 1 {
         err!("`INVITATION_EXPIRATION_HOURS` has a minimum duration of 1 hour")
+    }
+
+    if !(1..=90).contains(&cfg.two_factor_remember_days) {
+        err!("`TWO_FACTOR_REMEMBER_DAYS` must be between 1 and 90 days")
     }
 
     // Validate schedule crontab format
@@ -1868,3 +1874,25 @@ handlebars::handlebars_helper!(webver: | web_vault_version: String |
 handlebars::handlebars_helper!(vwver: | vw_version: String |
     semver::VersionReq::parse(&vw_version).expect("Invalid Vaultwarden version compare string").matches(&VW_VERSION)
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config_with_two_factor_remember_days(days: i64) -> ConfigItems {
+        ConfigBuilder {
+            database_url: Some("sqlite://:memory:".to_owned()),
+            two_factor_remember_days: Some(days),
+            ..Default::default()
+        }
+        .build()
+    }
+
+    #[test]
+    fn two_factor_remember_days_are_limited_to_ninety() {
+        assert!(validate_config(&config_with_two_factor_remember_days(90), false).is_ok());
+
+        let error = validate_config(&config_with_two_factor_remember_days(91), false).unwrap_err();
+        assert_eq!(format!("{error:?}"), "`TWO_FACTOR_REMEMBER_DAYS` must be between 1 and 90 days");
+    }
+}
