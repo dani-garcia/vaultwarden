@@ -259,6 +259,11 @@ impl User {
             orgs_json.push(c.to_json(conn).await);
         }
 
+        let mut orgs_new_json = Vec::new();
+        for c in Membership::find_accepted_and_confirmed_by_user(&self.uuid, conn).await {
+            orgs_new_json.push(c.to_json(conn).await);
+        }
+
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).await.is_empty();
 
         // TODO: Might want to save the status field in the DB
@@ -299,6 +304,7 @@ impl User {
             "privateKey": self.private_key,
             "securityStamp": self.security_stamp,
             "organizations": orgs_json,
+            "organizationsNew": orgs_new_json,
             "providers": [],
             "providerOrganizations": [],
             "forcePasswordReset": false,

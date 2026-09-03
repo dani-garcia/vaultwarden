@@ -861,6 +861,21 @@ impl Membership {
         .await
     }
 
+    pub async fn find_accepted_and_confirmed_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
+        conn.run(move |conn| {
+            users_organizations::table
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(
+                    users_organizations::status
+                        .eq(MembershipStatus::Accepted as i32)
+                        .or(users_organizations::status.eq(MembershipStatus::Confirmed as i32)),
+                )
+                .load::<Self>(conn)
+                .unwrap_or_default()
+        })
+        .await
+    }
+
     pub async fn find_invited_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             users_organizations::table
