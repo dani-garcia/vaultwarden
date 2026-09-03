@@ -1119,6 +1119,87 @@ enum FileUploadType {
     // Azure = 1, // only used upstream
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AttachmentQuotaError {
+    Disabled,
+    Overflow,
+    LimitReached,
+}
+
+/// Computes remaining attachment quota in bytes.
+///
+/// `limit_kb` is the configured limit in kilobytes (`None` = unlimited).
+/// `size_adjust` credits bytes already reserved in the database (v2 metadata row).
+fn attachment_quota_remaining(
+    limit_kb: Option<i64>,
+    already_used: i64,
+    size_adjust: i64,
+) -> Result<Option<i64>, AttachmentQuotaError> {
+    match limit_kb {
+        Some(0) => Err(AttachmentQuotaError::Disabled),
+        Some(limit_kb) => {
+            let Some(left) = limit_kb
+                .checked_mul(1024)
+                .and_then(|l| l.checked_sub(already_used))
+                .and_then(|l| l.checked_add(size_adjust))
+            else {
+                return Err(AttachmentQuotaError::Overflow);
+            };
+
+            if left <= 0 {
+                Err(AttachmentQuotaError::LimitReached)
+            } else {
+                Ok(Some(left))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
+fn proposed_exceeds_attachment_quota(remaining: Option<i64>, proposed_size: i64) -> bool {
+    remaining.is_some_and(|left| proposed_size > left)
+}
+
+/// Returns the remaining attachment storage in bytes for the cipher's owner, or `None` if unlimited.
+///
+/// `size_adjust` credits bytes already reserved in the database (v2 metadata row) so they are not
+/// double-counted against the limit.
+async fn attachment_size_limit(
+    cipher: &Cipher,
+    size_adjust: i64,
+    conn: &DbConn,
+) -> Result<Option<i64>, crate::error::Error> {
+    if let Some(ref user_id) = cipher.user_uuid {
+        match attachment_quota_remaining(
+            CONFIG.user_attachment_limit(),
+            Attachment::size_by_user(user_id, conn).await,
+            size_adjust,
+        ) {
+            Ok(remaining) => Ok(remaining),
+            Err(AttachmentQuotaError::Disabled) => err!("Attachments are disabled"),
+            Err(AttachmentQuotaError::Overflow) => err!("Attachment size overflow"),
+            Err(AttachmentQuotaError::LimitReached) => {
+                err!("Attachment storage limit reached! Delete some attachments to free up space")
+            }
+        }
+    } else if let Some(ref org_id) = cipher.organization_uuid {
+        match attachment_quota_remaining(
+            CONFIG.org_attachment_limit(),
+            Attachment::size_by_org(org_id, conn).await,
+            size_adjust,
+        ) {
+            Ok(remaining) => Ok(remaining),
+            Err(AttachmentQuotaError::Disabled) => err!("Attachments are disabled"),
+            Err(AttachmentQuotaError::Overflow) => err!("Attachment size overflow"),
+            Err(AttachmentQuotaError::LimitReached) => {
+                err!("Attachment storage limit reached! Delete some attachments to free up space")
+            }
+        }
+    } else {
+        err!("Cipher is neither owned by a user nor an organization");
+    }
+}
+
 /// v2 API for creating an attachment associated with a cipher.
 /// This redirects the client to the API it should use to upload the attachment.
 /// For upstream's cloud-hosted service, it's an Azure object storage API.
@@ -1144,6 +1225,11 @@ async fn post_attachment_v2(
     if file_size < 0 {
         err!("Attachment size can't be negative")
     }
+
+    if proposed_exceeds_attachment_quota(attachment_size_limit(&cipher, 0, &conn).await?, file_size) {
+        err!("Attachment storage limit exceeded with this file");
+    }
+
     let attachment_id = crypto::generate_attachment_id();
     let attachment =
         Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.file_name, file_size, Some(data.key));
@@ -1210,57 +1296,9 @@ async fn save_attachment(
         Some(a) => a.file_size, // v2 API
     };
 
-    let size_limit = if let Some(ref user_id) = cipher.user_uuid {
-        match CONFIG.user_attachment_limit() {
-            Some(0) => err!("Attachments are disabled"),
-            Some(limit_kb) => {
-                let already_used = Attachment::size_by_user(user_id, &conn).await;
-                let left = limit_kb
-                    .checked_mul(1024)
-                    .and_then(|l| l.checked_sub(already_used))
-                    .and_then(|l| l.checked_add(size_adjust));
+    let size_limit = attachment_size_limit(&cipher, size_adjust, &conn).await?;
 
-                let Some(left) = left else {
-                    err!("Attachment size overflow");
-                };
-
-                if left <= 0 {
-                    err!("Attachment storage limit reached! Delete some attachments to free up space")
-                }
-
-                Some(left)
-            }
-            None => None,
-        }
-    } else if let Some(ref org_id) = cipher.organization_uuid {
-        match CONFIG.org_attachment_limit() {
-            Some(0) => err!("Attachments are disabled"),
-            Some(limit_kb) => {
-                let already_used = Attachment::size_by_org(org_id, &conn).await;
-                let left = limit_kb
-                    .checked_mul(1024)
-                    .and_then(|l| l.checked_sub(already_used))
-                    .and_then(|l| l.checked_add(size_adjust));
-
-                let Some(left) = left else {
-                    err!("Attachment size overflow");
-                };
-
-                if left <= 0 {
-                    err!("Attachment storage limit reached! Delete some attachments to free up space")
-                }
-
-                Some(left)
-            }
-            None => None,
-        }
-    } else {
-        err!("Cipher is neither owned by a user nor an organization");
-    };
-
-    if let Some(size_limit) = size_limit
-        && size > size_limit
-    {
+    if proposed_exceeds_attachment_quota(size_limit, size) {
         err!("Attachment storage limit exceeded with this file");
     }
 
@@ -2211,5 +2249,64 @@ impl CipherSyncData {
             user_collections_groups,
             user_group_full_access_for_organizations,
         }
+    }
+}
+
+#[cfg(test)]
+mod attachment_quota_tests {
+    use super::{AttachmentQuotaError, attachment_quota_remaining, proposed_exceeds_attachment_quota};
+
+    #[test]
+    fn unlimited_when_limit_unset() {
+        assert_eq!(attachment_quota_remaining(None, 0, 0), Ok(None));
+        assert_eq!(attachment_quota_remaining(None, 1_000_000, 0), Ok(None));
+    }
+
+    #[test]
+    fn disabled_when_limit_zero() {
+        assert_eq!(attachment_quota_remaining(Some(0), 0, 0), Err(AttachmentQuotaError::Disabled));
+    }
+
+    #[test]
+    fn remaining_bytes_from_limit_and_usage() {
+        // 1 KiB limit, nothing used
+        assert_eq!(attachment_quota_remaining(Some(1), 0, 0), Ok(Some(1024)));
+
+        // 1 KiB limit, 512 bytes used
+        assert_eq!(attachment_quota_remaining(Some(1), 512, 0), Ok(Some(512)));
+    }
+
+    #[test]
+    fn limit_reached_when_quota_exhausted() {
+        assert_eq!(attachment_quota_remaining(Some(1), 1024, 0), Err(AttachmentQuotaError::LimitReached));
+        assert_eq!(attachment_quota_remaining(Some(1), 2048, 0), Err(AttachmentQuotaError::LimitReached));
+    }
+
+    #[test]
+    fn size_adjust_credits_v2_reservation() {
+        // 1 KiB quota fully used in DB, but upload path credits the reserved row.
+        assert_eq!(attachment_quota_remaining(Some(1), 1024, 512), Ok(Some(512)));
+
+        // v2 create path uses size_adjust = 0, so a full quota blocks new reservations.
+        assert_eq!(attachment_quota_remaining(Some(1), 1024, 0), Err(AttachmentQuotaError::LimitReached));
+    }
+
+    #[test]
+    fn overflow_on_arithmetic_wrap() {
+        assert_eq!(attachment_quota_remaining(Some(i64::MAX), i64::MIN, 0), Err(AttachmentQuotaError::Overflow));
+    }
+
+    #[test]
+    fn v2_metadata_reservation_rejects_over_quota_declared_size() {
+        let remaining = attachment_quota_remaining(Some(100), 0, 0).expect("quota available");
+        let remaining = remaining.expect("limited quota");
+
+        assert!(!proposed_exceeds_attachment_quota(Some(remaining), remaining));
+        assert!(proposed_exceeds_attachment_quota(Some(remaining), remaining + 1));
+    }
+
+    #[test]
+    fn unlimited_quota_never_rejects_declared_size() {
+        assert!(!proposed_exceeds_attachment_quota(None, i64::MAX));
     }
 }
