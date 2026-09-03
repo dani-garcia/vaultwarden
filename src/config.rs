@@ -1425,6 +1425,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "desktop-ui-migration-milestone-4",
     // Auth Team
     "pm-5594-safari-account-switching",
+    "pm-32413-multi-client-password-management",
     // Autofill Team
     "ssh-agent",
     "ssh-agent-v2",
