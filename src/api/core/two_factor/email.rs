@@ -5,9 +5,12 @@ use crate::{
     CONFIG,
     api::{
         EmptyResult, JsonResult, PasswordOrOtpData,
-        core::{log_user_event, two_factor::generate_recover_code},
+        core::{
+            log_user_event,
+            two_factor::{VerificationTokenData, generate_recover_code},
+        },
     },
-    auth::{ClientHeaders, Headers},
+    auth::{ClientHeaders, Headers, two_factor},
     crypto,
     db::{
         DbConn,
@@ -18,7 +21,7 @@ use crate::{
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![get_email, send_email_login, send_email, email,]
+    routes![get_email, send_email_login, send_email, email, disable_email]
 }
 
 #[derive(Deserialize)]
@@ -107,8 +110,8 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
 
 /// Generate the token, save the data for later verification and send email to user
 pub async fn send_token(user_id: &UserId, conn: &DbConn) -> EmptyResult {
-    let type_ = TwoFactorType::Email as i32;
-    let mut twofactor = TwoFactor::find_by_user_and_type(user_id, type_, conn).await.map_res("Two factor not found")?;
+    let mut twofactor =
+        TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Email, conn).await.map_res("Two factor not found")?;
 
     let generated_token = crypto::generate_email_token(CONFIG.email_token_size());
 
@@ -131,18 +134,19 @@ async fn get_email(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn
     data.validate(&user, false, &conn).await?;
 
     let (enabled, mfa_email) =
-        match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &conn).await {
-            Some(x) => {
-                let twofactor_data = EmailTokenData::from_json(&x.data)?;
-                (true, json!(twofactor_data.email))
-            }
-            _ => (false, serde_json::value::Value::Null),
+        if let Some(x) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await {
+            let twofactor_data = EmailTokenData::from_json(&x.data)?;
+            (true, Some(twofactor_data.email))
+        } else {
+            (false, None)
         };
 
-    Ok(Json(json!({
-        "email": mfa_email,
-        "enabled": enabled,
-        "object": "twoFactorEmail"
+    Ok(Json(rocket::serde::json::json!({
+        "email": rocket::serde::json::json!({
+            "enabled": enabled,
+            "email": mfa_email,
+        }),
+        "userVerificationToken": two_factor::email_token(user.uuid, mfa_email, enabled),
     })))
 }
 
@@ -151,30 +155,22 @@ async fn get_email(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn
 struct SendEmailData {
     /// Email where 2FA codes will be sent to, can be different than user email account.
     email: String,
-    master_password_hash: Option<String>,
-    otp: Option<String>,
+    user_verification_token: String,
 }
 
 /// Send a verification email to the specified email address to check whether it exists/belongs to user.
 #[post("/two-factor/send-email", data = "<data>")]
-async fn send_email(data: Json<SendEmailData>, headers: Headers, conn: DbConn) -> EmptyResult {
+async fn send_email(data: Json<SendEmailData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: SendEmailData = data.into_inner();
     let user = headers.user;
 
-    PasswordOrOtpData {
-        master_password_hash: data.master_password_hash,
-        otp: data.otp,
-    }
-    .validate(&user, false, &conn)
-    .await?;
+    two_factor::validate_email(&data.user_verification_token, &user.uuid, data.email.clone(), false)?;
 
     if !CONFIG._enable_email_2fa() {
         err!("Email 2FA is disabled")
     }
 
-    let type_ = TwoFactorType::Email as i32;
-
-    if let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
+    if let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await {
         tf.delete(&conn).await?;
     }
 
@@ -182,12 +178,13 @@ async fn send_email(data: Json<SendEmailData>, headers: Headers, conn: DbConn) -
     let twofactor_data = EmailTokenData::new(data.email, generated_token);
 
     // Uses EmailVerificationChallenge as type to show that it's not verified yet.
-    let twofactor = TwoFactor::new(user.uuid, TwoFactorType::EmailVerificationChallenge, twofactor_data.to_json());
+    let twofactor =
+        TwoFactor::new(user.uuid.clone(), TwoFactorType::EmailVerificationChallenge, twofactor_data.to_json());
     twofactor.save(&conn).await?;
 
     mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?).await?;
 
-    Ok(())
+    Ok(Json(json!({})))
 }
 
 #[derive(Deserialize, Serialize)]
@@ -195,8 +192,7 @@ async fn send_email(data: Json<SendEmailData>, headers: Headers, conn: DbConn) -
 struct EmailData {
     email: String,
     token: String,
-    master_password_hash: Option<String>,
-    otp: Option<String>,
+    user_verification_token: String,
 }
 
 /// Verify email belongs to user and can be used for 2FA email codes.
@@ -205,17 +201,11 @@ async fn email(data: Json<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
     let data: EmailData = data.into_inner();
     let mut user = headers.user;
 
-    // This is the last step in the verification process, delete the otp directly afterwards
-    PasswordOrOtpData {
-        master_password_hash: data.master_password_hash,
-        otp: data.otp,
-    }
-    .validate(&user, true, &conn)
-    .await?;
+    two_factor::validate_email(&data.user_verification_token, &user.uuid, data.email, false)?;
 
-    let type_ = TwoFactorType::EmailVerificationChallenge as i32;
-    let mut twofactor =
-        TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await.map_res("Two factor not found")?;
+    let mut twofactor = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::EmailVerificationChallenge, &conn)
+        .await
+        .map_res("Two factor not found")?;
 
     let mut email_data = EmailTokenData::from_json(&twofactor.data)?;
 
@@ -234,13 +224,28 @@ async fn email(data: Json<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
 
     generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+    log_user_event(EventType::UserUpdated2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
-    Ok(Json(json!({
-        "email": email_data.email,
-        "enabled": "true",
-        "object": "twoFactorEmail"
-    })))
+    Ok(Json(json!({})))
+}
+
+#[delete("/two-factor/email", data = "<data>")]
+async fn disable_email(data: Json<VerificationTokenData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let user = headers.user;
+
+    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await {
+        let twofactor_data = EmailTokenData::from_json(&twofactor.data)?;
+        two_factor::validate_email(&data.user_verification_token, &user.uuid, twofactor_data.email, true)?;
+
+        twofactor.delete(&conn).await?;
+        log_user_event(EventType::UserDisabled2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+    }
+
+    if TwoFactor::find_by_user(&user.uuid, &conn).await.is_empty() {
+        super::enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await?;
+    }
+
+    Ok(())
 }
 
 /// Validate the email code when used as TwoFactor token mechanism
@@ -252,9 +257,8 @@ pub async fn validate_email_code_str(
     conn: &DbConn,
 ) -> EmptyResult {
     let mut email_data = EmailTokenData::from_json(data)?;
-    let mut twofactor = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Email as i32, conn)
-        .await
-        .map_res("Two factor not found")?;
+    let mut twofactor =
+        TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Email, conn).await.map_res("Two factor not found")?;
     let Some(issued_token) = &email_data.last_token else {
         err!(
             format!("No token available! IP: {ip}"),
