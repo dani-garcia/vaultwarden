@@ -13,7 +13,7 @@ use crate::{
 };
 use macros::UuidFromParam;
 
-use super::{CollectionId, Membership, MembershipId, OrganizationId, User, UserId};
+use super::{CollectionId, Membership, MembershipId, MembershipStatus, OrganizationId, User, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = groups)]
@@ -276,6 +276,9 @@ impl Group {
                         .and(users_organizations::org_uuid.eq(groups::organizations_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                // Only allow full access via a confirmed membership, since
+                // groups_users rows are kept when a membership is revoked.
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(groups::organizations_uuid.eq(org_uuid))
                 .filter(groups::access_all.eq(true))
                 .select(groups::access_all)
