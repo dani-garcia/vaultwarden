@@ -38,8 +38,8 @@ pub enum OrgPolicyType {
     DisableSend = 6,
     SendOptions = 7,
     ResetPassword = 8,
-    // MaximumVaultTimeout = 9, // Not supported (Not AGPLv3 Licensed)
-    // DisablePersonalVaultExport = 10, // Not supported (Not AGPLv3 Licensed)
+    MaximumVaultTimeout = 9,
+    DisablePersonalVaultExport = 10,
     // ActivateAutofill = 11,
     // AutomaticAppLogIn = 12,
     // FreeFamiliesSponsorshipPolicy = 13,
@@ -49,6 +49,102 @@ pub enum OrgPolicyType {
     // AutotypeDefaultSetting = 17, // Not supported yet
     // AutoConfirm = 18, // Not supported (not implemented yet)
     // BlockClaimedDomainAccountCreation = 19, // Not supported (Not AGPLv3 Licensed)
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum MaximumVaultTimeoutType {
+    Immediately,
+    Custom,
+    OnSystemLock,
+    OnAppRestart,
+    Never,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum MaximumVaultTimeoutAction {
+    Lock,
+    LogOut,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MaximumVaultTimeoutPolicyData {
+    #[serde(rename = "type")]
+    pub timeout_type: Option<MaximumVaultTimeoutType>,
+    pub minutes: u32,
+    pub action: Option<MaximumVaultTimeoutAction>,
+}
+
+impl Default for MaximumVaultTimeoutPolicyData {
+    fn default() -> Self {
+        Self {
+            timeout_type: Some(MaximumVaultTimeoutType::Custom),
+            minutes: 8 * 60,
+            action: None,
+        }
+    }
+}
+
+impl MaximumVaultTimeoutPolicyData {
+    /// Validate admin-supplied data and normalize the fallback expected by clients predating the type field.
+    pub fn validate_and_normalize(&mut self) -> Result<(), &'static str> {
+        let timeout_type = self.timeout_type.unwrap_or(MaximumVaultTimeoutType::Custom);
+        self.timeout_type = Some(timeout_type);
+
+        if timeout_type == MaximumVaultTimeoutType::Custom {
+            if self.minutes == 0 {
+                return Err("The custom vault timeout must be at least one minute.");
+            }
+        } else {
+            // Bitwarden writes an eight-hour fallback for non-custom types so older clients stay safe.
+            self.minutes = 8 * 60;
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod maximum_vault_timeout_tests {
+    use super::*;
+
+    #[test]
+    fn serializes_client_policy_shape() {
+        let data = MaximumVaultTimeoutPolicyData {
+            timeout_type: Some(MaximumVaultTimeoutType::Custom),
+            minutes: 90,
+            action: Some(MaximumVaultTimeoutAction::LogOut),
+        };
+
+        assert_eq!(serde_json::to_value(data).unwrap(), json!({ "type": "custom", "minutes": 90, "action": "logOut" }));
+    }
+
+    #[test]
+    fn validates_and_normalizes_timeout_data() {
+        let mut zero_custom = MaximumVaultTimeoutPolicyData {
+            timeout_type: Some(MaximumVaultTimeoutType::Custom),
+            minutes: 0,
+            action: None,
+        };
+        assert!(zero_custom.validate_and_normalize().is_err());
+
+        let mut non_custom = MaximumVaultTimeoutPolicyData {
+            timeout_type: Some(MaximumVaultTimeoutType::Immediately),
+            minutes: 0,
+            action: Some(MaximumVaultTimeoutAction::Lock),
+        };
+        non_custom.validate_and_normalize().unwrap();
+        assert_eq!(non_custom.minutes, 480);
+
+        // Policies stored before the type field existed must keep their minutes.
+        let mut legacy: MaximumVaultTimeoutPolicyData =
+            serde_json::from_value(json!({ "minutes": 60, "action": "lock" })).unwrap();
+        legacy.validate_and_normalize().unwrap();
+        assert_eq!(legacy.timeout_type, Some(MaximumVaultTimeoutType::Custom));
+        assert_eq!(legacy.minutes, 60);
+    }
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Models/Data/Organizations/Policies/SendOptionsPolicyData.cs#L5
