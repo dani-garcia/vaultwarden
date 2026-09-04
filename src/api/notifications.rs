@@ -514,8 +514,8 @@ impl WebSocketUsers {
     }
 
     /// Tells the clients of `recipient_id` that `member_id` accepted an invitation and is waiting to be
-    /// confirmed. Only the browser extension acts upon this, it holds the organization key needed to
-    /// confirm the member, which the server never has. Because of that this is WebSocket only.
+    /// confirmed. Only the browser extension acts upon this, it holds the organization key the server
+    /// never has, which is why this is WebSocket only.
     /// https://github.com/bitwarden/clients/blob/main/libs/auto-confirm/README.md
     pub async fn send_auto_confirm_member(
         &self,

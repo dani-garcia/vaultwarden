@@ -282,8 +282,7 @@ impl OrgPolicy {
 
     /// Returns every membership of the user, in any status and of any role, in an organization which has
     /// `policy_type` enabled. Contrary to the queries above this filters nothing away, the caller decides
-    /// which memberships its operation cares about. Bitwarden collects the policies of a user the same way
-    /// and lets each policy declare the roles and statuses it exempts.
+    /// which memberships it cares about, like Bitwarden does per policy.
     /// https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/PolicyRequirements/BasePolicyRequirementFactory.cs
     pub async fn find_memberships_by_user_and_active_policy(
         user_uuid: &UserId,
@@ -306,9 +305,8 @@ impl OrgPolicy {
         .await
     }
 
-    /// Returns true if members of this organization may be confirmed automatically. This requires both the
-    /// server wide config option and the policy of this organization to be enabled, which mirrors Bitwarden
-    /// where the organization needs the feature enabled by support on top of the policy.
+    /// Requires both the server wide config option and the policy of this organization, mirroring
+    /// Bitwarden where support has to enable the feature on top of the policy.
     pub async fn is_auto_confirm_enabled(org_uuid: &OrganizationId, conn: &DbConn) -> bool {
         CONFIG.org_auto_confirm_enabled()
             && match Self::find_by_org_and_type(org_uuid, OrgPolicyType::AutomaticUserConfirmation, conn).await {
@@ -350,9 +348,7 @@ impl OrgPolicy {
             }
         }
 
-        // The automatic user confirmation policy is a stricter variant of the SingleOrg policy, it does not
-        // exempt owners and admins and it applies to every status. Therefore it is checked outside of the
-        // block above.
+        // Stricter than the SingleOrg block above: this policy exempts no role and no status.
         // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/Enforcement/AutoConfirm/AutomaticUserConfirmationPolicyEnforcementHandler.cs
         if AutoConfirmRequirement::for_user(&m.user_uuid, conn).await.forbids_membership_outside(&m.org_uuid) {
             err!(format!(
@@ -424,16 +420,16 @@ pub struct OrgPolicyId(String);
 
 /// The memberships of a user in organizations which confirm their members automatically.
 ///
-/// Bitwarden models this as a policy requirement: a value which answers what the policy forbids this user
-/// to do. Contrary to every other policy this one exempts no role and no status, so an owner or an admin
-/// is bound by it just like a plain member. Not every operation looks at every status though, which is why
-/// each question below states which memberships it counts instead of one shared query deciding it.
+/// Bitwarden models this as a policy requirement: a value answering what the policy forbids this user.
+/// Contrary to every other policy this one exempts no role and no status, so an owner or an admin is
+/// bound just like a plain member. Not every operation looks at every status though, which is why each
+/// question below states which memberships it counts.
 /// https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/PolicyRequirements/AutomaticUserConfirmationPolicyRequirement.cs
 pub struct AutoConfirmRequirement(Vec<Membership>);
 
 impl AutoConfirmRequirement {
-    /// Loads the requirement of a user. It is always empty while the server wide config option is off,
-    /// the policy can not be enabled anywhere then and so it enforces nothing.
+    /// Always empty while the server wide config option is off: the policy can not be enabled anywhere
+    /// then and so enforces nothing.
     pub async fn for_user(user_uuid: &UserId, conn: &DbConn) -> Self {
         if !CONFIG.org_auto_confirm_enabled() {
             return Self(Vec::new());
@@ -449,9 +445,8 @@ impl AutoConfirmRequirement {
         )
     }
 
-    /// The user may not create another organization. Every membership counts here, an open invitation
-    /// included, and the role does not matter: this is what makes the policy stricter than SingleOrg,
-    /// which exempts owners and admins. Mirrors `CannotCreateNewOrganization()`.
+    /// The user may not create another organization. Every membership counts, an open invitation and any
+    /// role included, which is what makes this stricter than SingleOrg. Mirrors `CannotCreateNewOrganization()`.
     pub fn forbids_creating_organization(&self) -> bool {
         !self.0.is_empty()
     }
@@ -462,12 +457,9 @@ impl AutoConfirmRequirement {
         self.0.iter().any(|m| &m.org_uuid != org_uuid)
     }
 
-    /// The user may neither grant nor accept emergency access, which would hand its account, and with it
-    /// the organization vault, to somebody the organization never vetted.
-    ///
-    /// Bitwarden restricts the accepted, the confirmed and the revoked status, and exempts only an open
-    /// invitation. See [`Membership::counts_for_auto_confirm`] for why a revoked membership is restricted
-    /// no matter which status it was revoked from.
+    /// The user may neither grant nor accept emergency access, which would hand its account, and with
+    /// it the organization vault, to somebody the organization never vetted. Only an open invitation is
+    /// exempt, see [`Membership::counts_for_auto_confirm`].
     /// Mirrors `GrantorCannotInviteToEmergencyAccess()` and `GranteeCannotAcceptEmergencyAccess()`.
     pub fn forbids_emergency_access(&self) -> bool {
         self.0.iter().any(Membership::counts_for_auto_confirm)
@@ -482,7 +474,6 @@ mod tests {
         OrganizationId::from(String::from(name))
     }
 
-    /// A membership of our user in an organization which has the policy enabled.
     fn membership(org_uuid: &OrganizationId, atype: MembershipType, status: i32) -> Membership {
         let mut member = Membership::new(UserId::from(String::from("user")), org_uuid.clone(), None);
         member.atype = atype as i32;
@@ -497,11 +488,10 @@ mod tests {
         member
     }
 
-    /// Automatic user confirmation exempts no role, so an owner or an admin of such an organization may
-    /// not create another organization either. This is the difference to the SingleOrg policy, which lets
-    /// both of them through.
+    /// Unlike SingleOrg, which lets owners and admins through, this policy exempts no role and no
+    /// status, so any membership blocks creating another organization.
     #[test]
-    fn no_role_may_create_another_organization() {
+    fn no_role_and_no_status_may_create_another_organization() {
         let auto_confirm_org = org("auto-confirm");
 
         for atype in [MembershipType::User, MembershipType::Manager, MembershipType::Admin, MembershipType::Owner] {
@@ -509,22 +499,14 @@ mod tests {
                 AutoConfirmRequirement(vec![membership(&auto_confirm_org, atype, MembershipStatus::Confirmed as i32)]);
             assert!(requirement.forbids_creating_organization(), "type {} must not create an org", atype as i32);
         }
-    }
 
-    /// Neither does it exempt a status, an invitation and a revoked membership bind just as much.
-    #[test]
-    fn no_status_may_create_another_organization() {
-        let auto_confirm_org = org("auto-confirm");
-
-        let memberships = [
+        for member in [
             membership(&auto_confirm_org, MembershipType::User, MembershipStatus::Invited as i32),
             membership(&auto_confirm_org, MembershipType::User, MembershipStatus::Accepted as i32),
             membership(&auto_confirm_org, MembershipType::User, MembershipStatus::Confirmed as i32),
             revoked(&auto_confirm_org, MembershipType::User, MembershipStatus::Accepted as i32),
             revoked(&auto_confirm_org, MembershipType::User, MembershipStatus::Confirmed as i32),
-        ];
-
-        for member in memberships {
+        ] {
             let status = member.status;
             assert!(
                 AutoConfirmRequirement(vec![member]).forbids_creating_organization(),
@@ -533,18 +515,8 @@ mod tests {
         }
     }
 
-    /// A user which is in no such organization is not restricted by this policy at all. Whether it may
-    /// create an organization is then decided by the SingleOrg policy alone, exactly as before.
-    #[test]
-    fn without_such_a_membership_nothing_is_forbidden() {
-        let requirement = AutoConfirmRequirement(Vec::new());
-
-        assert!(!requirement.forbids_creating_organization());
-        assert!(!requirement.forbids_membership_outside(&org("other")));
-        assert!(!requirement.forbids_emergency_access());
-    }
-
-    /// The organization which enabled the policy is the one membership that is allowed to exist.
+    /// The organization which enabled the policy is the one membership that may exist; a user in no
+    /// such organization is not restricted by this policy at all.
     #[test]
     fn only_a_membership_in_another_organization_is_forbidden() {
         let auto_confirm_org = org("auto-confirm");
@@ -556,57 +528,41 @@ mod tests {
 
         assert!(!requirement.forbids_membership_outside(&auto_confirm_org));
         assert!(requirement.forbids_membership_outside(&org("other")));
+
+        let none = AutoConfirmRequirement(Vec::new());
+        assert!(!none.forbids_creating_organization());
+        assert!(!none.forbids_membership_outside(&org("other")));
+        assert!(!none.forbids_emergency_access());
     }
 
-    /// Accepted, confirmed and every revoked membership block emergency access. The revoked ones matter
-    /// because a membership is restored without another accept step, so an emergency access created while
-    /// revoked would survive the restore.
+    /// Only an open invitation leaves emergency access alone, that account did not join yet and may
+    /// still decline. Revoked memberships count because a restore adds no second accept step, so an
+    /// emergency access created while revoked would survive it.
     #[test]
-    fn joined_and_revoked_memberships_forbid_emergency_access() {
+    fn every_status_but_an_open_invitation_forbids_emergency_access() {
         let auto_confirm_org = org("auto-confirm");
 
-        let memberships = [
-            membership(&auto_confirm_org, MembershipType::User, MembershipStatus::Accepted as i32),
-            membership(&auto_confirm_org, MembershipType::User, MembershipStatus::Confirmed as i32),
-            revoked(&auto_confirm_org, MembershipType::User, MembershipStatus::Accepted as i32),
-            revoked(&auto_confirm_org, MembershipType::User, MembershipStatus::Confirmed as i32),
-        ];
-
-        for member in memberships {
+        for (member, forbidden) in [
+            (membership(&auto_confirm_org, MembershipType::User, MembershipStatus::Invited as i32), false),
+            (membership(&auto_confirm_org, MembershipType::User, MembershipStatus::Accepted as i32), true),
+            (membership(&auto_confirm_org, MembershipType::User, MembershipStatus::Confirmed as i32), true),
+            (revoked(&auto_confirm_org, MembershipType::User, MembershipStatus::Invited as i32), true),
+            (revoked(&auto_confirm_org, MembershipType::User, MembershipStatus::Accepted as i32), true),
+            (revoked(&auto_confirm_org, MembershipType::User, MembershipStatus::Confirmed as i32), true),
+        ] {
             let status = member.status;
-            assert!(
+            assert_eq!(
                 AutoConfirmRequirement(vec![member]).forbids_emergency_access(),
-                "status {status} must not have emergency access"
+                forbidden,
+                "status {status} is handled incorrectly"
             );
         }
-    }
 
-    /// A revoked invitation is revoked like any other membership, so it is restricted too. Bitwarden
-    /// stores one `Revoked` status without looking at what it was revoked from and restricts all of it.
-    #[test]
-    fn a_revoked_invitation_forbids_emergency_access() {
-        let member = revoked(&org("auto-confirm"), MembershipType::User, MembershipStatus::Invited as i32);
-
-        assert!(AutoConfirmRequirement(vec![member]).forbids_emergency_access());
-    }
-
-    /// An open invitation is the only membership emergency access is not restricted by, that account did
-    /// not join yet and may still decline.
-    #[test]
-    fn an_open_invitation_does_not_forbid_emergency_access() {
-        let member = membership(&org("auto-confirm"), MembershipType::User, MembershipStatus::Invited as i32);
-
-        assert!(!AutoConfirmRequirement(vec![member]).forbids_emergency_access());
-    }
-
-    /// One joined membership is enough, even next to an invitation which does not restrict by itself.
-    #[test]
-    fn one_joined_membership_forbids_emergency_access() {
+        // One joined membership is enough, next to an invitation which does not restrict by itself.
         let requirement = AutoConfirmRequirement(vec![
             membership(&org("invited-to"), MembershipType::User, MembershipStatus::Invited as i32),
-            membership(&org("auto-confirm"), MembershipType::User, MembershipStatus::Confirmed as i32),
+            membership(&auto_confirm_org, MembershipType::User, MembershipStatus::Confirmed as i32),
         ]);
-
         assert!(requirement.forbids_emergency_access());
     }
 }

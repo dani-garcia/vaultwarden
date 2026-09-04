@@ -220,9 +220,8 @@ fn config() -> Json<Value> {
         &FeatureFlagFilter::ValidOnly,
     );
     feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
-    // Web vaults up to 2026.4.x only offer the automatic user confirmation policy when this flag is on:
-    // `display$(org, config) => config.getFeatureFlag$(FeatureFlag.AutoConfirm).pipe(map(f => f && org.useAutomaticUserConfirmation))`
-    // Newer clients dropped the flag and look at `useAutomaticUserConfirmation` alone, so sending it stays harmless.
+    // Web vaults up to 2026.4.x only offer the policy when this flag is on; newer ones look at
+    // `useAutomaticUserConfirmation` alone, so sending it stays harmless.
     feature_states.insert("pm-19934-auto-confirm-organization-users".to_owned(), CONFIG.org_auto_confirm_enabled());
 
     Json(json!({
@@ -281,10 +280,9 @@ fn api_not_found() -> Json<Value> {
     }))
 }
 
-/// Tells everybody who is able to confirm this member that it accepted its invitation and is waiting.
-/// Only the browser extension of an unlocked admin acts upon this, it holds the organization key which
-/// is needed to confirm a member and which the server never has.
-/// Call this wherever a membership reaches the accepted state.
+/// Tells everybody who can confirm this member that it accepted its invitation and is waiting. Only the
+/// browser extension of an unlocked admin acts upon this, it holds the organization key the server never
+/// has. Call this wherever a membership reaches the accepted state.
 pub async fn notify_pending_auto_confirm(member: &Membership, conn: &DbConn, nt: &Notify<'_>) {
     if member.status != MembershipStatus::Accepted as i32
         || member.atype != MembershipType::User
@@ -293,8 +291,7 @@ pub async fn notify_pending_auto_confirm(member: &Membership, conn: &DbConn, nt:
         return;
     }
 
-    // Confirming requires `AdminHeaders`, so skip the managers this also returns. They could not act on
-    // the notification anyway and would only run into a rejected request.
+    // Confirming requires `AdminHeaders`, so skip the managers this also returns.
     for admin in Membership::find_confirmed_and_manage_all_by_org(&member.org_uuid, conn)
         .await
         .into_iter()

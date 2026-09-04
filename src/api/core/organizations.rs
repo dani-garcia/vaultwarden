@@ -204,8 +204,7 @@ async fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn
         err!("User not allowed to create organizations")
     }
     // Stricter than the SingleOrg policy below, which exempts owners and admins: an organization which
-    // confirms its members automatically forbids every one of its members, in any role and in any status,
-    // to be part of another organization, so it may not create one either.
+    // confirms members automatically forbids every one of them, in any role and status, another membership.
     // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Organizations/SelfHostedOrganizationSignUpCommand.cs
     if AutoConfirmRequirement::for_user(&headers.user.uuid, &conn).await.forbids_creating_organization() {
         err!(
@@ -1203,9 +1202,9 @@ async fn send_invite(
             group_entry.save(&conn).await?;
         }
 
-        // With mail disabled an existing user is accepted right away, so there is no accept request later on.
-        // This is the last step on purpose: an admin client may confirm the member the moment it is told
-        // about it, and by then the collections and groups of the invite have to be in place.
+        // With mail disabled an existing user is accepted right away, so no accept request follows.
+        // Last step on purpose: an admin client may confirm the member the moment it is told about it,
+        // and by then the collections and groups of the invite have to be in place.
         notify_pending_auto_confirm(&new_member, &conn, &nt).await;
     }
 
@@ -1491,11 +1490,9 @@ async fn confirm_member(
     // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
     OrgPolicy::check_user_allowed(&member_to_confirm, "confirm", conn).await?;
 
-    // An organization which confirms its members automatically does not tolerate emergency access: the
-    // grantee could take over the account of a member that nobody ever vetted and reach the organization
-    // vault through it. Enabling the policy drops the grants of the members present at that time, this
-    // covers the member which brings one along when it joins afterwards. Bitwarden does the same, and
-    // like there it applies to the manual confirmation as well.
+    // Emergency access would let a grantee take over the account of a member nobody vetted and reach
+    // the organization vault. Enabling the policy drops existing grants, this covers a member which
+    // brings one along afterwards. Like Bitwarden, this applies to manual confirmation as well.
     // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/OrganizationUsers/ConfirmOrganizationUserCommand.cs
     if OrgPolicy::is_auto_confirm_enabled(&org_id, conn).await {
         delete_all_emergency_access_of_user(&member_to_confirm.user_uuid, conn).await?;
@@ -1535,15 +1532,13 @@ async fn confirm_member(
     save_result
 }
 
-// Automatic user confirmation. The server can never confirm a member by itself, confirming means
-// encrypting the organization key with the public key of the member and the server does not have the
-// organization key. So all we do here is telling an admin client which members are waiting, the client
-// does the actual work in the background.
+// Automatic user confirmation. The server can never confirm a member itself: that means encrypting the
+// organization key with the public key of the member, and the server does not have the organization key.
+// All we do is tell an admin client which members are waiting, the client does the work in the background.
 // https://bitwarden.com/help/automatic-confirmation/
 
-/// Only a member which accepted its invitation and holds the plain User role is ever confirmed without
-/// a human looking at it. Every elevated role keeps needing a manual confirmation by an Owner, and an
-/// Owner can not lift that restriction here like it can for the manual confirmation.
+/// Only a member which accepted its invitation and holds the plain User role is confirmed without a
+/// human looking at it. Every elevated role keeps needing a manual confirmation by an Owner.
 fn may_be_confirmed_automatically(member: &Membership) -> bool {
     member.status == MembershipStatus::Accepted as i32 && member.atype == MembershipType::User
 }
@@ -2304,14 +2299,13 @@ async fn put_policy(
         }
     }
 
-    // The automatic user confirmation policy hands out organization access without anybody looking at it,
-    // so it needs to be allowed by the server first and it requires the Single Org policy on top.
+    // Automatic confirmation hands out organization access unattended, so it needs the server wide
+    // config option and the Single Org policy on top.
     // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/PolicyEventHandlers/AutomaticUserConfirmationPolicyEventHandler.cs
     let auto_confirm_turned_on = if pol_type_enum == OrgPolicyType::AutomaticUserConfirmation
         && data.enabled
-        // Only the step from disabled to enabled validates and has side effects. The web vault saves a
-        // policy on every edit, and re-running the below on an already enabled policy would keep wiping
-        // emergency access that members created in the meantime. Bitwarden guards this the same way.
+        // Only the step from disabled to enabled validates and has side effects. The web vault saves on
+        // every edit, and re-running the below would keep wiping newly created emergency access.
         && !OrgPolicy::is_auto_confirm_enabled(&org_id, &conn).await
     {
         if !CONFIG.org_auto_confirm_enabled() {
@@ -2328,9 +2322,8 @@ async fn put_policy(
             err!("Single Organization policy is not enabled. It is mandatory for this policy to be enabled.")
         }
 
-        // Every member has to be compliant already. Contrary to the Single Org policy below we do not revoke
-        // the members that are not, because this policy also applies to owners and admins and revoking those
-        // could lock the organization out of itself.
+        // Every member has to be compliant already. Contrary to the Single Org policy below we do not
+        // revoke the others: this policy also binds owners and admins, which could lock the org out.
         for member in Membership::find_by_org(&org_id, &conn).await {
             if member.counts_for_auto_confirm()
                 && Membership::count_accepted_confirmed_and_revoked_by_user(&member.user_uuid, &org_id, &conn).await > 0
@@ -2408,12 +2401,10 @@ async fn put_policy(
     policy.data = serde_json::to_string(&data.data)?;
     policy.save(&conn).await?;
 
-    // Emergency access would hand the account of a member to somebody outside of the control of this
-    // organization, which defeats the point of vetting members. Bitwarden drops these grants when the
-    // policy is turned on, and blocks new ones while it is on (see `emergency_access.rs`).
-    // This runs after the policy is stored so that a failed save can not destroy data for nothing, and it
-    // skips invited members on purpose: an invitation is created by an admin without any consent of the
-    // invited user, so it must never be able to delete data of an account that never joined.
+    // Emergency access would hand a member account to somebody outside this organization, which
+    // defeats vetting members; Bitwarden drops these on enable and blocks new ones (`emergency_access.rs`).
+    // Runs after the policy is stored so a failed save destroys nothing, and skips invited members: an
+    // invitation is created without their consent and must never delete data of an account that never joined.
     if auto_confirm_turned_on {
         for member in Membership::find_by_org(&org_id, &conn).await {
             if member.status == MembershipStatus::Invited as i32 {
@@ -2693,12 +2684,9 @@ async fn restore_member_impl(
             // This check need to be done after restoring to work with the correct status
             OrgPolicy::check_user_allowed(&member, "restore", conn).await?;
 
-            // A revoked membership is restored without another accept step, so the member is back inside the
-            // organization with whatever it set up while it was revoked. Emergency access created in that
-            // window would therefore outlive the revocation, which the policy must not allow, so it is
-            // dropped here before the membership becomes active again. Like enabling the policy this leaves
-            // a member which is only invited alone, an invitation must never delete data of an account that
-            // never joined.
+            // A restore adds no second accept step, so emergency access created while revoked would
+            // outlive the revocation. Like enabling the policy this leaves a merely invited member alone,
+            // an invitation must never delete data of an account that never joined.
             // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/OrganizationUsers/RestoreUser/v1/RestoreOrganizationUserCommand.cs
             if member.status != MembershipStatus::Invited as i32
                 && OrgPolicy::is_auto_confirm_enabled(org_id, conn).await
@@ -3528,8 +3516,8 @@ async fn rotate_api_key(
 mod tests {
     use super::*;
 
-    /// Automatic confirmation hands out access to the organization vault without anybody looking at it,
-    /// so it must stay limited to plain members which actually accepted their invitation.
+    /// Automatic confirmation hands out vault access unattended, so it must stay limited to plain
+    /// members which actually accepted their invitation.
     #[test]
     fn only_accepted_plain_members_are_confirmed_automatically() {
         let mut member =

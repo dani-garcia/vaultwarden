@@ -1869,9 +1869,8 @@ handlebars::handlebars_helper!(vwver: | vw_version: String |
 mod tests {
     use super::*;
 
-    /// The registry runs in strict mode, so a placeholder which the sender does not fill only blows up
-    /// when the mail is actually sent. Render both templates of the emergency access removal notification
-    /// with the data `mail::send_emergency_access_grantees_removed` passes.
+    /// The registry runs in strict mode, so a placeholder the sender does not fill only blows up when the
+    /// mail is actually sent. Render both templates with the data the sender passes.
     #[test]
     fn emergency_access_grantees_removed_renders() {
         let hb = load_templates(std::env::temp_dir());

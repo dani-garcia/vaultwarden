@@ -22,10 +22,9 @@ use crate::{
     util::NumberOrString,
 };
 
-/// Drops every emergency access of `user_id`, the ones it granted as well as the ones it holds, and tells
-/// the grantors which contacts they lost. The grantor of the second group is somebody else, so without a
-/// mail that user would silently lose a part of its account setup.
-/// Bitwarden notifies the same way, one mail per grantor listing all of its removed contacts.
+/// Drops every emergency access of `user_id`, granted as well as held, and tells the grantors which
+/// contacts they lost: those are other users which would otherwise silently lose part of their setup.
+/// Like Bitwarden, one mail per grantor listing all of its removed contacts.
 /// https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/Auth/UserFeatures/EmergencyAccess/Commands/DeleteEmergencyAccessCommand.cs
 pub async fn delete_all_emergency_access_of_user(user_id: &UserId, conn: &DbConn) -> EmptyResult {
     // Read before deleting, afterwards the rows are gone.
