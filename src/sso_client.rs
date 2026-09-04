@@ -3,9 +3,9 @@ use std::{borrow::Cow, collections::HashSet, future::Future, pin::Pin, sync::Laz
 use openidconnect::{
     AccessToken, AsyncHttpClient, AuthDisplay, AuthPrompt, AuthType, AuthenticationFlow, AuthorizationCode,
     AuthorizationRequest, ClientId, ClientSecret, CsrfToken, EmptyAdditionalClaims, EmptyExtraTokenFields,
-    EndpointNotSet, EndpointSet, HttpClientError, HttpRequest, HttpResponse, IdTokenClaims, IdTokenFields, Nonce,
-    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RefreshToken, ResponseType, Scope, StandardErrorResponse,
-    StandardTokenResponse,
+    EndpointNotSet, EndpointSet, HttpClientError, HttpRequest, HttpResponse, IdTokenClaims, IdTokenFields,
+    JsonWebKeySetUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RefreshToken, ResponseType,
+    Scope, StandardErrorResponse, StandardTokenResponse, TokenUrl, UserInfoUrl,
     core::{
         CoreAuthDisplay, CoreAuthPrompt, CoreClient, CoreClientAuthMethod, CoreErrorResponseType, CoreGenderClaim,
         CoreIdTokenVerifier, CoreJsonWebKey, CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm,
@@ -77,12 +77,94 @@ impl OidcHttpClient {
     }
 }
 
+fn rewrite_oidc_url(public: &str, internal: &str, original: &str) -> Option<String> {
+    let public = public.trim().trim_end_matches('/');
+    let internal = internal.trim().trim_end_matches('/');
+    if public.is_empty() || internal.is_empty() || public.eq_ignore_ascii_case(internal) {
+        return None;
+    }
+    // Parse and normalize via Url to handle case, default ports, and trailing slashes robustly.
+    let public_url = Url::parse(public).ok()?;
+    let internal_url = Url::parse(internal).ok()?;
+    let orig_url = Url::parse(original).ok()?;
+
+    let public_norm = public_url.as_str().trim_end_matches('/');
+    let internal_norm = internal_url.as_str().trim_end_matches('/');
+    let orig_str = orig_url.as_str();
+
+    let suffix = orig_str.strip_prefix(public_norm)?;
+    let new_url = format!("{internal_norm}{suffix}");
+    Url::parse(&new_url).ok().map(|_| new_url)
+}
+
+fn is_explicit_override(url: &str) -> bool {
+    [CONFIG.sso_token_endpoint(), CONFIG.sso_userinfo_endpoint(), CONFIG.sso_jwks_uri()]
+        .into_iter()
+        .flatten()
+        .any(|e| e.trim() == url)
+}
+
+fn maybe_rewrite_oidc_request(request: HttpRequest) -> HttpRequest {
+    let Some(internal) = CONFIG.sso_internal_endpoint().filter(|s| !s.trim().is_empty()).map(|s| s.trim().to_owned())
+    else {
+        return request;
+    };
+    let orig = request.uri().to_string();
+    // Explicit full-URL overrides take precedence; don't rewrite those even if they share SSO_AUTHORITY prefix.
+    if is_explicit_override(&orig) {
+        return request;
+    }
+    let Some(new_url) = rewrite_oidc_url(&CONFIG.sso_authority(), &internal, &orig) else {
+        return request;
+    };
+    debug!("Rewriting OIDC request {orig} -> {new_url}");
+    let (mut parts, body) = request.into_parts();
+    parts.uri = new_url.parse().unwrap_or(parts.uri);
+    http::Request::from_parts(parts, body)
+}
+
+fn explicit_url<T, E: std::fmt::Display>(
+    raw: Option<String>,
+    env_name: &str,
+    parse: impl FnOnce(String) -> Result<T, E>,
+) -> Option<T> {
+    let v = raw.filter(|s| !s.trim().is_empty())?;
+    let trimmed = v.trim().to_owned();
+    match parse(trimmed.clone()) {
+        Ok(u) => {
+            debug!("Overriding {env_name} with {trimmed}");
+            Some(u)
+        }
+        Err(e) => {
+            warn!("Invalid {env_name} '{trimmed}' – ignoring: {e}");
+            None
+        }
+    }
+}
+
+fn apply_endpoint_overrides(mut metadata: CoreProviderMetadata) -> CoreProviderMetadata {
+    // SSO_INTERNAL_ENDPOINT is handled at the HTTP layer (maybe_rewrite_oidc_request)
+    // so discovered URLs are rewritten on-the-fly. Here we only apply explicit full-URL overrides,
+    // which take precedence and are stored in metadata.
+    if let Some(u) = explicit_url(CONFIG.sso_token_endpoint(), "SSO_TOKEN_ENDPOINT", TokenUrl::new) {
+        metadata = metadata.set_token_endpoint(Some(u));
+    }
+    if let Some(u) = explicit_url(CONFIG.sso_userinfo_endpoint(), "SSO_USERINFO_ENDPOINT", UserInfoUrl::new) {
+        metadata = metadata.set_userinfo_endpoint(Some(u));
+    }
+    if let Some(u) = explicit_url(CONFIG.sso_jwks_uri(), "SSO_JWKS_URI", JsonWebKeySetUrl::new) {
+        metadata = metadata.set_jwks_uri(u);
+    }
+    metadata
+}
+
 impl<'c> AsyncHttpClient<'c> for OidcHttpClient {
     type Error = HttpClientError<reqwest::Error>;
     type Future = Pin<Box<dyn Future<Output = Result<HttpResponse, Self::Error>> + Send + Sync + 'c>>;
 
     fn call(&'c self, request: HttpRequest) -> Self::Future {
         Box::pin(async move {
+            let request = maybe_rewrite_oidc_request(request);
             let response = self.client.execute(request.try_into().map_err(Box::new)?).await.map_err(|e| {
                 debug!("Request failed {e:?}");
                 Box::new(e)
@@ -116,10 +198,12 @@ impl Client {
             Ok(client) => client,
         };
 
-        let provider_metadata = match CoreProviderMetadata::discover_async(issuer_url, &http_client).await {
+        let mut provider_metadata = match CoreProviderMetadata::discover_async(issuer_url, &http_client).await {
             Err(err) => err!(format!("Failed to discover OpenID provider: {err}")),
             Ok(metadata) => metadata,
         };
+
+        provider_metadata = apply_endpoint_overrides(provider_metadata);
 
         let auth_methods: Option<HashSet<CoreClientAuthMethod>> = provider_metadata
             .token_endpoint_auth_methods_supported()
@@ -344,5 +428,62 @@ impl<'a, AD: AuthDisplay, P: AuthPrompt, RT: ResponseType> AuthorizationRequestE
             self = self.add_extra_param(key, value);
         }
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rewrite_oidc_url_cases() {
+        let cases: &[(&str, &str, &str, Option<&str>)] = &[
+            (
+                "https://sso.example.com",
+                "http://sso:8080",
+                "https://sso.example.com/.well-known/openid-configuration",
+                Some("http://sso:8080/.well-known/openid-configuration"),
+            ),
+            (
+                "https://sso.example.com/realms/test",
+                "http://keycloak:8080/realms/test",
+                "https://sso.example.com/realms/test/.well-known/openid-configuration",
+                Some("http://keycloak:8080/realms/test/.well-known/openid-configuration"),
+            ),
+            ("https://sso.example.com", "http://127.0.0.1:8081", "https://sso.example.com/token", Some("http://127.0.0.1:8081/token")),
+            (
+                "https://sso.example.com",
+                "http://sso:8080",
+                "https://sso.example.com/token?foo=bar&baz=qux",
+                Some("http://sso:8080/token?foo=bar&baz=qux"),
+            ),
+            ("https://sso.example.com", "http://sso:8080", "https://other.example.com/token", None),
+            (
+                "https://sso.example.com",
+                "https://sso.example.com",
+                "https://sso.example.com/.well-known/openid-configuration",
+                None,
+            ),
+            (
+                "https://sso.example.com/",
+                "http://sso:8080/",
+                "https://sso.example.com/.well-known/openid-configuration",
+                Some("http://sso:8080/.well-known/openid-configuration"),
+            ),
+            (
+                "https://sso.example.com:8443",
+                "http://sso:8080",
+                "https://sso.example.com:8443/.well-known/openid-configuration",
+                Some("http://sso:8080/.well-known/openid-configuration"),
+            ),
+        ];
+
+        for (public, internal, original, expected) in cases {
+            assert_eq!(
+                rewrite_oidc_url(public, internal, original),
+                expected.map(|s| s.to_owned()),
+                "public={public} internal={internal} original={original}"
+            );
+        }
     }
 }
