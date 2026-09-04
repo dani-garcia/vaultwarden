@@ -677,6 +677,100 @@ where
     }))
 }
 
+/// Deserialize a field that can be absent, JSON `null`, or a string.
+///
+/// - Field absent → `None` (caller should leave the existing value unchanged)
+/// - JSON `null` → `Some(None)` (caller should clear the value)
+/// - JSON string → `Some(Some(value))`
+///
+/// Needed because plain `Option<String>` collapses both absent and `null` into `None`.
+pub fn deser_double_opt_str<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::Deserialize;
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct DoubleOptStrVisitor;
+
+    impl<'de> Visitor<'de> for DoubleOptStrVisitor {
+        type Value = Option<Option<String>>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a string or null")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(Some(Some(value.to_owned())))
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(Some(Some(value)))
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(Some(None))
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(Some(None))
+        }
+
+        fn visit_some<D2>(self, deserializer: D2) -> Result<Self::Value, D2::Error>
+        where
+            D2: Deserializer<'de>,
+        {
+            Ok(Some(Some(String::deserialize(deserializer)?)))
+        }
+    }
+
+    deserializer.deserialize_option(DoubleOptStrVisitor)
+}
+
+#[cfg(test)]
+mod double_opt_str_tests {
+    use super::deser_double_opt_str;
+    use serde::Deserialize;
+
+    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    #[serde(rename_all = "camelCase")]
+    struct Sample {
+        #[serde(default, deserialize_with = "deser_double_opt_str")]
+        archived_date: Option<Option<String>>,
+    }
+
+    #[test]
+    fn absent_field_means_no_change() {
+        let parsed: Sample = serde_json::from_str(r#"{"other":1}"#).unwrap();
+        assert_eq!(parsed.archived_date, None);
+    }
+
+    #[test]
+    fn null_field_means_clear() {
+        let parsed: Sample = serde_json::from_str(r#"{"archivedDate":null}"#).unwrap();
+        assert_eq!(parsed.archived_date, Some(None));
+    }
+
+    #[test]
+    fn string_field_means_set() {
+        let parsed: Sample = serde_json::from_str(r#"{"archivedDate":"2026-08-11T12:00:00.000Z"}"#).unwrap();
+        assert_eq!(parsed.archived_date, Some(Some("2026-08-11T12:00:00.000Z".to_string())));
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum NumberOrString {
