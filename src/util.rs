@@ -545,19 +545,16 @@ pub fn is_valid_email(email: &str) -> bool {
 
 /// The most an `EncString` we are willing to store may weigh.
 ///
-/// Upstream puts no length on the fields this guards; this is ours, so a client cannot park
-/// megabytes in a column that is supposed to hold a wrapped key. The largest thing that legitimately
-/// lands there is a device's RSA-2048 private key wrapped with AES-CBC plus a MAC, around 1.7 kB, so
-/// this leaves room to spare.
+/// Upstream puts no length on the fields this guards; this is ours, so a client cannot park megabytes in
+/// a column meant to hold a wrapped key. The largest legitimate value is a device's RSA-2048 private key
+/// wrapped with AES-CBC plus a MAC, around 1.7 kB, so this leaves room to spare.
 const MAX_ENC_STRING_LENGTH: usize = 4096;
 
 /// The number of `|` separated parts an `EncString` of the given `EncryptionType` is made of.
 ///
-///  - `3` Rsa2048_OaepSha256_B64 and `4` Rsa2048_OaepSha1_B64 are the ciphertext by itself, and
-///    `7` XChaCha20Poly1305_B64 is one blob of COSE bytes;
-///  - `0` AesCbc256_B64 is `iv|ct`, while `5` Rsa2048_OaepSha256_HmacSha256_B64 and
-///    `6` Rsa2048_OaepSha1_HmacSha256_B64 are `rsaCt|mac`;
-///  - `1` AesCbc128_HmacSha256_B64 and `2` AesCbc256_HmacSha256_B64 are `iv|ct|mac`.
+///  - `3`/`4` Rsa2048_OaepSha256/Sha1_B64 and `7` XChaCha20Poly1305_B64 are one blob;
+///  - `0` AesCbc256_B64 is `iv|ct`, `5`/`6` Rsa2048_Oaep*_HmacSha256_B64 are `rsaCt|mac`;
+///  - `1`/`2` AesCbc128/256_HmacSha256_B64 are `iv|ct|mac`.
 ///
 /// https://github.com/bitwarden/server/blob/main/src/Core/Enums/EncryptionType.cs
 fn enc_string_parts(enc_type: u8) -> Option<usize> {
@@ -571,9 +568,9 @@ fn enc_string_parts(enc_type: u8) -> Option<usize> {
 
 /// Whether a single part is base64, as permissively as upstream reads it.
 ///
-/// Upstream accepts a final character whose unused padding bits are not zero, because such values
-/// exist in the wild; a strict decoder rejects them. Everything else is the usual shape: a multiple
-/// of four characters from the base64 alphabet, with at most two `=` closing it off.
+/// Upstream accepts a final character whose unused padding bits are not zero, because such values exist
+/// in the wild; a strict decoder rejects them. Everything else is the usual shape: a multiple of four
+/// characters from the base64 alphabet, with at most two `=` closing it off.
 /// https://github.com/bitwarden/server/blob/main/src/Core/Utilities/EncryptedStringAttribute.cs
 fn is_valid_base64_permissive(value: &str) -> bool {
     if value.is_empty() || !value.len().is_multiple_of(4) {
@@ -588,10 +585,10 @@ fn is_valid_base64_permissive(value: &str) -> bool {
 
 /// Whether a value has the shape of a Bitwarden `EncString`: `<type>.<part>|<part>...`.
 ///
-/// The server cannot tell whether a blob decrypts, but it can refuse everything that is not even
-/// of the right form, which keeps unbounded junk out of the columns that hold key material.
-/// Mirrors `EncryptedStringAttribute` upstream, including its header-less legacy form, but not its
-/// acceptance of a type spelled out by name (`AesCbc256_B64.…`), which no client has ever written.
+/// The server cannot tell whether a blob decrypts, but it can refuse everything that is not even of the
+/// right form, which keeps unbounded junk out of the columns that hold key material. Mirrors
+/// `EncryptedStringAttribute` upstream, including its header-less legacy form, but not its acceptance of
+/// a type spelled out by name (`AesCbc256_B64.…`), which no client has ever written.
 /// https://github.com/bitwarden/server/blob/main/src/Core/Utilities/EncryptedStringAttribute.cs
 pub fn is_valid_enc_string(value: &str) -> bool {
     if value.is_empty() || value.len() > MAX_ENC_STRING_LENGTH {
@@ -645,18 +642,12 @@ mod enc_string_tests {
             "aXY=|Y2lwaGVy|bWFj",     // and as iv|ct|mac when it has three parts
             "3.Y2lwaGVyLysvdGV4dA==", // the whole base64 alphabet, padded
             "3.Y2lwaGVyLysvdGV4dGE=", // and with a single pad character
+            "3.QR==",                 // unused padding bits that are not zero: a strict decoder
+            "3.QUJDRR==",             // refuses these, upstream deliberately does not, and such
+            "2.aXY=|QR==|bWFj",       // values exist in the wild
         ] {
             assert!(is_valid_enc_string(value), "{value}");
         }
-    }
-
-    #[test]
-    fn a_non_canonical_final_character_is_accepted() {
-        // The unused padding bits of the last character are not zero. A strict decoder refuses
-        // these, upstream deliberately does not, and such values exist in the wild.
-        assert!(is_valid_enc_string("3.QR=="));
-        assert!(is_valid_enc_string("3.QUJDRR=="));
-        assert!(is_valid_enc_string("2.aXY=|QR==|bWFj"));
     }
 
     #[test]

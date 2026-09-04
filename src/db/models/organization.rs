@@ -279,34 +279,31 @@ impl Membership {
 
     /// Whether this membership is in one of the active states rather than a revoked one.
     ///
-    /// Revoking does not write `Revoked`, it shifts the status the membership is to be restored to
-    /// out of the active range, so a revoked row reads `-128`, `-127` or `-126` and never `-1`.
-    /// `MembershipStatus::from_i32` only knows the three active values, which is exactly how
-    /// `OrgHeaders` turns a revoked member away, so it is what decides it here too. Comparing
-    /// against `Revoked` instead would let every one of those stored values through.
+    /// Revoking shifts the status the membership is to be restored to out of the active range instead of
+    /// writing `Revoked`, so a revoked row reads `-128`, `-127` or `-126` and never `-1`. `from_i32` knows
+    /// only the three active values, which is exactly how `OrgHeaders` turns a revoked member away, so it
+    /// decides it here too. Comparing against `Revoked` would let every one of those values through.
     pub fn is_active(&self) -> bool {
         MembershipStatus::from_i32(self.status).is_some()
     }
 
     /// The role side of account recovery, without asking what the membership's standing is.
     ///
-    /// Upstream is a permission of its own, `ManageResetPassword`, which an administrator has by
-    /// virtue of the role and a custom role can be granted separately. Vaultwarden folds the custom
-    /// role into `Manager` and drops the permissions that came with it, so only the administrators
-    /// are left holding it. Asking here rather than comparing roles at each call site keeps that one
-    /// decision in one place for when custom roles arrive.
+    /// Upstream this is a permission of its own, `ManageResetPassword`, which a custom role can also be
+    /// granted. Vaultwarden folds custom roles into `Manager` and drops their permissions, so only the
+    /// administrators are left holding it. Asking here rather than comparing roles at each call site keeps
+    /// that decision in one place for when custom roles arrive.
     /// https://github.com/bitwarden/server/blob/main/src/Core/Context/CurrentContext.cs
     fn has_manage_reset_password_role(&self) -> bool {
         MembershipType::from_i32(self.atype).is_some_and(|atype| atype >= MembershipType::Admin)
     }
 
-    /// Whether this membership may act on the account recovery of the organization's members right
-    /// now: reset their master password, and answer the device approvals they ask their
-    /// organization for.
+    /// Whether this membership may act on the account recovery of the organization's members right now:
+    /// reset their master password, and answer the device approvals they ask their organization for.
     ///
-    /// This is the authorization question, so it asks for a membership that is fully established.
-    /// An invitation that was never accepted and one that is still waiting to be confirmed are not
-    /// yet somebody the organization has put in charge of its members' keys.
+    /// This is the authorization question, so it asks for a fully established membership: an invitation
+    /// that was never accepted or is still waiting to be confirmed is not yet somebody the organization
+    /// has put in charge of its members' keys.
     pub fn can_manage_reset_password_now(&self) -> bool {
         self.status == MembershipStatus::Confirmed as i32 && self.has_manage_reset_password_role()
     }
@@ -314,14 +311,11 @@ impl Membership {
     /// Whether a login should tell the client that this member is on the answering side of account
     /// recovery, which is what makes it walk a member who has no master password into setting one.
     ///
-    /// A weaker question than `can_manage_reset_password_now`, and deliberately so: it decides what
-    /// the account is told about itself, not what it may do. Upstream answers it for every active
-    /// membership, invited and accepted included, because a member who was just provisioned into
-    /// the organization by their first SSO login holds the role before anyone confirms them, and
-    /// waiting until then would let an administrator through the trusted device flow without ever
-    /// being asked for the master password their own role requires of them.
-    ///
-    /// A revoked membership is not active and never counts, here or anywhere else.
+    /// Weaker than `can_manage_reset_password_now` on purpose: it decides what the account is told about
+    /// itself, not what it may do. Upstream answers it for every active membership, invited and accepted
+    /// included, because an administrator provisioned by their first SSO login holds the role before anyone
+    /// confirms them, and waiting would let them through the trusted device flow without ever being asked
+    /// for the master password their role requires. A revoked membership is not active and never counts.
     /// https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/UserDecryptionOptionsBuilder.cs
     pub fn has_manage_reset_password_role_for_tde(&self) -> bool {
         self.is_active() && self.has_manage_reset_password_role()
@@ -329,17 +323,13 @@ impl Membership {
 
     /// Whether the administrators of this organization can let a new device of this member in.
     ///
-    /// Approving means handing the member their own user key, wrapped for the asking device. The
-    /// only copy of it the organization has is the one enrolling into account recovery left behind,
-    /// so without that key there is nothing to approve with, whatever the member's standing is.
-    ///
-    /// Enrolling is also what turns an invitation into a membership in the trusted device flow, so
-    /// the state this has to cover is `Accepted` and not just `Confirmed`: a member who set up
-    /// trusted devices and then lost the device before an administrator got round to confirming
-    /// them would otherwise have no way back into their own vault. Upstream asks for the enrollment
-    /// alone and lets any membership row through; the two ends of the range are kept out here
-    /// because an invitation is not a membership yet and a revoked one is not one anymore, so
-    /// neither should have its device let in.
+    /// Approving hands the member their own user key wrapped for the asking device; the only copy the
+    /// organization has is what enrolling into account recovery left behind, so without that key there is
+    /// nothing to approve with. Enrolling also turns an invitation into a membership in the trusted device
+    /// flow, so `Accepted` has to count and not just `Confirmed`: a member who set up trusted devices and
+    /// lost the device before being confirmed would otherwise have no way back into their vault. Upstream
+    /// lets any membership row through; both ends are kept out here, an invitation is not a membership yet
+    /// and a revoked one is not one anymore.
     /// https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/UserDecryptionOptionsBuilder.cs
     pub fn can_use_admin_approval(&self) -> bool {
         matches!(
@@ -1357,6 +1347,8 @@ mod tests {
         assert!(MembershipType::Manager == MembershipType::from_str("4").unwrap());
     }
 
+    /// The authorization question, deliberately not the same as `has_manage_reset_password_role_for_tde`:
+    /// being told to set a master password is not being allowed to reset somebody else's.
     #[test]
     fn only_a_confirmed_administrator_manages_account_recovery() {
         let mut membership = Membership::new(String::from("user").into(), String::from("org").into(), None);
@@ -1457,25 +1449,6 @@ mod tests {
         // The value the responses show for a revoked membership does not count either.
         membership.status = MembershipStatus::Revoked as i32;
         assert!(!membership.is_active());
-    }
-
-    #[test]
-    fn only_a_confirmed_membership_may_act_on_account_recovery() {
-        // The two questions are deliberately not the same one: being told to set a master password
-        // is not being allowed to reset somebody else's.
-        let mut membership = Membership::new(String::from("user").into(), String::from("org").into(), None);
-        membership.atype = MembershipType::Admin as i32;
-
-        for status in [MembershipStatus::Invited, MembershipStatus::Accepted] {
-            let status = status as i32;
-            membership.status = status;
-            assert!(membership.has_manage_reset_password_role_for_tde(), "the login signal covers status {status}");
-            assert!(!membership.can_manage_reset_password_now(), "but the endpoints do not, status {status}");
-        }
-
-        membership.status = MembershipStatus::Confirmed as i32;
-        assert!(membership.has_manage_reset_password_role_for_tde());
-        assert!(membership.can_manage_reset_password_now());
     }
 
     #[test]

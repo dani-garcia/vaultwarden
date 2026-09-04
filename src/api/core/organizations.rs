@@ -3162,10 +3162,9 @@ async fn put_reset_password_enrollment(
         err!("Reset password can't be withdrawn due to an enterprise policy");
     }
 
-    // An account that unlocks with a trusted device has no master password to verify against, and
-    // the clients send nothing but the key when they enroll as part of that flow. Upstream carves
-    // out the same exception, keyed on the organization's SSO configuration rather than on a
-    // server-wide setting as here.
+    // An account that unlocks with a trusted device has no master password to verify against, and the
+    // clients send nothing but the key when they enroll as part of that flow. Upstream carves out the
+    // same exception, keyed on the organization's SSO configuration rather than a server-wide setting.
     // https://github.com/bitwarden/server/blob/main/src/Api/AdminConsole/Controllers/OrganizationUsersController.cs
     let trusted_device_enrollment = CONFIG.sso_trusted_device_encryption() && headers.user.password_hash.is_empty();
 
@@ -3181,13 +3180,11 @@ async fn put_reset_password_enrollment(
     let enrolled = reset_password_key.is_some();
     let membership_id = membership.uuid.clone();
 
-    // Enrolling is where a member who was invited into a trusted device organization turns into a
-    // real one; upstream accepts the invitation at this point as well. Without it they would stay
-    // invited forever and no admin could ever confirm them.
-    //
-    // Tied to the same condition as the exception above, so that turning the feature off leaves the
-    // invitation flow exactly as it was: an invitation is otherwise accepted only against the token
-    // that was mailed out, and that is the only thing proving the address belongs to the account.
+    // Enrolling is where a member who was invited into a trusted device organization turns into a real
+    // one; upstream accepts the invitation at this point as well, without it they would stay invited
+    // forever. Tied to the same condition as the exception above, so turning the feature off leaves the
+    // invitation flow as it was: an invitation is otherwise accepted only against the mailed token, the
+    // only thing proving the address belongs to the account.
     if enrolled && trusted_device_enrollment && membership.status == MembershipStatus::Invited as i32 {
         // Do not leave the open invitation behind, it would keep the address signup-eligible.
         Invitation::take(&headers.user.email, &conn).await;
@@ -3211,10 +3208,10 @@ async fn put_reset_password_enrollment(
     Ok(())
 }
 
-// Device approvals. A member who unlocks with a trusted device and has no other device of their own
-// left to ask can turn to the administrators of their organization instead. Answering means handing
-// them their own user key, encrypted for the key pair of the asking device, which is only possible
-// because the member enrolled into account recovery beforehand.
+// Device approvals. A member who unlocks with a trusted device and has no other device of their own left
+// to ask can turn to the administrators of their organization instead. Answering means handing them their
+// own user key, encrypted for the key pair of the asking device, which is only possible because the
+// member enrolled into account recovery beforehand.
 // https://github.com/bitwarden/server/blob/main/src/Api/AdminConsole/Controllers/OrganizationAuthRequestsController.cs
 
 /// The requests waiting for an answer in this organization.
@@ -3283,11 +3280,10 @@ const MAX_BULK_AUTH_REQUESTS: usize = 500;
 
 /// Whether one entry that cannot be answered takes the whole call down with it.
 ///
-/// A single request is addressed by its id, so a caller that names a request nobody can answer
-/// deserves to hear about it. A batch is a list of what an administrator saw a moment ago, where an
-/// entry may well have expired or been answered by a colleague since; upstream processes those as
-/// far as it can and passes over the rest. Failing the batch instead would report an error while
-/// having already answered everything before the bad entry.
+/// A single request is addressed by its id, so a caller that names an unanswerable one deserves to hear
+/// about it. A batch is a list of what an administrator saw a moment ago, where an entry may well have
+/// expired or been answered by a colleague since; upstream processes those as far as it can and passes
+/// over the rest, rather than reporting an error after already answering everything before it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum OnUnanswerable {
     Fail,
@@ -3463,10 +3459,9 @@ async fn answer_organization_auth_request(
 
     ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
 
-    // No acting device: the answer did not come from one of this user's devices, so every one of
-    // them, the one that asked above all, should hear about it. Naming the administrator's device
-    // here would leave it out of a notification meant for somebody else's account and hand its
-    // identifiers to the push relay under a foreign user id.
+    // No acting device: the answer did not come from one of this user's devices, so every one of them,
+    // the one that asked above all, should hear about it. Naming the administrator's device here would
+    // hand its identifiers to the push relay under a foreign user id. See `push_auth_response`.
     nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, None, conn).await;
 
     if CONFIG.mail_enabled()

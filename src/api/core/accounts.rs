@@ -533,19 +533,17 @@ struct UpdateTdeOffboardingPasswordData {
     master_password_hint: Option<String>,
 }
 
-/// Gives an account that unlocks with a trusted device the master password it needs once the server
-/// stops offering trusted devices.
+/// Gives an account that unlocks with a trusted device the master password it needs once the server stops
+/// offering trusted devices.
 ///
-/// This is the endpoint the clients take when a login answered `IsTdeOffboarding`, see
-/// `trusted_device_option`. It is deliberately not `/accounts/set-password`: the account is fully
-/// set up by this point, so the only thing being added is a second way to unlock the user key it
-/// already has. The account key pair and the vault are left exactly as they are, and unlike
-/// `/accounts/keys` there is nothing here that could replace them.
+/// The endpoint the clients take when a login answered `IsTdeOffboarding`, see `trusted_device_option`.
+/// Deliberately not `/accounts/set-password`: the account is fully set up by this point, so the only
+/// thing added is a second way to unlock the user key it already has. The account key pair and the vault
+/// are left as they are, and unlike `/accounts/keys` nothing here could replace them.
 ///
-/// Upstream keys this on the organization having switched its SSO member decryption away from
-/// trusted devices; Vaultwarden configures SSO for the whole server, so the same state is
-/// `SSO_ENABLED` without `SSO_TRUSTED_DEVICE_ENCRYPTION`, which is exactly when a login starts
-/// answering `IsTdeOffboarding`.
+/// Upstream keys this on the organization having switched its SSO member decryption away from trusted
+/// devices; Vaultwarden configures SSO for the whole server, so the same state is `SSO_ENABLED` without
+/// `SSO_TRUSTED_DEVICE_ENCRYPTION`, which is exactly when a login starts answering `IsTdeOffboarding`.
 /// https://github.com/bitwarden/server/blob/main/src/Core/Auth/UserFeatures/TdeOffboardingPassword/TdeOffboardingPasswordCommand.cs
 #[put("/accounts/update-tde-offboarding-password", data = "<data>")]
 async fn put_update_tde_offboarding_password(
@@ -557,10 +555,9 @@ async fn put_update_tde_offboarding_password(
     let data = data.into_inner();
     let mut user = headers.user;
 
-    // Adding a master password to an account that has one is changing it, which is
-    // `/accounts/password` and asks for the current one first. Without this an authenticated caller
-    // could replace the password of the account they are on, and a second offboarding call would
-    // overwrite the password the first one just set.
+    // Adding a master password to an account that has one is changing it, which is `/accounts/password`
+    // and asks for the current one first. Without this an authenticated caller could replace the password
+    // of the account they are on, and a second offboarding call would overwrite the first one's password.
     if !user.password_hash.is_empty() {
         err!("Account already has a master password")
     }
@@ -686,11 +683,10 @@ async fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> Json
 
     let mut user = headers.user;
 
-    // Replacing the key pair of an initialized account would make every existing cipher
-    // undecryptable, so only accept it while the account has none yet. The clients call this during
-    // account creation, including the trusted device flow, where a stale client state could
-    // otherwise send us here for an account that is already set up. Repeating the same keys stays
-    // allowed so a retried request does not fail. Mirrors the guard in `post_set_password`.
+    // Replacing the key pair of an initialized account would make every existing cipher undecryptable,
+    // so only accept it while the account has none yet. The clients call this during account creation,
+    // including the trusted device flow, where a stale client state could otherwise send us here for an
+    // account that is already set up. Repeating the same keys stays allowed so a retry does not fail.
     if user.private_key.is_some() || user.public_key.is_some() {
         if user.private_key.as_ref() != Some(&data.encrypted_private_key)
             || user.public_key.as_ref() != Some(&data.public_key)
@@ -924,8 +920,8 @@ struct RotateAccountUnlockData {
     organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
     /// The user key, re-wrapped for every device that unlocks the vault without a master password.
     ///
-    /// Absent rather than empty tells the two generations of clients apart: one that sends this
-    /// rotates the trust of its devices right here, an older one does it afterwards through
+    /// Absent rather than empty tells the two generations of clients apart: one that sends this rotates
+    /// the trust of its devices right here, an older one does it afterwards through
     /// `POST /devices/update-trust` and leaves this out entirely. See `post_rotatekey`.
     device_key_unlock_data: Option<Vec<UpdateDeviceKeysData>>,
 }
@@ -967,13 +963,10 @@ struct RotateAccountData {
 
 /// Works out what a key rotation has to write to the user's devices.
 ///
-/// Returns the devices that keep their trust, each with the user key freshly wrapped for it.
-/// Whatever the user owns beyond that list ends up untrusted, so the caller can hand the result to
-/// `Device::replace_trust` and be done in one transaction.
-///
-/// Mirrors `DeviceRotationValidator` upstream, which refuses a rotation that would quietly drop the
-/// trust of a device the user still relies on. Untrusting is the client's own separate step, and
-/// the current ones take it before they get here.
+/// Returns the devices that keep their trust, each with the user key freshly wrapped for it; whatever
+/// the user owns beyond that list ends up untrusted, so the caller can hand the result to
+/// `Device::replace_trust` and be done in one transaction. Mirrors `DeviceRotationValidator` upstream,
+/// which refuses a rotation that would quietly drop the trust of a device the user still relies on.
 /// https://github.com/bitwarden/server/blob/main/src/Api/KeyManagement/Validators/DeviceRotationValidator.cs
 fn validate_device_keydata(
     updates: &[UpdateDeviceKeysData],
@@ -999,10 +992,8 @@ fn validate_device_keydata(
     }
 
     // Walked over the devices that are trusted right now rather than over what was sent, because a
-    // rotation may only carry an existing trust over to the new user key. Trusting a device is a
-    // step of its own, `PUT /devices/<id>/keys`, taken by the device itself once it holds the
-    // device key that these two keys are wrapped for. An entry for anything else is passed over,
-    // as upstream does; the clients only ever send the devices we reported as trusted.
+    // rotation may only carry an existing trust over to the new user key. Trusting a device is a step of
+    // its own, `PUT /devices/<id>/keys`. An entry for anything else is passed over, as upstream does.
     let mut rotated = Vec::new();
 
     for device in existing_devices.iter().filter(|device| device.is_trusted()) {
@@ -1199,11 +1190,9 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         }
     }
 
-    // Every device holds the previous user key wrapped for itself, which unlocks nothing anymore.
-    // Settle that here rather than after the account itself: by this point the ciphers have already
-    // been rewritten under the new user key, so a device that holds the new one is the half that
-    // still works if what follows fails. The other order would leave a device counting itself
-    // trusted while handing its owner the key it just stopped needing.
+    // Every device holds the previous user key wrapped for itself, which unlocks nothing anymore. Settle
+    // that here rather than after the account itself: the ciphers have already been rewritten under the
+    // new user key, so a device holding the new one is the half that still works if what follows fails.
     match rotated_devices {
         // The current clients send the re-wrapped user key for every trusted device along with the
         // rotation, so their trust survives it. Anything they left out is untrusted here.
@@ -1781,9 +1770,9 @@ async fn post_clear_device_token(device_id: DeviceId, ip: ClientIp, conn: DbConn
 }
 
 // Trusted device encryption, see https://bitwarden.com/help/login-with-sso-trusted-devices/
-// The three key blobs below are generated and encrypted by the client, the server only stores them
-// and hands them back on the next login of that same device. It never learns the device key that
-// unwraps `encrypted_private_key`, so a stored trust is worth nothing without the device itself.
+// The three key blobs below are generated and encrypted by the client, the server only stores them and
+// hands them back on the next login of that same device. It never learns the device key that unwraps
+// `encrypted_private_key`, so a stored trust is worth nothing without the device itself.
 // https://github.com/bitwarden/server/blob/main/src/Api/Controllers/DevicesController.cs
 
 #[derive(Debug, Deserialize)]
@@ -1796,9 +1785,9 @@ struct TrustedDeviceKeysData {
 
 /// Refuses anything that does not even have the shape of an `EncString`.
 ///
-/// The server cannot tell whether a blob decrypts, but storing something that certainly does not
-/// only leaves a device that calls itself trusted and fails its owner at the next unlock. Upstream
-/// puts `[EncryptedString]` on the same fields.
+/// The server cannot tell whether a blob decrypts, but storing something that certainly does not only
+/// leaves a device that calls itself trusted and fails its owner at the next unlock. Upstream puts
+/// `[EncryptedString]` on the same fields.
 fn validate_enc_strings(values: &[(&str, &str)]) -> EmptyResult {
     for (name, value) in values {
         if !crate::util::is_valid_enc_string(value) {
@@ -1810,9 +1799,9 @@ fn validate_enc_strings(values: &[(&str, &str)]) -> EmptyResult {
 
 /// Marks a device of the current user as trusted.
 ///
-/// Upstream keys this on the device identifier and does not require it to be the device the request
-/// was authenticated with, so neither do we. The keys only ever unlock the vault on the device that
-/// holds the matching device key, so writing them for another of your own devices gains nothing.
+/// Upstream keys this on the device identifier and does not require it to be the device the request was
+/// authenticated with, so neither do we. The keys only ever unlock the vault on the device holding the
+/// matching device key, so writing them for another of your own devices gains nothing.
 #[put("/devices/<device_id>/keys", data = "<data>")]
 async fn put_device_keys(
     device_id: DeviceId,
@@ -1889,12 +1878,9 @@ struct UpdateDevicesTrustData {
 
 /// Re-wraps the user key for the trusted devices after it was replaced by a key rotation.
 ///
-/// Every trusted device that is not listed loses its trust: its stored copy of the user key is the
-/// old one and would no longer unlock anything.
-///
-/// The current clients do this as part of the rotation itself and never come here; this is the
-/// route the older ones take, and the only one that can rotate the trust of a single device without
-/// rotating the account. See `post_rotatekey`.
+/// Every trusted device that is not listed loses its trust: its stored copy of the user key is the old
+/// one. The current clients do this as part of the rotation itself and never come here; this is the route
+/// the older ones take, and the only one that can rotate a single device's trust. See `post_rotatekey`.
 #[post("/devices/update-trust", data = "<data>")]
 async fn post_devices_update_trust(data: Json<UpdateDevicesTrustData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data = data.into_inner();
@@ -1974,9 +1960,8 @@ async fn post_devices_untrust(data: Json<UntrustDevicesData>, headers: Headers, 
 
 /// Reported by a client that still holds a device key but did not get any keys back from us.
 ///
-/// There is nothing left to clean up at this point, the device already counts as untrusted here.
-/// Upstream only writes a log line as well, since this points at the client and the server having
-/// drifted apart.
+/// Nothing is left to clean up, the device already counts as untrusted here. Upstream only writes a log
+/// line as well, since this points at the client and the server having drifted apart.
 #[expect(clippy::needless_pass_by_value, reason = "Not beneficial for Headers")]
 #[post("/devices/lost-trust")]
 fn post_devices_lost_trust(headers: Headers) -> EmptyResult {
@@ -2017,10 +2002,9 @@ const MAX_ACCESS_CODE_LENGTH: usize = 25;
 const MAX_REQUEST_PUBLIC_KEY_LENGTH: usize = 4096;
 
 impl AuthRequestRequest {
-    /// Both of these end up stored, and the admin approval route stores a copy per organization the
-    /// user belongs to, so neither may be unbounded. The public key is handed to the answering
-    /// client as base64 to wrap a key against; one that is not base64 at all would break the page
-    /// listing the requests rather than just this one.
+    /// Both of these end up stored, and the admin approval route stores a copy per organization the user
+    /// belongs to, so neither may be unbounded. The public key is handed to the answering client as
+    /// base64 to wrap a key against; one that is not base64 would break the page listing the requests.
     fn validate(&self) -> EmptyResult {
         if self.access_code.is_empty() || self.access_code.len() > MAX_ACCESS_CODE_LENGTH {
             err!("Invalid access code")
@@ -2118,13 +2102,12 @@ async fn post_auth_request(
 
 /// Asks the administrators of every organization the user belongs to to let this device in.
 ///
-/// The way out for someone who unlocks with trusted devices and has no other device left to ask.
-/// One request per organization, so whichever administrator gets there first can answer.
+/// The way out for someone who unlocks with trusted devices and has no other device left to ask. One
+/// request per organization, so whichever administrator gets there first can answer.
 /// https://github.com/bitwarden/server/blob/main/src/Api/Auth/Controllers/AuthRequestsController.cs
 #[post("/auth-requests/admin-request", data = "<data>")]
 async fn post_admin_auth_request(data: Json<AuthRequestRequest>, headers: Headers, conn: DbConn) -> JsonResult {
-    // Every call mails all administrators of every organization involved, so it is worth a limit of
-    // its own even though the caller is authenticated.
+    // Every call mails all administrators of every organization involved, so it is worth its own limit.
     crate::ratelimit::check_limit_unauthenticated(&headers.ip.ip)?;
 
     let data = data.into_inner();
@@ -2139,10 +2122,9 @@ async fn post_admin_auth_request(data: Json<AuthRequestRequest>, headers: Header
 
     data.validate()?;
 
-    // Only an organization that could actually answer is asked. Approving means handing the member
-    // their own user key, which an administrator can only do with the key that enrolling into
-    // account recovery left them, so an organization without one has nothing to offer and does not
-    // need the email address, the address and the device of the asker.
+    // Only an organization that could actually answer is asked. Approving hands the member their own
+    // user key, which an administrator can only do with the key that enrolling into account recovery
+    // left them, so an organization without one has nothing to offer and needs none of the asker's data.
     let memberships: Vec<Membership> = Membership::find_by_user(&headers.user.uuid, &conn)
         .await
         .into_iter()
@@ -2164,13 +2146,10 @@ async fn post_admin_auth_request(data: Json<AuthRequestRequest>, headers: Header
     let mut first_request = None;
     for membership in memberships {
         // Repeating the very same request is answered with the row it already has, so a client that
-        // sends it twice does not pile up rows and does not mail the administrators again.
-        //
-        // What identifies the request is the key pair the client generated for it: an approval is
-        // the user key wrapped for that public key, and the fingerprint an administrator reads out
-        // is derived from it. A client that asks again with a new key pair is therefore asking
-        // something else, and giving it the id of the pending request would let an administrator
-        // who is still looking at the old one approve it for a key the requester has thrown away.
+        // sends it twice does not pile up rows and does not mail the administrators again. What
+        // identifies the request is the key pair the client generated for it: an approval is the user
+        // key wrapped for that public key. A client asking again with a new key pair is asking something
+        // else, and reusing the id would let an administrator approve it for a key already thrown away.
         // Upstream never reuses a request at all, it creates one per attempt.
         // https://github.com/bitwarden/server/blob/main/src/Core/Auth/Services/Implementations/AuthRequestService.cs
         let existing = AuthRequest::find_pending_admin_approval(
@@ -2475,8 +2454,7 @@ mod tests {
 
     #[test]
     fn a_trusted_device_that_is_left_out_takes_the_rotation_down_with_it() {
-        // Silently dropping the trust of a device the user still relies on is not the server's call
-        // to make; the client untrusts it first if that is what it means.
+        // Silently dropping the trust of a device the user still relies on is not the server's call.
         let devices = [device("a", true), device("b", true)];
 
         let err = validate_device_keydata(&[update("a")], &devices).unwrap_err();
@@ -2493,8 +2471,7 @@ mod tests {
 
     #[test]
     fn the_same_device_may_not_be_listed_twice() {
-        // Two entries for one device means one of the two keys is dropped without anyone noticing
-        // which, so neither is taken.
+        // Two entries for one device means one of the two keys is dropped without anyone noticing which.
         let devices = [device("a", true)];
 
         let err = validate_device_keydata(&[update("a"), update("a")], &devices).unwrap_err();
@@ -2518,8 +2495,8 @@ mod tests {
 
     #[test]
     fn a_device_without_its_own_key_pair_is_not_given_a_user_key() {
-        // Half a trust is worth nothing to the client and would only fail at the next unlock, so
-        // the device is dropped from the rotation and ends up untrusted instead.
+        // Half a trust is worth nothing to the client and would only fail at the next unlock, so the
+        // device is dropped from the rotation and ends up untrusted instead.
         let devices = [device("a", true), device("b", false)];
 
         let result = validate_device_keydata(&[update("a"), update("b")], &devices).unwrap();
@@ -2543,8 +2520,8 @@ mod tests {
         assert_eq!(rotated(&result), ["a=4.bmV3dXNlcmtleQ=="]);
     }
 
-    /// A device left holding nothing but its own key pair, which is what a rotation by a client too
-    /// old to send `deviceKeyUnlockData` leaves behind. It does not unlock anything as it stands.
+    /// A device left holding nothing but its own key pair, which is what a rotation by a client too old
+    /// to send `deviceKeyUnlockData` leaves behind. It does not unlock anything as it stands.
     fn half_trusted(id: &str) -> Device {
         let mut device = device(id, true);
         device.encrypted_user_key = None;
@@ -2555,23 +2532,16 @@ mod tests {
     }
 
     #[test]
-    fn a_rotation_does_not_trust_a_device_that_was_not_trusted() {
-        // Trusting a device is `PUT /devices/<id>/keys`, taken by the device itself once it holds
-        // the device key these blobs are wrapped for. A rotation only carries an existing trust
-        // over to the new user key, so listing an untrusted device here gains it nothing, even
-        // though its key pair is still around for the trust it could be given later.
+    fn a_rotation_never_trusts_a_device_that_was_not_trusted_before() {
+        // Trusting a device is `PUT /devices/<id>/keys`, taken by the device itself once it holds the
+        // device key these blobs are wrapped for. A rotation only carries an existing trust over to the
+        // new user key, so listing an untrusted device gains it nothing, and with nothing to carry over
+        // a rotation writes no trust at all.
         let devices = [device("a", true), half_trusted("b")];
-
         let result = validate_device_keydata(&[update("a"), update("b")], &devices).unwrap();
         assert_eq!(rotated(&result), ["a=4.bmV3dXNlcmtleQ=="], "`b` is passed over and cleared by the write");
-    }
 
-    #[test]
-    fn a_rotation_cannot_hand_a_user_their_first_trusted_device() {
-        // The same the other way round: with nothing to carry over, a rotation writes no trust at
-        // all, however much the request offers.
         let devices = [half_trusted("a"), half_trusted("b")];
-
         let result = validate_device_keydata(&[update("a"), update("b")], &devices).unwrap();
         assert!(result.is_empty(), "no device was trusted before the rotation, so none is after it");
     }

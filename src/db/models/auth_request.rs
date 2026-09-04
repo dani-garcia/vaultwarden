@@ -142,13 +142,12 @@ impl AuthRequest {
         })
     }
 
-    /// What an administrator gets to see about a request that is waiting for them, which is the
-    /// public key of the asking device and enough about it to recognise it. Same shape as
+    /// What an administrator gets to see about a request waiting for them: the public key of the asking
+    /// device and enough about it to recognise it. Same shape as
     /// `PendingOrganizationAuthRequestResponseModel` upstream.
     ///
-    /// Deliberately no access code, which is the asking device's own proof, and no wrapped key: a
-    /// request that is still waiting has none, and handing one out here would be crypto material
-    /// the answering side has no use for.
+    /// Deliberately no access code, which is the asking device's own proof, and no wrapped key: a waiting
+    /// request has none, and handing one out here would be crypto material the answering side cannot use.
     pub fn to_json_for_organization(&self, email: &str, member_id: &MembershipId) -> Value {
         json!({
             "id": self.uuid,
@@ -224,12 +223,11 @@ impl AuthRequest {
         .await
     }
 
-    /// The request a device is currently waiting on, if it is still open and still within its
-    /// window.
+    /// The request a device is currently waiting on, if it is still open and within its window.
     ///
-    /// Only the types a device answers for itself. A request addressed to an administrator is
-    /// answered through the organization and stays open for a week, so counting it here would let
-    /// it shadow the short lived request the user is actually being shown.
+    /// Only the types a device answers for itself. A request addressed to an administrator is answered
+    /// through the organization and stays open for a week, so counting it here would let it shadow the
+    /// short lived request the user is actually being shown.
     /// https://github.com/bitwarden/server/blob/main/src/Infrastructure.EntityFramework/Auth/Repositories/Queries/DeviceWithPendingAuthByUserIdQuery.cs
     pub async fn find_by_user_and_requested_device(
         user_uuid: &UserId,
@@ -254,12 +252,10 @@ impl AuthRequest {
 
     /// The open request a device already has waiting at this organization, if any.
     ///
-    /// Asking again from the same device updates that one instead of adding another, so a client
-    /// that retries cannot fill the table or mail the administrators over and over.
-    ///
-    /// A request past its window does not count: it is one nobody can answer any more, and reviving
-    /// it by moving its date forward would leave the user waiting on a request the administrators
-    /// were never told about. Asking again after it ran out is a new request, and is announced.
+    /// Asking again from the same device updates that one instead of adding another, so a retrying client
+    /// cannot fill the table or mail the administrators over and over. A request past its window does not
+    /// count: nobody can answer it any more, and reviving it by moving its date forward would leave the
+    /// user waiting on a request the administrators were never told about. Asking again is a new request.
     pub async fn find_pending_admin_approval(
         user_uuid: &UserId,
         device_uuid: &DeviceId,
@@ -328,11 +324,9 @@ impl AuthRequest {
         ct_eq(&self.access_code, access_code)
     }
 
-    /// Drops everything past its window, which is a different one per type.
-    ///
+    /// Drops everything past its window, which is a different one per type. One statement per case rather
+    /// than reading the table and deleting row by row, so the work stays in the database.
     /// https://github.com/bitwarden/server/blob/f8ee2270409f7a13125cd414c450740af605a175/src/Sql/dbo/Auth/Stored%20Procedures/AuthRequest_DeleteIfExpired.sql
-    /// One statement per case rather than reading the table and deleting row by row, so the work
-    /// stays in the database however many requests have piled up.
     pub async fn purge_expired_auth_requests(conn: &DbConn) {
         let now = Utc::now().naive_utc();
         let admin = AuthRequestType::AdminApproval as i32;
@@ -420,24 +414,19 @@ mod tests {
     }
 
     #[test]
-    fn a_request_between_the_users_own_devices_is_short_lived() {
+    fn each_request_type_expires_after_its_own_window() {
         assert!(!request(AuthRequestType::AuthenticateAndUnlock, TimeDelta::try_minutes(14).unwrap()).is_expired());
         assert!(request(AuthRequestType::AuthenticateAndUnlock, TimeDelta::try_minutes(16).unwrap()).is_expired());
         assert!(request(AuthRequestType::Unlock, TimeDelta::try_minutes(16).unwrap()).is_expired());
-    }
 
-    #[test]
-    fn an_administrator_gets_a_week_to_answer() {
         assert!(!request(AuthRequestType::AdminApproval, TimeDelta::try_days(6).unwrap()).is_expired());
         assert!(request(AuthRequestType::AdminApproval, TimeDelta::try_days(8).unwrap()).is_expired());
     }
 
     #[test]
     fn a_request_nobody_answered_in_time_is_not_still_pending() {
-        // `find_pending_admin_approval` decides whether asking again reuses the open request or
-        // starts a new one, and filters on the same window as this. A request past it must not come
-        // back: reviving it by moving its date forward would leave the user waiting on something
-        // the administrators were never told about, because only a new request mails them.
+        // See `find_pending_admin_approval`: a request past its window must not come back, reviving
+        // it would leave the user waiting on something the administrators were never told about.
         let mut auth_request =
             request(AuthRequestType::AdminApproval, AuthRequest::admin_request_expiration() + TimeDelta::seconds(1));
         assert_eq!(auth_request.approved, None, "still unanswered");
@@ -473,10 +462,7 @@ mod tests {
         assert!(request(AuthRequestType::AdminApproval, TimeDelta::zero()).is_admin_approval());
         assert!(!request(AuthRequestType::Unlock, TimeDelta::zero()).is_admin_approval());
         assert!(!request(AuthRequestType::AuthenticateAndUnlock, TimeDelta::zero()).is_admin_approval());
-    }
 
-    #[test]
-    fn unknown_request_types_are_rejected() {
         assert_eq!(AuthRequestType::from_i32(0), Some(AuthRequestType::AuthenticateAndUnlock));
         assert_eq!(AuthRequestType::from_i32(1), Some(AuthRequestType::Unlock));
         assert_eq!(AuthRequestType::from_i32(2), Some(AuthRequestType::AdminApproval));

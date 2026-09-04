@@ -109,9 +109,8 @@ impl Device {
 
     /// Whether the device still holds the private key of its own key pair.
     ///
-    /// That key is wrapped with the device key, which a rotation of the user key does not touch, so
-    /// it outlives one. It is what decides whether a device can be handed a freshly wrapped user
-    /// key and be trusted again, or whether it has to be set up from scratch.
+    /// That key is wrapped with the device key, which a user key rotation does not touch, so it outlives
+    /// one. It decides whether a device can be handed a freshly wrapped user key and be trusted again.
     pub fn holds_private_key(&self) -> bool {
         Self::present(self.encrypted_private_key.as_ref()).is_some()
     }
@@ -251,15 +250,12 @@ impl Device {
 
     /// Invalidates every copy of the user key that is wrapped for one of the user's devices.
     ///
-    /// Called when the user key itself is replaced and the client did not say what to put in their
-    /// place, which leaves all of those copies pointing at a key that no longer unlocks anything. No
-    /// device counts as trusted afterwards, so a client that stops here ends up with an extra login
-    /// rather than a broken unlock. The device key pairs are deliberately left alone: they are
-    /// wrapped with the device key, which a rotation does not touch, so `POST /devices/update-trust`
-    /// can hand every device the new user key and restore its trust. Whatever it does not list is
-    /// dropped there.
-    ///
-    /// One statement, so there is no half applied state to reason about.
+    /// Called when the user key is replaced and the client did not say what to put in their place, so
+    /// those copies point at a key that no longer unlocks anything. No device counts as trusted
+    /// afterwards, so a client that stops here gets an extra login rather than a broken unlock. The
+    /// device key pairs are left alone: wrapped with the untouched device key, so
+    /// `POST /devices/update-trust` can hand every device the new user key and restore its trust,
+    /// dropping whatever it does not list. One statement, so there is no half applied state.
     pub async fn invalidate_wrapped_user_keys(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
         conn.run(move |conn| {
             diesel::update(devices::table.filter(devices::user_uuid.eq(user_uuid)))
@@ -296,15 +292,12 @@ impl Device {
         .await
     }
 
-    /// Replaces the trust of every device of the user in one go: the listed ones are re-wrapped for
-    /// the current user key, everything else loses whatever it still holds.
+    /// Replaces the trust of every device of the user in one go: the listed ones are re-wrapped for the
+    /// current user key, everything else loses whatever it still holds.
     ///
-    /// This is what both a key rotation and `POST /devices/update-trust` come down to. The caller
-    /// has already checked that every id belongs to this user, that none is listed twice, and that
-    /// no device is asked to keep a trust it cannot complete; this only writes.
-    ///
-    /// One transaction, so the devices cannot be left split between the old and the new user key,
-    /// which is a state no client can tell apart from a working one until an unlock fails.
+    /// This is what both a key rotation and `POST /devices/update-trust` come down to; the caller has
+    /// already validated the ids, so this only writes. One transaction, so the devices cannot be left
+    /// split between the old and the new user key, a state no client can tell apart from a working one.
     pub async fn replace_trust(
         user_uuid: &UserId,
         updates: Vec<(DeviceId, String, String)>,
@@ -539,9 +532,8 @@ impl DeviceType {
 
     /// Whether a device of this type can answer a login request from another device.
     ///
-    /// The SDK, the server and the CLIs have no interactive prompt to show the request in, so they
-    /// are the ones left out. Matches `LoginApprovingClientTypes` upstream, which allows the
-    /// desktop, mobile, web and browser client types.
+    /// The SDK, the server and the CLIs have no interactive prompt to show the request in, so they are
+    /// the ones left out. Matches `LoginApprovingClientTypes` upstream (desktop, mobile, web, browser).
     pub fn can_approve_login_requests(&self) -> bool {
         !matches!(
             self,

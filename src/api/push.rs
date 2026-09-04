@@ -317,11 +317,10 @@ pub async fn push_auth_request(user_id: &UserId, auth_request_id: &str, device: 
     }
 }
 
-/// `acting_device` is the device that answered, and is the one device left out of the notification,
-/// since it already knows. An answer that did not come from a device of this user at all, as an
-/// approval by an administrator of their organization does, leaves it out: naming a device of
-/// somebody else here would both hand its identifiers to the push relay under a foreign user id and
-/// tell the wrong device to ignore the answer.
+/// `acting_device` is the device that answered and the one left out of the notification, since it
+/// already knows. An answer that did not come from a device of this user, as an administrator approval
+/// does, leaves it out: naming a foreign device would hand its identifiers to the push relay under the
+/// wrong user id and tell the wrong device to ignore the answer.
 pub async fn push_auth_response(
     user_id: &UserId,
     auth_request_id: &AuthRequestId,

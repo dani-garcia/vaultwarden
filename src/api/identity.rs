@@ -510,16 +510,15 @@ async fn password_login(
 /// Whether the account creation the clients run when nothing else is on offer can succeed here.
 ///
 /// A client that gets the trusted device options, but neither a master password nor an approval an
-/// administrator could give, decides it is looking at a fresh account and walks it through
-/// creation: generate the account keys and post them, enrol into the account recovery of the
-/// organization behind the SSO login, then trust the device. Every one of those has to be able to
-/// go through. If enrolment is refused, the keys are already written, and the next login walks into
-/// the same screen and fails at posting them a second time, leaving an account that can never be
-/// unlocked at all.
+/// administrator could give, decides it is looking at a fresh account and walks it through creation:
+/// generate the account keys and post them, enrol into the account recovery of the organization behind
+/// the SSO login, then trust the device. Every one of those has to be able to go through: if enrolment
+/// is refused the keys are already written, and the next login fails at posting them a second time,
+/// leaving an account that can never be unlocked at all.
 ///
 /// So the same conditions the enrolment endpoint enforces are checked here, before the client has
-/// written anything. Withholding the options instead sends it to setting a master password, which
-/// works and leaves the door to trusted devices open for the next login.
+/// written anything. Withholding the options instead sends it to setting a master password, which works
+/// and leaves the door to trusted devices open for the next login.
 async fn account_creation_can_succeed(user: &User, conn: &DbConn) -> bool {
     // `POST /accounts/keys` refuses to replace the keys of an account that has them, and the
     // clients post a freshly generated pair without looking.
@@ -533,11 +532,9 @@ async fn account_creation_can_succeed(user: &User, conn: &DbConn) -> bool {
         return false;
     };
 
-    // That lookup only rules out the `Revoked` status itself, which revoking never actually writes:
-    // it shifts the status out of the active range instead, so a revoked membership comes back from
-    // it like any other. The enrolment endpoint runs behind `OrgMemberHeaders` and turns exactly
-    // those away, so offering the flow on the strength of one would walk the client into the half
-    // built account this whole function exists to avoid.
+    // That lookup only rules out the `Revoked` status itself, which revoking never actually writes: it
+    // shifts the status out of the active range instead, so a revoked membership comes back from it like
+    // any other. The enrolment endpoint runs behind `OrgMemberHeaders` and turns exactly those away.
     if !membership.is_active() {
         return false;
     }
@@ -578,21 +575,17 @@ struct TrustedDeviceWaysIn {
 }
 
 impl TrustedDeviceWaysIn {
-    /// Whether the trusted device options belong in a login response, and in which of their two
-    /// roles.
+    /// Whether the trusted device options belong in a login response, and in which of their two roles.
     ///
-    /// `Some(true)` means they are only there to walk a user without a master password off the
-    /// feature after it was switched off; `None` means they are withheld, because nothing the
-    /// client could do with them would work.
-    ///
-    /// The order mirrors how the clients read them: a trusted device unlocks straight away,
-    /// otherwise an administrator to ask or a master password to type is offered, and only when
-    /// there is neither does the client decide it is looking at a fresh account and try to create
-    /// one.
+    /// `Some(true)` means they are only there to walk a user without a master password off the feature
+    /// after it was switched off; `None` means they are withheld, because nothing the client could do
+    /// with them would work. The order mirrors how the clients read them: a trusted device unlocks
+    /// straight away, otherwise an administrator to ask or a master password to type is offered, and only
+    /// when there is neither does the client try to create a fresh account.
     fn offer(&self, enabled: bool) -> Option<bool> {
-        // Once the feature is switched off again, a user without a master password would be locked
-        // out of their own vault. Keep telling their still trusted devices about it so their client
-        // can walk them through setting one while they can still unlock.
+        // Once the feature is switched off again, a user without a master password would be locked out
+        // of their own vault. Keep telling their still trusted devices about it so their client can walk
+        // them through setting one while they can still unlock.
         let offboarding = !enabled && self.offboarding_candidate();
         if !(enabled || offboarding) {
             return None;
@@ -614,9 +607,9 @@ impl TrustedDeviceWaysIn {
 /// password, the client keeps a copy of it on the device, wrapped for a key pair that the device
 /// generated. Its presence in the response is what makes the clients offer the flow at all.
 ///
-/// Upstream ties this to the SSO configuration of an organization; Vaultwarden configures SSO for
-/// the whole server, so `SSO_TRUSTED_DEVICE_ENCRYPTION` decides it here. Either way it stays an SSO
-/// feature, a password login never gets these options.
+/// Upstream ties this to the SSO configuration of an organization; Vaultwarden configures SSO for the
+/// whole server, so `SSO_TRUSTED_DEVICE_ENCRYPTION` decides it here. Either way it stays an SSO feature,
+/// a password login never gets these options.
 /// https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/UserDecryptionOptionsBuilder.cs
 async fn trusted_device_option(user: &User, device: &Device, conn: &DbConn) -> Option<Value> {
     let enabled = CONFIG.sso_trusted_device_encryption();
@@ -636,10 +629,9 @@ async fn trusted_device_option(user: &User, device: &Device, conn: &DbConn) -> O
 
     let memberships = Membership::find_by_user(&user.uuid, conn).await;
 
-    // An admin can only take over the approval once the member handed them a key to work with,
-    // which is what enrolling into account recovery does. The same condition the request itself is
-    // created and answered under, so this does not announce a way out that would be refused the
-    // moment it is taken.
+    // An admin can only take over the approval once the member handed them a key to work with, which is
+    // what enrolling into account recovery does. The same condition the request itself is created and
+    // answered under, so this does not announce a way out that would be refused the moment it is taken.
     ways_in.has_admin_approval = memberships.iter().any(Membership::can_use_admin_approval);
 
     // Only worth asking when nothing cheaper already lets the client in.
@@ -656,15 +648,10 @@ async fn trusted_device_option(user: &User, device: &Device, conn: &DbConn) -> O
         .iter()
         .any(|other| other.uuid != device.uuid && DeviceType::from_i32(other.atype).can_approve_login_requests());
 
-    // Whether the user is on the answering side of that. The clients use it to push someone who
-    // could approve others, but has no master password themselves, into setting one. Upstream reads
-    // a `ManageResetPassword` permission here, which in Vaultwarden's role model only the
-    // administrators of an organization have.
-    //
-    // Every active membership counts, not only the confirmed one that may act on the permission
-    // today: an administrator provisioned into the organization by this very login holds the role
-    // before anybody has confirmed them, and this is the login that has to tell them to set a
-    // master password. See `has_manage_reset_password_role_for_tde`.
+    // Whether the user is on the answering side of that. The clients use it to push someone who could
+    // approve others, but has no master password themselves, into setting one. Every active membership
+    // counts, not only a confirmed one: an administrator provisioned by this very login holds the role
+    // before anybody has confirmed them. See `has_manage_reset_password_role_for_tde`.
     let has_manage_reset_password_permission =
         memberships.iter().any(Membership::has_manage_reset_password_role_for_tde);
 
@@ -1599,62 +1586,8 @@ mod tests {
             ..Account::new()
         };
         assert_eq!(account.offer(), Some(false));
-    }
 
-    #[test]
-    fn an_account_with_no_way_through_the_flow_is_not_offered_it() {
-        // Nothing set up, nobody to ask, and account creation would fail at the enrolment: the one
-        // combination that would leave the account half built. The client is sent to setting a
-        // master password instead.
-        assert_eq!(Account::new().offer(), None);
-    }
-
-    #[test]
-    fn every_way_through_the_flow_is_offered_it() {
-        // A device that can unlock right now.
-        assert_eq!(
-            Account {
-                device_is_trusted: true,
-                ..Account::new()
-            }
-            .offer(),
-            Some(false)
-        );
-
-        // An administrator to ask, which needs the member to be enrolled in account recovery.
-        assert_eq!(
-            Account {
-                has_admin_approval: true,
-                ..Account::new()
-            }
-            .offer(),
-            Some(false)
-        );
-
-        // A master password to fall back on.
-        assert_eq!(
-            Account {
-                has_master_password: true,
-                ..Account::new()
-            }
-            .offer(),
-            Some(false)
-        );
-
-        // A fresh account in an organization that can actually take the enrolment.
-        assert_eq!(
-            Account {
-                can_create_account: true,
-                ..Account::new()
-            }
-            .offer(),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn a_user_with_a_master_password_is_never_offboarded() {
-        // There is nothing to walk them off, they can unlock either way.
+        // With a master password there is nothing to walk them off, they can unlock either way.
         let account = Account {
             enabled: false,
             device_is_trusted: true,
@@ -1662,6 +1595,39 @@ mod tests {
             ..Account::new()
         };
         assert_eq!(account.offer(), None);
+    }
+
+    #[test]
+    fn every_way_through_the_flow_is_offered_it_and_nothing_else_is() {
+        // Nothing set up, nobody to ask, and account creation would fail at the enrolment: the one
+        // combination that would leave the account half built. The client is sent to setting a
+        // master password instead.
+        assert_eq!(Account::new().offer(), None);
+
+        for account in [
+            // A device that can unlock right now.
+            Account {
+                device_is_trusted: true,
+                ..Account::new()
+            },
+            // An administrator to ask, which needs the member to be enrolled in account recovery.
+            Account {
+                has_admin_approval: true,
+                ..Account::new()
+            },
+            // A master password to fall back on.
+            Account {
+                has_master_password: true,
+                ..Account::new()
+            },
+            // A fresh account in an organization that can actually take the enrolment.
+            Account {
+                can_create_account: true,
+                ..Account::new()
+            },
+        ] {
+            assert_eq!(account.offer(), Some(false));
+        }
     }
 
     /// What `trusted_device_option` reads off the memberships of the user logging in.
