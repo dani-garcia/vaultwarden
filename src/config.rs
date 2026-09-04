@@ -847,6 +847,8 @@ make_config! {
         sso_client_cache_expiration:    u64,    true,   def,    0;
         /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
         sso_debug_tokens:               bool,   true,   def,    false;
+        /// Trusted device encryption |> Let users unlock their vault after an SSO login with a key stored on a trusted device instead of a master password. A user who never sets a master password and then loses every trusted device cannot recover their vault. See: https://bitwarden.com/help/login-with-sso-trusted-devices/
+        sso_trusted_device_encryption:  bool,   true,   def,    false;
     },
 
     /// Yubikey settings
@@ -1114,6 +1116,12 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
         validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
+    } else if cfg.sso_trusted_device_encryption {
+        err!(
+            "`SSO_TRUSTED_DEVICE_ENCRYPTION` requires `SSO_ENABLED` to be set, it only applies to SSO logins. \
+             To stop offering trusted devices, clear `SSO_TRUSTED_DEVICE_ENCRYPTION` and leave `SSO_ENABLED` on \
+             until every user without a master password has set one, otherwise they can no longer log in at all"
+        )
     }
 
     if cfg._enable_yubico {
@@ -1749,6 +1757,7 @@ where
     reg!("email/change_email_invited", ".html");
     reg!("email/change_email", ".html");
     reg!("email/delete_account", ".html");
+    reg!("email/device_approval_requested", ".html");
     reg!("email/emergency_access_invite_accepted", ".html");
     reg!("email/emergency_access_invite_confirmed", ".html");
     reg!("email/emergency_access_recovery_approved", ".html");
@@ -1770,6 +1779,7 @@ where
     reg!("email/send_single_org_removed_from_org", ".html");
     reg!("email/smtp_test", ".html");
     reg!("email/sso_change_email", ".html");
+    reg!("email/trusted_device_admin_approval", ".html");
     reg!("email/twofactor_email", ".html");
     reg!("email/verify_email", ".html");
     reg!("email/welcome_must_verify", ".html");

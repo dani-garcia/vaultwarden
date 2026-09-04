@@ -843,6 +843,40 @@ impl<'r> FromRequest<'r> for AdminHeaders {
     }
 }
 
+/// A member who may act on the account recovery of an organization, which is also what answering its
+/// device approvals comes down to.
+///
+/// Upstream guards those endpoints on a permission, `ManageResetPassword`, rather than on a role, so this
+/// asks `Membership::can_manage_reset_password_now` instead of naming roles here. Today that permission
+/// belongs to the administrators alone, making this the same set of callers as `AdminHeaders`; keeping it
+/// apart is what lets a custom role hold the permission later without revisiting every endpoint.
+/// https://github.com/bitwarden/server/blob/main/src/Api/AdminConsole/Controllers/OrganizationAuthRequestsController.cs
+pub struct ManageResetPasswordHeaders {
+    pub device: Device,
+    pub user: User,
+    pub ip: ClientIp,
+    pub org_id: OrganizationId,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ManageResetPasswordHeaders {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let headers = try_outcome!(OrgHeaders::from_request(request).await);
+        if headers.membership.can_manage_reset_password_now() {
+            Outcome::Success(Self {
+                device: headers.device,
+                user: headers.user,
+                ip: headers.ip,
+                org_id: headers.membership.org_uuid,
+            })
+        } else {
+            err_handler!("You need permission to manage account recovery to call this endpoint")
+        }
+    }
+}
+
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),
 // but there could be cases where it is a query value.
 // First check the path, if this is not a valid uuid, try the query values.

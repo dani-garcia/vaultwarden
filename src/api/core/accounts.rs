@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use rocket::{
@@ -20,9 +20,10 @@ use crate::{
     db::{
         DbConn, DbPool,
         models::{
-            AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
-            EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
+            AuthRequest, AuthRequestId, AuthRequestType, Cipher, CipherId, Device, DeviceId, DeviceType,
+            DeviceWithAuthRequest, EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation,
+            Membership, MembershipId, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User,
+            UserId, UserKdfType,
         },
     },
     mail,
@@ -44,6 +45,7 @@ pub fn routes() -> Vec<rocket::Route> {
         post_keys,
         post_password,
         post_set_password,
+        put_update_tde_offboarding_password,
         post_kdf,
         post_rotatekey,
         post_sstamp,
@@ -68,8 +70,15 @@ pub fn routes() -> Vec<rocket::Route> {
         put_device_token,
         put_clear_device_token,
         post_clear_device_token,
+        put_device_keys,
+        post_device_keys,
+        post_device_retrieve_keys,
+        post_devices_update_trust,
+        post_devices_untrust,
+        post_devices_lost_trust,
         get_tasks,
         post_auth_request,
+        post_admin_auth_request,
         get_auth_request,
         put_auth_request,
         get_auth_request_response,
@@ -440,14 +449,30 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     let data: SetPasswordData = data.into_inner();
     let mut user = headers.user;
 
-    if user.private_key.is_some() {
-        err!("Account already initialized, cannot set password")
+    // A trusted device account already has its key pair but no master password, and must still be
+    // able to add one later, for instance once the server stops offering trusted device encryption.
+    // What this must never do is hand out a fresh master password for an account that has one.
+    if !user.password_hash.is_empty() {
+        err!("Account already has a master password")
     }
 
     // Check against the password hint setting here so if it fails,
     // the user can retry without losing their invitation below.
     let password_hint = clean_password_hint(data.master_password_hint.as_ref());
     enforce_password_hint_setting(password_hint.as_ref())?;
+
+    // Same reasoning as in `post_keys`: the existing ciphers are encrypted under the existing key
+    // pair, so an account that has one only gets a password, never new keys.
+    let keys = match (data.keys, user.private_key.is_some() || user.public_key.is_some()) {
+        (Some(keys), false) => Some(keys),
+        (Some(keys), true)
+            if user.private_key.as_ref() != Some(&keys.encrypted_private_key)
+                || user.public_key.as_ref() != Some(&keys.public_key) =>
+        {
+            err!("Account already initialized, cannot replace the account keys")
+        }
+        _ => None,
+    };
 
     set_kdf_data(&mut user, &data.kdf)?;
 
@@ -461,7 +486,7 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     .await?;
     user.password_hint = password_hint;
 
-    if let Some(keys) = data.keys {
+    if let Some(keys) = keys {
         user.private_key = Some(keys.encrypted_private_key);
         user.public_key = Some(keys.public_key);
     }
@@ -496,6 +521,85 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
       "object": "set-password",
       "captchaBypassToken": "",
     })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateTdeOffboardingPasswordData {
+    new_master_password_hash: String,
+    /// The user key the account already has, re-wrapped for the master key derived from the new
+    /// password. The vault is not re-encrypted, so this is the only thing that changes about it.
+    key: String,
+    master_password_hint: Option<String>,
+}
+
+/// Gives an account that unlocks with a trusted device the master password it needs once the server stops
+/// offering trusted devices.
+///
+/// The endpoint the clients take when a login answered `IsTdeOffboarding`, see `trusted_device_option`.
+/// Deliberately not `/accounts/set-password`: the account is fully set up by this point, so the only
+/// thing added is a second way to unlock the user key it already has. The account key pair and the vault
+/// are left as they are, and unlike `/accounts/keys` nothing here could replace them.
+///
+/// Upstream keys this on the organization having switched its SSO member decryption away from trusted
+/// devices; Vaultwarden configures SSO for the whole server, so the same state is `SSO_ENABLED` without
+/// `SSO_TRUSTED_DEVICE_ENCRYPTION`, which is exactly when a login starts answering `IsTdeOffboarding`.
+/// https://github.com/bitwarden/server/blob/main/src/Core/Auth/UserFeatures/TdeOffboardingPassword/TdeOffboardingPasswordCommand.cs
+#[put("/accounts/update-tde-offboarding-password", data = "<data>")]
+async fn put_update_tde_offboarding_password(
+    data: Json<UpdateTdeOffboardingPasswordData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    let data = data.into_inner();
+    let mut user = headers.user;
+
+    // Adding a master password to an account that has one is changing it, which is `/accounts/password`
+    // and asks for the current one first. Without this an authenticated caller could replace the password
+    // of the account they are on, and a second offboarding call would overwrite the first one's password.
+    if !user.password_hash.is_empty() {
+        err!("Account already has a master password")
+    }
+
+    // The way out of trusted devices only exists while the server still takes SSO logins but no
+    // longer offers trusted devices. A server that still offers them has nothing to offboard from,
+    // and one without SSO never had the flow at all.
+    if !CONFIG.sso_enabled() || CONFIG.sso_trusted_device_encryption() {
+        err!("Trusted device offboarding is not available on this server")
+    }
+
+    // A user key that is not an encrypted string unlocks nothing, and this is the only copy the
+    // master password can reach. Storing it would leave an account that logs in and then cannot
+    // open its own vault.
+    if !crate::util::is_valid_enc_string(&data.key) {
+        err!("key is not a valid encrypted string")
+    }
+
+    let password_hint = clean_password_hint(data.master_password_hint.as_ref());
+    enforce_password_hint_setting(password_hint.as_ref())?;
+
+    // The KDF is left alone: the client derived the master key from the settings the account
+    // already has, and sends nothing to change them by, as upstream does here.
+    user.set_password(&data.new_master_password_hash, Some(data.key), true, None, &conn).await?;
+    user.password_hint = password_hint;
+
+    log_user_event(
+        EventType::UserTdeOffboardingPasswordSet as i32,
+        &user.uuid,
+        headers.device.atype,
+        &headers.ip.ip,
+        &conn,
+    )
+    .await;
+
+    user.save(&conn).await?;
+
+    // Upstream logs every session out at this point. The account unlocks a different way from now
+    // on, so the sessions that were opened against a trusted device do not carry over.
+    nt.send_logout(&user, None, &conn).await;
+
+    Ok(())
 }
 
 #[get("/accounts/profile")]
@@ -578,6 +682,24 @@ async fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> Json
     let data: KeysData = data.into_inner();
 
     let mut user = headers.user;
+
+    // Replacing the key pair of an initialized account would make every existing cipher undecryptable,
+    // so only accept it while the account has none yet. The clients call this during account creation,
+    // including the trusted device flow, where a stale client state could otherwise send us here for an
+    // account that is already set up. Repeating the same keys stays allowed so a retry does not fail.
+    if user.private_key.is_some() || user.public_key.is_some() {
+        if user.private_key.as_ref() != Some(&data.encrypted_private_key)
+            || user.public_key.as_ref() != Some(&data.public_key)
+        {
+            err!("Account already initialized, cannot replace the account keys")
+        }
+
+        return Ok(Json(json!({
+            "privateKey": user.private_key,
+            "publicKey": user.public_key,
+            "object":"keys"
+        })));
+    }
 
     user.private_key = Some(data.encrypted_private_key);
     user.public_key = Some(data.public_key);
@@ -796,6 +918,20 @@ struct RotateAccountUnlockData {
     emergency_access_unlock_data: Vec<UpdateEmergencyAccessData>,
     master_password_unlock_data: MasterPasswordUnlockData,
     organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
+    /// The user key, re-wrapped for every device that unlocks the vault without a master password.
+    ///
+    /// Absent rather than empty tells the two generations of clients apart: one that sends this rotates
+    /// the trust of its devices right here, an older one does it afterwards through
+    /// `POST /devices/update-trust` and leaves this out entirely. See `post_rotatekey`.
+    device_key_unlock_data: Option<Vec<UpdateDeviceKeysData>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateDeviceKeysData {
+    device_id: DeviceId,
+    encrypted_user_key: String,
+    encrypted_public_key: String,
 }
 
 #[derive(Deserialize)]
@@ -823,6 +959,52 @@ struct RotateAccountData {
     ciphers: Vec<CipherData>,
     folders: Vec<UpdateFolderData>,
     sends: Vec<SendData>,
+}
+
+/// Works out what a key rotation has to write to the user's devices.
+///
+/// Returns the devices that keep their trust, each with the user key freshly wrapped for it; whatever
+/// the user owns beyond that list ends up untrusted, so the caller can hand the result to
+/// `Device::replace_trust` and be done in one transaction. Mirrors `DeviceRotationValidator` upstream,
+/// which refuses a rotation that would quietly drop the trust of a device the user still relies on.
+/// https://github.com/bitwarden/server/blob/main/src/Api/KeyManagement/Validators/DeviceRotationValidator.cs
+fn validate_device_keydata(
+    updates: &[UpdateDeviceKeysData],
+    existing_devices: &[Device],
+) -> ApiResult<Vec<(DeviceId, String, String)>> {
+    // Everything the client sent is checked before any of it is used, so a request that is
+    // malformed anywhere is refused as a whole rather than answered in part.
+    let mut listed: HashMap<&DeviceId, &UpdateDeviceKeysData> = HashMap::with_capacity(updates.len());
+
+    for update in updates {
+        if listed.insert(&update.device_id, update).is_some() {
+            err!("A device was listed more than once in the rotation")
+        }
+
+        if !existing_devices.iter().any(|device| device.uuid == update.device_id) {
+            err!(format!("Device {} does not belong to this user", update.device_id))
+        }
+
+        validate_enc_strings(&[
+            ("encryptedUserKey", &update.encrypted_user_key),
+            ("encryptedPublicKey", &update.encrypted_public_key),
+        ])?;
+    }
+
+    // Walked over the devices that are trusted right now rather than over what was sent, because a
+    // rotation may only carry an existing trust over to the new user key. Trusting a device is a step of
+    // its own, `PUT /devices/<id>/keys`. An entry for anything else is passed over, as upstream does.
+    let mut rotated = Vec::new();
+
+    for device in existing_devices.iter().filter(|device| device.is_trusted()) {
+        let Some(update) = listed.get(&device.uuid) else {
+            err!("All existing trusted devices must be included in the rotation")
+        };
+
+        rotated.push((device.uuid.clone(), update.encrypted_user_key.clone(), update.encrypted_public_key.clone()));
+    }
+
+    Ok(rotated)
 }
 
 fn validate_keydata(
@@ -929,6 +1111,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // We only rotate the reset password key if it is set.
     existing_memberships.retain(|m| m.reset_password_key.is_some());
     let mut existing_sends = Send::find_by_user(user_id, &conn).await;
+    let existing_devices = Device::find_by_user(user_id, &conn).await;
 
     validate_keydata(
         &data,
@@ -939,6 +1122,11 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         &existing_sends,
         &headers.user,
     )?;
+
+    let rotated_devices = match data.account_unlock_data.device_key_unlock_data.as_deref() {
+        Some(updates) => Some(validate_device_keydata(updates, &existing_devices)?),
+        None => None,
+    };
 
     // Update folder data
     for folder_data in data.account_data.folders {
@@ -1000,6 +1188,19 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
             // We force the users to logout after the user has been saved to try and prevent these issues.
             update_cipher_from_data(saved_cipher, cipher_data, &headers, None, &conn, &nt, UpdateType::None).await?;
         }
+    }
+
+    // Every device holds the previous user key wrapped for itself, which unlocks nothing anymore. Settle
+    // that here rather than after the account itself: the ciphers have already been rewritten under the
+    // new user key, so a device holding the new one is the half that still works if what follows fails.
+    match rotated_devices {
+        // The current clients send the re-wrapped user key for every trusted device along with the
+        // rotation, so their trust survives it. Anything they left out is untrusted here.
+        Some(rotated) => Device::replace_trust(&headers.user.uuid, rotated, &conn).await?,
+        // A client old enough to leave the field out does this afterwards through
+        // `POST /devices/update-trust`. Until it does, no device counts as trusted, so the worst it
+        // costs its owner is another login rather than an unlock that fails.
+        None => Device::invalidate_wrapped_user_keys(&headers.user.uuid, &conn).await?,
     }
 
     // Update user data
@@ -1568,6 +1769,212 @@ async fn post_clear_device_token(device_id: DeviceId, ip: ClientIp, conn: DbConn
     put_clear_device_token(device_id, ip, conn).await
 }
 
+// Trusted device encryption, see https://bitwarden.com/help/login-with-sso-trusted-devices/
+// The three key blobs below are generated and encrypted by the client, the server only stores them and
+// hands them back on the next login of that same device. It never learns the device key that unwraps
+// `encrypted_private_key`, so a stored trust is worth nothing without the device itself.
+// https://github.com/bitwarden/server/blob/main/src/Api/Controllers/DevicesController.cs
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrustedDeviceKeysData {
+    encrypted_user_key: String,
+    encrypted_public_key: String,
+    encrypted_private_key: String,
+}
+
+/// Refuses anything that does not even have the shape of an `EncString`.
+///
+/// The server cannot tell whether a blob decrypts, but storing something that certainly does not only
+/// leaves a device that calls itself trusted and fails its owner at the next unlock. Upstream puts
+/// `[EncryptedString]` on the same fields.
+fn validate_enc_strings(values: &[(&str, &str)]) -> EmptyResult {
+    for (name, value) in values {
+        if !crate::util::is_valid_enc_string(value) {
+            err!(format!("{name} is not a valid encrypted string"))
+        }
+    }
+    Ok(())
+}
+
+/// Marks a device of the current user as trusted.
+///
+/// Upstream keys this on the device identifier and does not require it to be the device the request was
+/// authenticated with, so neither do we. The keys only ever unlock the vault on the device holding the
+/// matching device key, so writing them for another of your own devices gains nothing.
+#[put("/devices/<device_id>/keys", data = "<data>")]
+async fn put_device_keys(
+    device_id: DeviceId,
+    data: Json<TrustedDeviceKeysData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    let data = data.into_inner();
+
+    validate_enc_strings(&[
+        ("encryptedUserKey", &data.encrypted_user_key),
+        ("encryptedPublicKey", &data.encrypted_public_key),
+        ("encryptedPrivateKey", &data.encrypted_private_key),
+    ])?;
+
+    let Some(mut device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &conn).await else {
+        err!("No device found")
+    };
+
+    device.encrypted_user_key = Some(data.encrypted_user_key);
+    device.encrypted_public_key = Some(data.encrypted_public_key);
+    device.encrypted_private_key = Some(data.encrypted_private_key);
+    device.save(true, &conn).await?;
+
+    Ok(Json(device.to_json()))
+}
+
+// Deprecated upstream in favour of the PUT variant, but still served for older clients
+#[post("/devices/<device_id>/keys", data = "<data>")]
+async fn post_device_keys(
+    device_id: DeviceId,
+    data: Json<TrustedDeviceKeysData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    put_device_keys(device_id, data, headers, conn).await
+}
+
+/// The public half of a device's trust, needed by the clients to re-wrap the user key for every
+/// trusted device during a key rotation.
+#[post("/devices/<device_id>/retrieve-keys")]
+async fn post_device_retrieve_keys(device_id: DeviceId, headers: Headers, conn: DbConn) -> JsonResult {
+    let Some(device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &conn).await else {
+        err!("No device found")
+    };
+
+    Ok(Json(device.to_protected_json()))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceTrustUpdateData {
+    encrypted_user_key: String,
+    encrypted_public_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OtherDeviceTrustUpdateData {
+    device_id: DeviceId,
+    #[serde(flatten)]
+    keys: DeviceTrustUpdateData,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateDevicesTrustData {
+    #[serde(flatten)]
+    secret: PasswordOrOtpData,
+    current_device: DeviceTrustUpdateData,
+    #[serde(default)]
+    other_devices: Vec<OtherDeviceTrustUpdateData>,
+}
+
+/// Re-wraps the user key for the trusted devices after it was replaced by a key rotation.
+///
+/// Every trusted device that is not listed loses its trust: its stored copy of the user key is the old
+/// one. The current clients do this as part of the rotation itself and never come here; this is the route
+/// the older ones take, and the only one that can rotate a single device's trust. See `post_rotatekey`.
+#[post("/devices/update-trust", data = "<data>")]
+async fn post_devices_update_trust(data: Json<UpdateDevicesTrustData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data = data.into_inner();
+
+    data.secret.validate(&headers.user, true, &conn).await?;
+
+    validate_enc_strings(&[
+        ("encryptedUserKey", &data.current_device.encrypted_user_key),
+        ("encryptedPublicKey", &data.current_device.encrypted_public_key),
+    ])?;
+
+    let devices = Device::find_by_user(&headers.user.uuid, &conn).await;
+    if !devices.iter().any(|device| device.uuid == headers.device.uuid) {
+        err!("No device found")
+    }
+
+    // The current device is written whatever it holds now, as upstream does: it is the one the
+    // caller is speaking from and just proved it can unlock.
+    let mut updates = vec![(
+        headers.device.uuid.clone(),
+        data.current_device.encrypted_user_key,
+        data.current_device.encrypted_public_key,
+    )];
+    let mut listed: HashSet<DeviceId> = HashSet::from([headers.device.uuid.clone()]);
+
+    // Validate everything before writing anything, so one bad entry cannot leave the devices
+    // wrapping a mix of the old and the new user key.
+    for other in data.other_devices {
+        if !listed.insert(other.device_id.clone()) {
+            if other.device_id == headers.device.uuid {
+                err!("The current device cannot also be part of the optional rotation")
+            }
+            err!("A device was listed more than once in the rotation")
+        }
+
+        let Some(device) = devices.iter().find(|device| device.uuid == other.device_id) else {
+            err!(format!("Device {} does not belong to this user", other.device_id))
+        };
+
+        validate_enc_strings(&[
+            ("encryptedUserKey", &other.keys.encrypted_user_key),
+            ("encryptedPublicKey", &other.keys.encrypted_public_key),
+        ])?;
+
+        // A rotation clears the wrapped user key of every device, so the listed ones are not
+        // trusted at this point; their key pair is what they are restored from. Without it there is
+        // nothing the two keys could belong to, so the device is left to be untrusted instead.
+        if device.holds_private_key() {
+            updates.push((other.device_id, other.keys.encrypted_user_key, other.keys.encrypted_public_key));
+        }
+    }
+
+    Device::replace_trust(&headers.user.uuid, updates, &conn).await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UntrustDevicesData {
+    devices: Vec<DeviceId>,
+}
+
+#[post("/devices/untrust", data = "<data>")]
+async fn post_devices_untrust(data: Json<UntrustDevicesData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let data = data.into_inner();
+
+    let owned: HashSet<DeviceId> =
+        Device::find_by_user(&headers.user.uuid, &conn).await.into_iter().map(|device| device.uuid).collect();
+
+    // Check that the user owns all of them first, so a single foreign id does not leave the request
+    // half applied.
+    if let Some(unknown) = data.devices.iter().find(|device_id| !owned.contains(*device_id)) {
+        err!(format!("Device {unknown} does not belong to this user"))
+    }
+
+    Device::untrust_many(&headers.user.uuid, data.devices, &conn).await
+}
+
+/// Reported by a client that still holds a device key but did not get any keys back from us.
+///
+/// Nothing is left to clean up, the device already counts as untrusted here. Upstream only writes a log
+/// line as well, since this points at the client and the server having drifted apart.
+#[expect(clippy::needless_pass_by_value, reason = "Not beneficial for Headers")]
+#[post("/devices/lost-trust")]
+fn post_devices_lost_trust(headers: Headers) -> EmptyResult {
+    warn!(
+        "Device {} ({}) of user {} still holds a device key, but has no trusted device keys on the server",
+        headers.device.uuid,
+        DeviceType::from_i32(headers.device.atype),
+        headers.user.uuid
+    );
+
+    Ok(())
+}
+
 #[get("/tasks")]
 fn get_tasks(_client_headers: ClientHeaders) -> JsonResult {
     Ok(Json(json!({
@@ -1583,9 +1990,57 @@ struct AuthRequestRequest {
     device_identifier: DeviceId,
     email: String,
     public_key: String,
-    // Not used for now
-    // #[serde(alias = "type")]
-    // _type: i32,
+    #[serde(default, rename = "type")]
+    atype: i32,
+}
+
+/// Upstream puts `[StringLength(25)]` on the access code, so no client sends more than that.
+/// https://github.com/bitwarden/server/blob/main/src/Core/Auth/Models/Api/Request/AuthRequest/AuthRequestCreateRequestModel.cs
+const MAX_ACCESS_CODE_LENGTH: usize = 25;
+
+/// A base64 SPKI RSA-4096 public key is under a kilobyte; this leaves room for whatever comes next.
+const MAX_REQUEST_PUBLIC_KEY_LENGTH: usize = 4096;
+
+impl AuthRequestRequest {
+    /// Both of these end up stored, and the admin approval route stores a copy per organization the user
+    /// belongs to, so neither may be unbounded. The public key is handed to the answering client as
+    /// base64 to wrap a key against; one that is not base64 would break the page listing the requests.
+    fn validate(&self) -> EmptyResult {
+        if self.access_code.is_empty() || self.access_code.len() > MAX_ACCESS_CODE_LENGTH {
+            err!("Invalid access code")
+        }
+
+        if self.public_key.is_empty()
+            || self.public_key.len() > MAX_REQUEST_PUBLIC_KEY_LENGTH
+            || data_encoding::BASE64.decode(self.public_key.as_bytes()).is_err()
+        {
+            err!("Invalid public key")
+        }
+
+        Ok(())
+    }
+}
+
+fn auth_request_json(auth_request: &AuthRequest) -> Value {
+    json!({
+        "id": auth_request.uuid,
+        "publicKey": auth_request.public_key,
+        "type": auth_request.atype,
+        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
+        // The clients read the raw enum value as well, to pick an icon for the asking device.
+        "requestDeviceTypeValue": auth_request.device_type,
+        "requestDeviceIdentifier": auth_request.request_device_identifier,
+        "requestIpAddress": auth_request.request_ip,
+        // Not recorded here, but the clients read it, so it is answered rather than missing.
+        "requestCountryName": null,
+        "key": auth_request.enc_key,
+        "masterPasswordHash": auth_request.master_password_hash,
+        "creationDate": format_date(&auth_request.creation_date),
+        "responseDate": auth_request.response_date.as_ref().map(format_date),
+        "requestApproved": auth_request.approved.unwrap_or(false),
+        "origin": CONFIG.domain_origin(),
+        "object": "auth-request"
+    })
 }
 
 #[post("/auth-requests", data = "<data>")]
@@ -1597,6 +2052,14 @@ async fn post_auth_request(
 ) -> JsonResult {
     let data = data.into_inner();
 
+    // Asking an administrator for approval means telling them who is asking, so that one is only
+    // available to a caller who has already proven who they are. See `post_admin_auth_request`.
+    if AuthRequestType::from_i32(data.atype) == Some(AuthRequestType::AdminApproval) {
+        err!("You must be authenticated to create a request of that type")
+    }
+
+    data.validate()?;
+
     let Some(user) = User::find_by_mail(&data.email, &conn).await else {
         err!("AuthRequest doesn't exist", "User not found")
     };
@@ -1607,8 +2070,14 @@ async fn post_auth_request(
         _ => err!("AuthRequest doesn't exist", "Device verification failed"),
     };
 
+    let Some(atype) = AuthRequestType::from_i32(data.atype) else {
+        err!("Unknown auth request type")
+    };
+
     let mut auth_request = AuthRequest::new(
         user.uuid.clone(),
+        None,
+        atype,
         data.device_identifier.clone(),
         client_headers.device_type,
         client_headers.ip.ip.to_string(),
@@ -1628,19 +2097,136 @@ async fn post_auth_request(
     )
     .await;
 
-    Ok(Json(json!({
-        "id": auth_request.uuid,
-        "publicKey": auth_request.public_key,
-        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-        "requestIpAddress": auth_request.request_ip,
-        "key": null,
-        "masterPasswordHash": null,
-        "creationDate": format_date(&auth_request.creation_date),
-        "responseDate": null,
-        "requestApproved": false,
-        "origin": CONFIG.domain_origin(),
-        "object": "auth-request"
-    })))
+    Ok(Json(auth_request_json(&auth_request)))
+}
+
+/// Asks the administrators of every organization the user belongs to to let this device in.
+///
+/// The way out for someone who unlocks with trusted devices and has no other device left to ask. One
+/// request per organization, so whichever administrator gets there first can answer.
+/// https://github.com/bitwarden/server/blob/main/src/Api/Auth/Controllers/AuthRequestsController.cs
+#[post("/auth-requests/admin-request", data = "<data>")]
+async fn post_admin_auth_request(data: Json<AuthRequestRequest>, headers: Headers, conn: DbConn) -> JsonResult {
+    // Every call mails all administrators of every organization involved, so it is worth its own limit.
+    crate::ratelimit::check_limit_unauthenticated(&headers.ip.ip)?;
+
+    let data = data.into_inner();
+
+    if AuthRequestType::from_i32(data.atype) != Some(AuthRequestType::AdminApproval) {
+        err!("Invalid auth request type, expected admin approval")
+    }
+
+    if data.device_identifier != headers.device.uuid {
+        err!("AuthRequest doesn't exist", "Device verification failed")
+    }
+
+    data.validate()?;
+
+    // Only an organization that could actually answer is asked. Approving hands the member their own
+    // user key, which an administrator can only do with the key that enrolling into account recovery
+    // left them, so an organization without one has nothing to offer and needs none of the asker's data.
+    let memberships: Vec<Membership> = Membership::find_by_user(&headers.user.uuid, &conn)
+        .await
+        .into_iter()
+        .filter(Membership::can_use_admin_approval)
+        .collect();
+    if memberships.is_empty() {
+        err!("User does not belong to any organization that could approve a device")
+    }
+
+    log_user_event(
+        EventType::UserRequestedDeviceApproval as i32,
+        &headers.user.uuid,
+        headers.device.atype,
+        &headers.ip.ip,
+        &conn,
+    )
+    .await;
+
+    let mut first_request = None;
+    for membership in memberships {
+        // Repeating the very same request is answered with the row it already has, so a client that
+        // sends it twice does not pile up rows and does not mail the administrators again. What
+        // identifies the request is the key pair the client generated for it: an approval is the user
+        // key wrapped for that public key. A client asking again with a new key pair is asking something
+        // else, and reusing the id would let an administrator approve it for a key already thrown away.
+        // Upstream never reuses a request at all, it creates one per attempt.
+        // https://github.com/bitwarden/server/blob/main/src/Core/Auth/Services/Implementations/AuthRequestService.cs
+        let existing = AuthRequest::find_pending_admin_approval(
+            &headers.user.uuid,
+            &data.device_identifier,
+            &membership.org_uuid,
+            &conn,
+        )
+        .await
+        .filter(|request| request.public_key == data.public_key && request.access_code == data.access_code);
+        let is_new = existing.is_none();
+
+        let mut auth_request = match existing {
+            Some(mut auth_request) => {
+                // Only what says where the request is being made from, never the keys it is made
+                // with; those are what the id stands for.
+                auth_request.device_type = headers.device.atype;
+                auth_request.request_ip = headers.ip.ip.to_string();
+                auth_request.creation_date = Utc::now().naive_utc();
+                auth_request
+            }
+            None => AuthRequest::new(
+                headers.user.uuid.clone(),
+                Some(membership.org_uuid.clone()),
+                AuthRequestType::AdminApproval,
+                data.device_identifier.clone(),
+                headers.device.atype,
+                headers.ip.ip.to_string(),
+                data.access_code.clone(),
+                data.public_key.clone(),
+            ),
+        };
+        auth_request.save(&conn).await?;
+
+        if is_new {
+            notify_device_approval_requested(&headers.user, &membership.org_uuid, &conn).await;
+        }
+
+        if first_request.is_none() {
+            first_request = Some(auth_request);
+        }
+    }
+
+    // Guaranteed by the emptiness check above
+    let auth_request = first_request.expect("at least one organization");
+    Ok(Json(auth_request_json(&auth_request)))
+}
+
+/// Mails everyone in the organization who could answer the request. Failing to reach them must not
+/// undo the request itself, so problems are logged rather than returned.
+async fn notify_device_approval_requested(user: &User, org_id: &OrganizationId, conn: &DbConn) {
+    if !CONFIG.mail_enabled() {
+        return;
+    }
+
+    let Some(org) = Organization::find_by_uuid(org_id, conn).await else {
+        return;
+    };
+
+    // The same set that may answer the request, see `ManageResetPasswordHeaders`. Mailing anyone
+    // else would tell them who is asking for something they cannot do anything about.
+    let approvers = Membership::find_confirmed_by_org(org_id, conn)
+        .await
+        .into_iter()
+        .filter(Membership::can_manage_reset_password_now);
+
+    for approver in approvers {
+        let Some(admin) = User::find_by_uuid(&approver.user_uuid, conn).await else {
+            continue;
+        };
+
+        if let Err(e) =
+            mail::send_device_approval_requested(&admin.email, org_id, &org.name, &user.email, &user.name).await
+        {
+            error!("Error sending device approval request email: {e:#?}");
+        }
+    }
 }
 
 #[get("/auth-requests/<auth_request_id>")]
@@ -1650,21 +2236,13 @@ async fn get_auth_request(auth_request_id: AuthRequestId, headers: Headers, conn
         err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
     };
 
-    let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
+    // The anonymous lookup refuses an expired request, and so does this one: the window an approval
+    // stays usable in should not depend on which of the two the client happens to poll.
+    if auth_request.is_expired() {
+        err!("AuthRequest doesn't exist", "Request has expired")
+    }
 
-    Ok(Json(json!({
-        "id": &auth_request_id,
-        "publicKey": auth_request.public_key,
-        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-        "requestIpAddress": auth_request.request_ip,
-        "key": auth_request.enc_key,
-        "masterPasswordHash": auth_request.master_password_hash,
-        "creationDate": format_date(&auth_request.creation_date),
-        "responseDate": response_date_utc,
-        "requestApproved": auth_request.approved,
-        "origin": CONFIG.domain_origin(),
-        "object":"auth-request"
-    })))
+    Ok(Json(auth_request_json(&auth_request)))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1691,6 +2269,13 @@ async fn put_auth_request(
         err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
     };
 
+    // A request addressed to an administrator is answered through the organization, where the
+    // permission to do so can actually be checked. Letting the asking user answer it here would
+    // make the whole detour pointless.
+    if auth_request.is_admin_approval() {
+        err!("AuthRequest doesn't exist", "Admin approval requests are answered by the organization")
+    }
+
     if headers.device.uuid != data.device_identifier {
         err!("AuthRequest doesn't exist", "Device verification failed")
     }
@@ -1699,8 +2284,26 @@ async fn put_auth_request(
         err!("An authentication request with the same device already exists")
     }
 
+    if auth_request.is_expired() {
+        err!("AuthRequest doesn't exist", "Request has expired")
+    }
+
+    // Only the newest request of a device may be approved. Anyone can create a request for a known
+    // device, so without this an older one could still be sitting there when the user approves what
+    // their screen shows, and the answer would go to whoever left it. Same check as upstream.
+    if data.request_approved
+        && AuthRequest::find_by_user_and_requested_device(
+            &headers.user.uuid,
+            &auth_request.request_device_identifier,
+            &conn,
+        )
+        .await
+        .is_none_or(|newest| newest.uuid != auth_request.uuid)
+    {
+        err!("This request is no longer valid. Make sure to approve the most recent request.")
+    }
+
     let response_date = Utc::now().naive_utc();
-    let response_date_utc = format_date(&response_date);
 
     if data.request_approved {
         auth_request.approved = Some(data.request_approved);
@@ -1711,7 +2314,7 @@ async fn put_auth_request(
         auth_request.save(&conn).await?;
 
         ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
-        nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, &headers.device, &conn).await;
+        nt.send_auth_response(&auth_request.user_uuid, &auth_request.uuid, Some(&headers.device), &conn).await;
 
         log_user_event(
             EventType::OrganizationUserApprovedAuthRequest as i32,
@@ -1734,19 +2337,7 @@ async fn put_auth_request(
         .await;
     }
 
-    Ok(Json(json!({
-        "id": &auth_request_id,
-        "publicKey": auth_request.public_key,
-        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-        "requestIpAddress": auth_request.request_ip,
-        "key": auth_request.enc_key,
-        "masterPasswordHash": auth_request.master_password_hash,
-        "creationDate": format_date(&auth_request.creation_date),
-        "responseDate": response_date_utc,
-        "requestApproved": auth_request.approved,
-        "origin": CONFIG.domain_origin(),
-        "object":"auth-request"
-    })))
+    Ok(Json(auth_request_json(&auth_request)))
 }
 
 #[get("/auth-requests/<auth_request_id>/response?<code>")]
@@ -1767,21 +2358,11 @@ async fn get_auth_request_response(
         err!("AuthRequest doesn't exist", "Invalid device, IP or code")
     }
 
-    let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
+    if auth_request.is_expired() {
+        err!("AuthRequest doesn't exist", "Request has expired")
+    }
 
-    Ok(Json(json!({
-        "id": &auth_request_id,
-        "publicKey": auth_request.public_key,
-        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-        "requestIpAddress": auth_request.request_ip,
-        "key": auth_request.enc_key,
-        "masterPasswordHash": auth_request.master_password_hash,
-        "creationDate": format_date(&auth_request.creation_date),
-        "responseDate": response_date_utc,
-        "requestApproved": auth_request.approved,
-        "origin": CONFIG.domain_origin(),
-        "object":"auth-request"
-    })))
+    Ok(Json(auth_request_json(&auth_request)))
 }
 
 // Now unused but not yet removed
@@ -1798,7 +2379,8 @@ async fn get_auth_requests_pending(headers: Headers, conn: DbConn) -> JsonResult
     Ok(Json(json!({
         "data": auth_requests
             .iter()
-            .filter(|request| request.approved.is_none())
+            // The same set a device answers for itself, see `find_by_user_and_requested_device`.
+            .filter(|request| request.approved.is_none() && !request.is_admin_approval() && !request.is_expired())
             .map(|request| {
             let response_date_utc = request.response_date.map(|response_date| format_date(&response_date));
 
@@ -1827,5 +2409,140 @@ pub async fn purge_auth_requests(pool: DbPool) {
         AuthRequest::purge_expired_auth_requests(&conn).await;
     } else {
         error!("Failed to get DB connection while purging auth requests");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(id: &str, trusted: bool) -> Device {
+        let mut device = Device::new(id.to_owned().into(), String::from("user").into(), String::new(), 9);
+        if trusted {
+            device.encrypted_user_key = Some(String::from("4.b2xkdXNlcmtleQ=="));
+            device.encrypted_public_key = Some(String::from("2.aXY=|Y2lwaGVy|bWFj"));
+            device.encrypted_private_key = Some(String::from("2.aXY=|Y2lwaGVy|bWFj"));
+        }
+        device
+    }
+
+    fn update(device_id: &str) -> UpdateDeviceKeysData {
+        UpdateDeviceKeysData {
+            device_id: device_id.to_owned().into(),
+            encrypted_user_key: String::from("4.bmV3dXNlcmtleQ=="),
+            encrypted_public_key: String::from("2.aXY=|bmV3|bWFj"),
+        }
+    }
+
+    /// The ids and keys the rotation would write, so a test can say what it expects in one line.
+    fn rotated(result: &[(DeviceId, String, String)]) -> Vec<String> {
+        result.iter().map(|(device_id, user_key, _)| format!("{device_id}={user_key}")).collect()
+    }
+
+    #[test]
+    fn a_trusted_device_that_is_listed_keeps_its_trust() {
+        let devices = [device("a", true), device("b", true)];
+        let updates = [update("a"), update("b")];
+
+        let result = validate_device_keydata(&updates, &devices).unwrap();
+        assert_eq!(
+            rotated(&result),
+            ["a=4.bmV3dXNlcmtleQ==", "b=4.bmV3dXNlcmtleQ=="],
+            "both are re-wrapped, neither keeps the previous user key"
+        );
+    }
+
+    #[test]
+    fn a_trusted_device_that_is_left_out_takes_the_rotation_down_with_it() {
+        // Silently dropping the trust of a device the user still relies on is not the server's call.
+        let devices = [device("a", true), device("b", true)];
+
+        let err = validate_device_keydata(&[update("a")], &devices).unwrap_err();
+        assert!(format!("{err}").contains("All existing trusted devices must be included"));
+    }
+
+    #[test]
+    fn a_device_of_somebody_else_is_refused() {
+        let devices = [device("a", true)];
+
+        let err = validate_device_keydata(&[update("a"), update("stranger")], &devices).unwrap_err();
+        assert!(format!("{err}").contains("does not belong to this user"));
+    }
+
+    #[test]
+    fn the_same_device_may_not_be_listed_twice() {
+        // Two entries for one device means one of the two keys is dropped without anyone noticing which.
+        let devices = [device("a", true)];
+
+        let err = validate_device_keydata(&[update("a"), update("a")], &devices).unwrap_err();
+        assert!(format!("{err}").contains("listed more than once"));
+    }
+
+    #[test]
+    fn a_key_that_is_not_an_encrypted_string_is_refused() {
+        let devices = [device("a", true)];
+
+        let mut broken = update("a");
+        broken.encrypted_user_key = String::from("not an enc string");
+        let err = validate_device_keydata(&[broken], &devices).unwrap_err();
+        assert!(format!("{err}").contains("encryptedUserKey"));
+
+        let mut broken = update("a");
+        broken.encrypted_public_key = String::new();
+        let err = validate_device_keydata(&[broken], &devices).unwrap_err();
+        assert!(format!("{err}").contains("encryptedPublicKey"));
+    }
+
+    #[test]
+    fn a_device_without_its_own_key_pair_is_not_given_a_user_key() {
+        // Half a trust is worth nothing to the client and would only fail at the next unlock, so the
+        // device is dropped from the rotation and ends up untrusted instead.
+        let devices = [device("a", true), device("b", false)];
+
+        let result = validate_device_keydata(&[update("a"), update("b")], &devices).unwrap();
+        assert_eq!(rotated(&result), ["a=4.bmV3dXNlcmtleQ=="]);
+    }
+
+    #[test]
+    fn a_user_who_trusts_no_device_rotates_nothing() {
+        let devices = [device("a", false)];
+
+        let result = validate_device_keydata(&[], &devices).unwrap();
+        assert!(result.is_empty(), "and the leftovers of `a` are cleared by the write that follows");
+    }
+
+    #[test]
+    fn a_partially_trusted_device_does_not_have_to_be_listed() {
+        // It cannot unlock anything as it stands, so leaving it out is not the loss of a trust.
+        let devices = [device("a", true), half_trusted("b")];
+
+        let result = validate_device_keydata(&[update("a")], &devices).unwrap();
+        assert_eq!(rotated(&result), ["a=4.bmV3dXNlcmtleQ=="]);
+    }
+
+    /// A device left holding nothing but its own key pair, which is what a rotation by a client too old
+    /// to send `deviceKeyUnlockData` leaves behind. It does not unlock anything as it stands.
+    fn half_trusted(id: &str) -> Device {
+        let mut device = device(id, true);
+        device.encrypted_user_key = None;
+        device.encrypted_public_key = None;
+        assert!(!device.is_trusted(), "not trusted");
+        assert!(device.holds_private_key(), "but still holds its key pair");
+        device
+    }
+
+    #[test]
+    fn a_rotation_never_trusts_a_device_that_was_not_trusted_before() {
+        // Trusting a device is `PUT /devices/<id>/keys`, taken by the device itself once it holds the
+        // device key these blobs are wrapped for. A rotation only carries an existing trust over to the
+        // new user key, so listing an untrusted device gains it nothing, and with nothing to carry over
+        // a rotation writes no trust at all.
+        let devices = [device("a", true), half_trusted("b")];
+        let result = validate_device_keydata(&[update("a"), update("b")], &devices).unwrap();
+        assert_eq!(rotated(&result), ["a=4.bmV3dXNlcmtleQ=="], "`b` is passed over and cleared by the write");
+
+        let devices = [half_trusted("a"), half_trusted("b")];
+        let result = validate_device_keydata(&[update("a"), update("b")], &devices).unwrap();
+        assert!(result.is_empty(), "no device was trusted before the rotation, so none is after it");
     }
 }

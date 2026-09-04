@@ -277,6 +277,67 @@ impl Membership {
         }
     }
 
+    /// Whether this membership is in one of the active states rather than a revoked one.
+    ///
+    /// Revoking shifts the status the membership is to be restored to out of the active range instead of
+    /// writing `Revoked`, so a revoked row reads `-128`, `-127` or `-126` and never `-1`. `from_i32` knows
+    /// only the three active values, which is exactly how `OrgHeaders` turns a revoked member away, so it
+    /// decides it here too. Comparing against `Revoked` would let every one of those values through.
+    pub fn is_active(&self) -> bool {
+        MembershipStatus::from_i32(self.status).is_some()
+    }
+
+    /// The role side of account recovery, without asking what the membership's standing is.
+    ///
+    /// Upstream this is a permission of its own, `ManageResetPassword`, which a custom role can also be
+    /// granted. Vaultwarden folds custom roles into `Manager` and drops their permissions, so only the
+    /// administrators are left holding it. Asking here rather than comparing roles at each call site keeps
+    /// that decision in one place for when custom roles arrive.
+    /// https://github.com/bitwarden/server/blob/main/src/Core/Context/CurrentContext.cs
+    fn has_manage_reset_password_role(&self) -> bool {
+        MembershipType::from_i32(self.atype).is_some_and(|atype| atype >= MembershipType::Admin)
+    }
+
+    /// Whether this membership may act on the account recovery of the organization's members right now:
+    /// reset their master password, and answer the device approvals they ask their organization for.
+    ///
+    /// This is the authorization question, so it asks for a fully established membership: an invitation
+    /// that was never accepted or is still waiting to be confirmed is not yet somebody the organization
+    /// has put in charge of its members' keys.
+    pub fn can_manage_reset_password_now(&self) -> bool {
+        self.status == MembershipStatus::Confirmed as i32 && self.has_manage_reset_password_role()
+    }
+
+    /// Whether a login should tell the client that this member is on the answering side of account
+    /// recovery, which is what makes it walk a member who has no master password into setting one.
+    ///
+    /// Weaker than `can_manage_reset_password_now` on purpose: it decides what the account is told about
+    /// itself, not what it may do. Upstream answers it for every active membership, invited and accepted
+    /// included, because an administrator provisioned by their first SSO login holds the role before anyone
+    /// confirms them, and waiting would let them through the trusted device flow without ever being asked
+    /// for the master password their role requires. A revoked membership is not active and never counts.
+    /// https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/UserDecryptionOptionsBuilder.cs
+    pub fn has_manage_reset_password_role_for_tde(&self) -> bool {
+        self.is_active() && self.has_manage_reset_password_role()
+    }
+
+    /// Whether the administrators of this organization can let a new device of this member in.
+    ///
+    /// Approving hands the member their own user key wrapped for the asking device; the only copy the
+    /// organization has is what enrolling into account recovery left behind, so without that key there is
+    /// nothing to approve with. Enrolling also turns an invitation into a membership in the trusted device
+    /// flow, so `Accepted` has to count and not just `Confirmed`: a member who set up trusted devices and
+    /// lost the device before being confirmed would otherwise have no way back into their vault. Upstream
+    /// lets any membership row through; both ends are kept out here, an invitation is not a membership yet
+    /// and a revoked one is not one anymore.
+    /// https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/UserDecryptionOptionsBuilder.cs
+    pub fn can_use_admin_approval(&self) -> bool {
+        matches!(
+            MembershipStatus::from_i32(self.status),
+            Some(MembershipStatus::Accepted | MembershipStatus::Confirmed)
+        ) && self.reset_password_key.as_ref().is_some_and(|key| !key.is_empty())
+    }
+
     pub fn restore(&mut self) -> bool {
         if self.status < MembershipStatus::Invited as i32 {
             self.status += ACTIVATE_REVOKE_DIFF;
@@ -1284,5 +1345,152 @@ mod tests {
         assert!(MembershipType::Admin > MembershipType::Manager);
         assert!(MembershipType::Manager > MembershipType::User);
         assert!(MembershipType::Manager == MembershipType::from_str("4").unwrap());
+    }
+
+    /// The authorization question, deliberately not the same as `has_manage_reset_password_role_for_tde`:
+    /// being told to set a master password is not being allowed to reset somebody else's.
+    #[test]
+    fn only_a_confirmed_administrator_manages_account_recovery() {
+        let mut membership = Membership::new(String::from("user").into(), String::from("org").into(), None);
+
+        for (atype, expected) in [
+            (MembershipType::Owner, true),
+            (MembershipType::Admin, true),
+            // The custom role is folded into the manager one, losing whatever permissions came
+            // with it, so it cannot be assumed to hold this one.
+            (MembershipType::Manager, false),
+            (MembershipType::User, false),
+        ] {
+            membership.atype = atype as i32;
+
+            for status in [MembershipStatus::Revoked, MembershipStatus::Invited, MembershipStatus::Accepted] {
+                let status = status as i32;
+                membership.status = status;
+                assert!(
+                    !membership.can_manage_reset_password_now(),
+                    "a membership that is not confirmed manages nothing, status {status}"
+                );
+            }
+
+            membership.status = MembershipStatus::Confirmed as i32;
+            assert_eq!(membership.can_manage_reset_password_now(), expected, "type {}", atype as i32);
+        }
+    }
+
+    #[test]
+    fn the_trusted_device_role_signal_covers_a_member_nobody_confirmed_yet() {
+        let mut membership = Membership::new(String::from("user").into(), String::from("org").into(), None);
+
+        for (atype, holds_role) in [
+            (MembershipType::Owner, true),
+            (MembershipType::Admin, true),
+            (MembershipType::Manager, false),
+            (MembershipType::User, false),
+        ] {
+            membership.atype = atype as i32;
+
+            // Every active membership answers the same, so an administrator who was provisioned by
+            // the login that is asking is told to set a master password straight away.
+            for status in [MembershipStatus::Invited, MembershipStatus::Accepted, MembershipStatus::Confirmed] {
+                let status = status as i32;
+                membership.status = status;
+                assert_eq!(
+                    membership.has_manage_reset_password_role_for_tde(),
+                    holds_role,
+                    "type {}, status {status}",
+                    atype as i32
+                );
+            }
+
+            // Revoked never counts, whatever the role says.
+            membership.status = MembershipStatus::Revoked as i32;
+            assert!(!membership.has_manage_reset_password_role_for_tde(), "revoked, type {}", atype as i32);
+
+            // Nor do the internal statuses a revoked membership is actually stored as, which keep
+            // the role it is to be restored to.
+            for was in [MembershipStatus::Invited, MembershipStatus::Accepted, MembershipStatus::Confirmed] {
+                let was = was as i32;
+                membership.status = was;
+                assert!(membership.revoke(), "revoking a {was} membership");
+                assert!(
+                    !membership.has_manage_reset_password_role_for_tde(),
+                    "revoked from {was}, stored as {}",
+                    membership.status
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_revoked_membership_is_not_active_whatever_it_was_revoked_from() {
+        let mut membership = Membership::new(String::from("user").into(), String::from("org").into(), None);
+
+        for status in [MembershipStatus::Invited, MembershipStatus::Accepted, MembershipStatus::Confirmed] {
+            let status = status as i32;
+            membership.status = status;
+            assert!(membership.is_active(), "status {status}");
+
+            // Revoking keeps the status it is to be restored to and shifts it out of the active
+            // range, so what is stored is never `Revoked` itself. Comparing against that value is
+            // what would let these through.
+            assert!(membership.revoke(), "revoking status {status}");
+            assert_ne!(
+                membership.status,
+                MembershipStatus::Revoked as i32,
+                "revoked from {status} is not stored as -1"
+            );
+            assert!(!membership.is_active(), "revoked from {status}, stored as {}", membership.status);
+
+            assert!(membership.restore(), "restoring status {status}");
+            assert_eq!(membership.status, status, "restored to what it was");
+            assert!(membership.is_active());
+        }
+
+        // The value the responses show for a revoked membership does not count either.
+        membership.status = MembershipStatus::Revoked as i32;
+        assert!(!membership.is_active());
+    }
+
+    #[test]
+    fn admin_approval_needs_an_accepted_membership_and_an_enrollment() {
+        let mut membership = Membership::new(String::from("user").into(), String::from("org").into(), None);
+
+        for (status, enrolled, expected, why) in [
+            // The invitation was never taken up, so there is no membership to act for yet.
+            (MembershipStatus::Invited, true, false, "an invitation is not a membership"),
+            // Where the trusted device enrollment leaves a member until an administrator confirms
+            // them. Losing the device in that window must not cost them their vault.
+            (MembershipStatus::Accepted, true, true, "an accepted member enrolled in account recovery"),
+            (MembershipStatus::Confirmed, true, true, "a confirmed member enrolled in account recovery"),
+            // Belonging to the organization is not the point, holding the key it would answer with
+            // is; without an enrollment there is nothing an administrator could hand back.
+            (MembershipStatus::Accepted, false, false, "accepted, but not enrolled"),
+            (MembershipStatus::Confirmed, false, false, "confirmed, but not enrolled"),
+            // Revoking takes the access away but leaves the key behind, which must not keep letting
+            // new devices in.
+            (MembershipStatus::Revoked, true, false, "a revoked membership is not one anymore"),
+        ] {
+            membership.status = status as i32;
+            membership.reset_password_key = enrolled.then(|| String::from("2.aXY=|Y2lwaGVy|bWFj"));
+
+            assert_eq!(membership.can_use_admin_approval(), expected, "{why}");
+        }
+
+        // Nothing to wrap the user key with, so the same as never having enrolled.
+        membership.status = MembershipStatus::Confirmed as i32;
+        membership.reset_password_key = Some(String::new());
+        assert!(!membership.can_use_admin_approval(), "an empty key is not an enrollment");
+
+        // Revoking a member who was enrolled keeps their key, and stores a status that is not
+        // `Revoked` itself. None of those may keep letting new devices in.
+        membership.reset_password_key = Some(String::from("2.aXY=|Y2lwaGVy|bWFj"));
+        for was in [MembershipStatus::Accepted, MembershipStatus::Confirmed] {
+            let was = was as i32;
+            membership.status = was;
+            assert!(membership.can_use_admin_approval(), "enrolled and active, status {was}");
+
+            assert!(membership.revoke(), "revoking status {was}");
+            assert!(!membership.can_use_admin_approval(), "revoked from {was}, stored as {}", membership.status);
+        }
     }
 }
