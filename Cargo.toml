@@ -12,7 +12,6 @@ members = ["macros"]
 name = "vaultwarden"
 version = "1.0.0"
 authors = ["Daniel García <dani-garcia@users.noreply.github.com>"]
-readme = "README.md"
 build = "build.rs"
 repository.workspace = true
 edition.workspace = true
@@ -107,7 +106,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.3.12", features = ["chrono", "r2d2", "numeric"] }
+diesel = { version = "2.3.13", features = ["chrono", "r2d2", "numeric"] }
 diesel_migrations = "2.3.2"
 
 derive_more = { version = "2.1.1", features = [
@@ -125,7 +124,7 @@ libsqlite3-sys = { version = "0.38.2", optional = true }
 # Crypto-related libraries
 rand = "0.10.2"
 ring = "0.17.14"
-rustls = { version = "0.23.43", features = ["ring", "std"], default-features = false }
+rustls = { version = "0.23.44", features = ["ring", "std"], default-features = false }
 subtle = "2.6.1"
 
 # UUID generation
@@ -183,7 +182,7 @@ email_address = "0.2.9"
 handlebars = { version = "6.4.4", features = ["dir_source"] }
 
 # HTTP client (Used for favicons, version check, DUO and HIBP API)
-reqwest = { version = "0.13.4", default-features = false, features = [
+reqwest = { version = "0.13.5", default-features = false, features = [
     # Misc
     "charset",
     "cookies",
@@ -201,7 +200,7 @@ reqwest = { version = "0.13.4", default-features = false, features = [
     "socks",
     "system-proxy",
 ] }
-hickory-resolver = "0.26.1"
+hickory-resolver = "0.26.2"
 
 # Favicon extraction libraries
 html5gum = "0.8.4"
@@ -215,7 +214,7 @@ bytes = "1.12.1"
 svg-hush = "0.9.7"
 
 # Cache function results (Used for version check and favicon fetching)
-cached = { version = "3.1.1", features = ["async"] }
+cached = { version = "4.0.0", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.18.2"
@@ -232,7 +231,7 @@ pastey = "0.2.3"
 governor = "0.10.4"
 
 # CIDR parsing for the trusted proxies of the client IP header
-ipnet = "2.12.1"
+ipnet = "2.12.2"
 
 # OIDC for SSO
 openidconnect = { version = "4.0.1", default-features = false }
@@ -257,17 +256,17 @@ rpassword = "7.5.4"
 grass_compiler = { version = "0.13.4", default-features = false }
 
 # File are accessed through Apache OpenDAL
-opendal = { version = "0.58.2", default-features = false, features = ["services-fs"] }
+opendal = { version = "0.59.1", default-features = false, features = ["services-fs"] }
 
 # For retrieving AWS credentials, including temporary SSO credentials
-aws-config = { version = "1.11.0", optional = true, default-features = false, features = [
+aws-config = { version = "1.12.0", optional = true, default-features = false, features = [
     "behavior-version-latest",
     "credentials-process",
     "rt-tokio",
     "sso",
 ] }
 aws-credential-types = { version = "1.3.0", optional = true }
-aws-smithy-runtime-api = { version = "1.15.0", optional = true }
+aws-smithy-runtime-api = { version = "1.16.0", optional = true }
 http = { version = "1.5.0", optional = true }
 reqsign-aws-v4 = { version = "3.3.0", optional = true }
 reqsign-core = { version = "3.3.1", optional = true }
