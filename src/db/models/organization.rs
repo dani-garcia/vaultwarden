@@ -204,6 +204,7 @@ impl Organization {
             "maxCollections": null,
             "maxStorageGb": i16::MAX, // The value doesn't matter, we don't check server-side
             "use2fa": true,
+            "useAutomaticUserConfirmation": CONFIG.org_auto_confirm_enabled(),
             "useCustomPermissions": true,
             "useDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
             "useEvents": CONFIG.org_events_enabled(),
@@ -498,6 +499,7 @@ impl Membership {
             "useKeyConnector": false,
             "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
             "usePasswordManager": true,
+            "useAutomaticUserConfirmation": CONFIG.org_auto_confirm_enabled(),
             "useCustomPermissions": true,
             "useActivateAutofillPolicy": false,
             "useAdminSponsoredFamilies": false,
@@ -917,6 +919,39 @@ impl Membership {
         .await
     }
 
+    /// Whether this membership counts for the automatic user confirmation policy, which exempts no role
+    /// and only one status: an open invitation, because that account did not join yet and may still
+    /// decline. Every revoked membership counts, it is restored without another accept step.
+    /// https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/Enforcement/AutoConfirm/AutomaticUserConfirmationPolicyEnforcementHandler.cs
+    pub fn counts_for_auto_confirm(&self) -> bool {
+        self.status != MembershipStatus::Invited as i32
+    }
+
+    /// The same rule as [`Membership::counts_for_auto_confirm`] as a query: how many organizations besides
+    /// `excluded_org` the user belongs to. Contrary to `count_accepted_and_confirmed_by_user`, which the
+    /// SingleOrg policy uses, this counts revoked memberships, which are stored below `Invited`.
+    pub async fn count_accepted_confirmed_and_revoked_by_user(
+        user_uuid: &UserId,
+        excluded_org: &OrganizationId,
+        conn: &DbConn,
+    ) -> i64 {
+        conn.run(move |conn| {
+            users_organizations::table
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::org_uuid.ne(excluded_org))
+                .filter(
+                    users_organizations::status
+                        .eq(MembershipStatus::Accepted as i32)
+                        .or(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                        .or(users_organizations::status.lt(MembershipStatus::Invited as i32)),
+                )
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0)
+        })
+        .await
+    }
+
     pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             users_organizations::table
@@ -1284,5 +1319,33 @@ mod tests {
         assert!(MembershipType::Admin > MembershipType::Manager);
         assert!(MembershipType::Manager > MembershipType::User);
         assert!(MembershipType::Manager == MembershipType::from_str("4").unwrap());
+    }
+
+    fn member_with_status(status: i32) -> Membership {
+        let mut member =
+            Membership::new(UserId::from(String::from("user")), OrganizationId::from(String::from("org")), None);
+        member.status = status;
+        member
+    }
+
+    /// The rule `count_accepted_confirmed_and_revoked_by_user` encodes as a query, deciding whether a
+    /// membership in another organization blocks joining, restoring, emergency access and enabling the
+    /// policy. Only an open invitation is exempt, every revoked membership counts.
+    #[test]
+    fn auto_confirm_counts_everything_but_an_open_invitation() {
+        for status in [MembershipStatus::Invited, MembershipStatus::Accepted, MembershipStatus::Confirmed] {
+            let unrevoked = status as i32;
+            let mut member = member_with_status(unrevoked);
+            assert_eq!(
+                member.counts_for_auto_confirm(),
+                unrevoked != MembershipStatus::Invited as i32,
+                "status {unrevoked} is counted incorrectly"
+            );
+
+            assert!(member.revoke(), "status {unrevoked} can not be revoked");
+            assert!(member.counts_for_auto_confirm(), "status {unrevoked} must count once it is revoked");
+            // The query relies on this, and it keeps SingleOrg's own count ignoring revoked memberships.
+            assert!(member.status < MembershipStatus::Invited as i32, "revoked {unrevoked} must stay below Invited");
+        }
     }
 }

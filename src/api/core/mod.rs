@@ -24,7 +24,7 @@ use crate::{
     auth::Headers,
     db::{
         DbConn,
-        models::{Membership, MembershipStatus, OrgPolicy, Organization, User},
+        models::{Membership, MembershipStatus, MembershipType, OrgPolicy, Organization, User, UserId},
     },
     error::Error,
     http_client::make_http_request,
@@ -220,6 +220,9 @@ fn config() -> Json<Value> {
         &FeatureFlagFilter::ValidOnly,
     );
     feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
+    // Web vaults up to 2026.4.x only offer the policy when this flag is on; newer ones look at
+    // `useAutomaticUserConfirmation` alone, so sending it stays harmless.
+    feature_states.insert("pm-19934-auto-confirm-organization-users".to_owned(), CONFIG.org_auto_confirm_enabled());
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
@@ -277,11 +280,52 @@ fn api_not_found() -> Json<Value> {
     }))
 }
 
+/// Tells everybody who can confirm this member that it accepted its invitation and is waiting. Only the
+/// browser extension of an unlocked admin acts upon this, it holds the organization key the server never
+/// has. Call this wherever a membership reaches the accepted state.
+pub async fn notify_pending_auto_confirm(member: &Membership, conn: &DbConn, nt: &Notify<'_>) {
+    if member.status != MembershipStatus::Accepted as i32
+        || member.atype != MembershipType::User
+        || !OrgPolicy::is_auto_confirm_enabled(&member.org_uuid, conn).await
+    {
+        return;
+    }
+
+    // Confirming requires `AdminHeaders`, so skip the managers this also returns.
+    for admin in Membership::find_confirmed_and_manage_all_by_org(&member.org_uuid, conn)
+        .await
+        .into_iter()
+        .filter(|m| m.atype >= MembershipType::Admin)
+    {
+        nt.send_auto_confirm_member(&admin.user_uuid, &member.org_uuid, &member.uuid, &member.user_uuid).await;
+    }
+}
+
+/// Accepts every open invitation of a user at once, as done when mail is disabled, and notifies for each
+/// of them. See [`notify_pending_auto_confirm`].
+pub async fn accept_user_invitations(user_id: &UserId, conn: &DbConn, nt: &Notify<'_>) -> EmptyResult {
+    let invited: Vec<Membership> = Membership::find_any_state_by_user(user_id, conn)
+        .await
+        .into_iter()
+        .filter(|m| m.status == MembershipStatus::Invited as i32)
+        .collect();
+
+    Membership::accept_user_invitations(user_id, conn).await?;
+
+    for mut member in invited {
+        member.status = MembershipStatus::Accepted as i32;
+        notify_pending_auto_confirm(&member, conn, nt).await;
+    }
+
+    Ok(())
+}
+
 async fn accept_org_invite(
     user: &User,
     mut member: Membership,
     reset_password_key: Option<String>,
     conn: &DbConn,
+    nt: &Notify<'_>,
 ) -> EmptyResult {
     if member.status != MembershipStatus::Invited as i32 {
         err!("User already accepted the invitation");
@@ -294,6 +338,8 @@ async fn accept_org_invite(
     OrgPolicy::check_user_allowed(&member, "join", conn).await?;
 
     member.save(conn).await?;
+
+    notify_pending_auto_confirm(&member, conn, nt).await;
 
     if CONFIG.mail_enabled() {
         let Some(org) = Organization::find_by_uuid(&member.org_uuid, conn).await else {
