@@ -817,6 +817,8 @@ make_config! {
         sso_enabled:                    bool,   true,   def,    false;
         /// Only SSO login |> Disable Email+Master Password login
         sso_only:                       bool,   true,   def,    false;
+        /// Allow SSO flow to create account |> You probably want to disable it when using a public provider
+        sso_signups_allowed:            bool,   true,   def,    true;
         /// Allow email association |> Associate existing non-SSO user based on email
         sso_signups_match_email:        bool,   true,   def,    true;
         /// Allow unknown email verification status |> Allowing this with `SSO_SIGNUPS_MATCH_EMAIL=true` open potential account takeover.
@@ -1292,7 +1294,7 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     if !cfg.disable_admin_token {
         match cfg.admin_token.as_ref() {
             Some(t) if t.starts_with("$argon2") => {
-                if let Err(e) = argon2::password_hash::PasswordHash::new(t) {
+                if let Err(e) = argon2::password_hash::phc::PasswordHash::new(t) {
                     err!(format!("The configured Argon2 PHC in `ADMIN_TOKEN` is invalid: '{e}'"))
                 }
             }
@@ -1560,6 +1562,17 @@ impl Config {
     pub fn is_signup_allowed(&self, email: &str) -> bool {
         if self.signups_domains_whitelist().is_empty() {
             self.signups_allowed()
+        } else {
+            // The whitelist setting overrides the signups_allowed setting.
+            self.is_email_domain_allowed(email)
+        }
+    }
+
+    /// Tests whether SSO signup is allowed for an email address, taking into
+    /// account the sso_signups_allowed and signups_domains_whitelist settings.
+    pub fn is_sso_signup_allowed(&self, email: &str) -> bool {
+        if self.signups_domains_whitelist().is_empty() {
+            self.sso_signups_allowed()
         } else {
             // The whitelist setting overrides the signups_allowed setting.
             self.is_email_domain_allowed(email)
