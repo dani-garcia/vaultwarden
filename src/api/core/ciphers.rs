@@ -266,6 +266,9 @@ pub struct CipherData {
     Card = 3,
     Identity = 4,
     SshKey = 5
+    BankAccount = 6
+    DriversLicense = 7
+    Passport = 8
     */
     pub r#type: i32,
     pub name: String,
@@ -278,6 +281,9 @@ pub struct CipherData {
     card: Option<Value>,
     identity: Option<Value>,
     ssh_key: Option<Value>,
+    bank_account: Option<Value>,
+    drivers_license: Option<Value>,
+    passport: Option<Value>,
 
     favorite: Option<bool>,
     reprompt: Option<i32>,
@@ -510,6 +516,9 @@ pub async fn update_cipher_from_data(
         3 => data.card,
         4 => data.identity,
         5 => data.ssh_key,
+        6 => data.bank_account,
+        7 => data.drivers_license,
+        8 => data.passport,
         _ => err!("Invalid type"),
     };
 

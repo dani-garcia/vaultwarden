@@ -1440,6 +1440,8 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "cxp-export-mobile",
     // Platform Team
     "pm-30529-webauthn-related-origins",
+    // Vault Team
+    "pm-32009-new-item-types",
 ];
 
 impl Config {
