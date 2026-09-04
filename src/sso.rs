@@ -385,8 +385,7 @@ async fn invite_user_to_default_organization(
     membership.atype = MembershipType::User as i32;
     membership.save(conn).await?;
 
-    log_event(EventType::OrganizationUserInvited as i32, &membership.uuid, &org_id, &user.uuid, device_type, ip, conn)
-        .await;
+    log_event(EventType::OrganizationUserInvited, &membership.uuid, &org_id, &user.uuid, device_type, ip, conn).await;
 
     info!("Invited SSO user {} to default organization {}", user.uuid, org_id);
     Ok(())
