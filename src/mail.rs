@@ -4,6 +4,10 @@ use chrono::NaiveDateTime;
 use lettre::{
     Address, AsyncSendmailTransport, AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
     message::{Attachment, Body, Mailbox, Message, MultiPart, SinglePart},
+    message::{
+        dkim::{DkimConfig, DkimSigningAlgorithm, DkimSigningKey},
+        dkim_sign,
+    },
     transport::smtp::authentication::{Credentials, Mechanism as SmtpAuthMechanism},
     transport::smtp::client::{Tls, TlsParameters},
     transport::smtp::extension::ClientId,
@@ -19,7 +23,7 @@ use crate::{
     },
     db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId},
     error::Error,
-    util::upcase_first,
+    util::{get_env_str_value, upcase_first},
 };
 
 fn sendmail_transport() -> AsyncSendmailTransport<Tokio1Executor> {
@@ -708,7 +712,35 @@ async fn send_with_selected_transport(email: Message) -> EmptyResult {
         }
     }
 }
-
+pub fn check_dkim() -> Result<Option<DkimConfig>, String> {
+    match (
+        CONFIG.dkim_signing_key().or_else(|| get_env_str_value("dkim_signing_key")),
+        CONFIG.dkim_domain().or_else(|| get_env_str_value("dkim_domain")),
+        CONFIG.dkim_selector().or_else(|| get_env_str_value("dkim_selector")),
+    ) {
+        (Some(sig), Some(domain), Some(selector)) => {
+            let config = {
+                let algo = if CONFIG.dkim_use_rsa() {
+                    DkimSigningAlgorithm::Rsa
+                } else {
+                    DkimSigningAlgorithm::Ed25519
+                };
+                let sig = match DkimSigningKey::new(&sig, algo) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        return Err(format!("DKIM key is invalid. Err is {e:?}"));
+                    }
+                };
+                (selector, domain, sig)
+            };
+            Ok(Some(DkimConfig::default_config(config.0, config.1, config.2)))
+        }
+        (None, None, None) => Ok(None),
+        _ => Err(
+            "DKIM setting is badly implemented. One config is missing or invalid (DKIM signature or DKIM infos or DKIM signing key).".to_owned(),
+        ),
+    }
+}
 async fn send_email(address: &str, subject: &str, body_html: String, body_text: String) -> EmptyResult {
     let smtp_from = Address::from_str(&CONFIG.smtp_from())?;
 
@@ -731,12 +763,52 @@ async fn send_email(address: &str, subject: &str, body_html: String, body_text: 
         MultiPart::alternative_plain_html(body_text, body_html)
     };
 
-    let email = Message::builder()
+    let mut email = Message::builder()
         .message_id(Some(format!("<{}@{}>", crate::util::get_uuid(), smtp_from.domain())))
         .to(Mailbox::new(None, Address::from_str(address)?))
         .from(Mailbox::new(Some(CONFIG.smtp_from_name()), smtp_from))
         .subject(subject)
         .multipart(body)?;
-
+    if let Ok(Some(sig)) = check_dkim() {
+        dkim_sign(&mut email, &sig);
+    }
     send_with_selected_transport(email).await
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const RSAKEY: &str = "-----BEGIN RSA PRIVATE KEY-----
+MIIEogIBAAKCAQEAtSROEsCJGYiDsoECpdlv7ufopGp2kaM2ii50Hs/3mKFevuTc
+mku0+QSjSZblLsmKwvTmoJyE1r4ztAzSmeYeB66HIfOHu7Fk0b7R5jcraRoZdG5H
+ko/vO9fkL6e2Bz1ZhOV/mrD5PMJx9uxqpnibqm2puA3+Q0xmfcgQeYPJm2XgCFHc
+sSL+yRu3rLlkv/ZOmLECqheJl7zJAeh1I66LrdS13UHRQOuP7hNeBrWrdGY8e7W6
+p6jiKXloiqgP6vZZnuDx/GGD2TvmqW7Axbhr/lVTW1ogHs0IwSqazF5tvDZC9OjY
+auEa86VQI35jvQfbzvpUqEZH5pOaT6f4E12nowIDAQABAoIBABD/773NyPAXAjkR
+53Q2JE2ZARnRDgCb/yXXtzkfDl8KIfCrXNK0MS8/kq141lhePMIQJsbC+aqHniWT
+IH6l/IJ/DBqRFtd0DgCrNlqzKcVK2EG3icsE7BBDMhyQ0kH6rXiN6zxSyIk9vGFO
+jbHC1uUXNprZ4Vdih6ndSUKGLjkBnXu0mSpVMkjsfPFp3GggqdmPoqHU9BKr+Top
+IOZ9O4yp1JtX7D928aqEL18tmUTfa+GL/KwWMUKSRhDeHWCZtJ0Zq9hyfDUoYW6J
+3VvyMAKtxnwq4JnO06x79q3YbdQOCrhWcJCFyVDQHKqJtpj0UEpWlNCHfrOtWr8N
+XzP6Np0CgYEA7LIWohi4Xwv7aa5Zd408C0urI1nV0QCRyQtypqqdL3CIjbPBW4nJ
+TUV5/rgB/DQiafYDAiUbVmK5KSFozn7Lla1OYu0LhGGd+Wg+5iX66h9JLG8NTaGt
+9wzk8ocz/+56i/E4CwDGLhJsNGz/hlHB2kdON+dAls7lYrlnS1inlIcCgYEAw+pS
+QGeT/fJUUVPa3dGudryyc9hhRmTC0pamoJmRzl9+1416ZmHR/Fa7zIKV8okDa+x9
+nzidrl/maPHTAXXcltUx3yhhBX8gSP6JaMtBOVQeus+GFXOtEMaJ6WA8nFv2lCPB
+FLcyTZtM0UO55qb8HZkeFuwWugNtxIZpCb3LdwUCgYAlZCjBKKiPk0P/OOS3Rx9y
+JVz+s6VcY/ujx+QvwgocwWlBAWGNRWIAi/YusADYR6AcHxnwj84Wwne/sKBu5obg
+uUUFya6lFgqvqLEvCFbv/0s+8rgmSGFEAsx0J7mmN5UyYEPbMR8djhl72rAvFuFJ
+yzPnDugcKsj/5IwV0gZ/JwKBgHXJqY4DOBzT1xHWYp4+dK/6nye7DjDuX5uQ67le
+2yTCkVYzP0XSxhb6Zop8cH6TFbWLR7O0rEisa7Dowz37iJY+s29BraNKXTTFpAOX
+QC2hf6A9KJY5J/IQC9Z9/7LaL5O9M1arFdlG55ZhK6Ga/7Uj281YQAmyCgq/7OLo
+cy2pAoGAAmkEQRIuoPHRsBMtbybAsKJeYlY6r5V3aA5v7A4bb1gma2LOYvpXV1/L
+R7Zsckp3e8q4afGLEbjqQp3HJV9In5xkCsDWfLj+WB6hOUwEXMCVQ6d1RiezsfBw
+sK77Q2NwzF97mD+bkq8aVnYAHcc7hKYzgP5ZeJyI3XbilFgQD0Q=
+-----END RSA PRIVATE KEY-----";
+    const ECDSAKEY: &str = "b3y5uWvqVte+ZThKnUGN97do2zsygO3QMWH85DBoDmg=";
+    #[test]
+    fn checkdkim() {
+        //Dkim is already checked on lettre but we still provide some examples of use
+        let _a = DkimSigningKey::new(RSAKEY, DkimSigningAlgorithm::Rsa).unwrap();
+        let _b = DkimSigningKey::new(ECDSAKEY, DkimSigningAlgorithm::Ed25519).unwrap();
+    }
 }
