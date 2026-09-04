@@ -14,7 +14,7 @@
                         <th class="vw-entries">Entries</th>
                         <th class="vw-attachments">Attachments</th>
                         <th class="vw-organizations">Organizations</th>
-                        <th class="vw-actions">Actions</th>
+                        <th class="vw-actions text-end">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -47,10 +47,10 @@
                         </td>
                         {{/if}}
                         <td>
-                            <span class="d-block">{{created_at}}</span>
+                            <span class="d-block" data-sort-type="date-iso">{{created_at}}</span>
                         </td>
                         <td>
-                            <span class="d-block">{{last_active}}</span>
+                            <span class="d-block" data-sort-type="date-iso">{{last_active}}</span>
                         </td>
                         <td>
                             <span class="d-block">{{cipher_count}}</span>
@@ -153,7 +153,6 @@
 </main>
 
 <link rel="stylesheet" href="{{urlpath}}/vw_static/datatables.css" />
-<script src="{{urlpath}}/vw_static/jquery-4.0.0.slim.js"></script>
 <script src="{{urlpath}}/vw_static/datatables.js"></script>
 <script src="{{urlpath}}/vw_static/admin_users.js"></script>
 <script src="{{urlpath}}/vw_static/jdenticon-3.3.0.js"></script>

@@ -58,13 +58,13 @@ jobs:
 
     steps:
       - name: Initialize QEMU binfmt support
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
         with:
           platforms: "arm64,arm"
 
       # Start Docker Buildx
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
         # https://github.com/moby/buildkit/issues/3969
         # Also set max parallelism to 2, the default of 4 breaks GitHub Actions and causes OOMKills
         with:
