@@ -52,6 +52,8 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut hibp_routes);
     routes.append(&mut meta_routes);
 
+    // Mounted only when the feature is on, so that installs without an authenticating proxy in
+    // front of them keep answering /api/sso-cookie-vendor with the standard 404.
     if CONFIG.sso_cookie_vendor_enabled() {
         routes.append(&mut sso_cookie_vendor::routes());
     }
@@ -226,6 +228,10 @@ fn config() -> Json<Value> {
     );
     feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
 
+    // Tells clients whether reaching this server takes extra work beyond a plain HTTPS request.
+    // A populated bootstrap block sends the Bitwarden apps through the SSO cookie vending flow in
+    // api::core::sso_cookie_vendor; null means the server is reachable directly.
+    // See: https://github.com/bitwarden/server/pull/6892
     let communication = if CONFIG.sso_cookie_vendor_enabled() {
         json!({
             "bootstrap": {

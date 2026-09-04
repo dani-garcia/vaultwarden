@@ -851,13 +851,17 @@ make_config! {
 
     /// SSO Cookie Vendor settings
     sso_cookie_vendor {
-        /// Enabled |> Enable the SSO cookie vendor endpoint for native app support behind authenticating reverse proxies
+        /// Enabled |> Serve `/api/sso-cookie-vendor` and advertise the flow in `/api/config`
+        /// Set this when Vaultwarden sits behind a reverse proxy that authenticates every request, such as
+        /// Cloudflare Access, Authentik, Authelia, or oauth2-proxy. Without it the Bitwarden mobile and desktop
+        /// apps cannot finish logging in, because the proxy answers their API calls with a browser redirect they
+        /// cannot follow. The three settings below are required while this is enabled.
         sso_cookie_vendor_enabled:          bool,   true,   def,    false;
-        /// IdP Login URL |> The URL the client should navigate to for IdP authentication (e.g. Cloudflare Access login URL)
+        /// IdP Login URL |> URL the app opens in a browser to authenticate, for example, the Cloudflare Access login URL for this vault
         sso_cookie_vendor_idp_login_url:    String, true,   def,    String::new();
-        /// Cookie Name |> The name of the cookie set by the authenticating reverse proxy (e.g. CF_Authorization)
+        /// Cookie Name |> Name of the cookie the proxy sets on authenticated requests, for example, `CF_Authorization`
         sso_cookie_vendor_cookie_name:      String, true,   def,    String::new();
-        /// Cookie Domain |> The domain scope of the proxy auth cookie (e.g. vault.example.com)
+        /// Cookie Domain |> Domain scope of the proxy auth cookie, for example, `vault.example.com`
         sso_cookie_vendor_cookie_domain:    String, true,   def,    String::new();
     },
 
@@ -1128,13 +1132,15 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
     }
 
+    // Refuse a half-configured cookie vendor: with any of these blank the endpoint would hand
+    // clients a bootstrap block they cannot act on, or answer with a 500.
     if cfg.sso_cookie_vendor_enabled
         && (cfg.sso_cookie_vendor_idp_login_url.is_empty()
             || cfg.sso_cookie_vendor_cookie_name.is_empty()
             || cfg.sso_cookie_vendor_cookie_domain.is_empty())
     {
         err!(
-            "`SSO_COOKIE_VENDOR_IDP_LOGIN_URL`, `SSO_COOKIE_VENDOR_COOKIE_NAME` and `SSO_COOKIE_VENDOR_COOKIE_DOMAIN` must be set when SSO cookie vendor is enabled"
+            "`SSO_COOKIE_VENDOR_IDP_LOGIN_URL`, `SSO_COOKIE_VENDOR_COOKIE_NAME`, and `SSO_COOKIE_VENDOR_COOKIE_DOMAIN` must be set when `SSO_COOKIE_VENDOR_ENABLED` is true"
         )
     }
 
