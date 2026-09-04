@@ -151,9 +151,9 @@ impl MembershipType {
 
 /// The stored `users_organizations.atype` values that carry organization-wide authority by role.
 ///
-/// Queries enumerate the two values instead of comparing `atype <= Admin`: `<=` also matches every
-/// value *below* `Owner`, so a corrupt or negative `atype` would satisfy the SQL check while every
-/// Rust guard rejects it. Enumerating keeps both layers on the same answer.
+/// Queries enumerate the two values instead of comparing `atype <= Admin`: `<=` also matches every value
+/// *below* `Owner`, so a corrupt or negative `atype` would satisfy the SQL check while every Rust guard
+/// rejects it. Enumerating keeps both layers on the same answer.
 pub(crate) const ORG_ADMIN_ATYPES: &[i32] = &[MembershipType::Owner as i32, MembershipType::Admin as i32];
 
 impl Ord for MembershipType {
@@ -859,10 +859,10 @@ impl Membership {
     }
 
     /// Whether this membership reaches every collection in the org regardless of per-collection
-    /// assignments — Admins/Owners implicitly, and Custom members holding `edit_any_collection`.
-    /// This is the successor of the removed `access_all` flag: it backs the `accessAll` field the
-    /// Bitwarden clients still read, and it intentionally does not gate on status, matching the old
-    /// column's semantics. Authorization decisions use the status-aware `has_full_access` instead.
+    /// assignments -- Admins/Owners implicitly, and Custom members holding `edit_any_collection`. The
+    /// successor of the removed `access_all` flag: it backs the `accessAll` field the Bitwarden clients
+    /// still read, and intentionally does not gate on status, matching the old column. Authorization
+    /// decisions use the status-aware `has_full_access` instead.
     pub fn grants_access_to_all_collections(&self) -> bool {
         self.atype >= MembershipType::Admin || self.has_edit_any_collection()
     }
@@ -874,10 +874,9 @@ impl Membership {
     ///
     /// * Admins and Owners are never revoked. `atype < Admin` is deliberately the *ceiling* comparison
     ///   used everywhere else, so an unknown stored role stays sweepable.
-    /// * Nor is the member who made the change. Until the Custom role this was implied by the first
-    ///   rule, since only Admins and Owners reached the policy endpoints; `managePolicies` can now be
-    ///   held by a Custom member, who *is* sweepable and would otherwise revoke themselves mid-request.
-    ///   Bitwarden excludes the acting user for the same reason.
+    /// * Nor is the member who made the change. Until the Custom role this was implied by the first rule;
+    ///   `managePolicies` can now be held by a Custom member, who *is* sweepable and would otherwise
+    ///   revoke themselves mid-request. Bitwarden excludes the acting user for the same reason.
     ///
     /// Peers are still revoked exactly as before.
     pub fn is_policy_enforcement_target(&self, acting_user: &UserId) -> bool {
@@ -923,16 +922,15 @@ impl Membership {
         self.has_type(MembershipType::Custom) && self.access_reports
     }
 
-    /// Check for an explicit per-collection Manage grant without treating any `access_all` value as
-    /// such a grant. This is the *only* per-collection authority a Custom member can hold: neither
-    /// membership nor group `access_all` may manufacture one.
+    /// Check for an explicit per-collection Manage grant without treating any `access_all` value as such
+    /// a grant. This is the *only* per-collection authority a Custom member can hold: neither membership
+    /// nor group `access_all` may manufacture one.
     ///
     /// There is deliberately no live exception for legacy Managers whose authority came from an
-    /// organization-local `access_all` group: deriving one from the membership's shape ("Custom, no
-    /// collection permissions, member of such a group") would also match every newly created flagless
-    /// Custom member, so joining one to an ordinary `access_all` group would hand out organization-wide
-    /// edit and delete. The migration writes that authority into the visible `edit_any_collection` /
-    /// `delete_any_collection` columns instead, where an owner can see and revoke it.
+    /// organization-local `access_all` group: deriving one from the membership's shape would also match
+    /// every newly created flagless Custom member, so joining one to an ordinary `access_all` group would
+    /// hand out organization-wide edit and delete. The migration writes that authority into the visible
+    /// `edit_any_collection` / `delete_any_collection` columns instead.
     pub async fn has_explicit_collection_manage_access(&self, collection_uuid: &CollectionId, conn: &DbConn) -> bool {
         let membership_uuid = self.uuid.clone();
         let user_uuid = self.user_uuid.clone();
@@ -1512,17 +1510,13 @@ mod tests {
     }
 
     /// A stored `atype` that no role maps to is *incomparable*, and the two directions resolve that
-    /// differently on purpose — both fail-closed, and the asymmetry is easy to "tidy up" into a silent
+    /// differently on purpose -- both fail-closed, and the asymmetry is easy to "tidy up" into a silent
     /// authorization change.
     ///
-    /// `MembershipType op i32` — "does the caller outrank this role?" — answers no: `gt`/`ge` are false
-    /// for an unknown value, so nothing is granted on the strength of one.
-    ///
-    /// `i32 op MembershipType` — "is this membership at most that role?" — answers yes: `lt`/`le` are
-    /// true. Every use is a *ceiling* (`atype < Admin`), so treating an unrecognized value as low-ranked
-    /// is the restrictive reading, and the one place that phrases a permission this way
-    /// (`check_reset_password_applicable_and_permissions`) guards against `Owner`, whose discriminant is
-    /// 0 and therefore never unknown.
+    /// `MembershipType op i32` -- "does the caller outrank this role?" -- answers no: `gt`/`ge` are false
+    /// for an unknown value. `i32 op MembershipType` -- "is this membership at most that role?" -- answers
+    /// yes: every use is a *ceiling* (`atype < Admin`), so low-ranked is the restrictive reading, and the
+    /// one place phrasing a permission this way guards against `Owner`, whose discriminant is 0.
     #[test]
     #[expect(
         clippy::nonminimal_bool,

@@ -1018,11 +1018,10 @@ fn collection_read_access(membership: &Membership) -> CollectionManageAccess {
 ///
 /// Vaultwarden serializes `limitCollectionDeletion = true` unconditionally, and upstream gates
 /// manage-based deletion on that setting being *off*: with the limit active only Owners, Admins and
-/// holders of `Delete any collection` may delete. Accepting a stored `manage` grant here would break
-/// that promise and make the three collection permissions depend on each other — `Create new
-/// collections` alone receives an automatic `manage` row for the collection it just created, and
-/// could then delete it. A Manage grant keeps its full meaning for editing (`collection_edit_access`);
-/// it just is not a delete permission.
+/// holders of `Delete any collection` may delete. Accepting a stored `manage` grant here would break that
+/// promise and make the three collection permissions depend on each other -- `Create new collections`
+/// alone receives an automatic `manage` row for the collection it just created, and could then delete it.
+/// A Manage grant keeps its full meaning for editing (`collection_edit_access`).
 fn collection_delete_access(membership: &Membership) -> CollectionManageAccess {
     if !membership.has_status(MembershipStatus::Confirmed) {
         return CollectionManageAccess::Denied;
@@ -1050,13 +1049,10 @@ async fn can_manage_collection(
     }
 }
 
-/// Whether `membership` may edit (rewrite the access of) `collection_uuid`, on exactly the same rules
-/// as the path-based `ManagerHeaders` guard: Edit-any (or Admin/Owner) reaches every collection,
-/// otherwise only those carrying a real per-collection Manage grant. Group `access_all` deliberately
-/// does not qualify.
-///
-/// Body-param endpoints take collection ids in the request body and so cannot use `ManagerHeaders`;
-/// they run this per collection instead, so the two cannot diverge.
+/// Whether `membership` may edit (rewrite the access of) `collection_uuid`, on exactly the same rules as
+/// the path-based `ManagerHeaders` guard: Edit-any (or Admin/Owner) reaches every collection, otherwise
+/// only those carrying a real per-collection Manage grant. Group `access_all` deliberately does not
+/// qualify. Body-param endpoints cannot use `ManagerHeaders`, so they run this per collection instead.
 pub(crate) async fn can_edit_collection(
     membership: &Membership,
     collection_uuid: &CollectionId,

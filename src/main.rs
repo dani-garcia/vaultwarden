@@ -553,11 +553,9 @@ fn check_web_vault() {
 }
 
 async fn create_db_pool() -> db::DbPool {
-    // A Custom-role preflight refusal is deterministic: it reads schema and ledger state that no
-    // amount of waiting changes. Retrying only reprinted the same answer up to
-    // `db_connection_retries` times, each time introduced by "Can't connect to database, retrying",
-    // which was never the problem. The full recovery procedure has already been logged at that
-    // point, so stop and report the one-line reason.
+    // A Custom-role preflight refusal is deterministic: it reads schema and ledger state that no amount
+    // of waiting changes, and retrying only reprinted the same answer under a misleading "Can't connect
+    // to database". The full recovery procedure is already logged, so stop and report the one-line reason.
     match util::retry_db(db::DbPool::from_config, CONFIG.db_connection_retries(), |_| {
         db::custom_role_preflight_refusal().is_none()
     })

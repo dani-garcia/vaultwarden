@@ -1078,14 +1078,12 @@ async fn get_assigned_org_details(data: OrgIdData, headers: Headers, conn: DbCon
     })))
 }
 
-// Serialize exactly the organization ciphers the user is actually assigned to, directly or via a
-// group. `CipherSyncType::User` keeps the per-cipher access restrictions in place, so nothing outside
-// the caller's own collections is returned and every cipher carries its real `edit`/`viewPassword`
-// flags.
-//
+// Serialize exactly the organization ciphers the user is actually assigned to, directly or via a group.
+// `CipherSyncType::User` keeps the per-cipher access restrictions in place, so nothing outside the
+// caller's own collections is returned and every cipher carries its real `edit`/`viewPassword` flags.
 // NOTE: as everywhere else in Vaultwarden (and Bitwarden), `hidePasswords` is reported as
-// `viewPassword: false` rather than redacted server-side, so this returns exactly what the same
-// member already receives from `/api/sync` — never more.
+// `viewPassword: false` rather than redacted server-side, so this returns exactly what the same member
+// already receives from `/api/sync` -- never more.
 async fn assigned_org_ciphers_json(
     org_id: &OrganizationId,
     host: &str,
@@ -1297,10 +1295,10 @@ impl CustomRolePermissions {
 
     /// Parse a permissions object.
     ///
-    /// Every known key is type-checked even when the role makes the flags inert, so a malformed request
-    /// is rejected identically whatever role it names, and always before anything is mutated. Unknown
-    /// keys are ignored: Bitwarden sends `manageSso`, `manageScim` and `manageResetPassword`, and
-    /// rejecting them would break clients over permissions Vaultwarden does not implement.
+    /// Every known key is type-checked even when the role makes the flags inert, so a malformed request is
+    /// rejected identically whatever role it names, and always before anything is mutated. Unknown keys are
+    /// ignored: Bitwarden sends `manageSso`, `manageScim` and `manageResetPassword`, and rejecting them
+    /// would break clients over permissions Vaultwarden does not implement.
     fn from_request(member_type: MembershipType, permissions: &HashMap<String, Value>) -> Result<Self, crate::Error> {
         let parsed = Self {
             manage_users: Self::read_known(permissions, "manageUsers")?,
@@ -2032,13 +2030,10 @@ async fn edit_member(
     }
 
     // Security: the same actor/target role matrix as every other member endpoint. Without it
-    // `edit_member` was the only path on which Custom+manage_users could aim at an Admin or a peer
-    // Custom membership, as long as the role stayed unchanged.
-    //
-    // Deliberate narrowing of upstream: Bitwarden lets Custom+ManageUsers administer peer Custom members
-    // and delegate a subset of its own permissions. That hands permission delegation to a non-Admin and
-    // makes correctness rest on a subset comparison being right on every path, so Vaultwarden keeps role
-    // and permission changes with Admins/Owners instead.
+    // `edit_member` was the only path on which Custom+manage_users could aim at an Admin or a peer Custom
+    // membership, as long as the role stayed unchanged. Deliberate narrowing of upstream, which lets
+    // Custom+ManageUsers administer peers and delegate a subset of its own permissions: that hands
+    // permission delegation to a non-Admin, so Vaultwarden keeps it with Admins/Owners.
     if !may_manage_stored_member_type(headers.membership_type, member_to_edit.atype) {
         err!("You don't have permission to edit this member")
     }
@@ -2064,10 +2059,9 @@ async fn edit_member(
     // member's collection assignments; manage_users alone leaves them untouched.
     //
     // Narrowing of upstream, which resolves ModifyUserAccess per collection. Requiring blanket authority
-    // is coarser, but it keeps a stored `manage` grant from becoming a lever for handing out access — the
-    // same boundary `caller_may_grant_collection_manage` draws, and the group paths below follow it.
-    // Widening this needs the per-collection check to cover *current* assignments too, or removal becomes
-    // the hole.
+    // keeps a stored `manage` grant from becoming a lever for handing out access -- the same boundary
+    // `caller_may_grant_collection_manage` draws. Widening this needs the per-collection check to cover
+    // *current* assignments too, or removal becomes the hole.
     let caller_can_manage_collections = headers.membership_type >= MembershipType::Admin
         || match Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await {
             Some(m) => m.has_full_access(),
@@ -2101,13 +2095,10 @@ async fn edit_member(
     // We need to perform the check after changing the type since `admin` is exempt.
     OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
-    // ---------------------------------------------------------------------------------------------
-    // Validation phase. Nothing may be written until every id, tenant binding and caller right has
-    // been checked: this endpoint replaces both collection assignments and group memberships, and with
-    // no database transactions an error between the two replaces used to leave the request
-    // half-applied while answering 4xx. This cannot make them atomic, but a *rejected* request now
-    // changes nothing.
-    // ---------------------------------------------------------------------------------------------
+    // Validation phase. Nothing may be written until every id, tenant binding and caller right has been
+    // checked: this endpoint replaces both collection assignments and group memberships, and with no
+    // database transactions an error between the two used to leave the request half-applied while
+    // answering 4xx. This cannot make them atomic, but a *rejected* request now changes nothing.
 
     // Security: a per-collection `manage` grant is durable administration authority, so it may only be
     // conferred where the caller already holds it.
@@ -3108,13 +3099,12 @@ async fn restore_member_impl(
     Ok(())
 }
 
-/// Whether `membership` may read group→collection/user mappings.
+/// Whether `membership` may read group->collection/user mappings.
 ///
-/// Two independent routes to the same data: the Manage Users / Manage Groups permissions, which is
-/// what Bitwarden gates ReadAll on, and organization-wide collection reach, which is what released
-/// Vaultwarden gated it on. Both are kept so a legacy Manager with "Manage all collections" still
-/// reads these mappings after the migration converts them. The single-group view returns exactly this
-/// data and so asks exactly this question.
+/// Two independent routes to the same data: the Manage Users / Manage Groups permissions, which is what
+/// Bitwarden gates ReadAll on, and organization-wide collection reach, which is what released Vaultwarden
+/// gated it on. Both are kept so a legacy Manager with "Manage all collections" still reads these
+/// mappings after the migration. The single-group view returns exactly this data and asks the same.
 async fn can_read_group_details(org_id: &OrganizationId, membership: &Membership, conn: &DbConn) -> bool {
     membership.has_manage_users()
         || membership.has_manage_groups()
@@ -3442,20 +3432,18 @@ fn may_change_group_membership(caller_can_manage_collections: bool, group_confer
 /// Whether `caller_type` may hand out organization-wide group access: create a group carrying
 /// `groups.access_all`, turn one into it, or add a member to one.
 ///
-/// Security: `access_all` reaches every collection and is not bound to the grantee's role, so it
-/// survives their Custom permissions being cleared — a durable grant like a `users_collections.manage`
-/// row, which `caller_may_grant_collection_manage` already reserves. Gating on `has_full_access()`
-/// instead would let `manageGroups` + `editAnyCollection` mint one and outlive the flag it came from,
-/// so no Custom permission satisfies this, `deleteAnyCollection` included.
+/// Security: `access_all` reaches every collection and is not bound to the grantee's role, so it survives
+/// their Custom permissions being cleared -- a durable grant like a `users_collections.manage` row, which
+/// `caller_may_grant_collection_manage` already reserves. Gating on `has_full_access()` instead would let
+/// `manageGroups` + `editAnyCollection` mint one and outlive the flag it came from, so no Custom
+/// permission satisfies this, `deleteAnyCollection` included. Only granting is restricted; removals,
+/// clearing the flag and deleting the group all reduce access.
 ///
-/// Only granting is restricted; removals, clearing the flag and deleting the group all reduce access.
 /// Asked by `post_groups`, `put_group`, `add_update_group`, `put_group_members`, `edit_member` and
-/// `send_invite` — the last needs it because a new membership has no current groups to diff against,
-/// so every group in an invite is an addition.
-///
-/// A missing call site is invisible to `cargo test`, so that list is the thing to check when a new
-/// group path is added. So is *where* the call sits: it has to precede every write the request makes,
-/// or a refusal leaves the endpoint half-applied (audit F-1).
+/// `send_invite` -- the last needs it because every group in an invite is an addition. A missing call
+/// site is invisible to `cargo test`, so that list is the thing to check when a new group path is added.
+/// So is *where* the call sits: it has to precede every write, or a refusal leaves the endpoint
+/// half-applied (audit F-1).
 fn may_grant_access_all_group(caller_type: MembershipType) -> bool {
     caller_type >= MembershipType::Admin
 }
@@ -3504,10 +3492,10 @@ fn collection_bearing_membership_unchanged(
 
 /// Whether a caller of `edit_member` may change a member's role type.
 ///
-/// The role type changes organization-wide collection reach and which granular permissions are
-/// effective — the data plane, not the user lifecycle `manage_users` covers — so only Admins and
-/// Owners may change it. An unchanged role is always allowed, so `manage_users` members can still use
-/// the regular edit dialog; Admin/Owner transitions have their own guard in `edit_member`.
+/// The role type changes organization-wide collection reach and which granular permissions are effective
+/// -- the data plane, not the user lifecycle `manage_users` covers -- so only Admins and Owners may
+/// change it. An unchanged role is always allowed, so `manage_users` members can still use the regular
+/// edit dialog; Admin/Owner transitions have their own guard in `edit_member`.
 fn may_change_member_type(caller_type: MembershipType, current_atype: i32, new_type: MembershipType) -> bool {
     caller_type >= MembershipType::Admin || new_type == current_atype
 }
@@ -3529,13 +3517,12 @@ fn may_manage_stored_member_type(caller_type: MembershipType, target_atype: i32)
     MembershipType::from_i32(target_atype).is_some_and(|target_type| may_manage_member_type(caller_type, target_type))
 }
 
-/// Whether a caller may *provision* a membership of `target_type` — create it (invite), activate it
+/// Whether a caller may *provision* a membership of `target_type` -- create it (invite), activate it
 /// (confirm) or remove it (delete).
 ///
 /// Stricter than [`may_manage_member_type`], preserving the rule that only Owners bring Admin/Owner
-/// memberships into or out of existence — `edit_member` guards the same boundary on role transitions,
-/// so an Admin must not route around it by inviting a fresh Admin. State changes that leave the
-/// membership in place keep using [`may_manage_member_type`].
+/// memberships into or out of existence, so an Admin cannot route around `edit_member`'s role-transition
+/// guard by inviting a fresh Admin. State changes that leave the membership in place use that helper.
 fn may_provision_member_type(caller_type: MembershipType, target_type: MembershipType) -> bool {
     match caller_type {
         MembershipType::Owner => true,
@@ -3552,12 +3539,11 @@ fn may_provision_stored_member_type(caller_type: MembershipType, target_atype: i
 
 /// Whether a caller may act on a membership whose stored `atype` this build cannot interpret.
 ///
-/// Such a row (a future build, a partial rollback, a hand edit) holds no authority — `OrgHeaders`
-/// refuses it and every permission flag on it is inert — but the helpers above fail closed on the
-/// unknown value, which left nobody able to remove it either, unlike Vaultwarden. So: an Owner only,
-/// and only for the two actions that reduce what the row can become. Editing, confirming, restoring
-/// and reinviting keep refusing, because they preserve or reactivate a role the server cannot reason
-/// about.
+/// Such a row (a future build, a partial rollback, a hand edit) holds no authority -- `OrgHeaders`
+/// refuses it and every permission flag on it is inert -- but the helpers above fail closed on the
+/// unknown value, which left nobody able to remove it either, unlike Vaultwarden. So: an Owner only, and
+/// only for the two actions that reduce what the row can become. Editing, confirming, restoring and
+/// reinviting keep refusing, because they preserve or reactivate a role the server cannot reason about.
 fn may_act_on_unknown_stored_member_type(caller_type: MembershipType) -> bool {
     caller_type == MembershipType::Owner
 }
@@ -3603,20 +3589,18 @@ async fn group_grants_access_to_all_collections(group_id: &GroupId, org_id: &Org
 /// `collections_groups.manage`) on `col_id`.
 ///
 /// Security: a `manage` grant is collection administration authority (`ManagerHeaders` accepts it via
-/// `has_explicit_collection_manage_access`) and survives every later change to the grantee's role, so
-/// a caller acting through `edit_any_collection` — revocable by clearing one flag — must not be able
-/// to write one. Only blanket authority (Admin/Owner, or Custom with `delete_any_collection`) or a
-/// real stored grant on that same collection qualifies. Strictly subtractive: it can only downgrade a
-/// requested `manage` to false.
+/// `has_explicit_collection_manage_access`) and survives every later change to the grantee's role, so a
+/// caller acting through `edit_any_collection` -- revocable by clearing one flag -- must not write one.
+/// Only blanket authority (Admin/Owner, or Custom with `delete_any_collection`) or a real stored grant on
+/// that same collection qualifies. Strictly subtractive: it can only downgrade a requested `manage`.
 async fn caller_may_grant_collection_manage(caller: &Membership, col_id: &CollectionId, conn: &DbConn) -> bool {
     match caller_manage_grant_role_check(caller) {
         // Role alone decides it (Admin/Owner or delete_any -> yes; User/unknown/unconfirmed -> no).
         Some(decision) => decision,
         // Custom without delete_any: the answer is per-collection and must reflect a *real* stored
-        // manage grant. Edit any collection deliberately does not count here — it is revocable by
-        // clearing a flag, while a `manage` row written here outlives it. Accepting it would let
-        // temporary authority be laundered into a permanent grant, which is exactly the escalation
-        // this clamp exists to prevent.
+        // manage grant. `edit_any_collection` deliberately does not count -- it is revocable by clearing
+        // a flag, while a `manage` row written here outlives it, so accepting it would launder temporary
+        // authority into a permanent grant.
         None => match MembershipType::from_i32(caller.atype) {
             Some(MembershipType::Custom) => caller.has_explicit_collection_manage_access(col_id, conn).await,
             _ => false,
@@ -3678,13 +3662,12 @@ fn may_export_entire_organization(caller: &Membership) -> bool {
 
 /// Pure, collection-independent part of `caller_may_grant_collection_manage`.
 ///
-/// `Some(true)`  -> the caller may grant `manage` on *any* collection (Admin/Owner, or a Custom
-///                  member holding `delete_any_collection`).
-/// `Some(false)` -> the caller may never grant `manage` (unconfirmed, plain User, or unknown type).
+/// `Some(true)`  -> may grant `manage` on *any* collection (Admin/Owner, or Custom + `delete_any_collection`).
+/// `Some(false)` -> may never grant it (unconfirmed, plain User, or unknown type).
 /// `None`        -> depends on a real per-collection manage grant, resolved against the database.
 ///
-/// Separate so the role gating — in particular `edit_any_collection` alone yielding `None` rather
-/// than `Some(true)` — is unit-testable without a DB.
+/// Separate so the role gating -- in particular `edit_any_collection` alone yielding `None` rather than
+/// `Some(true)` -- is unit-testable without a DB.
 fn caller_manage_grant_role_check(caller: &Membership) -> Option<bool> {
     if caller.can_delete_any_collection() {
         return Some(true); // Admin/Owner, or a Custom member holding delete_any_collection
@@ -3709,13 +3692,10 @@ async fn add_update_group(
 ) -> JsonResult {
     // Security: membership of a collection-bearing group grants (or revokes) access to those
     // collections' contents, so only a caller who can manage collections may change it. Rejected rather
-    // than silently ignored, and checked before the first write so a refused request leaves nothing
-    // behind. On create the group is brand new and this never triggers.
-    //
-    // `group.access_all` is the value this request leaves behind, which is what actually grants: adding a
-    // member to it is Admin/Owner authority even for a caller who can manage collections. Removals stay
-    // under the collection rule below. `put_group` asks the same question before its own destructive
-    // delete (audit F-1); this call covers `post_groups`, where nothing has been written yet either.
+    // than silently ignored, and checked before the first write. `group.access_all` is the value this
+    // request leaves behind, so adding a member to it is Admin/Owner authority even for a caller who can
+    // manage collections; removals stay under the collection rule below. `put_group` asks the same before
+    // its own destructive delete (audit F-1); this call covers `post_groups`.
     if !may_grant_access_all_group(headers.membership_type)
         && adds_member_to_access_all_group(&group, &members, &org_id, conn).await
     {

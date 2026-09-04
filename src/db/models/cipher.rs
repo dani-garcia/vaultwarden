@@ -603,11 +603,9 @@ impl Cipher {
     ) -> Option<(bool, bool, bool)> {
         // Security: central fail-closed check binding cipher -> organization -> *confirmed* membership.
         // It denies access from assignment rows that outlived a revoke (or are still only
-        // invited/accepted) and from cross-organization assignments another path might have persisted;
-        // without it the queries below would keep honouring them.
-        //
-        // The sync path (cipher_sync_data is Some) is left to the caller: it is built only from
-        // confirmed memberships and evaluated below against that cached data.
+        // invited/accepted) and from cross-organization assignments another path might have persisted.
+        // The sync path (cipher_sync_data is Some) is left to the caller: it is built only from confirmed
+        // memberships and evaluated below against that cached data.
         if cipher_sync_data.is_none()
             && let Some(ref org_uuid) = self.organization_uuid
             && Membership::find_confirmed_by_user_and_org(user_uuid, org_uuid, conn).await.is_none()

@@ -54,11 +54,11 @@ pub struct CollectionCipher {
     pub collection_uuid: CollectionId,
 }
 
-/// Serialize the assignment-level `manage` capability using the same role boundary as the
-/// collection mutation guards. Read/write access is deliberately not management authority.
+/// Serialize the assignment-level `manage` capability using the same role boundary as the collection
+/// mutation guards. Read/write access is deliberately not management authority.
 ///
-/// Belongs on what a member receives about themselves; the administrative lists echo a *stored*
-/// grant and use `stored_assignment_manage` instead.
+/// Belongs on what a member receives about themselves; the administrative lists echo a *stored* grant and
+/// use `stored_assignment_manage` instead.
 pub(super) fn assignment_manage_for_member(membership_type: i32, stored_manage: bool) -> bool {
     match MembershipType::from_i32(membership_type) {
         Some(MembershipType::Owner | MembershipType::Admin) => true,
@@ -69,10 +69,9 @@ pub(super) fn assignment_manage_for_member(membership_type: i32, stored_manage: 
 
 /// Serialize a *stored* per-collection assignment row for the admin-console access lists.
 ///
-/// The client writes the same value back when the dialog is saved, so reporting anything other than
-/// the persisted bit would make an unrelated save silently strip it — for a plain User that also
-/// revokes the cipher write access `users_collections.manage` grants. Admins and Owners manage
-/// implicitly and are reported as such regardless of the stored row.
+/// The client writes the same value back when the dialog is saved, so reporting anything other than the
+/// persisted bit would make an unrelated save silently strip it -- for a plain User that also revokes the
+/// cipher write access `users_collections.manage` grants. Admins and Owners manage implicitly.
 pub(super) fn stored_assignment_manage(membership_type: i32, stored_manage: bool) -> bool {
     matches!(MembershipType::from_i32(membership_type), Some(MembershipType::Owner | MembershipType::Admin))
         || stored_manage
@@ -131,11 +130,9 @@ impl Collection {
         let (read_only, hide_passwords, manage) = if let Some(cipher_sync_data) = cipher_sync_data {
             match cipher_sync_data.members.get(&self.org_uuid) {
                 Some(m) => {
-                    // What the client is told has to match what the collection guards allow, or it renders the
-                    // wrong controls. A stored grant therefore counts even for a member who already reaches every
-                    // collection. Reaching every collection through a group with `access_all` deliberately does
-                    // not: the guards accept an explicit `users_collections.manage` /
-                    // `collections_groups.manage` row only.
+                    // What the client is told has to match what the collection guards allow, or it renders
+                    // the wrong controls. A stored grant therefore counts even for a member who already
+                    // reaches every collection; reaching it through a group with `access_all` does not.
                     let assignment = cipher_sync_data
                         .user_collections
                         .get(&self.uuid)
