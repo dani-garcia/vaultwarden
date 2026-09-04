@@ -917,9 +917,9 @@ async fn get_org_details_impl(
     Ok(json!(ciphers_json))
 }
 
-// Returning a Domain/Organization here allows the client to prefill it and prevents prompting the user.
+// Returning a Domain/Organization here allow to prefill it and prevent prompting the user
 // Use the configured default organization so its policies apply during SSO enrollment; otherwise return a dummy value.
-// In use since `v2025.6.0`, the client appears to use only the first `organizationIdentifier`.
+// In use since `v2025.6.0`, appears to use only the first `organizationIdentifier`
 #[post("/organizations/domain/sso/verified")]
 fn get_org_domain_sso_verified() -> JsonResult {
     let organization_identifier = match CONFIG.sso_default_organization_uuid() {

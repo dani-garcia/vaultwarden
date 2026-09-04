@@ -392,8 +392,7 @@ async fn invite_user_to_default_organization(
     Ok(())
 }
 
-// `Uuid::parse_str` also accepts non-canonical forms (uppercase, braced, without hyphens),
-// while stored organization uuids are always lowercase hyphenated and compared as strings.
+// Stored organization uuids are always lowercase hyphenated and compared as strings.
 pub(crate) fn normalize_organization_uuid(org_uuid: &str) -> ApiResult<OrganizationId> {
     let Ok(parsed) = uuid::Uuid::parse_str(org_uuid) else {
         err!("`SSO_DEFAULT_ORGANIZATION_UUID` must be a valid UUID")
@@ -525,6 +524,7 @@ mod tests {
 
     #[test]
     fn normalizes_organization_uuid_to_canonical_form() {
+        // `Uuid::parse_str` accepts uppercase, braced and unhyphenated forms.
         for input in [
             "1B2C3D4E-5F60-7182-93A4-B5C6D7E8F901",
             "{1b2c3d4e-5f60-7182-93a4-b5c6d7e8f901}",
@@ -533,10 +533,6 @@ mod tests {
             let org_id = normalize_organization_uuid(input).expect("valid UUID form should be accepted");
             assert_eq!(org_id.to_string(), "1b2c3d4e-5f60-7182-93a4-b5c6d7e8f901");
         }
-    }
-
-    #[test]
-    fn rejects_invalid_organization_uuid() {
         assert!(normalize_organization_uuid("not-a-uuid").is_err());
     }
 }
