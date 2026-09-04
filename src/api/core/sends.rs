@@ -129,14 +129,10 @@ async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, c
     Ok(())
 }
 
-/// Enforces the restrictions that only exist on the `Send controls` policy.
-///
-/// `DisableSend` and `DisableHideEmail` are deliberately not checked here. Upstream keeps enforcing
-/// those two through the legacy `DisableSend` and `Send Options` policies and mirrors them into
-/// `Send controls`, which `put_policy` does as well, so the two functions above stay authoritative.
-///
-/// `has_password` and `creation_date` describe the Send as it will look after the request: on an
-/// update the client may leave the password out to keep the existing one.
+/// Enforces the restrictions that only exist on the `Send controls` policy. `DisableSend` and
+/// `DisableHideEmail` stay with the two functions above, which are mirrored into `Send controls`.
+/// `has_password` and `creation_date` describe the Send after the request: on an update the client
+/// may leave the password out to keep the existing one.
 ///
 /// Ref: https://github.com/bitwarden/server/blob/main/src/Core/Tools/SendFeatures/Services/SendValidationService.cs
 async fn enforce_send_controls_policy(
@@ -152,9 +148,8 @@ async fn enforce_send_controls_policy(
         Some(SendWhoCanAccessType::PasswordProtected) if !has_password => {
             err!("Due to an Enterprise Policy, your Sends have to be protected by a password.")
         }
-        // Vaultwarden rejects Sends that carry recipient emails, so this can never be satisfied.
-        // `put_policy` already refuses to store such a policy, this only guards rows that were
-        // written before or outside of that check.
+        // Vaultwarden rejects Sends carrying recipient emails, so this can never be satisfied.
+        // `put_policy` refuses to store such a policy; this only guards rows written outside it.
         Some(SendWhoCanAccessType::SpecificPeople) => {
             err!(
                 "Due to an Enterprise Policy, your Sends have to be protected by email verification, \

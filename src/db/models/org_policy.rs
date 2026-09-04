@@ -71,9 +71,8 @@ pub enum SendWhoCanAccessType {
 
 // https://github.com/bitwarden/server/blob/main/src/Core/AdminConsole/Models/Data/Organizations/Policies/SendControlsPolicyData.cs
 //
-// The `Send controls` policy absorbs `DisableSend` and `SendOptions` and adds restrictions of its
-// own. The web vault we ship only renders the first four fields so far, the last two are already
-// part of the data model upstream and are parsed and enforced here as well.
+// The shipped web vault only renders the first four fields; the last two already exist upstream and
+// are parsed and enforced here as well.
 #[derive(Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendControlsPolicyData {
@@ -390,9 +389,8 @@ impl OrgPolicy {
         false
     }
 
-    /// Reads the `Send controls` data of this policy, falling back to the defaults when the stored
-    /// data is missing or unreadable. A policy row without data means "no restrictions", so a
-    /// broken payload must not accidentally lock users out of creating Sends.
+    /// Reads the `Send controls` data, falling back to the defaults when the stored data is missing
+    /// or unreadable: a broken payload must not accidentally lock users out of creating Sends.
     pub fn send_controls_data(&self) -> SendControlsPolicyData {
         if let Ok(data) = serde_json::from_str::<SendControlsPolicyData>(&self.data) {
             return data;
@@ -405,8 +403,8 @@ impl OrgPolicy {
     }
 
     /// Combines the `Send controls` policies of every organization the user is a plain member of.
-    /// Mirrors upstreams `SendControlsPolicyRequirementFactory`: the two toggles are ORed, the
-    /// remaining restrictions are taken from the first organization that sets them.
+    /// Like upstreams `SendControlsPolicyRequirementFactory`: the two toggles are ORed, the other
+    /// restrictions come from the first organization that sets them.
     pub async fn send_controls_for_user(user_uuid: &UserId, conn: &DbConn) -> SendControlsPolicyData {
         let mut result = SendControlsPolicyData::default();
         for policy in
@@ -445,7 +443,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn send_controls_data_parses_the_payload_the_clients_send() {
+    fn send_controls_data_parses_client_payloads_and_pascal_case_aliases() {
         let data: SendControlsPolicyData = serde_json::from_str(
             r#"{"disableSend":true,"disableHideEmail":true,"whoCanAccess":1,"allowedDomains":null}"#,
         )
@@ -457,10 +455,7 @@ mod tests {
         assert!(data.allowed_domains.is_none());
         assert!(data.deletion_hours.is_none());
         assert!(data.allowed_send_types.is_none());
-    }
 
-    #[test]
-    fn send_controls_data_accepts_the_pascal_case_aliases_and_fills_in_defaults() {
         let data: SendControlsPolicyData = serde_json::from_str(r#"{"DisableSend":true}"#).unwrap();
 
         assert!(data.disable_send);

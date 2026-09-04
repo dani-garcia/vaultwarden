@@ -2201,14 +2201,12 @@ fn parse_send_controls(data: Option<&Value>) -> ApiResult<SendControlsPolicyData
 }
 
 fn validate_send_controls(data: &SendControlsPolicyData) -> EmptyResult {
-    // Vaultwarden rejects Sends that carry recipient emails, so requiring email verification would
-    // leave the members of this organization unable to create any Send at all.
+    // Vaultwarden rejects Sends carrying recipient emails, so members could not create any Send.
     if data.required_access_type() == Some(SendWhoCanAccessType::SpecificPeople) {
         err!("Sends with email verification are not supported, so that access type cannot be required")
     }
 
-    // Upstream only accepts allowed domains together with the specific people access type, which
-    // the check above already rules out.
+    // Upstream only allows domains together with the specific people type, ruled out above.
     if data.allowed_domains.is_some() {
         err!("Allowed domains can only be set when the required access type is set to specific people")
     }
@@ -2221,11 +2219,9 @@ fn validate_send_controls(data: &SendControlsPolicyData) -> EmptyResult {
     Ok(())
 }
 
-/// The `Send controls` policy is a container that absorbs the older `DisableSend` and
-/// `Send Options` policies. Upstream mirrors changes in both directions with dedicated policy event
-/// handlers, so that clients which only know the legacy policies keep enforcing the same rules and
-/// so that a rollback stays safe. We do the same, which also keeps the existing enforcement in
-/// `sends.rs` authoritative for those two flags.
+/// `Send controls` absorbs the legacy `DisableSend` and `Send Options` policies. Like upstream we
+/// mirror changes in both directions so older clients keep enforcing the same rules and a rollback
+/// stays safe; enforcement in `sends.rs` therefore stays authoritative for those two flags.
 ///
 /// Ref: https://github.com/bitwarden/server/blob/main/src/Core/AdminConsole/OrganizationFeatures/Policies/PolicyEventHandlers/SendControlsSyncPolicyEvent.cs
 async fn sync_send_policies(
@@ -3386,20 +3382,18 @@ mod tests {
     }
 
     #[test]
-    fn send_controls_rejects_restrictions_vaultwarden_cannot_satisfy() {
+    fn send_controls_validation_rejects_only_the_unsupported_restrictions() {
         // Requiring recipient emails would lock every member out of creating Sends.
-        assert!(validate_send_controls(&send_controls(r#"{"whoCanAccess":2}"#)).is_err());
-        assert!(validate_send_controls(&send_controls(r#"{"allowedDomains":"example.com"}"#)).is_err());
-        assert!(validate_send_controls(&send_controls(r#"{"deletionHours":0}"#)).is_err());
-    }
+        for invalid in [r#"{"whoCanAccess":2}"#, r#"{"allowedDomains":"example.com"}"#, r#"{"deletionHours":0}"#] {
+            assert!(validate_send_controls(&send_controls(invalid)).is_err(), "should reject {invalid}");
+        }
 
-    #[test]
-    fn send_controls_accepts_the_supported_restrictions() {
-        assert!(validate_send_controls(&send_controls(r#"{"disableSend":true,"disableHideEmail":true}"#)).is_ok());
-        assert!(
-            validate_send_controls(&send_controls(r#"{"whoCanAccess":1,"deletionHours":24,"allowedSendTypes":[0]}"#))
-                .is_ok()
-        );
+        for valid in [
+            r#"{"disableSend":true,"disableHideEmail":true}"#,
+            r#"{"whoCanAccess":1,"deletionHours":24,"allowedSendTypes":[0]}"#,
+        ] {
+            assert!(validate_send_controls(&send_controls(valid)).is_ok(), "should accept {valid}");
+        }
         assert!(validate_send_controls(&SendControlsPolicyData::default()).is_ok());
     }
 }
