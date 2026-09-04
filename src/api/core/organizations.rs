@@ -8,7 +8,7 @@ use crate::{
     CONFIG,
     api::admin::FAKE_ADMIN_UUID,
     api::{
-        EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
+        ApiResult, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
     auth::{AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite},
@@ -17,7 +17,8 @@ use crate::{
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
             Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, User, UserId,
+            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, SendControlsPolicyData,
+            SendOptionsPolicyData, SendWhoCanAccessType, User, UserId,
         },
     },
     mail,
@@ -2160,6 +2161,10 @@ async fn put_policy(
         }
     }
 
+    if pol_type_enum == OrgPolicyType::SendControls && data.enabled {
+        validate_send_controls(&parse_send_controls(data.data.as_ref())?)?;
+    }
+
     let mut policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await {
         Some(p) => p,
         None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "{}".to_owned()),
@@ -2168,6 +2173,8 @@ async fn put_policy(
     policy.enabled = data.enabled;
     policy.data = serde_json::to_string(&data.data)?;
     policy.save(&conn).await?;
+
+    sync_send_policies(pol_type_enum, &policy, &org_id, &conn).await?;
 
     log_event(
         EventType::PolicyUpdated,
@@ -2181,6 +2188,120 @@ async fn put_policy(
     .await;
 
     Ok(Json(policy.to_json()))
+}
+
+fn parse_send_controls(data: Option<&Value>) -> ApiResult<SendControlsPolicyData> {
+    match data {
+        None | Some(Value::Null) => Ok(SendControlsPolicyData::default()),
+        Some(value) => match serde_json::from_value::<SendControlsPolicyData>(value.clone()) {
+            Ok(parsed) => Ok(parsed),
+            Err(e) => err!(format!("Invalid Send controls policy data: {e}")),
+        },
+    }
+}
+
+fn validate_send_controls(data: &SendControlsPolicyData) -> EmptyResult {
+    // Vaultwarden rejects Sends carrying recipient emails, so members could not create any Send.
+    if data.required_access_type() == Some(SendWhoCanAccessType::SpecificPeople) {
+        err!("Sends with email verification are not supported, so that access type cannot be required")
+    }
+
+    // Upstream only allows domains together with the specific people type, ruled out above.
+    if data.allowed_domains.is_some() {
+        err!("Allowed domains can only be set when the required access type is set to specific people")
+    }
+
+    // A non positive value would mean no Send could ever satisfy the policy.
+    if data.deletion_hours.is_some_and(|hours| hours < 1) {
+        err!("The maximum lifetime of a Send has to be at least one hour")
+    }
+
+    Ok(())
+}
+
+/// `Send controls` absorbs the legacy `DisableSend` and `Send Options` policies. Like upstream we
+/// mirror changes in both directions so older clients keep enforcing the same rules and a rollback
+/// stays safe; enforcement in `sends.rs` therefore stays authoritative for those two flags.
+///
+/// Ref: https://github.com/bitwarden/server/blob/main/src/Core/AdminConsole/OrganizationFeatures/Policies/PolicyEventHandlers/SendControlsSyncPolicyEvent.cs
+async fn sync_send_policies(
+    pol_type: OrgPolicyType,
+    saved: &OrgPolicy,
+    org_id: &OrganizationId,
+    conn: &DbConn,
+) -> EmptyResult {
+    match pol_type {
+        OrgPolicyType::SendControls => {
+            let data = saved.send_controls_data();
+            // Upstream leaves the data of the DisableSend policy untouched, it carries no options.
+            upsert_mirrored_policy(org_id, OrgPolicyType::DisableSend, saved.enabled && data.disable_send, None, conn)
+                .await?;
+
+            let send_options = SendOptionsPolicyData {
+                disable_hide_email: data.disable_hide_email,
+            };
+            upsert_mirrored_policy(
+                org_id,
+                OrgPolicyType::SendOptions,
+                saved.enabled && data.disable_hide_email,
+                Some(serde_json::to_string(&send_options)?),
+                conn,
+            )
+            .await?;
+        }
+        OrgPolicyType::DisableSend | OrgPolicyType::SendOptions => {
+            // Keep every restriction that only exists on the Send controls policy.
+            let mut data = match OrgPolicy::find_by_org_and_type(org_id, OrgPolicyType::SendControls, conn).await {
+                Some(p) => p.send_controls_data(),
+                None => SendControlsPolicyData::default(),
+            };
+
+            let disable_send = OrgPolicy::find_by_org_and_type(org_id, OrgPolicyType::DisableSend, conn)
+                .await
+                .is_some_and(|p| p.enabled);
+            let send_options = OrgPolicy::find_by_org_and_type(org_id, OrgPolicyType::SendOptions, conn).await;
+
+            data.disable_send = disable_send;
+            // Upstream reads this out of the data of the legacy policy regardless of whether that
+            // policy is enabled, the enabled flag is only folded into the container below.
+            data.disable_hide_email = send_options
+                .as_ref()
+                .and_then(|p| serde_json::from_str::<SendOptionsPolicyData>(&p.data).ok())
+                .is_some_and(|d| d.disable_hide_email);
+
+            let enabled = disable_send || send_options.is_some_and(|p| p.enabled);
+            upsert_mirrored_policy(
+                org_id,
+                OrgPolicyType::SendControls,
+                enabled,
+                Some(serde_json::to_string(&data)?),
+                conn,
+            )
+            .await?;
+        }
+        _ => (),
+    }
+
+    Ok(())
+}
+
+async fn upsert_mirrored_policy(
+    org_id: &OrganizationId,
+    pol_type: OrgPolicyType,
+    enabled: bool,
+    data: Option<String>,
+    conn: &DbConn,
+) -> EmptyResult {
+    let mut policy = match OrgPolicy::find_by_org_and_type(org_id, pol_type, conn).await {
+        Some(p) => p,
+        None => OrgPolicy::new(org_id.clone(), pol_type, false, "null".to_owned()),
+    };
+
+    policy.enabled = enabled;
+    if let Some(data) = data {
+        policy.data = data;
+    }
+    policy.save(conn).await
 }
 
 // Deprecated with client v2026.5.0
@@ -3250,4 +3371,29 @@ async fn rotate_api_key(
     conn: DbConn,
 ) -> JsonResult {
     api_key(&org_id, data, true, headers, conn).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn send_controls(json: &str) -> SendControlsPolicyData {
+        serde_json::from_str(json).expect("valid Send controls payload")
+    }
+
+    #[test]
+    fn send_controls_validation_rejects_only_the_unsupported_restrictions() {
+        // Requiring recipient emails would lock every member out of creating Sends.
+        for invalid in [r#"{"whoCanAccess":2}"#, r#"{"allowedDomains":"example.com"}"#, r#"{"deletionHours":0}"#] {
+            assert!(validate_send_controls(&send_controls(invalid)).is_err(), "should reject {invalid}");
+        }
+
+        for valid in [
+            r#"{"disableSend":true,"disableHideEmail":true}"#,
+            r#"{"whoCanAccess":1,"deletionHours":24,"allowedSendTypes":[0]}"#,
+        ] {
+            assert!(validate_send_controls(&send_controls(valid)).is_ok(), "should accept {valid}");
+        }
+        assert!(validate_send_controls(&SendControlsPolicyData::default()).is_ok());
+    }
 }
