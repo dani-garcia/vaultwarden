@@ -114,19 +114,15 @@ pub async fn validate_totp_code_str(
 
 /// The outcome of checking a TOTP `code` against the allowed time window.
 pub(crate) enum TotpValidation {
-    /// The code is valid. Contains the accepted time step, which must be stored as the
-    /// new "last used" value so the same code cannot be reused.
+    /// Valid; holds the accepted time step, which must be stored as the new "last used" value.
     Accepted(i64),
     /// The code matched a time step that has already been used (replay protection).
     Reused,
-    /// The code did not match any step within the allowed window.
     Rejected,
 }
 
-/// Verifies a 6-digit TOTP `code` against the already base32-decoded `secret`, allowing
-/// `steps` (>= 0) time steps of ±30 seconds drift in either direction and rejecting any
-/// time step that is not newer than `last_used`. The comparison is constant-time.
-/// Shared by the user 2FA flow and the admin-page 2FA.
+/// Verifies a 6-digit TOTP `code` against the base32-decoded `secret`, allowing `steps` time steps of
+/// ±30s drift and rejecting any step not newer than `last_used`. The comparison is constant-time.
 pub(crate) fn verify_totp(secret: &[u8], code: &str, timestamp: i64, last_used: i64, steps: i64) -> TotpValidation {
     use totp_lite::{Sha1, totp_custom};
 

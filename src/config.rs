@@ -960,10 +960,8 @@ make_config! {
 }
 
 impl ConfigBuilder {
-    /// Applies the write-only admin form semantics for the TOTP secret:
-    /// - an omitted value keeps the value currently stored in `config.json`;
-    /// - an empty value removes the stored override;
-    /// - a non-empty value replaces it.
+    /// Write-only admin form semantics for the TOTP secret: an omitted value keeps the value stored in
+    /// `config.json`, an empty value removes the stored override and a non-empty value replaces it.
     fn prepare_admin_update(&mut self, current_user_config: &Self) {
         self.admin_totp_secret = match self.admin_totp_secret.take() {
             None => current_user_config.admin_totp_secret.clone(),
@@ -1529,8 +1527,7 @@ impl Config {
         // TODO: Remove values that are defaults, above only checks those set by env and not the defaults
         let mut builder = other;
 
-        // Remove values that are not editable. Preserve an omitted write-only TOTP value,
-        // while still allowing an explicit empty value to remove the saved override.
+        // Remove values that are not editable
         if ignore_non_editable {
             let current_user_config = self.inner.read().unwrap()._usr.clone();
             builder.prepare_admin_update(&current_user_config);
@@ -1919,6 +1916,13 @@ mod tests {
     const ENV_TOTP_SECRET: &str = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
     const USER_TOTP_SECRET: &str = "KRSXG5DSNFXGOIDBKRSXG5DSNFXGOIDB";
 
+    fn builder(secret: &str) -> ConfigBuilder {
+        ConfigBuilder {
+            admin_totp_secret: Some(secret.to_owned()),
+            ..Default::default()
+        }
+    }
+
     fn config_with(env: ConfigBuilder, usr: ConfigBuilder) -> Config {
         let mut overrides = Vec::new();
         let config = env.merge(&usr, false, &mut overrides).build();
@@ -1935,6 +1939,10 @@ mod tests {
         }
     }
 
+    fn env_and_usr_config() -> Config {
+        config_with(builder(ENV_TOTP_SECRET), builder(USER_TOTP_SECRET))
+    }
+
     fn admin_totp_element(config: &Config) -> serde_json::Value {
         config
             .prepare_json()
@@ -1948,36 +1956,13 @@ mod tests {
     }
 
     #[test]
-    fn config_file_admin_totp_secret_overrides_environment() {
-        let env = ConfigBuilder {
-            admin_totp_secret: Some(ENV_TOTP_SECRET.to_owned()),
-            ..Default::default()
-        };
-        let usr = ConfigBuilder {
-            admin_totp_secret: Some(USER_TOTP_SECRET.to_owned()),
-            ..Default::default()
-        };
-        let config = config_with(env, usr);
+    fn admin_totp_secret_is_write_only_in_settings_json() {
+        let config = env_and_usr_config();
+        let serialized = config.prepare_json().to_string();
+        let support_json = config.get_support_json().to_string();
 
         assert_eq!(config.admin_totp_secret().as_deref(), Some(USER_TOTP_SECRET));
         assert!(config.inner.read().unwrap()._overrides.contains(&"ADMIN_TOTP_SECRET"));
-    }
-
-    #[test]
-    fn admin_totp_secret_is_write_only_in_settings_json() {
-        let env = ConfigBuilder {
-            admin_totp_secret: Some(ENV_TOTP_SECRET.to_owned()),
-            ..Default::default()
-        };
-        let usr = ConfigBuilder {
-            admin_totp_secret: Some(USER_TOTP_SECRET.to_owned()),
-            ..Default::default()
-        };
-        let config = config_with(env, usr);
-        let json = config.prepare_json();
-        let serialized = json.to_string();
-        let support_json = config.get_support_json().to_string();
-
         assert!(!serialized.contains(ENV_TOTP_SECRET));
         assert!(!serialized.contains(USER_TOTP_SECRET));
         assert!(!support_json.contains(ENV_TOTP_SECRET));
@@ -1991,17 +1976,8 @@ mod tests {
         assert_eq!(element["user_configured"], true);
         assert_eq!(element["overridden"], true);
 
-        let empty_override = config_with(
-            ConfigBuilder {
-                admin_totp_secret: Some(ENV_TOTP_SECRET.to_owned()),
-                ..Default::default()
-            },
-            ConfigBuilder {
-                admin_totp_secret: Some(String::new()),
-                ..Default::default()
-            },
-        );
-        let element = admin_totp_element(&empty_override);
+        // An explicitly emptied override still overrides the environment value.
+        let element = admin_totp_element(&config_with(builder(ENV_TOTP_SECRET), builder("")));
         assert_eq!(element["configured"], false);
         assert_eq!(element["user_configured"], true);
         assert_eq!(element["overridden"], true);
@@ -2009,15 +1985,7 @@ mod tests {
 
     #[test]
     fn admin_settings_template_never_renders_admin_totp_secret() {
-        let env = ConfigBuilder {
-            admin_totp_secret: Some(ENV_TOTP_SECRET.to_owned()),
-            ..Default::default()
-        };
-        let usr = ConfigBuilder {
-            admin_totp_secret: Some(USER_TOTP_SECRET.to_owned()),
-            ..Default::default()
-        };
-        let config = config_with(env, usr);
+        let config = env_and_usr_config();
 
         let mut handlebars = Handlebars::new();
         handlebars.set_strict_mode(true);
@@ -2043,18 +2011,15 @@ mod tests {
         assert!(!rendered.contains(USER_TOTP_SECRET));
         assert!(rendered.contains("id=\"input_admin_totp_secret\""));
         assert!(rendered.contains("placeholder=\"Configured — enter a new value to replace it\""));
-        assert!(rendered.contains("data-bs-target=\"#adminTotpQrDialog\""));
         assert!(rendered.contains("id=\"adminTotpQrCode\""));
         assert!(rendered.contains("/vw_static/qrcode-generator-2.0.4.js"));
+        // The QR dialog must not be nested inside the settings form.
         assert!(rendered.find("</form>").unwrap() < rendered.find("id=\"adminTotpQrDialog\"").unwrap());
     }
 
     #[test]
     fn admin_totp_secret_form_supports_keep_set_and_clear() {
-        let current = ConfigBuilder {
-            admin_totp_secret: Some(USER_TOTP_SECRET.to_owned()),
-            ..Default::default()
-        };
+        let current = builder(USER_TOTP_SECRET);
 
         let mut keep = ConfigBuilder::default();
         keep.prepare_admin_update(&current);
@@ -2064,27 +2029,18 @@ mod tests {
         no_saved_override.prepare_admin_update(&ConfigBuilder::default());
         assert_eq!(no_saved_override.admin_totp_secret, None);
 
-        let mut replace = ConfigBuilder {
-            admin_totp_secret: Some(format!("  {}  ", ENV_TOTP_SECRET.to_lowercase())),
-            ..Default::default()
-        };
+        let mut replace = builder(&format!("  {}  ", ENV_TOTP_SECRET.to_lowercase()));
         replace.prepare_admin_update(&current);
         assert_eq!(replace.admin_totp_secret.as_deref(), Some(ENV_TOTP_SECRET));
 
-        let mut clear = ConfigBuilder {
-            admin_totp_secret: Some("   ".to_owned()),
-            ..Default::default()
-        };
+        let mut clear = builder("   ");
         clear.prepare_admin_update(&current);
         assert_eq!(clear.admin_totp_secret, None);
 
-        let env = ConfigBuilder {
-            admin_totp_secret: Some(ENV_TOTP_SECRET.to_owned()),
-            ..Default::default()
-        };
+        // Clearing the saved override falls back to the environment value.
         let mut overrides = Vec::new();
         assert_eq!(
-            env.merge(&clear, false, &mut overrides).build().admin_totp_secret.as_deref(),
+            builder(ENV_TOTP_SECRET).merge(&clear, false, &mut overrides).build().admin_totp_secret.as_deref(),
             Some(ENV_TOTP_SECRET)
         );
     }

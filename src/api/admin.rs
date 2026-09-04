@@ -251,9 +251,8 @@ fn validate_token(token: &str) -> bool {
     }
 }
 
-// The active-secret fingerprint and its last accepted TOTP time step, kept in memory since there is no database
-// record for the admin. Keeping the fingerprint resets replay protection when the configured secret changes.
-// Restarting Vaultwarden resets it, which at worst allows a code from the previous 30 seconds to be reused once.
+// Last accepted TOTP time step, keyed by a fingerprint of the active secret so replacing the secret resets
+// replay protection. Kept in memory (the admin has no DB record); a restart allows one code reuse at worst.
 static ADMIN_TOTP_LAST_USED: Mutex<Option<(String, i64)>> = Mutex::new(None);
 
 fn configured_admin_totp_secret() -> Option<String> {
