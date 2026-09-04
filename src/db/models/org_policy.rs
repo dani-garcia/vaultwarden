@@ -88,8 +88,7 @@ impl Default for MaximumVaultTimeoutPolicyData {
 }
 
 impl MaximumVaultTimeoutPolicyData {
-    /// Validate data supplied by the admin page and normalize the compatibility
-    /// value expected by clients which predate the timeout type field.
+    /// Validate admin-supplied data and normalize the fallback expected by clients predating the type field.
     pub fn validate_and_normalize(&mut self) -> Result<(), &'static str> {
         let timeout_type = self.timeout_type.unwrap_or(MaximumVaultTimeoutType::Custom);
         self.timeout_type = Some(timeout_type);
@@ -99,8 +98,7 @@ impl MaximumVaultTimeoutPolicyData {
                 return Err("The custom vault timeout must be at least one minute.");
             }
         } else {
-            // Current Bitwarden clients write an eight-hour fallback for all
-            // non-custom types so older clients continue to behave safely.
+            // Bitwarden writes an eight-hour fallback for non-custom types so older clients stay safe.
             self.minutes = 8 * 60;
         }
 
@@ -124,36 +122,28 @@ mod maximum_vault_timeout_tests {
     }
 
     #[test]
-    fn rejects_zero_length_custom_timeout() {
-        let mut data = MaximumVaultTimeoutPolicyData {
+    fn validates_and_normalizes_timeout_data() {
+        let mut zero_custom = MaximumVaultTimeoutPolicyData {
             timeout_type: Some(MaximumVaultTimeoutType::Custom),
             minutes: 0,
             action: None,
         };
+        assert!(zero_custom.validate_and_normalize().is_err());
 
-        assert!(data.validate_and_normalize().is_err());
-    }
-
-    #[test]
-    fn normalizes_non_custom_timeout_for_older_clients() {
-        let mut data = MaximumVaultTimeoutPolicyData {
+        let mut non_custom = MaximumVaultTimeoutPolicyData {
             timeout_type: Some(MaximumVaultTimeoutType::Immediately),
             minutes: 0,
             action: Some(MaximumVaultTimeoutAction::Lock),
         };
+        non_custom.validate_and_normalize().unwrap();
+        assert_eq!(non_custom.minutes, 480);
 
-        data.validate_and_normalize().unwrap();
-        assert_eq!(data.minutes, 480);
-    }
-
-    #[test]
-    fn accepts_legacy_policy_without_timeout_type() {
-        let mut data: MaximumVaultTimeoutPolicyData =
+        // Policies stored before the type field existed must keep their minutes.
+        let mut legacy: MaximumVaultTimeoutPolicyData =
             serde_json::from_value(json!({ "minutes": 60, "action": "lock" })).unwrap();
-
-        data.validate_and_normalize().unwrap();
-        assert_eq!(data.timeout_type, Some(MaximumVaultTimeoutType::Custom));
-        assert_eq!(data.minutes, 60);
+        legacy.validate_and_normalize().unwrap();
+        assert_eq!(legacy.timeout_type, Some(MaximumVaultTimeoutType::Custom));
+        assert_eq!(legacy.minutes, 60);
     }
 }
 
