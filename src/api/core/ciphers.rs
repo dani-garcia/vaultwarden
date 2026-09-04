@@ -392,6 +392,20 @@ async fn enforce_personal_ownership_policy(data: Option<&CipherData>, headers: &
     Ok(())
 }
 
+/// Ensure SSH key type-data carries the mandatory non-empty string fields.
+///
+/// `Cipher::to_json` already discards the type-data of stored SSH ciphers whose
+/// fields are missing or empty; rejecting them here keeps such ciphers from
+/// being written in the first place.
+fn validate_ssh_key_data(type_data: &Value) -> EmptyResult {
+    for field in ["privateKey", "publicKey", "keyFingerprint"] {
+        if type_data[field].as_str().is_none_or(str::is_empty) {
+            err!(format!("SSH key field '{field}' must be a non-empty string"))
+        }
+    }
+    Ok(())
+}
+
 pub async fn update_cipher_from_data(
     cipher: &mut Cipher,
     data: CipherData,
@@ -524,6 +538,13 @@ pub async fn update_cipher_from_data(
     } else {
         err!("Data missing")
     };
+
+    // Reject invalid SSH key payloads up-front. Bitwarden cloud returns a validation
+    // error for null/empty required members; previously we accepted the write and then
+    // dropped sshKey on read-back (silent data loss).
+    if data.r#type == 5 {
+        validate_ssh_key_data(&type_data)?;
+    }
 
     cipher.key = data.key;
     cipher.name = data.name;
@@ -2210,6 +2231,28 @@ impl CipherSyncData {
             user_collections,
             user_collections_groups,
             user_group_full_access_for_organizations,
+        }
+    }
+}
+
+#[cfg(test)]
+mod ssh_key_validation_tests {
+    use super::validate_ssh_key_data;
+    use serde_json::json;
+
+    #[test]
+    fn validate_ssh_key_data_required_fields() {
+        let cases = [
+            ("all fields present", json!({"privateKey": "priv", "publicKey": "pub", "keyFingerprint": "fp"}), true),
+            ("null private key", json!({"privateKey": null, "publicKey": "pub", "keyFingerprint": "fp"}), false),
+            ("empty public key", json!({"privateKey": "priv", "publicKey": "", "keyFingerprint": "fp"}), false),
+            ("missing fingerprint", json!({"privateKey": "priv", "publicKey": "pub"}), false),
+            ("non-string fingerprint", json!({"privateKey": "priv", "publicKey": "pub", "keyFingerprint": 42}), false),
+            ("no fields at all", json!({}), false),
+        ];
+
+        for (case, type_data, expected_ok) in cases {
+            assert_eq!(validate_ssh_key_data(&type_data).is_ok(), expected_ok, "case: {case}");
         }
     }
 }
