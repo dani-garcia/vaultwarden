@@ -28,6 +28,7 @@ pub mod authenticator;
 pub mod duo;
 pub mod duo_oidc;
 pub mod email;
+pub mod new_device_verification;
 pub mod protected_actions;
 pub mod webauthn;
 pub mod yubikey;
@@ -64,6 +65,7 @@ pub fn is_twofactor_provider_usable(provider_type: &TwoFactorType, provider_data
         | TwoFactorType::EmailVerificationChallenge
         | TwoFactorType::WebauthnRegisterChallenge
         | TwoFactorType::WebauthnLoginChallenge
+        | TwoFactorType::NewDeviceVerification
         | TwoFactorType::ProtectedActions => false,
     }
 }
@@ -83,6 +85,7 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut webauthn::routes());
     routes.append(&mut yubikey::routes());
     routes.append(&mut protected_actions::routes());
+    routes.append(&mut new_device_verification::routes());
 
     routes
 }
@@ -276,20 +279,15 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
     }
 }
 
-// This function currently is just a dummy and the actual part is not implemented yet.
-// This also prevents 404 errors.
+// Kept to prevent 404 errors, current clients read `verifyDevices` from the profile and change it
+// via `/api/accounts/verify-devices`. See `new_device_verification` for the details.
 //
 // See the following Bitwarden PR's regarding this feature.
 // https://github.com/bitwarden/clients/pull/2843
 // https://github.com/bitwarden/clients/pull/2839
 // https://github.com/bitwarden/server/pull/2016
-//
-// The HTML part is hidden via the CSS patches done via the bw_web_build repo
 #[get("/two-factor/get-device-verification-settings")]
-fn get_device_verification_settings(_headers: Headers, _conn: DbConn) -> Json<Value> {
-    Json(json!({
-        "isDeviceVerificationSectionEnabled":false,
-        "unknownDeviceVerificationEnabled":false,
-        "object":"deviceVerificationSettings"
-    }))
+fn get_device_verification_settings(headers: Headers) -> Json<Value> {
+    let user = headers.user;
+    Json(new_device_verification::device_verification_settings(&user))
 }

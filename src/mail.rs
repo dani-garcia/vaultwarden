@@ -531,6 +531,31 @@ pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTi
     send_email(address, &subject, body_html, body_text).await
 }
 
+/// Sends the code a user has to enter before an unknown device may log in. Not the same as
+/// `send_new_device_logged_in`, which only notifies after a login already succeeded.
+pub async fn send_new_device_verification(
+    address: &str,
+    token: &str,
+    ip: &str,
+    dt: &NaiveDateTime,
+    device_type: i32,
+) -> EmptyResult {
+    let fmt = "%A, %B %_d, %Y at %r %Z";
+    let (subject, body_html, body_text) = get_text(
+        "email/new_device_verification",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "token": token,
+            "ip": ip,
+            "device_type": DeviceType::from_i32(device_type).to_string(),
+            "datetime": crate::util::format_naive_datetime_local(dt, fmt),
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_incomplete_2fa_login(
     address: &str,
     ip: &str,
