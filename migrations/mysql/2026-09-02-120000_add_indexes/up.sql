@@ -1,6 +1,10 @@
--- archives.cipher_uuid is left out: it is declared as an explicit FOREIGN KEY,
--- so InnoDB already maintains an index for it. Every other table below uses
--- inline REFERENCES, which MySQL parses and ignores, so no index exists.
+-- archives.cipher_uuid is left out: it is declared as an explicit FOREIGN KEY, so both
+-- MySQL and MariaDB already maintain an index for it.
+--
+-- Every other table below uses inline REFERENCES. MySQL parses and ignores those, so no
+-- index exists there. MariaDB honours them and backs each one with an auto-named index,
+-- which InnoDB drops once the named index below can serve the constraint. Both engines
+-- therefore end up with exactly one index per column.
 CREATE INDEX idx_ciphers_user_uuid ON ciphers (user_uuid);
 CREATE INDEX idx_ciphers_organization_uuid ON ciphers (organization_uuid);
 CREATE INDEX idx_attachments_cipher_uuid ON attachments (cipher_uuid);

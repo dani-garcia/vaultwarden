@@ -1,3 +1,7 @@
+-- On MariaDB these indexes back the foreign keys created from the inline REFERENCES,
+-- and dropping them is refused with error 1553 while the constraints are enforced.
+SET FOREIGN_KEY_CHECKS = 0;
+
 DROP INDEX idx_ciphers_user_uuid ON ciphers;
 DROP INDEX idx_ciphers_organization_uuid ON ciphers;
 DROP INDEX idx_attachments_cipher_uuid ON attachments;
