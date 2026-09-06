@@ -132,7 +132,6 @@ struct FullCollectionData {
     name: String,
     groups: Vec<CollectionGroupData>,
     users: Vec<CollectionMembershipData>,
-    id: Option<CollectionId>,
     external_id: Option<String>,
 }
 
@@ -1793,11 +1792,22 @@ async fn bulk_public_keys(
 use super::ciphers::CipherData;
 use super::ciphers::update_cipher_from_data;
 
+// The import endpoint only ever uses the name/id/external_id of a collection.
+// Bitwarden's own server ignores `groups`/`users` here too, so do not make them
+// mandatory: clients are free to leave them out.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportCollectionData {
+    name: String,
+    id: Option<CollectionId>,
+    external_id: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ImportData {
     ciphers: Vec<CipherData>,
-    collections: Vec<FullCollectionData>,
+    collections: Vec<ImportCollectionData>,
     collection_relationships: Vec<RelationsData>,
 }
 
