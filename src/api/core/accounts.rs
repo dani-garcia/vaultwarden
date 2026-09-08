@@ -22,7 +22,8 @@ use crate::{
         models::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
             EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
+            OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, SignatureAlgorithm, User, UserId,
+            UserKdfType, UserSignatureKeyPair,
         },
     },
     mail,
@@ -41,6 +42,8 @@ pub fn routes() -> Vec<rocket::Route> {
         post_profile,
         put_avatar,
         get_public_keys,
+        get_account_public_keys,
+        get_keys,
         post_keys,
         post_password,
         post_set_password,
@@ -102,6 +105,9 @@ pub struct RegisterData {
     #[serde(alias = "userAsymmetricKeys")]
     keys: Option<KeysData>,
 
+    // Supersedes `keys`, and the only way a v2 account can be registered.
+    account_keys: Option<AccountKeysData>,
+
     master_password_hint: Option<String>,
 
     name: Option<String>,
@@ -114,36 +120,6 @@ pub struct RegisterData {
     accept_emergency_access_invite_token: Option<String>,
     #[serde(alias = "token")]
     org_invite_token: Option<String>,
-}
-
-impl RegisterData {
-    fn hash(&self) -> String {
-        self.compat.fold(|rdc| &rdc.master_password_hash, |rdcu| &rdcu.master_password_authentication.hash).to_owned()
-    }
-
-    fn kdf(&self) -> &KDFData {
-        self.compat.fold(|rdc| &rdc.kdf, |rdcu| &rdcu.master_password_authentication.kdf)
-    }
-
-    fn key(&self) -> String {
-        self.compat.fold(|rdc| &rdc.key, |rdcu| &rdcu.master_password_unlock.key).to_owned()
-    }
-
-    // When comparing with salt, email need to be normalized:
-    //  - https://github.com/bitwarden/clients/blob/web-v2026.5.0/libs/common/src/key-management/master-password/services/master-password.service.ts#L171
-    fn unprocessable(&self) -> bool {
-        let mut unprocessable = false;
-        *self.compat.fold(
-            |_| &false,
-            |rdcu| {
-                let email = self.email.trim().to_lowercase();
-                unprocessable = rdcu.master_password_authentication.kdf != rdcu.master_password_unlock.kdf
-                    || rdcu.master_password_authentication.salt != email
-                    || rdcu.master_password_unlock.salt != email;
-                &unprocessable
-            },
-        )
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -183,6 +159,34 @@ impl RegisterDataCompat {
             RegisterDataCompat::RegisterDataCur(rdcu) => fcu(rdcu),
         }
     }
+
+    fn hash(&self) -> String {
+        self.fold(|rdc| &rdc.master_password_hash, |rdcu| &rdcu.master_password_authentication.hash).to_owned()
+    }
+
+    fn kdf(&self) -> &KDFData {
+        self.fold(|rdc| &rdc.kdf, |rdcu| &rdcu.master_password_authentication.kdf)
+    }
+
+    fn key(&self) -> String {
+        self.fold(|rdc| &rdc.key, |rdcu| &rdcu.master_password_unlock.key).to_owned()
+    }
+
+    // When comparing with salt, email need to be normalized:
+    //  - https://github.com/bitwarden/clients/blob/web-v2026.5.0/libs/common/src/key-management/master-password/services/master-password.service.ts#L171
+    fn unprocessable(&self, email: &str) -> bool {
+        let mut unprocessable = false;
+        *self.fold(
+            |_| &false,
+            |rdcu| {
+                let email = email.trim().to_lowercase();
+                unprocessable = rdcu.master_password_authentication.kdf != rdcu.master_password_unlock.kdf
+                    || rdcu.master_password_authentication.salt != email
+                    || rdcu.master_password_unlock.salt != email;
+                &unprocessable
+            },
+        )
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -190,6 +194,167 @@ impl RegisterDataCompat {
 struct KeysData {
     encrypted_private_key: String,
     public_key: String,
+}
+
+/// The `accountKeys` payload, which replaces the flat `keys`/`userAsymmetricKeys` object.
+///
+/// It carries either a "v1" state (just the encryption key pair) or a "v2" one, which adds a
+/// signature key pair, a signed public key, and a signed security state. The two deprecated
+/// top-level fields are still sent by the SDK alongside the nested ones and are only used as a
+/// fallback for clients that don't send `publicKeyEncryptionKeyPair` yet.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/main/src/Core/KeyManagement/Models/Api/Request/AccountKeysRequestModel.cs>
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountKeysData {
+    user_key_encrypted_account_private_key: Option<String>,
+    account_public_key: Option<String>,
+
+    public_key_encryption_key_pair: Option<PublicKeyEncryptionKeyPairData>,
+    signature_key_pair: Option<SignatureKeyPairData>,
+    security_state: Option<SecurityStateData>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicKeyEncryptionKeyPairData {
+    wrapped_private_key: String,
+    public_key: String,
+    signed_public_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SignatureKeyPairData {
+    signature_algorithm: String,
+    wrapped_signing_key: String,
+    verifying_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SecurityStateData {
+    security_state: String,
+    security_version: i32,
+}
+
+pub struct ValidatedAccountKeys {
+    private_key: String,
+    public_key: String,
+    v2: Option<ValidatedV2AccountKeys>,
+}
+
+struct ValidatedV2AccountKeys {
+    signed_public_key: String,
+    signing_key: String,
+    verifying_key: String,
+    signature_algorithm: SignatureAlgorithm,
+    security_state: String,
+    security_version: i32,
+}
+
+impl AccountKeysData {
+    /// Checks that the payload describes a complete account cryptographic state.
+    ///
+    /// The v2 fields have to be all present or all absent: a client that receives a COSE-wrapped
+    /// private key without the matching signature key pair and security state refuses to unlock the
+    /// vault, so storing half a state would produce an account nobody can log into.
+    pub fn validate(self) -> ApiResult<ValidatedAccountKeys> {
+        let (private_key, public_key, signed_public_key) = if let Some(key_pair) = self.public_key_encryption_key_pair {
+            (key_pair.wrapped_private_key, key_pair.public_key, key_pair.signed_public_key)
+        // Older clients only send the deprecated top-level fields, which are always v1.
+        } else if let (Some(private_key), Some(public_key)) =
+            (self.user_key_encrypted_account_private_key, self.account_public_key)
+        {
+            (private_key, public_key, None)
+        } else {
+            err!("The account keys are missing an encryption key pair")
+        };
+
+        let v2 = match (signed_public_key, self.signature_key_pair, self.security_state) {
+            (Some(signed_public_key), Some(signature_key_pair), Some(security_state)) => {
+                let Some(signature_algorithm) = SignatureAlgorithm::from_str(&signature_key_pair.signature_algorithm)
+                else {
+                    err!(format!("Unsupported signature algorithm: {}", signature_key_pair.signature_algorithm))
+                };
+
+                Some(ValidatedV2AccountKeys {
+                    signed_public_key,
+                    signing_key: signature_key_pair.wrapped_signing_key,
+                    verifying_key: signature_key_pair.verifying_key,
+                    signature_algorithm,
+                    security_state: security_state.security_state,
+                    security_version: security_state.security_version,
+                })
+            }
+            (None, None, None) => None,
+            _ => err!(
+                "Invalid account keys: the signed public key, signature key pair and security state must either all be present or all be absent"
+            ),
+        };
+
+        Ok(ValidatedAccountKeys {
+            private_key,
+            public_key,
+            v2,
+        })
+    }
+}
+
+impl From<KeysData> for ValidatedAccountKeys {
+    fn from(keys: KeysData) -> Self {
+        Self {
+            private_key: keys.encrypted_private_key,
+            public_key: keys.public_key,
+            v2: None,
+        }
+    }
+}
+
+impl ValidatedAccountKeys {
+    /// Writes the parts of the state that live on the user itself. The user still needs saving, and
+    /// [`Self::save_signature_key_pair`] still needs calling once it has been.
+    ///
+    /// Rejects downgrading an account from v2 back to v1.
+    pub fn apply(&self, user: &mut User) -> EmptyResult {
+        if user.is_v2() && self.v2.is_none() {
+            err!("Cannot downgrade an account from v2 to v1 encryption")
+        }
+
+        user.private_key = Some(self.private_key.clone());
+        user.public_key = Some(self.public_key.clone());
+
+        user.signed_public_key = self.v2.as_ref().map(|v2| v2.signed_public_key.clone());
+        user.security_state = self.v2.as_ref().map(|v2| v2.security_state.clone());
+        user.security_version = self.v2.as_ref().map(|v2| v2.security_version);
+
+        Ok(())
+    }
+
+    /// Persists the signature key pair. Separate from [`Self::apply`] because the row has a foreign
+    /// key to the user, so it can only be written once the user exists.
+    pub async fn save_signature_key_pair(&self, user_id: &UserId, conn: &DbConn) -> EmptyResult {
+        // Skip if the account is v1, since v1 accounts don't have a signature key pair.
+        let Some(v2) = &self.v2 else {
+            return Ok(());
+        };
+
+        let mut key_pair = match UserSignatureKeyPair::find_active_by_user(user_id, conn).await {
+            Some(mut key_pair) => {
+                key_pair.signature_algorithm = v2.signature_algorithm as i32;
+                key_pair.signing_key.clone_from(&v2.signing_key);
+                key_pair.verifying_key.clone_from(&v2.verifying_key);
+                key_pair
+            }
+            None => UserSignatureKeyPair::new(
+                user_id.clone(),
+                v2.signature_algorithm,
+                v2.signing_key.clone(),
+                v2.verifying_key.clone(),
+            ),
+        };
+        key_pair.save(conn).await
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -216,11 +381,12 @@ pub struct MasterPasswordUnlock {
 #[serde(rename_all = "camelCase")]
 pub struct SetPasswordData {
     #[serde(flatten)]
-    kdf: KDFData,
+    compat: RegisterDataCompat,
 
-    key: String,
     keys: Option<KeysData>,
-    master_password_hash: String,
+    // Supersedes `keys`, and the only way a v2 account can be initialized here.
+    account_keys: Option<AccountKeysData>,
+
     master_password_hint: Option<String>,
     org_identifier: Option<String>,
 }
@@ -263,7 +429,7 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
 
     let mut pending_emergency_access = None;
 
-    if data.unprocessable() {
+    if data.compat.unprocessable(&data.email) {
         err_code!("Unexpected RegisterData format", Status::UnprocessableEntity.code);
     }
 
@@ -386,9 +552,9 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
     // Make sure we don't leave a lingering invitation.
     Invitation::take(&email, &conn).await;
 
-    set_kdf_data(&mut user, data.kdf())?;
+    set_kdf_data(&mut user, data.compat.kdf())?;
 
-    user.set_password(&data.hash(), Some(data.key()), true, None, &conn).await?;
+    user.set_password(&data.compat.hash(), Some(data.compat.key()), true, None, &conn).await?;
     user.password_hint = password_hint;
 
     // Add extra fields if present
@@ -396,9 +562,13 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
         user.name = name;
     }
 
-    if let Some(keys) = data.keys {
-        user.private_key = Some(keys.encrypted_private_key);
-        user.public_key = Some(keys.public_key);
+    let account_keys = match (data.account_keys, data.keys) {
+        (Some(account_keys), _) => Some(account_keys.validate()?),
+        (None, Some(keys)) => Some(keys.into()),
+        (None, None) => None,
+    };
+    if let Some(ref account_keys) = account_keys {
+        account_keys.apply(&mut user)?;
     }
 
     if email_verified {
@@ -422,6 +592,10 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
 
     user.save(&conn).await?;
 
+    if let Some(account_keys) = account_keys {
+        account_keys.save_signature_key_pair(&user.uuid, &conn).await?;
+    }
+
     // accept any open emergency access invitations
     if !CONFIG.mail_enabled() && CONFIG.emergency_access_allowed() {
         for mut emergency_invite in EmergencyAccess::find_all_invited_by_grantee_email(&user.email, &conn).await {
@@ -444,16 +618,26 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
         err!("Account already initialized, cannot set password")
     }
 
+    if data.compat.unprocessable(&user.email) {
+        err_code!("Unexpected SetPasswordData format", Status::UnprocessableEntity.code);
+    }
+
     // Check against the password hint setting here so if it fails,
     // the user can retry without losing their invitation below.
     let password_hint = clean_password_hint(data.master_password_hint.as_ref());
     enforce_password_hint_setting(password_hint.as_ref())?;
 
-    set_kdf_data(&mut user, &data.kdf)?;
+    let account_keys = match (data.account_keys, data.keys) {
+        (Some(account_keys), _) => Some(account_keys.validate()?),
+        (None, Some(keys)) => Some(keys.into()),
+        (None, None) => None,
+    };
+
+    set_kdf_data(&mut user, data.compat.kdf())?;
 
     user.set_password(
-        &data.master_password_hash,
-        Some(data.key),
+        &data.compat.hash(),
+        Some(data.compat.key()),
         false,
         Some(vec![String::from("revision_date")]), // We need to allow revision-date to use the old security_timestamp
         &conn,
@@ -461,9 +645,8 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     .await?;
     user.password_hint = password_hint;
 
-    if let Some(keys) = data.keys {
-        user.private_key = Some(keys.encrypted_private_key);
-        user.public_key = Some(keys.public_key);
+    if let Some(ref account_keys) = account_keys {
+        account_keys.apply(&mut user)?;
     }
 
     if let Some(identifier) = data.org_identifier
@@ -491,6 +674,10 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
         .await;
 
     user.save(&conn).await?;
+
+    if let Some(account_keys) = account_keys {
+        account_keys.save_signature_key_pair(&user.uuid, &conn).await?;
+    }
 
     Ok(Json(json!({
       "object": "set-password",
@@ -573,20 +760,60 @@ async fn get_public_keys(user_id: UserId, _headers: Headers, conn: DbConn) -> Js
     })))
 }
 
+#[get("/users/<user_id>/keys")]
+async fn get_account_public_keys(user_id: UserId, _headers: Headers, conn: DbConn) -> JsonResult {
+    let user = match User::find_by_uuid(&user_id, &conn).await {
+        Some(user) if user.public_key.is_some() => user,
+        Some(_) => err_code!("User has no public_key", Status::NotFound.code),
+        None => err_code!("User doesn't exist", Status::NotFound.code),
+    };
+
+    Ok(Json(user.public_keys_json(&conn).await))
+}
+
+#[get("/accounts/keys")]
+async fn get_keys(headers: Headers, conn: DbConn) -> JsonResult {
+    let user = headers.user;
+
+    Ok(Json(json!({
+        "key": user.akey,
+        "privateKey": user.private_key,
+        "publicKey": user.public_key,
+        "accountKeys": user.account_keys_json(&conn).await,
+        "object": "keys"
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PostKeysData {
+    #[serde(flatten)]
+    keys: Option<KeysData>,
+    account_keys: Option<AccountKeysData>,
+}
+
 #[post("/accounts/keys", data = "<data>")]
-async fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: KeysData = data.into_inner();
+async fn post_keys(data: Json<PostKeysData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: PostKeysData = data.into_inner();
 
     let mut user = headers.user;
 
-    user.private_key = Some(data.encrypted_private_key);
-    user.public_key = Some(data.public_key);
+    // `accountKeys` supersedes the flat `keys` object when both are sent.
+    let account_keys = match (data.account_keys, data.keys) {
+        (Some(account_keys), _) => account_keys.validate()?,
+        (None, Some(keys)) => keys.into(),
+        (None, None) => err!("No account keys provided"),
+    };
 
+    account_keys.apply(&mut user)?;
     user.save(&conn).await?;
+    account_keys.save_signature_key_pair(&user.uuid, &conn).await?;
 
     Ok(Json(json!({
+        "key": user.akey,
         "privateKey": user.private_key,
         "publicKey": user.public_key,
+        "accountKeys": user.account_keys_json(&conn).await,
         "object":"keys"
     })))
 }
