@@ -43,7 +43,7 @@ pub struct Event {
     pub provider_org_uuid: Option<String>,
 }
 
-// Upstream enum: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Enums/EventType.cs
+// Upstream enum: https://github.com/bitwarden/server/blob/v2026.6.2/src/Core/Dirt/Enums/EventType.cs
 #[derive(Debug, Copy, Clone)]
 pub enum EventType {
     // User
@@ -108,6 +108,12 @@ pub enum EventType {
     OrganizationUserRejectedAuthRequest = 1514,
     OrganizationUserDeleted = 1515, // Both user and organization user data were deleted
     OrganizationUserLeft = 1516,    // User voluntarily left the organization
+    // OrganizationUserAutomaticallyConfirmed = 1517,
+    // OrganizationUserSelfRevoked = 1518, // User self-revoked due to declining organization data ownership policy
+    OrganizationUserAdminResetTwoFactor = 1519,
+    // OrganizationUserRevoked_TwoFactorNonCompliance = 1520,
+    // OrganizationUserRevoked_SingleOrganizationNonCompliance = 1521,
+    // OrganizationUserNotificationBannerActionClicked = 1522,
 
     // Organization
     OrganizationUpdated = 1600,

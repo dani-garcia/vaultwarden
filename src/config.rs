@@ -1453,6 +1453,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "desktop-ui-migration-milestone-4",
     // Auth Team
     "pm-5594-safari-account-switching",
+    "pm-32413-multi-client-password-management",
     // Autofill Team
     "ssh-agent",
     "ssh-agent-v2",
@@ -1772,7 +1773,7 @@ where
     reg!("email/email_footer");
     reg!("email/email_footer_text");
 
-    reg!("email/admin_reset_password", ".html");
+    reg!("email/admin_account_recovery", ".html");
     reg!("email/change_email_existing", ".html");
     reg!("email/change_email_invited", ".html");
     reg!("email/change_email", ".html");

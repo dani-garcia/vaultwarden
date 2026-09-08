@@ -1,7 +1,7 @@
-// Ignore everything
+# Ignore everything
 *
 
-// Allow what is needed
+# Allow what is needed
 !.git
 !docker/healthcheck.sh
 !docker/start.sh

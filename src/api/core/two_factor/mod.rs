@@ -16,8 +16,8 @@ use crate::{
     db::{
         DbConn, DbPool,
         models::{
-            DeviceType, EventType, Membership, MembershipType, OrgPolicyType, Organization, OrganizationId, TwoFactor,
-            TwoFactorIncomplete, TwoFactorType, User, UserId,
+            Device, DeviceType, EventType, Membership, MembershipType, OrgPolicyType, Organization, OrganizationId,
+            TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
     },
     mail,
@@ -151,6 +151,7 @@ async fn disable_twofactor(data: Json<DisableTwoFactorData>, headers: Headers, c
 
     if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
         twofactor.delete(&conn).await?;
+        Device::clear_twofactor_remember_by_user(&user.uuid, &conn).await?;
         log_user_event(EventType::UserDisabled2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)
             .await;
     }

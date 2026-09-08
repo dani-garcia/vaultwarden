@@ -905,6 +905,12 @@ async fn twofactor_auth(
 
             // Remove all twofactors from the user
             TwoFactor::delete_all_by_user(&user.uuid, conn).await?;
+
+            // No device may keep skipping 2FA once every second factor is gone.
+            // `device` is cleared in memory too, since saving it later would restore its token.
+            Device::clear_twofactor_remember_by_user(&user.uuid, conn).await?;
+            device.delete_twofactor_remember();
+
             enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, conn).await?;
 
             log_user_event(EventType::UserRecovered2fa as i32, &user.uuid, device.atype, &ip.ip, conn).await;
@@ -1050,13 +1056,13 @@ async fn json_err_twofactor(
 }
 
 #[post("/accounts/prelogin", data = "<data>")]
-async fn post_prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
-    prelogin(data, conn).await
+async fn post_prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+    prelogin(data, ip, conn).await
 }
 
 #[post("/accounts/prelogin/password", data = "<data>")]
-async fn prelogin_password(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
-    prelogin(data, conn).await
+async fn prelogin_password(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+    prelogin(data, ip, conn).await
 }
 
 #[post("/accounts/register", data = "<data>")]
