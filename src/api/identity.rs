@@ -3,7 +3,7 @@ use num_traits::FromPrimitive;
 use rocket::{
     Route,
     form::{Form, FromForm},
-    http::{Cookie, CookieJar, SameSite},
+    http::{Accept, Cookie, CookieJar, MediaType, SameSite},
     response::Redirect,
     serde::json::Json,
 };
@@ -1083,11 +1083,19 @@ enum RegisterVerificationResponse {
     #[response(status = 204)]
     NoContent(()),
     Token(Json<String>),
+    PlainToken(String),
+}
+
+// The iOS client sends `Accept: */*` and reads the raw body as its token, so it would end up with
+// the quotes of a JSON string. Every other client keeps the JSON string.
+fn accepts_json(accept: Option<&Accept>) -> bool {
+    accept.is_none_or(|accept| accept.preferred().media_type() != &MediaType::Any)
 }
 
 #[post("/accounts/register/send-verification-email", data = "<data>")]
 async fn register_verification_email(
     data: Json<RegisterVerificationData>,
+    accept: Option<&Accept>,
     ip: ClientIp,
     conn: DbConn,
 ) -> ApiResult<RegisterVerificationResponse> {
@@ -1125,7 +1133,11 @@ async fn register_verification_email(
     } else {
         // If email verification is not required, return the token directly
         // the clients will use this token to finish the registration
-        Ok(RegisterVerificationResponse::Token(Json(token)))
+        Ok(if accepts_json(accept) {
+            RegisterVerificationResponse::Token(Json(token))
+        } else {
+            RegisterVerificationResponse::PlainToken(token)
+        })
     }
 }
 
