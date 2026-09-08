@@ -214,8 +214,12 @@ pub async fn enforce_2fa_policy_for_org(
 ) -> EmptyResult {
     let org = Organization::find_by_uuid(org_id, conn).await.unwrap();
     for member in Membership::find_confirmed_by_org(org_id, conn).await {
-        // Don't enforce the policy for Admins and Owners.
-        if member.atype < MembershipType::Admin && TwoFactor::find_by_user(&member.user_uuid, conn).await.is_empty() {
+        // Don't enforce the policy for Admins and Owners, nor for the member who just enabled it --
+        // see `Membership::is_policy_enforcement_target`. Every other non-compliant member is
+        // revoked exactly as before.
+        if member.is_policy_enforcement_target(act_user_id)
+            && TwoFactor::find_by_user(&member.user_uuid, conn).await.is_empty()
+        {
             if CONFIG.mail_enabled() {
                 let user = User::find_by_uuid(&member.user_uuid, conn).await.unwrap();
                 mail::send_2fa_removed_from_org(&user.email, &org.name).await?;

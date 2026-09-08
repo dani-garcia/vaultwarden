@@ -544,6 +544,32 @@ struct MembershipTypeData {
     org_uuid: OrganizationId,
 }
 
+fn apply_membership_type_change(membership: &mut Membership, new_type: MembershipType) {
+    // Entering Custom through the Vaultwarden admin panel is deliberately fail-closed because that
+    // UI cannot select granular permissions; they can be granted later through the regular
+    // organization member dialog. Any non-Custom role carries no custom flags at all. Only a member
+    // that is already Custom and stays Custom keeps its existing flags.
+    let stays_custom = new_type == MembershipType::Custom && membership.atype == MembershipType::Custom;
+    if !stays_custom {
+        membership.clear_custom_permissions();
+    }
+
+    membership.atype = new_type as i32;
+}
+
+fn parse_admin_membership_type(user_type: NumberOrString) -> Option<MembershipType> {
+    let raw_type = user_type.into_string();
+
+    // The public API still accepts the legacy Manager representation for compatibility and folds
+    // it into Custom. The admin panel must not do that: treating an apparent Manager demotion as a
+    // Custom-to-Custom update would preserve the member's existing granular permissions.
+    if matches!(raw_type.as_str(), "3" | "Manager") {
+        return None;
+    }
+
+    MembershipType::from_str(&raw_type)
+}
+
 #[post("/users/org_type", format = "application/json", data = "<data>")]
 async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToken, conn: DbConn) -> EmptyResult {
     let data: MembershipTypeData = data.into_inner();
@@ -553,9 +579,7 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
         err!("The specified user isn't member of the organization")
     };
 
-    let new_type = if let Some(new_type) = MembershipType::from_str(&data.user_type.into_string()) {
-        new_type as i32
-    } else {
+    let Some(new_type) = parse_admin_membership_type(data.user_type) else {
         err!("Invalid type")
     };
 
@@ -566,7 +590,7 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
         }
     }
 
-    member_to_edit.atype = new_type;
+    apply_membership_type_change(&mut member_to_edit, new_type);
     // This check is also done at api::organizations::{accept_invite, _confirm_invite, _activate_member, edit_member}, update_membership_type
     OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
@@ -900,6 +924,14 @@ impl<'r> FromRequest<'r> for AdminToken {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::models::MembershipStatus;
+
+    fn membership(member_type: MembershipType) -> Membership {
+        let mut membership = Membership::new("test-user".to_owned().into(), "test-org".to_owned().into(), None);
+        membership.atype = member_type as i32;
+        membership.status = MembershipStatus::Confirmed as i32;
+        membership
+    }
 
     #[test]
     fn validate_web_vault_compare() {
@@ -923,5 +955,60 @@ mod tests {
         assert!(web_vault_compare("2025.12.2", "2025.12.1+build.1") == 1);
         assert!(web_vault_compare("2025.12.2+build.1", "2025.12.1+build.1") == 1);
         assert!(web_vault_compare("2025.12.1+build.3", "2025.12.1+build.2") == 1);
+    }
+
+    #[test]
+    fn admin_type_changes_clear_custom_permissions() {
+        let mut custom = membership(MembershipType::Custom);
+        custom.manage_users = true;
+        custom.create_new_collections = true;
+        custom.edit_any_collection = true;
+        custom.delete_any_collection = true;
+
+        apply_membership_type_change(&mut custom, MembershipType::User);
+        assert_eq!(custom.atype, MembershipType::User as i32);
+        assert!(!custom.manage_users);
+        assert!(!custom.create_new_collections);
+        assert!(!custom.edit_any_collection);
+        assert!(!custom.delete_any_collection);
+
+        // Entering Custom through the admin panel is fail-closed: no granular permissions are set.
+        let mut admin = membership(MembershipType::Admin);
+        apply_membership_type_change(&mut admin, MembershipType::Custom);
+        assert_eq!(admin.atype, MembershipType::Custom as i32);
+        assert!(!admin.has_manage_all_collections());
+        assert!(!admin.edit_any_collection);
+    }
+
+    #[test]
+    fn admin_custom_to_custom_keeps_flags_but_other_transitions_clear() {
+        // A member kept as Custom retains its granular flags: the admin panel does not touch them;
+        // they are managed through the regular organization member dialog.
+        let mut custom = membership(MembershipType::Custom);
+        custom.manage_users = true;
+        custom.edit_any_collection = true;
+        apply_membership_type_change(&mut custom, MembershipType::Custom);
+        assert_eq!(custom.atype, MembershipType::Custom as i32);
+        assert!(custom.manage_users);
+        assert!(custom.edit_any_collection);
+
+        // Promoting to Admin/Owner drops any stale custom flags.
+        let mut promo = membership(MembershipType::Custom);
+        promo.edit_any_collection = true;
+        apply_membership_type_change(&mut promo, MembershipType::Admin);
+        assert_eq!(promo.atype, MembershipType::Admin as i32);
+        assert!(!promo.edit_any_collection);
+    }
+
+    #[test]
+    fn admin_type_parser_rejects_legacy_manager_before_normalization() {
+        assert!(parse_admin_membership_type(NumberOrString::Number(3)).is_none());
+        assert!(parse_admin_membership_type(NumberOrString::String("3".to_owned())).is_none());
+        assert!(parse_admin_membership_type(NumberOrString::String("Manager".to_owned())).is_none());
+
+        assert!(parse_admin_membership_type(NumberOrString::Number(4)) == Some(MembershipType::Custom));
+        assert!(
+            parse_admin_membership_type(NumberOrString::String("Custom".to_owned())) == Some(MembershipType::Custom)
+        );
     }
 }
