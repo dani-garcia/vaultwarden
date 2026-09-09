@@ -21,8 +21,9 @@ use crate::{
         DbConn, DbPool,
         models::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
-            EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
+            EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, KeyId, Membership,
+            MembershipId, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId,
+            UserKdfType,
         },
     },
     mail,
@@ -46,6 +47,7 @@ pub fn routes() -> Vec<rocket::Route> {
         post_set_password,
         post_kdf,
         post_rotatekey,
+        post_user_key,
         post_sstamp,
         post_email_token,
         post_email,
@@ -1023,6 +1025,23 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     nt.send_logout(&user, Some(&headers.device), &conn).await;
 
     save_result
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KeyIdData {
+    user_key_id: KeyId,
+}
+
+#[post("/accounts/key-management/user-key-id", data = "<data>")]
+async fn post_user_key(data: Json<KeyIdData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let mut user = headers.user;
+    if user.key_id.is_some() {
+        err_code!("Unexpected data", Status::UnprocessableEntity.code);
+    }
+
+    user.key_id = Some(data.into_inner().user_key_id);
+    user.save(&conn).await
 }
 
 #[post("/accounts/security-stamp", data = "<data>")]

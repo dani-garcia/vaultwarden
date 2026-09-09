@@ -69,6 +69,8 @@ pub struct User {
     pub avatar_color: Option<String>,
 
     pub external_id: Option<String>, // Todo: Needs to be removed in the future, this is not used anymore.
+
+    pub key_id: Option<KeyId>,
 }
 
 #[derive(Identifiable, Queryable, Insertable)]
@@ -154,6 +156,8 @@ impl User {
             avatar_color: None,
 
             external_id: None, // Todo: Needs to be removed in the future, this is not used anymore.
+
+            key_id: None,
         }
     }
 
@@ -524,6 +528,26 @@ impl Invitation {
 #[deref(forward)]
 #[from(forward)]
 pub struct UserId(String);
+
+#[derive(
+    Clone,
+    Debug,
+    DieselNewType,
+    FromForm,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    AsRef,
+    Deref,
+    Display,
+    From,
+    UuidFromParam,
+)]
+#[deref(forward)]
+#[from(forward)]
+pub struct KeyId(String);
 
 impl SsoUser {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
