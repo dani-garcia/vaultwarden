@@ -161,6 +161,12 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     let policies_json: Vec<Value> =
         OrgPolicy::find_confirmed_by_user(&headers.user.uuid, &conn).await.iter().map(OrgPolicy::to_json).collect();
 
+    let policies_new_json: Vec<Value> = OrgPolicy::find_accepted_and_confirmed_by_user(&headers.user.uuid, &conn)
+        .await
+        .iter()
+        .map(OrgPolicy::to_json)
+        .collect();
+
     let domains_json = if data.exclude_domains {
         Value::Null
     } else {
@@ -193,6 +199,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "folders": folders_json,
         "collections": collections_json,
         "policies": policies_json,
+        "policiesNew": policies_new_json,
         "ciphers": ciphers_json,
         "domains": domains_json,
         "sends": sends_json,

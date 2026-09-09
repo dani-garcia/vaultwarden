@@ -186,6 +186,26 @@ impl OrgPolicy {
         .await
     }
 
+    pub async fn find_accepted_and_confirmed_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
+        conn.run(move |conn| {
+            org_policies::table
+                .inner_join(
+                    users_organizations::table.on(users_organizations::org_uuid
+                        .eq(org_policies::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid))),
+                )
+                .filter(
+                    users_organizations::status
+                        .eq(MembershipStatus::Accepted as i32)
+                        .or(users_organizations::status.eq(MembershipStatus::Confirmed as i32)),
+                )
+                .select(org_policies::all_columns)
+                .load::<Self>(conn)
+                .expect("Error loading org_policy")
+        })
+        .await
+    }
+
     pub async fn find_by_org_and_type(
         org_uuid: &OrganizationId,
         policy_type: OrgPolicyType,
