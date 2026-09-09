@@ -297,6 +297,9 @@ impl CustomDnsResolver {
 }
 
 fn sort_addresses(addresses: &mut [SocketAddr], prefer_ipv6: bool) {
+    // `sort_by_key` orders `false` before `true`.
+    // When IPv6 is preferred, IPv6 addresses return `false` for `is_ipv4()` and sort first.
+    // When IPv4 is preferred, IPv4 addresses return `false` for `is_ipv6()` and sort first.
     if prefer_ipv6 {
         addresses.sort_by_key(SocketAddr::is_ipv4);
     } else {
