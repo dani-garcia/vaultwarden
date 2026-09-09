@@ -1086,10 +1086,9 @@ enum RegisterVerificationResponse {
     PlainToken(String),
 }
 
-// The iOS client sends `Accept: */*` and reads the raw body as its token, so it would end up with
-// the quotes of a JSON string. Every other client keeps the JSON string.
+// Return JSON only when the client explicitly requests it, otherwise return plain text.
 fn accepts_json(accept: Option<&Accept>) -> bool {
-    accept.is_none_or(|accept| accept.preferred().media_type() != &MediaType::Any)
+    accept.is_some_and(|accept| accept.preferred().media_type() == &MediaType::JSON)
 }
 
 #[post("/accounts/register/send-verification-email", data = "<data>")]
