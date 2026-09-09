@@ -217,6 +217,7 @@ table! {
         api_key -> Nullable<Text>,
         avatar_color -> Nullable<Text>,
         external_id -> Nullable<Text>,
+        uses_key_connector -> Bool,
     }
 }
 
