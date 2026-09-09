@@ -1,4 +1,7 @@
-use std::{env, sync::LazyLock};
+use std::{
+    env,
+    sync::{LazyLock, Mutex},
+};
 
 use reqwest::Method;
 use rocket::{
@@ -167,6 +170,7 @@ fn render_admin_login(msg: Option<&str>, redirect: Option<&str>) -> ApiResult<Ht
         "page_content": "admin/login",
         "error": msg,
         "redirect": redirect,
+        "totp_enabled": configured_admin_totp_secret().is_some(),
         "urlpath": CONFIG.domain_path()
     });
 
@@ -178,6 +182,7 @@ fn render_admin_login(msg: Option<&str>, redirect: Option<&str>) -> ApiResult<Ht
 #[derive(FromForm)]
 struct LoginForm {
     token: String,
+    totp: Option<String>,
     redirect: Option<String>,
 }
 
@@ -198,8 +203,8 @@ fn post_admin_login(
         )));
     }
 
-    // If the token is invalid, redirect to login page
-    if validate_token(&data.token) {
+    // If the token or the TOTP code is invalid, redirect to login page
+    if validate_token(&data.token) && validate_totp(data.totp.as_deref()) {
         // If the token received is valid, generate JWT and save it as a cookie
         let claims = generate_admin_claims();
         let jwt = encode_jwt(&claims);
@@ -218,9 +223,9 @@ fn post_admin_login(
             Err(AdminResponse::Ok(render_admin_page()))
         }
     } else {
-        error!("Invalid admin token. IP: {}", ip.ip);
+        error!("Invalid admin credentials. IP: {}", ip.ip);
         Err(AdminResponse::Unauthorized(render_admin_login(
-            Some("Invalid admin token, please try again."),
+            Some("Invalid credentials, please try again."),
             redirect.as_deref(),
         )))
     }
@@ -243,6 +248,58 @@ fn validate_token(token: &str) -> bool {
             }
         }
         Some(t) => crate::crypto::ct_eq(t.trim(), token.trim()),
+    }
+}
+
+// Last accepted TOTP time step, keyed by a fingerprint of the active secret so replacing the secret resets
+// replay protection. Kept in memory (the admin has no DB record); a restart allows one code reuse at worst.
+static ADMIN_TOTP_LAST_USED: Mutex<Option<(String, i64)>> = Mutex::new(None);
+
+fn configured_admin_totp_secret() -> Option<String> {
+    CONFIG.admin_totp_secret().filter(|secret| !secret.trim().is_empty())
+}
+
+fn validate_totp(code: Option<&str>) -> bool {
+    let Some(secret) = configured_admin_totp_secret() else {
+        // No TOTP secret configured, the admin token alone is sufficient
+        return true;
+    };
+    let Some(code) = code.map(str::trim) else {
+        return false;
+    };
+    check_totp_code(&secret, code)
+}
+
+fn check_totp_code(secret: &str, code: &str) -> bool {
+    use two_factor::authenticator::{TotpValidation, verify_totp};
+
+    if code.len() != 6 || !code.bytes().all(|digit| digit.is_ascii_digit()) {
+        return false;
+    }
+    let Ok(decoded_secret) = data_encoding::BASE32.decode(secret.trim().to_uppercase().as_bytes()) else {
+        error!("The configured admin TOTP secret is not a valid base32-encoded string");
+        return false;
+    };
+
+    let current_timestamp = chrono::Utc::now().timestamp();
+    let fingerprint = crate::crypto::sha256_hex(&decoded_secret);
+    let mut replay_state = ADMIN_TOTP_LAST_USED.lock().expect("admin TOTP mutex poisoned");
+    let last_used = replay_state
+        .as_ref()
+        .filter(|(active_fingerprint, _)| active_fingerprint == &fingerprint)
+        .map_or(0, |(_, last_used)| *last_used);
+
+    // Reuse the shared verifier; allow one step of time drift in either direction, like the user 2FA does.
+    match verify_totp(&decoded_secret, code, current_timestamp, last_used, 1) {
+        TotpValidation::Accepted(time_step) => {
+            *replay_state = Some((fingerprint, time_step));
+            true
+        }
+        TotpValidation::Reused => {
+            warn!("This admin TOTP code has already been used");
+            false
+        }
+        TotpValidation::Rejected => false,
     }
 }
 

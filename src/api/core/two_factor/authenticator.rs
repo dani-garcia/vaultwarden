@@ -112,6 +112,37 @@ pub async fn validate_totp_code_str(
     validate_totp_code(user_id, totp_code, secret, ip, conn).await
 }
 
+/// The outcome of checking a TOTP `code` against the allowed time window.
+pub(crate) enum TotpValidation {
+    /// Valid; holds the accepted time step, which must be stored as the new "last used" value.
+    Accepted(i64),
+    /// The code matched a time step that has already been used (replay protection).
+    Reused,
+    Rejected,
+}
+
+/// Verifies a 6-digit TOTP `code` against the base32-decoded `secret`, allowing `steps` time steps of
+/// ±30s drift and rejecting any step not newer than `last_used`. The comparison is constant-time.
+pub(crate) fn verify_totp(secret: &[u8], code: &str, timestamp: i64, last_used: i64, steps: i64) -> TotpValidation {
+    use totp_lite::{Sha1, totp_custom};
+
+    for step in -steps..=steps {
+        let time_step = timestamp / 30i64 + step;
+        // The generator needs the time as an u64; we only ever deal with times >= 0.
+        let time: u64 = (timestamp + step * 30i64).cast_unsigned();
+        let generated = totp_custom::<Sha1>(30, 6, secret, time);
+
+        if crypto::ct_eq(&generated, code) {
+            return if time_step > last_used {
+                TotpValidation::Accepted(time_step)
+            } else {
+                TotpValidation::Reused
+            };
+        }
+    }
+    TotpValidation::Rejected
+}
+
 pub async fn validate_totp_code(
     user_id: &UserId,
     totp_code: &str,
@@ -119,8 +150,6 @@ pub async fn validate_totp_code(
     ip: &ClientIp,
     conn: &DbConn,
 ) -> EmptyResult {
-    use totp_lite::{Sha1, totp_custom};
-
     let Ok(decoded_secret) = BASE32.decode(secret.as_bytes()) else {
         err!("Invalid TOTP secret")
     };
@@ -140,17 +169,10 @@ pub async fn validate_totp_code(
     let current_time = chrono::Utc::now();
     let current_timestamp = current_time.timestamp();
 
-    for step in -steps..=steps {
-        let time_step = current_timestamp / 30i64 + step;
-
-        // We need to calculate the time offsite and cast it as an u64.
-        // Since we only have times into the future and the totp generator needs an u64 instead of the default i64.
-        let time: u64 = (current_timestamp + step * 30i64).cast_unsigned();
-        let generated = totp_custom::<Sha1>(30, 6, &decoded_secret, time);
-
-        // Check the given code equals the generated and if the time_step is larger then the one last used.
-        if generated == totp_code && time_step > twofactor.last_used {
-            // If the step does not equals 0 the time is drifted either server or client side.
+    match verify_totp(&decoded_secret, totp_code, current_timestamp, twofactor.last_used, steps) {
+        TotpValidation::Accepted(time_step) => {
+            // If the accepted step is not the current one the time is drifted either server or client side.
+            let step = time_step - current_timestamp / 30i64;
             if step != 0 {
                 warn!("TOTP Time drift detected. The step offset is {step}");
             }
@@ -159,25 +181,27 @@ pub async fn validate_totp_code(
             // This will also save a newly created twofactor if the code is correct.
             twofactor.last_used = time_step;
             twofactor.save(conn).await?;
-            return Ok(());
-        } else if generated == totp_code && time_step <= twofactor.last_used {
+            Ok(())
+        }
+        TotpValidation::Reused => {
             warn!("This TOTP or a TOTP code within {steps} steps back or forward has already been used!");
             err!(
                 format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
                 ErrorEvent {
                     event: EventType::UserFailedLogIn2fa
                 }
-            );
+            )
+        }
+        // Else no valid code received, deny access
+        TotpValidation::Rejected => {
+            err!(
+                format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
+                ErrorEvent {
+                    event: EventType::UserFailedLogIn2fa
+                }
+            )
         }
     }
-
-    // Else no valid code received, deny access
-    err!(
-        format!("Invalid TOTP code! Server time: {} IP: {}", current_time.format("%F %T UTC"), ip.ip),
-        ErrorEvent {
-            event: EventType::UserFailedLogIn2fa
-        }
-    );
 }
 
 #[derive(Debug, Deserialize)]
@@ -216,4 +240,36 @@ async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: He
         "keys": type_,
         "object": "twoFactorProvider"
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TotpValidation, verify_totp};
+    use data_encoding::BASE32;
+    use totp_lite::{Sha1, totp_custom};
+
+    fn code_at(secret: &[u8], timestamp: i64) -> String {
+        totp_custom::<Sha1>(30, 6, secret, timestamp.cast_unsigned())
+    }
+
+    #[test]
+    fn totp_accepts_rejects_and_detects_reuse() {
+        let secret = BASE32.decode(b"JBSWY3DPEHPK3PXP").unwrap();
+        let ts = 1_700_000_000i64;
+        let step = ts / 30;
+        let current = code_at(&secret, ts);
+
+        // A fresh current code is accepted and reports the current time step.
+        assert!(matches!(verify_totp(&secret, &current, ts, 0, 1), TotpValidation::Accepted(s) if s == step));
+        // The same code is rejected as reused once its step has been recorded.
+        assert!(matches!(verify_totp(&secret, &current, ts, step, 1), TotpValidation::Reused));
+        // A wrong code is rejected.
+        assert!(matches!(verify_totp(&secret, "000000", ts, 0, 1), TotpValidation::Rejected));
+
+        // The previous 30s window is accepted with one step of drift...
+        let previous = code_at(&secret, ts - 30);
+        assert!(matches!(verify_totp(&secret, &previous, ts, 0, 1), TotpValidation::Accepted(_)));
+        // ...but rejected when drift is disabled (steps = 0).
+        assert!(matches!(verify_totp(&secret, &previous, ts, 0, 0), TotpValidation::Rejected));
+    }
 }
