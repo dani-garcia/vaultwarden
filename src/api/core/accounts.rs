@@ -22,7 +22,8 @@ use crate::{
         models::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
             EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
+            MembershipStatus, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId,
+            UserKdfType,
         },
     },
     mail,
@@ -439,6 +440,15 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
 async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: SetPasswordData = data.into_inner();
     let mut user = headers.user;
+    let default_org_id = match CONFIG.sso_default_organization_uuid() {
+        Some(org_uuid) => Some(crate::sso::normalize_organization_uuid(&org_uuid)?),
+        None => None,
+    };
+    let enroll_in_default_organization = matches!(
+        (data.org_identifier.as_deref(), default_org_id.as_ref()),
+        (Some(identifier), Some(org_id))
+            if identifier == crate::sso::FAKE_SSO_IDENTIFIER || identifier == org_id.as_ref()
+    );
 
     if user.private_key.is_some() {
         err!("Account already initialized, cannot set password")
@@ -467,6 +477,7 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     }
 
     if let Some(identifier) = data.org_identifier
+        && !enroll_in_default_organization
         && identifier != crate::sso::FAKE_SSO_IDENTIFIER
         && identifier != crate::api::admin::FAKE_ADMIN_UUID
     {
@@ -492,10 +503,41 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
 
     user.save(&conn).await?;
 
+    if enroll_in_default_organization && let Some(org_id) = default_org_id {
+        accept_sso_default_organization_invite(&user, &org_id, &conn).await?;
+    }
+
     Ok(Json(json!({
       "object": "set-password",
       "captchaBypassToken": "",
     })))
+}
+
+async fn accept_sso_default_organization_invite(user: &User, org_id: &OrganizationId, conn: &DbConn) -> EmptyResult {
+    let Some(mut membership) = Membership::find_by_user_and_org(&user.uuid, org_id, conn).await else {
+        err!("Failed to retrieve the default organization invitation")
+    };
+    if membership.status != MembershipStatus::Invited as i32 {
+        return Ok(());
+    }
+
+    let Some(org) = Organization::find_by_uuid(org_id, conn).await else {
+        err!("The organization configured in `SSO_DEFAULT_ORGANIZATION_UUID` does not exist")
+    };
+
+    membership.status = MembershipStatus::Accepted as i32;
+    OrgPolicy::check_user_allowed(&membership, "join", conn).await?;
+    membership.save(conn).await?;
+
+    if CONFIG.mail_enabled() {
+        let address = membership.invited_by_email.unwrap_or(org.billing_email);
+        if let Err(e) = mail::send_invite_accepted(&user.email, &address, &org.name).await {
+            error!("Error sending default organization enrollment notification: {e:#?}");
+        }
+    }
+
+    info!("Added SSO user {} to default organization {} pending confirmation", user.uuid, org_id);
+    Ok(())
 }
 
 #[get("/accounts/profile")]
