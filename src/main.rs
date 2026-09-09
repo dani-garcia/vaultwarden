@@ -743,6 +743,13 @@ fn schedule_jobs(pool: db::DbPool) {
                 }));
             }
 
+            // Purge expired sends OTP (default to daily at 00h22).
+            if !CONFIG.purge_sends_otp().is_empty() {
+                sched.add(Job::new(CONFIG.purge_sends_otp().parse().unwrap(), || {
+                    runtime.spawn(db::models::SendOTP::delete_expired(pool.clone()));
+                }));
+            }
+
             // Periodically check for jobs to run. We probably won't need any
             // jobs that run more often than once a minute, so a default poll
             // interval of 30 seconds should be sufficient. Users who want to

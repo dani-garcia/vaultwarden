@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrono::{NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, TimeDelta, Utc};
 use data_encoding::BASE64URL_NOPAD;
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
@@ -12,22 +12,24 @@ use crate::{
     CONFIG,
     api::EmptyResult,
     config::PathType,
-    db::{DbConn, schema::sends},
+    db::{
+        DbConn, DbPool,
+        schema::{sends, sends_otp},
+    },
     error::MapResult,
     util::{LowerCase, NumberOrString, format_date},
 };
 
-use super::{OrganizationId, User, UserId};
+use super::{User, UserId};
 
-#[derive(Identifiable, Queryable, Insertable, AsChangeset)]
+#[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
 #[diesel(table_name = sends)]
 #[diesel(treat_none_as_null = true)]
 #[diesel(primary_key(uuid))]
 pub struct Send {
     pub uuid: SendId,
 
-    pub user_uuid: Option<UserId>,
-    pub organization_uuid: Option<OrganizationId>,
+    pub user_uuid: UserId,
 
     pub name: String,
     pub notes: Option<String>,
@@ -41,6 +43,7 @@ pub struct Send {
 
     pub max_access_count: Option<i32>,
     pub access_count: i32,
+    pub emails: Option<String>,
 
     pub creation_date: NaiveDateTime,
     pub revision_date: NaiveDateTime,
@@ -48,7 +51,7 @@ pub struct Send {
     pub deletion_date: NaiveDateTime,
 
     pub disabled: bool,
-    pub hide_email: Option<bool>,
+    pub hide_email: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, num_derive::FromPrimitive)]
@@ -60,7 +63,7 @@ pub enum SendType {
 enum SendAuthType {
     #[allow(dead_code)]
     // Send requires email OTP verification
-    Email = 0, // Not yet supported by Vaultwarden
+    Email = 0,
     // Send requires a password
     Password = 1,
     // Send requires no auth
@@ -68,17 +71,28 @@ enum SendAuthType {
 }
 
 impl Send {
-    pub fn new(atype: i32, name: String, data: String, akey: String, deletion_date: NaiveDateTime) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        atype: i32,
+        user_uuid: UserId,
+        name: String,
+        notes: Option<String>,
+        data: String,
+        akey: String,
+        max_access_count: Option<i32>,
+        emails: Option<String>,
+        expiration_date: Option<NaiveDateTime>,
+        deletion_date: NaiveDateTime,
+        disabled: bool,
+        hide_email: bool,
+    ) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
             uuid: SendId::from(crate::util::get_uuid()),
-            user_uuid: None,
-            organization_uuid: None,
-
+            user_uuid,
             name,
-            notes: None,
-
+            notes,
             atype,
             data,
             akey,
@@ -86,16 +100,17 @@ impl Send {
             password_salt: None,
             password_iter: None,
 
-            max_access_count: None,
+            max_access_count,
             access_count: 0,
+            emails: emails.map(|e| e.to_lowercase()),
 
             creation_date: now,
             revision_date: now,
-            expiration_date: None,
+            expiration_date,
             deletion_date,
 
-            disabled: false,
-            hide_email: None,
+            disabled,
+            hide_email,
         }
     }
 
@@ -125,19 +140,13 @@ impl Send {
     }
 
     pub async fn creator_identifier(&self, conn: &DbConn) -> Option<String> {
-        if let Some(hide_email) = self.hide_email
-            && hide_email
+        if !self.hide_email
+            && let Some(user) = User::find_by_uuid(&self.user_uuid, conn).await
         {
-            return None;
+            Some(user.email)
+        } else {
+            None
         }
-
-        if let Some(user_uuid) = &self.user_uuid
-            && let Some(user) = User::find_by_uuid(user_uuid, conn).await
-        {
-            return Some(user.email);
-        }
-
-        None
     }
 
     pub fn to_json(&self) -> Value {
@@ -162,9 +171,10 @@ impl Send {
             "maxAccessCount": self.max_access_count,
             "accessCount": self.access_count,
             "password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
-            "authType": if self.password_hash.is_some() { SendAuthType::Password as i32 } else { SendAuthType::None as i32 },
+            "authType": if self.password_hash.is_some() { SendAuthType::Password } else if self.emails.is_some() { SendAuthType::Email } else { SendAuthType::None } as i32,
             "disabled": self.disabled,
-            "hideEmail": self.hide_email.unwrap_or(false),
+            "hideEmail": self.hide_email,
+            "emails": self.emails,
 
             "revisionDate": format_date(&self.revision_date),
             "expirationDate": self.expiration_date.as_ref().map(format_date),
@@ -202,24 +212,16 @@ impl Send {
         self.revision_date = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(sends::table)
+            mysql {
+                diesel::insert_into(sends::table)
                     .values(&*self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(&*self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(sends::table)
-                            .filter(sends::uuid.eq(&self.uuid))
-                            .set(&*self)
-                            .execute(conn)
-                            .map_res("Error saving send")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving send")
+                    .map_res("Error saving send")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(sends::table)
                     .values(&*self)
                     .on_conflict(sends::uuid)
@@ -300,14 +302,8 @@ impl Send {
     }
 
     pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<UserId> {
-        let mut user_uuids = Vec::new();
-        if let Some(user_uuid) = &self.user_uuid {
-            User::update_uuid_revision(user_uuid, conn).await;
-            user_uuids.push(user_uuid.clone());
-        } else {
-            // Belongs to Organization, not implemented
-        }
-        user_uuids
+        User::update_uuid_revision(&self.user_uuid, conn).await;
+        vec![self.user_uuid.clone()]
     }
 
     pub async fn delete_all_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
@@ -369,13 +365,6 @@ impl Send {
         Some(total)
     }
 
-    pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
-        conn.run(move |conn| {
-            sends::table.filter(sends::organization_uuid.eq(org_uuid)).load::<Self>(conn).expect("Error loading sends")
-        })
-        .await
-    }
-
     pub async fn find_by_past_deletion_date(conn: &DbConn) -> Vec<Self> {
         let now = Utc::now().naive_utc();
         conn.run(move |conn| {
@@ -419,5 +408,96 @@ impl AsRef<Path> for SendFileId {
     #[inline]
     fn as_ref(&self) -> &Path {
         Path::new(&self.0)
+    }
+}
+
+#[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
+#[diesel(table_name = sends_otp)]
+#[diesel(treat_none_as_null = true)]
+#[diesel(primary_key(send_uuid, email))]
+pub struct SendOTP {
+    pub send_uuid: SendId,
+    pub email: String,
+
+    pub code: String,
+
+    pub creation_date: NaiveDateTime,
+    pub revision_date: NaiveDateTime,
+    pub expiration_date: NaiveDateTime,
+}
+
+impl SendOTP {
+    pub fn new(send_id: SendId, email: &str, code: String) -> Self {
+        let now = Utc::now().naive_utc();
+
+        Self {
+            send_uuid: send_id,
+            email: email.to_lowercase(),
+            code,
+            creation_date: now,
+            revision_date: now,
+            expiration_date: now + TimeDelta::try_minutes(5).unwrap(),
+        }
+    }
+
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
+        db_run! { conn:
+            mysql {
+                diesel::insert_into(sends_otp::table)
+                    .values(&*self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set((
+                        sends_otp::code.eq(&self.code),
+                        sends_otp::expiration_date.eq(self.expiration_date),
+                        sends_otp::revision_date.eq(Utc::now().naive_utc()),
+                    ))
+                    .execute(conn)
+                    .map_res("Error saving send_otp")
+            }
+            postgresql, sqlite {
+                diesel::insert_into(sends_otp::table)
+                    .values(&*self)
+                    .on_conflict((sends_otp::send_uuid, sends_otp::email))
+                    .do_update()
+                    .set((
+                        sends_otp::code.eq(&self.code),
+                        sends_otp::expiration_date.eq(self.expiration_date),
+                        sends_otp::revision_date.eq(Utc::now().naive_utc()),
+                    ))
+                    .execute(conn)
+                    .map_res("Error saving send_otp")
+            }
+        }
+    }
+
+    pub async fn find_with_send(uuid: &SendId, email: Option<&String>, conn: &DbConn) -> Option<(Send, Option<Self>)> {
+        if let Some(mail) = email.map(|e| e.to_lowercase()) {
+            conn.run(move |conn| {
+                sends::table
+                    .left_join(sends_otp::table.on(sends::uuid.eq(sends_otp::send_uuid).and(sends_otp::email.eq(mail))))
+                    .select(<(Send, Option<Self>)>::as_select())
+                    .filter(sends::uuid.eq(uuid))
+                    .first::<(Send, Option<Self>)>(conn)
+                    .ok()
+            })
+            .await
+        } else {
+            Send::find_by_uuid(uuid, conn).await.map(|s| (s, None))
+        }
+    }
+
+    pub async fn delete_expired(pool: DbPool) -> EmptyResult {
+        debug!("Purging expired sends_otp");
+        if let Ok(conn) = pool.get().await {
+            conn.run(move |conn| {
+                diesel::delete(sends_otp::table.filter(sends_otp::expiration_date.lt(Utc::now().naive_utc())))
+                    .execute(conn)
+                    .map_res("Error deleting expired Sends OTP")
+            })
+            .await
+        } else {
+            err!("Failed to get DB connection while purging expired sends_otp")
+        }
     }
 }
