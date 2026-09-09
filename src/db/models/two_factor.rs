@@ -45,6 +45,8 @@ pub enum TwoFactorType {
 
     // Special type for Protected Actions verification via email
     ProtectedActions = 2000,
+    // Special type for New Device Verification via email
+    NewDeviceVerification = 2001,
 }
 
 /// Local methods

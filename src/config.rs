@@ -728,6 +728,10 @@ make_config! {
         /// If sending the email fails the login attempt will fail.
         require_device_email:   bool,   true,   def,     false;
 
+        /// New device verification |> Users without 2FA logging in from an unknown device must first enter
+        /// a code emailed to their account address. Requires a mail transport to be configured.
+        new_device_verification: bool,  true,   def,     false;
+
         /// Reload templates (Dev) |> When this is set to true, the templates get reloaded with every request.
         /// ONLY use this during development, as it can slow down the server
         reload_templates:       bool,   true,   def,    false;
@@ -1199,6 +1203,12 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     }
     if !cfg._enable_email_2fa && cfg.email_2fa_auto_fallback {
         err!("To use email 2FA as automatic fallback, email 2fa has to be enabled!");
+    }
+
+    // Without a mail transport the verification code can never be delivered, which would lock
+    // affected users out of every device they have not logged in from before.
+    if cfg.new_device_verification && !(cfg._enable_smtp && (cfg.smtp_host.is_some() || cfg.use_sendmail)) {
+        err!("To enable new device verification, a mail transport must be configured")
     }
 
     // Check if the HTTP request block regex is valid
@@ -1761,6 +1771,7 @@ where
     reg!("email/invite_accepted", ".html");
     reg!("email/invite_confirmed", ".html");
     reg!("email/new_device_logged_in", ".html");
+    reg!("email/new_device_verification", ".html");
     reg!("email/protected_action", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");

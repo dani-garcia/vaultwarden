@@ -17,8 +17,8 @@ use crate::{
             accounts::{PreloginData, RegisterData, kdf_upgrade, prelogin, register},
             log_user_event,
             two_factor::{
-                authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn,
-                yubikey,
+                authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable,
+                new_device_verification, webauthn, yubikey,
             },
         },
         master_password_policy,
@@ -497,6 +497,18 @@ async fn password_login(
             }
         )
     }
+
+    // Runs before the device is stored, so a correct master password alone never makes it known.
+    new_device_verification::validate_new_device_login(
+        &mut user,
+        data.device_identifier.as_ref().unwrap(),
+        util::try_parse_string(data.device_type.as_ref()).unwrap_or(14),
+        data.new_device_otp.as_deref(),
+        data.auth_request.is_some(),
+        ip,
+        conn,
+    )
+    .await?;
 
     let mut device = get_device(&data, conn, &user).await?;
 
@@ -1038,6 +1050,7 @@ async fn json_err_twofactor(
             | Some(
                 TwoFactorType::Authenticator
                 | TwoFactorType::EmailVerificationChallenge
+                | TwoFactorType::NewDeviceVerification
                 | TwoFactorType::OrganizationDuo
                 | TwoFactorType::ProtectedActions
                 | TwoFactorType::RecoveryCode
@@ -1187,6 +1200,11 @@ struct ConnectData {
     two_factor_remember: Option<i32>,
     #[field(name = uncased("authrequest"))]
     auth_request: Option<AuthRequestId>,
+
+    // Needed for new device verification, the clients send this as `newDeviceOtp`
+    #[field(name = uncased("new_device_otp"))]
+    #[field(name = uncased("newdeviceotp"))]
+    new_device_otp: Option<String>,
 
     // Needed for authorization code
     #[field(name = uncased("code"))]
