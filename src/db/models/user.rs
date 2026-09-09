@@ -9,7 +9,7 @@ use crate::{
     crypto,
     db::{
         DbConn,
-        models::DeviceId,
+        models::{DeviceId, WebauthnCredential},
         schema::{invitations, sso_users, twofactor_incomplete, users},
     },
     error::MapResult,
@@ -358,6 +358,7 @@ impl User {
         TwoFactor::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn).await?;
         Invitation::take(&self.email, conn).await; // Delete invitation if any
+        WebauthnCredential::delete_all_by_user(&self.uuid, conn).await?;
 
         conn.run(move |conn| {
             diesel::delete(users::table.filter(users::uuid.eq(self.uuid))).execute(conn).map_res("Error deleting user")

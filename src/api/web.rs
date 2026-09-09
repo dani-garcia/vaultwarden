@@ -101,6 +101,7 @@ fn vaultwarden_css() -> EtagCached<Css<String>> {
         "sso_only": CONFIG.sso_enabled() && CONFIG.sso_only(),
         "webauthn_2fa_supported": CONFIG.is_webauthn_2fa_supported(),
         "yubico_enabled": CONFIG._enable_yubico() && CONFIG.yubico_client_id().is_some() && CONFIG.yubico_secret_key().is_some(),
+        "passkey_login_allowed": CONFIG.passkey_login_allowed(),
     });
 
     let scss = match CONFIG.render_template("scss/vaultwarden.scss", &css_options) {

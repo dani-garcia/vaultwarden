@@ -12,9 +12,11 @@ use serde_json::Value;
 
 use crate::{
     CONFIG,
-    api::{self, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType, core::log_event},
-    auth::ClientVersion,
-    auth::{Headers, OrgIdGuard, OwnerHeaders},
+    api::{
+        self, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
+        core::{log_event, webauthn_prf_option},
+    },
+    auth::{ClientVersion, Headers, OrgIdGuard, OwnerHeaders},
     config::PathType,
     crypto,
     db::{
@@ -22,7 +24,7 @@ use crate::{
         models::{
             Archive, Attachment, AttachmentId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup,
             CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, Membership,
-            MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
+            MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId, WebauthnCredential,
         },
     },
     util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
@@ -188,6 +190,12 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         Value::Null
     };
 
+    let webauthn_prf_options = WebauthnCredential::find_all_by_user(&headers.user.uuid, &conn)
+        .await
+        .iter()
+        .filter_map(|wac| webauthn_prf_option(wac, false))
+        .collect();
+
     Ok(Json(json!({
         "profile": user_json,
         "folders": folders_json,
@@ -196,11 +204,19 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "ciphers": ciphers_json,
         "domains": domains_json,
         "sends": sends_json,
-        "userDecryption": {
-            "masterPasswordUnlock": master_password_unlock,
-        },
+        "userDecryption": sync_user_decryption(&master_password_unlock, webauthn_prf_options),
         "object": "sync"
     })))
+}
+
+fn sync_user_decryption(master_password_unlock: &Value, webauthn_prf_options: Vec<Value>) -> Value {
+    let mut user_decryption = json!({
+        "masterPasswordUnlock": master_password_unlock,
+    });
+    if !webauthn_prf_options.is_empty() {
+        user_decryption["webAuthnPrfOptions"] = webauthn_prf_options.into();
+    }
+    user_decryption
 }
 
 #[get("/ciphers")]

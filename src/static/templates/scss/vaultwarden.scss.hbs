@@ -54,6 +54,7 @@ app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secon
 }
 {{/if}}
 
+{{#if (not passkey_login_allowed)}}
 /* Hide the `Log in with passkey` settings */
 app-user-layout app-password-settings app-webauthn-login-settings {
   @extend %vw-hide;
@@ -67,6 +68,7 @@ app-user-layout app-password-settings app-webauthn-login-settings {
 app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secondary"].\!tw-text-primary-600:nth-child(3) {
   @extend %vw-hide;
 }
+{{/if}}
 {{/if}}
 
 /* Hide the or text followed by the two buttons hidden above */
