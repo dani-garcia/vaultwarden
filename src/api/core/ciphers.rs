@@ -537,11 +537,12 @@ pub async fn update_cipher_from_data(
     cipher.move_to_folder(data.folder_id, &headers.user.uuid, conn).await?;
     cipher.set_favorite(data.favorite, &headers.user.uuid, conn).await?;
 
-    if let Some(dt_str) = data.archived_date {
-        match NaiveDateTime::parse_from_str(&dt_str, "%+") {
+    match data.archived_date {
+        Some(dt_str) => match NaiveDateTime::parse_from_str(&dt_str, "%+") {
             Ok(dt) => cipher.set_archived_at(dt, &headers.user.uuid, conn).await?,
             Err(err) => warn!("Error parsing ArchivedDate '{dt_str}': {err}"),
-        }
+        },
+        None => cipher.unarchive(&headers.user.uuid, conn).await?,
     }
 
     if ut != UpdateType::None {
