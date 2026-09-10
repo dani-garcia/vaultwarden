@@ -30,7 +30,7 @@ use crate::{
     db::{
         DbConn,
         models::{
-            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeResponseError,
+            AuthRequest, AuthRequestId, Device, DeviceId, DeviceType, EventType, Invitation, OIDCCodeResponseError,
             OrganizationApiKey, OrganizationId, SendId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete,
             TwoFactorType, User, UserId,
         },
@@ -507,6 +507,39 @@ async fn password_login(
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
 }
 
+async fn send_new_device_email(user: &User, device: &Device, ip: &ClientIp) -> EmptyResult {
+    if !CONFIG.mail_enabled() || !device.is_new() {
+        return Ok(());
+    }
+
+    let now = Utc::now().naive_utc();
+    let device_type = DeviceType::from_i32(device.atype);
+
+    if CONFIG.require_device_email() {
+        if let Err(e) =
+            mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device.name, device_type).await
+        {
+            error!("Error sending new device email: {e:#?}");
+            err!(
+                "Could not send login notification email. Please contact your administrator.",
+                ErrorEvent {
+                    event: EventType::UserFailedLogIn
+                }
+            )
+        }
+        return Ok(());
+    }
+
+    let (address, ip, device_name) = (user.email.clone(), ip.ip.to_string(), device.name.clone());
+    tokio::task::spawn(async move {
+        if let Err(e) = mail::send_new_device_logged_in(&address, &ip, &now, &device_name, device_type).await {
+            error!("Error sending new device email: {e:#?}");
+        }
+    });
+
+    Ok(())
+}
+
 async fn authenticated_response(
     user: &User,
     device: &mut Device,
@@ -515,21 +548,7 @@ async fn authenticated_response(
     conn: &DbConn,
     ip: &ClientIp,
 ) -> JsonResult {
-    if CONFIG.mail_enabled() && device.is_new() {
-        let now = Utc::now().naive_utc();
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, device).await {
-            error!("Error sending new device email: {e:#?}");
-
-            if CONFIG.require_device_email() {
-                err!(
-                    "Could not send login notification email. Please contact your administrator.",
-                    ErrorEvent {
-                        event: EventType::UserFailedLogIn
-                    }
-                )
-            }
-        }
-    }
+    send_new_device_email(user, device, ip).await?;
 
     // register push device
     if !device.is_new() {
@@ -663,21 +682,7 @@ async fn user_api_key_login(
 
     let mut device = get_device(&data, conn, &user).await?;
 
-    if CONFIG.mail_enabled() && device.is_new() {
-        let now = Utc::now().naive_utc();
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
-            error!("Error sending new device email: {e:#?}");
-
-            if CONFIG.require_device_email() {
-                err!(
-                    "Could not send login notification email. Please contact your administrator.",
-                    ErrorEvent {
-                        event: EventType::UserFailedLogIn
-                    }
-                )
-            }
-        }
-    }
+    send_new_device_email(&user, &device, ip).await?;
 
     // ---
     // Disabled this variable, it was used to generate the JWT
