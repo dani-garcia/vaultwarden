@@ -282,6 +282,11 @@ impl Cipher {
             if let Some(pw_revision) = type_data_json["passwordRevisionDate"].as_str() {
                 type_data_json["passwordRevisionDate"] = json!(validate_and_format_date(pw_revision));
             }
+
+            // Official Bitwarden projects FIDO2 objects onto CipherLoginFido2CredentialData.
+            // Extra keys (prf, transports, backupEligible) make SDK 3 `Fido2Credential`
+            // (`deny_unknown_fields`) fail find_credentials as CTAP2 VendorError(240).
+            type_data_json = super::cipher_login::normalize_login_type_data(type_data_json);
         }
 
         // Fix secure note issues when data is invalid
