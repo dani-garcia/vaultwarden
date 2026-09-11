@@ -28,17 +28,17 @@ use crate::{
 pub fn routes() -> Vec<Route> {
     // If adding more routes here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
-    let mut routes = routes![attachments, alive, alive_head, static_files];
+    let mut routes = routes![
+        attachments,
+        alive,
+        alive_head,
+        static_files,
+        app_id,
+        apple_app_site_association,
+        webauthn_related_origins
+    ];
     if CONFIG.web_vault_enabled() {
-        routes.append(&mut routes![
-            web_index,
-            web_index_direct,
-            web_index_head,
-            app_id,
-            apple_app_site_association,
-            web_files,
-            vaultwarden_css
-        ]);
+        routes.append(&mut routes![web_index, web_index_direct, web_index_head, web_files, vaultwarden_css]);
     }
 
     #[cfg(debug_assertions)]
@@ -213,13 +213,34 @@ fn apple_app_site_association() -> Cached<(ContentType, Json<Value>)> {
                 "webcredentials": {
                     "apps": [
                         "LTZ2PFU5D6.com.8bit.bitwarden",
-                        "LTZ2PFU5D6.com.8bit.bitwarden.beta"
+                        "LTZ2PFU5D6.com.8bit.bitwarden.beta",
+                        "LTZ2PFU5D6.com.8bit.bitwarden.autofill"
                     ]
                 }
             })),
         ),
         true,
     )
+}
+
+/// W3C Related Origin Requests. iOS Autofill fetches this when
+/// `pm-30529-webauthn-related-origins` is on.
+#[get("/.well-known/webauthn")]
+fn webauthn_related_origins() -> Cached<(ContentType, Json<Value>)> {
+    Cached::long(
+        (
+            ContentType::JSON,
+            Json(json!({
+                "origins": [CONFIG.domain_origin()]
+            })),
+        ),
+        true,
+    )
+}
+
+/// Origin-root well-known for Apple AASA / related-origins when DOMAIN has a path prefix.
+pub fn well_known_routes() -> Vec<Route> {
+    routes![apple_app_site_association, webauthn_related_origins]
 }
 
 #[get("/<p..>", rank = 10)] // Only match this if the other routes don't match
