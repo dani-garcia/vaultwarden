@@ -36,6 +36,7 @@ pub struct OIDCAuthenticatedUser {
     pub email_verified: Option<bool>,
     pub user_name: Option<String>,
     pub acr: Option<String>,
+    pub amr: Option<Vec<String>>,
 }
 
 impl_FromToSqlText!(OIDCAuthenticatedUser);

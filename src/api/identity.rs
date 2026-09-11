@@ -355,7 +355,14 @@ async fn sso_login(
 
             let skip_2fa = match CONFIG.sso_skip_2fa().as_str() {
                 "true" => true,
-                "auto" => user_infos.acr.as_deref() == Some(SSO_2FA_ACR),
+                "auto" => {
+                    user_infos.acr.as_deref() == Some(SSO_2FA_ACR)
+                        || user_infos.amr.as_ref().is_some_and(|amr| {
+                            amr.iter().any(|method| {
+                                matches!(method.as_str(), "mfa" | "otp" | "fido2" | "webauthn" | "hwk")
+                            })
+                        })
+                }
                 _ => false,
             };
             let twofactor_token = if skip_2fa {
