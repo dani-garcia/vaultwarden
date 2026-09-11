@@ -579,14 +579,19 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
 
     // If adding more paths here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
-    let instance = rocket::custom(config)
+    let mut instance = rocket::custom(config)
         .mount([basepath, "/"].concat(), api::web_routes())
         .mount([basepath, "/api"].concat(), api::core_routes())
         .mount([basepath, "/admin"].concat(), api::admin_routes())
         .mount([basepath, "/events"].concat(), api::core_events_routes())
         .mount([basepath, "/identity"].concat(), api::identity_routes())
         .mount([basepath, "/icons"].concat(), api::icons_routes())
-        .mount([basepath, "/notifications"].concat(), api::notifications_routes())
+        .mount([basepath, "/notifications"].concat(), api::notifications_routes());
+    // Apple associated-domains and related-origins are origin-root only.
+    if !basepath.is_empty() {
+        instance = instance.mount("/", api::well_known_routes());
+    }
+    let instance = instance
         .register([basepath, "/"].concat(), api::web_catchers())
         .register([basepath, "/api"].concat(), api::core_catchers())
         .register([basepath, "/admin"].concat(), api::admin_catchers())

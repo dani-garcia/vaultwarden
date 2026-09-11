@@ -30,6 +30,7 @@ pub use crate::api::{
     },
     web::catchers as web_catchers,
     web::routes as web_routes,
+    web::well_known_routes,
     web::{invalidate_css_cache, static_files},
 };
 use crate::{
