@@ -37,7 +37,7 @@ use crate::{
     },
     error::MapResult,
     mail, sso,
-    sso::{OIDCCode, OIDCCodeChallenge, OIDCCodeVerifier, OIDCState, SSO_2FA_ACR},
+    sso::{OIDCCode, OIDCCodeChallenge, OIDCCodeVerifier, OIDCState},
     util,
 };
 
@@ -353,15 +353,12 @@ async fn sso_login(
         Some((mut user, sso_user)) => {
             let mut device = get_device(&data, conn, &user).await?;
 
-            let skip_2fa = match CONFIG.sso_skip_2fa().as_str() {
+            let skip_2fa = match CONFIG.sso_2fa_skip().as_str() {
                 "true" => true,
                 "auto" => {
-                    user_infos.acr.as_deref() == Some(SSO_2FA_ACR)
-                        || user_infos.amr.as_ref().is_some_and(|amr| {
-                            amr.iter().any(|method| {
-                                matches!(method.as_str(), "mfa" | "otp" | "fido2" | "webauthn" | "hwk")
-                            })
-                        })
+                    let amr_values = CONFIG.sso_2fa_amr_vec();
+                    user_infos.acr.as_deref() == Some(crate::sso::SSO_2FA_ACR)
+                        || user_infos.amr.as_ref().is_some_and(|amr| amr.iter().any(|method| amr_values.contains(method)))
                 }
                 _ => false,
             };

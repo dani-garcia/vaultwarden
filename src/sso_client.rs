@@ -202,20 +202,19 @@ impl Client {
             .add_scopes(scopes)
             .add_extra_params(CONFIG.sso_authorize_extra_params_vec());
 
-        if CONFIG.sso_skip_2fa() == "auto" {
-            auth_req = auth_req
-                .add_extra_param(
-                    "claims",
-                    serde_json::json!({
-                        "id_token": {
-                            "acr": {
-                                "essential": true,
-                                "values": [crate::sso::SSO_2FA_ACR]
+        if CONFIG.sso_2fa_skip() == "auto" {
+            auth_req = auth_req.add_extra_param(
+                "claims",
+                serde_json::json!({
+                    "id_token": {
+                        "acr": {
+                            "essential": true,
+                            "values": [crate::sso::SSO_2FA_ACR]
                             }
                         }
-                    })
-                    .to_string(),
-                );
+                })
+                .to_string(),
+            );
         }
 
         if CONFIG.sso_pkce() {
