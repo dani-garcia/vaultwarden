@@ -17,6 +17,8 @@ use crate::{
     sso_client::Client,
 };
 
+pub const SSO_2FA_ACR: &str = "2";
+
 pub static FAKE_SSO_IDENTIFIER: &str = "00000000-01DC-01DC-01DC-000000000000";
 
 static SSO_JWT_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|sso", CONFIG.domain_origin()));
@@ -305,6 +307,7 @@ pub async fn exchange_code(
         email: email.clone(),
         email_verified,
         user_name: user_name.clone(),
+        acr: id_claims.auth_context_ref().map(|acr| acr.as_str().to_string()),
     };
 
     debug!("Authenticated user {authenticated_user:?}");

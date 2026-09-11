@@ -845,8 +845,8 @@ make_config! {
         sso_auth_only_not_session:      bool,   true,   def,    false;
         /// Client cache for discovery endpoint. |> Duration in seconds (0 or less to disable). More details: https://github.com/dani-garcia/vaultwarden/wiki/Enabling-SSO-support-using-OpenId-Connect#client-cache
         sso_client_cache_expiration:    u64,    true,   def,    0;
-        /// Skip 2FA for SSO login |> Disable two-factor authentication requirement for SSO login
-        sso_skip_2fa:                   bool,   true,   def,    false;
+        /// Skip 2FA for SSO login |> `false` keeps Vaultwarden 2FA, `true` always skips it, `auto` skips it only when the IdP returns the requested ACR level
+        sso_skip_2fa:                   String, true,   def,    "false".to_string();
         /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
         sso_debug_tokens:               bool,   true,   def,    false;
     },
@@ -1116,6 +1116,10 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
         validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
+    }
+
+    if !matches!(cfg.sso_skip_2fa.as_str(), "false" | "true" | "auto") {
+        err!("`SSO_SKIP_2FA` must be one of: false, true, auto");
     }
 
     if cfg._enable_yubico {
