@@ -449,6 +449,7 @@ macro_rules! make_config {
                     "smtp_host",
                     "smtp_username",
                     "sso_authority",
+                    "sso_internal_endpoint",
                     "sso_callback_path",
                     "sso_client_id",
                 ];
@@ -829,6 +830,14 @@ make_config! {
         sso_client_secret:              Pass,   true,   def,    String::new();
         /// Authority Server |> Base url of the OIDC provider discovery endpoint (without `/.well-known/openid-configuration`)
         sso_authority:                  String, true,   def,    String::new();
+        /// Internal Endpoint |> Optional internal base URL for server-side OIDC requests (discovery, token, userinfo, JWKS). If set, requests to SSO_AUTHORITY are rewritten to this URL. Also rewrites discovered endpoints that share SSO_AUTHORITY prefix.
+        sso_internal_endpoint:          String, true,   option;
+        /// Token endpoint override |> Optional full URL override for token_endpoint (e.g. https://sso.example.com/token). If set, discovered value is ignored.
+        sso_token_endpoint:             String, true,   option;
+        /// UserInfo endpoint override |> Optional full URL override for userinfo_endpoint
+        sso_userinfo_endpoint:          String, true,   option;
+        /// JWKS URI override |> Optional full URL override for jwks_uri
+        sso_jwks_uri:                   String, true,   option;
         /// Authorization request scopes |> List the of the needed scope (`openid` is implicit)
         sso_scopes:                     String, true,  def,   "email profile".to_owned();
         /// Authorization request extra parameters
@@ -1112,6 +1121,10 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         }
 
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
+        validate_sso_url_opt(&cfg.sso_internal_endpoint, "sso_internal_endpoint")?;
+        validate_sso_url_opt(&cfg.sso_token_endpoint, "sso_token_endpoint")?;
+        validate_sso_url_opt(&cfg.sso_userinfo_endpoint, "sso_userinfo_endpoint")?;
+        validate_sso_url_opt(&cfg.sso_jwks_uri, "sso_jwks_uri")?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
         validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
     }
@@ -1306,6 +1319,17 @@ fn validate_internal_sso_redirect_url(sso_callback_path: &String) -> Result<open
         Err(err) => err!(format!("Invalid sso_callback_path ({sso_callback_path} built using `domain`) URL: {err}")),
         Ok(redirect_url) => Ok(redirect_url),
     }
+}
+
+#[allow(clippy::ref_option)]
+fn validate_sso_url_opt(opt: &Option<String>, name: &str) -> Result<(), Error> {
+    if let Some(url) = opt
+        && !url.trim().is_empty()
+        && Url::parse(url).is_err()
+    {
+        err!(format!("Invalid {name} URL ({url}): invalid URL"))
+    }
+    Ok(())
 }
 
 fn validate_sso_master_password_policy(
