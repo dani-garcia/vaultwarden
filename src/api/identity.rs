@@ -357,7 +357,7 @@ async fn sso_login(
                 "true" => true,
                 "auto" => {
                     let amr_values = CONFIG.sso_2fa_amr_vec();
-                    user_infos.acr.as_deref() == Some(crate::sso::SSO_2FA_ACR)
+                    user_infos.acr.as_deref() == Some(sso::SSO_2FA_ACR)
                         || user_infos.amr.as_ref().is_some_and(|amr| amr.iter().any(|method| amr_values.contains(method)))
                 }
                 _ => false,
