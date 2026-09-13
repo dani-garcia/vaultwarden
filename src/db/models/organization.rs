@@ -1,7 +1,4 @@
-use std::{
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
-};
+use std::cmp::Ordering;
 
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
@@ -15,8 +12,8 @@ use crate::{
     db::{
         DbConn,
         schema::{
-            ciphers, ciphers_collections, collections_groups, groups, groups_users, org_policies, organization_api_key,
-            organizations, users, users_collections, users_organizations,
+            ciphers_collections, collections, collections_groups, groups, groups_users, org_policies,
+            organization_api_key, organizations, users, users_collections, users_organizations,
         },
     },
     error::MapResult,
@@ -24,8 +21,8 @@ use crate::{
 use macros::UuidFromParam;
 
 use super::{
-    Cipher, CipherId, Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy,
-    OrgPolicyType, TwoFactor, User, UserId,
+    Cipher, CipherId, Collection, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy, OrgPolicyType,
+    TwoFactor, User, UserId, collection::stored_assignment_manage,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -44,6 +41,7 @@ pub struct Organization {
 #[diesel(table_name = users_organizations)]
 #[diesel(treat_none_as_null = true)]
 #[diesel(primary_key(uuid))]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Membership {
     pub uuid: MembershipId,
     pub user_uuid: UserId,
@@ -51,12 +49,31 @@ pub struct Membership {
 
     pub invited_by_email: Option<String>,
 
-    pub access_all: bool,
     pub akey: String,
     pub status: i32,
     pub atype: i32,
     pub reset_password_key: Option<String>,
     pub external_id: Option<String>,
+    pub manage_users: bool,
+    pub manage_groups: bool,
+    pub manage_policies: bool,
+    pub create_new_collections: bool,
+    pub edit_any_collection: bool,
+    pub delete_any_collection: bool,
+    pub access_event_logs: bool,
+    pub access_import_export: bool,
+    pub access_reports: bool,
+}
+
+/// Diesel equivalent of [`Membership::has_edit_any_collection`].
+///
+/// Keep the role check in this shared predicate so a stale flag on any non-Custom membership
+/// remains inert in every collection-access query.
+pub(super) fn custom_membership_with_edit_any_collection() -> diesel::dsl::And<
+    diesel::dsl::Eq<users_organizations::atype, i32>,
+    diesel::dsl::Eq<users_organizations::edit_any_collection, bool>,
+> {
+    users_organizations::atype.eq(MembershipType::Custom as i32).and(users_organizations::edit_any_collection.eq(true))
 }
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -97,37 +114,50 @@ pub enum MembershipType {
     Owner = 0,
     Admin = 1,
     User = 2,
-    Manager = 3,
+    // NOTE: the legacy Manager role (wire value 3) has been folded into Custom. It is no longer a
+    // distinct variant: it is never persisted or emitted, and an incoming value 3 is mapped onto
+    // Custom for backward compatibility (see `from_str`). The Custom discriminant stays 4 because
+    // that is the only role modern Bitwarden clients understand as carrying custom permissions.
+    Custom = 4,
 }
 
 impl MembershipType {
     pub fn from_str(s: &str) -> Option<Self> {
-        #[expect(
-            clippy::match_same_arms,
-            reason = "Specifically define `4|Custom` since this is a hack, not a default"
-        )]
         match s {
             "0" | "Owner" => Some(MembershipType::Owner),
             "1" | "Admin" => Some(MembershipType::Admin),
             "2" | "User" => Some(MembershipType::User),
-            "3" | "Manager" => Some(MembershipType::Manager),
-            // HACK: We convert the custom role to a manager role
-            "4" | "Custom" => Some(MembershipType::Manager),
+            // "3"/"Manager" is the legacy Manager role. Modern clients no longer offer it, but an old
+            // client or stored request may still send value 3. Custom supersedes Manager, so accept
+            // and fold it onto Custom.
+            "3" | "Manager" | "4" | "Custom" => Some(MembershipType::Custom),
             _ => None,
+        }
+    }
+
+    const fn access_rank(self) -> u8 {
+        match self {
+            Self::User => 0,
+            Self::Custom => 1,
+            Self::Admin => 2,
+            Self::Owner => 3,
         }
     }
 }
 
+/// The stored `users_organizations.atype` values that carry organization-wide authority by role.
+///
+/// Queries enumerate the two values instead of comparing `atype <= Admin`: `<=` also matches every value
+/// *below* `Owner`, so a corrupt or negative `atype` would satisfy the SQL check while every Rust guard
+/// rejects it. Enumerating keeps both layers on the same answer.
+pub(crate) const ORG_ADMIN_ATYPES: &[i32] = &[MembershipType::Owner as i32, MembershipType::Admin as i32];
+
 impl Ord for MembershipType {
     fn cmp(&self, other: &MembershipType) -> Ordering {
-        // For easy comparison, map each variant to an access level (where 0 is lowest).
-        const ACCESS_LEVEL: [i32; 4] = [
-            3, // Owner
-            2, // Admin
-            0, // User
-            1, // Manager && Custom
-        ];
-        ACCESS_LEVEL[*self as usize].cmp(&ACCESS_LEVEL[*other as usize])
+        // Roles are ordered by their authorization rank, not by their raw discriminant (Custom's
+        // discriminant is 4 but it ranks between User and Admin). The discriminant is kept as a
+        // stable tie-breaker so `Ord` never disagrees with `Eq`.
+        self.access_rank().cmp(&other.access_rank()).then_with(|| (*self as i32).cmp(&(*other as i32)))
     }
 }
 
@@ -268,12 +298,20 @@ impl Membership {
             org_uuid,
             invited_by_email,
 
-            access_all: false,
             akey: String::new(),
             status: MembershipStatus::Accepted as i32,
             atype: MembershipType::User as i32,
             reset_password_key: None,
             external_id: None,
+            manage_users: false,
+            manage_groups: false,
+            manage_policies: false,
+            create_new_collections: false,
+            edit_any_collection: false,
+            delete_any_collection: false,
+            access_event_logs: false,
+            access_import_export: false,
+            access_reports: false,
         }
     }
 
@@ -312,15 +350,6 @@ impl Membership {
             return true;
         }
         false
-    }
-
-    /// HACK: Convert the manager type to a custom type
-    /// It will be converted back on other locations
-    pub fn type_manager_as_custom(&self) -> i32 {
-        match self.atype {
-            3 => 4,
-            _ => self.atype,
-        }
     }
 }
 
@@ -441,28 +470,27 @@ impl Membership {
     pub async fn to_json(&self, conn: &DbConn) -> Value {
         let org = Organization::find_by_uuid(&self.org_uuid, conn).await.unwrap();
 
-        // HACK: Convert the manager type to a custom type
-        // It will be converted back on other locations
-        let membership_type = self.type_manager_as_custom();
+        let membership_type = self.atype;
 
         let permissions = json!({
-                // TODO: Add full support for Custom User Roles
-                // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
-                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
-                "accessEventLogs": false,
-                "accessImportExport": false,
-                "accessReports": false,
-                // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": membership_type == 4 && self.access_all,
-                "editAnyCollection": membership_type == 4 && self.access_all,
-                "deleteAnyCollection": membership_type == 4 && self.access_all,
-                "manageGroups": false,
-                "managePolicies": false,
+                "accessEventLogs": membership_type == MembershipType::Custom as i32 && self.access_event_logs,
+                "accessImportExport": membership_type == MembershipType::Custom as i32 && self.access_import_export,
+                "accessReports": membership_type == MembershipType::Custom as i32 && self.access_reports,
+                "createNewCollections": membership_type == MembershipType::Custom as i32 && self.create_new_collections,
+                "editAnyCollection": membership_type == MembershipType::Custom as i32 && self.edit_any_collection,
+                "deleteAnyCollection": membership_type == MembershipType::Custom as i32 && self.delete_any_collection,
+                "manageGroups": membership_type == MembershipType::Custom as i32 && self.manage_groups,
+                "managePolicies": membership_type == MembershipType::Custom as i32 && self.manage_policies,
                 "manageSso": false, // Not supported
-                "manageUsers": false,
+                "manageUsers": membership_type == MembershipType::Custom as i32 && self.manage_users,
                 "manageResetPassword": false,
                 "manageScim": false // Not supported (Not AGPLv3 Licensed)
         });
+
+        // Edit any collection grants full read/edit access to every collection, but it must not
+        // accidentally grant collection creation. The client treats limitCollectionCreation=false as
+        // an independent create grant, so compute it from the actual role/permission.
+        let limit_collection_creation = self.limit_collection_creation();
 
         // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/ProfileOrganizationResponseModel.cs
         json!({
@@ -513,8 +541,7 @@ impl Membership {
             "familySponsorshipValidUntil": null,
             "familySponsorshipToDelete": null,
             "accessSecretsManager": false,
-            // limit collection creation to managers with access_all permission to prevent issues
-            "limitCollectionCreation": self.atype < MembershipType::Manager || !self.access_all,
+            "limitCollectionCreation": limit_collection_creation,
             "limitCollectionDeletion": true,
             "limitItemDeletion": false,
             "allowAdminAccessToAllCollectionItems": true,
@@ -557,82 +584,39 @@ impl Membership {
             Vec::new()
         };
 
-        // Check if a user is in a group which has access to all collections
-        // If that is the case, we should not return individual collections!
-        let full_access_group =
-            CONFIG.org_groups_enabled() && Group::is_in_full_access_group(&self.user_uuid, &self.org_uuid, conn).await;
-
-        // If collections are to be included, only include them if the user does not have full access via a group or defined to the user it self
-        let collections: Vec<Value> = if include_collections && !(full_access_group || self.access_all) {
-            // Get all collections for the user here already to prevent more queries
-            let cu: HashMap<CollectionId, CollectionUser> =
-                CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
-                    .await
-                    .into_iter()
-                    .map(|cu| (cu.collection_uuid.clone(), cu))
-                    .collect();
-
-            // Get all collection groups for this user to prevent there inclusion
-            let cg: HashSet<CollectionId> = CollectionGroup::find_by_user(&self.user_uuid, conn)
+        let collections: Vec<Value> = if include_collections {
+            CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
                 .await
                 .into_iter()
-                .map(|cg| cg.collections_uuid)
-                .collect();
-
-            Collection::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
-                .await
-                .into_iter()
-                .filter_map(|c| {
-                    let (read_only, hide_passwords, manage) = if self.has_full_access() {
-                        (false, false, self.atype >= MembershipType::Manager)
-                    } else if let Some(cu) = cu.get(&c.uuid) {
-                        (
-                            cu.read_only,
-                            cu.hide_passwords,
-                            cu.manage || (self.atype == MembershipType::Manager && !cu.read_only && !cu.hide_passwords),
-                        )
-                    // If previous checks failed it might be that this user has access via a group, but we should not return those elements here
-                    // Those are returned via a special group endpoint
-                    } else if cg.contains(&c.uuid) {
-                        return None;
-                    } else {
-                        (true, true, false)
-                    };
-
-                    Some(json!({
-                        "id": c.uuid,
-                        "readOnly": read_only,
-                        "hidePasswords": hide_passwords,
-                        "manage": manage,
-                    }))
+                .map(|collection_user| {
+                    json!({
+                        "id": collection_user.collection_uuid,
+                        "readOnly": collection_user.read_only,
+                        "hidePasswords": collection_user.hide_passwords,
+                        "manage": stored_assignment_manage(self.atype, collection_user.manage),
+                    })
                 })
                 .collect()
         } else {
             Vec::new()
         };
 
-        // HACK: Convert the manager type to a custom type
-        // It will be converted back on other locations
-        let membership_type = self.type_manager_as_custom();
+        let membership_type = self.atype;
 
-        // HACK: Only return permissions if the user is of type custom and has access_all
-        // Else Bitwarden will assume the defaults of all false
-        let permissions = if membership_type == 4 && self.access_all {
+        // Only return a permissions object for custom-type members. Otherwise Bitwarden assumes
+        // all-false defaults and the role itself supplies any elevated capabilities.
+        let permissions = if membership_type == MembershipType::Custom as i32 {
             json!({
-                // TODO: Add full support for Custom User Roles
-                // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
-                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
-                "accessEventLogs": false,
-                "accessImportExport": false,
-                "accessReports": false,
-                // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": true,
-                "editAnyCollection": true,
-                "deleteAnyCollection": true,
-                "manageGroups": false,
-                "managePolicies": false,
+                "accessEventLogs": self.access_event_logs,
+                "accessImportExport": self.access_import_export,
+                "accessReports": self.access_reports,
+                "createNewCollections": self.create_new_collections,
+                "editAnyCollection": self.edit_any_collection,
+                "deleteAnyCollection": self.delete_any_collection,
+                "manageGroups": self.manage_groups,
+                "managePolicies": self.manage_policies,
                 "manageSso": false, // Not supported
-                "manageUsers": false,
+                "manageUsers": self.manage_users,
                 "manageResetPassword": false,
                 "manageScim": false // Not supported (Not AGPLv3 Licensed)
             })
@@ -652,7 +636,9 @@ impl Membership {
 
             "status": status,
             "type": membership_type,
-            "accessAll": self.access_all,
+            // `access_all` no longer exists as a stored flag; report the effective all-collection
+            // access so clients that still read this obsolete field keep seeing a consistent value.
+            "accessAll": self.grants_access_to_all_collections(),
             "twoFactorEnabled": twofactor_enabled,
             "resetPasswordEnrolled": self.reset_password_key.is_some(),
             "hasMasterPassword": !user.password_hash.is_empty(),
@@ -679,7 +665,7 @@ impl Membership {
     }
 
     pub async fn to_json_details(&self, conn: &DbConn) -> Value {
-        let coll_uuids = if self.access_all {
+        let coll_uuids = if self.grants_access_to_all_collections() {
             vec![] // If we have complete access, no need to fill the array
         } else {
             let collections =
@@ -711,7 +697,8 @@ impl Membership {
 
             "status": status,
             "type": self.atype,
-            "accessAll": self.access_all,
+            // Obsolete stored flag removed; report the effective all-collection access instead.
+            "accessAll": self.grants_access_to_all_collections(),
             "collections": coll_uuids,
 
             "object": "organizationUserDetails",
@@ -732,7 +719,7 @@ impl Membership {
         json!({
             "id": self.uuid,
             "userId": self.user_uuid,
-            "type": self.type_manager_as_custom(), // HACK: Convert the manager type to a custom type
+            "type": self.atype,
             "status": status,
             "name": user.name,
             "email": user.email,
@@ -812,7 +799,187 @@ impl Membership {
     }
 
     pub fn has_full_access(&self) -> bool {
-        (self.access_all || self.atype >= MembershipType::Admin) && self.has_status(MembershipStatus::Confirmed)
+        (self.has_edit_any_collection() || self.atype >= MembershipType::Admin)
+            && self.has_status(MembershipStatus::Confirmed)
+    }
+
+    /// Whether this membership reaches every collection in the org regardless of per-collection
+    /// assignments -- Admins/Owners implicitly, and Custom members holding `edit_any_collection`. The
+    /// successor of the removed `access_all` flag: it backs the `accessAll` field the Bitwarden clients
+    /// still read, and intentionally does not gate on status, matching the old column. Authorization
+    /// decisions use the status-aware `has_full_access` instead.
+    pub fn grants_access_to_all_collections(&self) -> bool {
+        self.atype >= MembershipType::Admin || self.has_edit_any_collection()
+    }
+
+    /// Whether enabling an organization policy may revoke this membership as part of enforcing it.
+    ///
+    /// Two exclusions, both applying to every policy whose enforcement revokes non-compliant members
+    /// (Two-Factor Authentication and Single Organization):
+    ///
+    /// * Admins and Owners are never revoked. `atype < Admin` is deliberately the *ceiling* comparison
+    ///   used everywhere else, so an unknown stored role stays sweepable.
+    /// * Nor is the member who made the change. Until the Custom role this was implied by the first rule;
+    ///   `managePolicies` can now be held by a Custom member, who *is* sweepable and would otherwise
+    ///   revoke themselves mid-request. Bitwarden excludes the acting user for the same reason.
+    ///
+    /// Peers are still revoked exactly as before.
+    pub fn is_policy_enforcement_target(&self, acting_user: &UserId) -> bool {
+        self.atype < MembershipType::Admin && &self.user_uuid != acting_user
+    }
+
+    // The granular custom permission flags are only meaningful while the membership is of
+    // the Custom type. Gating them on the type here ensures that a stale flag left over from
+    // a type change (e.g. via the admin panel) can never grant anything.
+    pub fn has_manage_users(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.manage_users
+    }
+
+    pub fn has_manage_groups(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.manage_groups
+    }
+
+    pub fn has_manage_policies(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.manage_policies
+    }
+
+    pub fn has_create_new_collections(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.create_new_collections
+    }
+
+    pub fn has_edit_any_collection(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.edit_any_collection
+    }
+
+    pub fn has_delete_any_collection(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.delete_any_collection
+    }
+
+    pub fn has_access_event_logs(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.access_event_logs
+    }
+
+    pub fn has_access_import_export(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.access_import_export
+    }
+
+    pub fn has_access_reports(&self) -> bool {
+        self.has_type(MembershipType::Custom) && self.access_reports
+    }
+
+    /// Check for an explicit per-collection Manage grant without treating any `access_all` value as such
+    /// a grant. Neither membership nor group `access_all` may manufacture one.
+    ///
+    /// There is deliberately no live exception for legacy Managers whose authority came from an
+    /// organization-local `access_all` group. That legacy management authority is intentionally not
+    /// materialized into Custom membership permissions during migration. The group continues to grant
+    /// collection access dynamically, while any desired Custom collection-management permissions must
+    /// be assigned explicitly after the upgrade.
+    pub async fn has_explicit_collection_manage_access(&self, collection_uuid: &CollectionId, conn: &DbConn) -> bool {
+        let membership_uuid = self.uuid.clone();
+        let user_uuid = self.user_uuid.clone();
+        let org_uuid = self.org_uuid.clone();
+        let collection_uuid = collection_uuid.clone();
+
+        conn.run(move |conn| {
+            let has_direct_manage = users_organizations::table
+                .inner_join(
+                    users_collections::table.on(users_collections::user_uuid.eq(users_organizations::user_uuid)),
+                )
+                .inner_join(
+                    collections::table.on(collections::uuid
+                        .eq(users_collections::collection_uuid)
+                        .and(collections::org_uuid.eq(users_organizations::org_uuid))),
+                )
+                .filter(users_organizations::uuid.eq(membership_uuid.clone()))
+                .filter(users_organizations::user_uuid.eq(user_uuid.clone()))
+                .filter(users_organizations::org_uuid.eq(org_uuid.clone()))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .filter(users_organizations::atype.eq_any([MembershipType::User as i32, MembershipType::Custom as i32]))
+                .filter(collections::uuid.eq(collection_uuid.clone()))
+                .filter(users_collections::manage.eq(true))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0)
+                != 0;
+
+            if has_direct_manage {
+                return true;
+            }
+
+            users_organizations::table
+                .inner_join(
+                    groups_users::table.on(groups_users::users_organizations_uuid.eq(users_organizations::uuid)),
+                )
+                .inner_join(
+                    groups::table.on(groups::uuid
+                        .eq(groups_users::groups_uuid)
+                        .and(groups::organizations_uuid.eq(users_organizations::org_uuid))),
+                )
+                .inner_join(collections_groups::table.on(collections_groups::groups_uuid.eq(groups_users::groups_uuid)))
+                .inner_join(
+                    collections::table.on(collections::uuid
+                        .eq(collections_groups::collections_uuid)
+                        .and(collections::org_uuid.eq(users_organizations::org_uuid))),
+                )
+                .filter(users_organizations::uuid.eq(membership_uuid))
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::org_uuid.eq(org_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .filter(users_organizations::atype.eq_any([MembershipType::User as i32, MembershipType::Custom as i32]))
+                .filter(collections::uuid.eq(collection_uuid))
+                .filter(collections_groups::manage.eq(true))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0)
+                != 0
+        })
+        .await
+    }
+
+    /// `manageAllCollections` is a client-side aggregate checkbox, not a separately persisted
+    /// Bitwarden permission. It is selected exactly when all three child permissions are selected.
+    pub fn has_manage_all_collections(&self) -> bool {
+        self.has_create_new_collections() && self.has_edit_any_collection() && self.has_delete_any_collection()
+    }
+
+    /// Match Vaultwarden's existing collection-creation policy while keeping the Custom
+    /// permission independent from edit/delete.
+    pub fn can_create_new_collections(&self) -> bool {
+        if !self.has_status(MembershipStatus::Confirmed) {
+            return false;
+        }
+
+        match MembershipType::from_i32(self.atype) {
+            Some(MembershipType::Owner | MembershipType::Admin) => true,
+            Some(MembershipType::Custom) => self.create_new_collections,
+            Some(MembershipType::User) | None => false,
+        }
+    }
+
+    pub fn limit_collection_creation(&self) -> bool {
+        match MembershipType::from_i32(self.atype) {
+            Some(MembershipType::Owner | MembershipType::Admin) => false,
+            Some(MembershipType::Custom) => !self.create_new_collections,
+            Some(MembershipType::User) | None => true,
+        }
+    }
+
+    pub fn can_delete_any_collection(&self) -> bool {
+        self.has_status(MembershipStatus::Confirmed)
+            && (self.atype >= MembershipType::Admin || self.has_delete_any_collection())
+    }
+
+    pub fn clear_custom_permissions(&mut self) {
+        self.manage_users = false;
+        self.manage_groups = false;
+        self.manage_policies = false;
+        self.create_new_collections = false;
+        self.edit_any_collection = false;
+        self.delete_any_collection = false;
+        self.access_event_logs = false;
+        self.access_import_export = false;
+        self.access_reports = false;
     }
 
     pub async fn find_by_uuid(uuid: &MembershipId, conn: &DbConn) -> Option<Self> {
@@ -936,7 +1103,7 @@ impl Membership {
         .await
     }
 
-    // Get all users which are either owner or admin, or a manager which can manage/access all
+    // Get all users which are either owner or admin, or a Custom member which can access all collections
     pub async fn find_confirmed_and_manage_all_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             users_organizations::table
@@ -944,10 +1111,8 @@ impl Membership {
                 .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(
                     users_organizations::atype
-                        .eq_any(vec![MembershipType::Owner as i32, MembershipType::Admin as i32])
-                        .or(users_organizations::atype
-                            .eq(MembershipType::Manager as i32)
-                            .and(users_organizations::access_all.eq(true))),
+                        .eq_any(ORG_ADMIN_ATYPES)
+                        .or(custom_membership_with_edit_any_collection()),
                 )
                 .load::<Self>(conn)
                 .unwrap_or_default()
@@ -1071,10 +1236,11 @@ impl Membership {
                         .eq(users_collections::collection_uuid)
                         .and(ciphers_collections::cipher_uuid.eq(&cipher_uuid))),
                 )
-                .filter(users_organizations::access_all.eq(true).or(
-                    // AccessAll..
-                    ciphers_collections::cipher_uuid.eq(&cipher_uuid), // ..or access to collection with cipher
-                ))
+                .filter(
+                    custom_membership_with_edit_any_collection() // Custom "Edit any collection" (successor of access_all)
+                        .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // or org admin/owner
+                        .or(ciphers_collections::cipher_uuid.eq(&cipher_uuid)), // ..or access to collection with cipher
+                )
                 .select(users_organizations::all_columns)
                 .distinct()
                 .load::<Self>(conn)
@@ -1117,27 +1283,6 @@ impl Membership {
         .await
     }
 
-    pub async fn user_has_ge_admin_access_to_cipher(user_uuid: &UserId, cipher_uuid: &CipherId, conn: &DbConn) -> bool {
-        conn.run(move |conn| {
-            users_organizations::table
-                .inner_join(
-                    ciphers::table.on(ciphers::uuid
-                        .eq(cipher_uuid)
-                        .and(ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()))),
-                )
-                .filter(users_organizations::user_uuid.eq(user_uuid))
-                .filter(
-                    users_organizations::atype.eq_any(vec![MembershipType::Owner as i32, MembershipType::Admin as i32]),
-                )
-                .count()
-                .first::<i64>(conn)
-                .ok()
-                .unwrap_or(0)
-                != 0
-        })
-        .await
-    }
-
     pub async fn find_by_collection_and_org(
         collection_uuid: &CollectionId,
         org_uuid: &OrganizationId,
@@ -1147,10 +1292,11 @@ impl Membership {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
                 .left_join(users_collections::table.on(users_collections::user_uuid.eq(users_organizations::user_uuid)))
-                .filter(users_organizations::access_all.eq(true).or(
-                    // AccessAll..
-                    users_collections::collection_uuid.eq(&collection_uuid), // ..or access to collection with cipher
-                ))
+                .filter(
+                    custom_membership_with_edit_any_collection() // Custom "Edit any collection" (successor of access_all)
+                        .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // or org admin/owner
+                        .or(users_collections::collection_uuid.eq(&collection_uuid)), // ..or access to collection
+                )
                 .select(users_organizations::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading user organizations")
@@ -1266,12 +1412,146 @@ pub struct OrgApiKeyId(String);
 mod tests {
     use super::*;
 
+    /// An `atype` this build cannot interpret: a future build, a partial rollback or a hand-edited row.
+    const UNKNOWN_ATYPE: i32 = 99;
+
+    fn membership(atype: i32) -> Membership {
+        let mut member = Membership::new(
+            UserId::from(String::from("test-user")),
+            OrganizationId::from(String::from("test-org")),
+            None,
+        );
+        member.atype = atype;
+        member.status = MembershipStatus::Confirmed as i32;
+        member
+    }
+
+    /// How roles rank against each other, and how a stored `atype` is read.
+    ///
+    /// Every authorization guard in the tree asks `atype >= MembershipType::X` or
+    /// `atype < MembershipType::X` against a value straight from the database, so those two answers --
+    /// including the answers for a value this build does not know -- are the security semantics here.
     #[test]
-    #[allow(non_snake_case)]
-    fn partial_cmp_MembershipType() {
+    fn membership_type_ordering_and_parsing() {
+        // Roles rank by authority, not by the stored discriminant: Custom is stored as 4 but sits
+        // between User and Admin.
         assert!(MembershipType::Owner > MembershipType::Admin);
-        assert!(MembershipType::Admin > MembershipType::Manager);
-        assert!(MembershipType::Manager > MembershipType::User);
-        assert!(MembershipType::Manager == MembershipType::from_str("4").unwrap());
+        assert!(MembershipType::Admin > MembershipType::Custom);
+        assert!(MembershipType::Custom > MembershipType::User);
+
+        // (stored atype, reaches Admin authority, is below Admin)
+        let stored = [
+            (MembershipType::Owner as i32, true, false),
+            (MembershipType::Admin as i32, true, false),
+            (MembershipType::Custom as i32, false, true),
+            (MembershipType::User as i32, false, true),
+            // An unknown role answers "no" to authority *and* "yes" to being below Admin. Both are
+            // deliberate: it never reaches administrative authority, and it stays sweepable by policy
+            // enforcement instead of becoming a row nothing can act on.
+            (UNKNOWN_ATYPE, false, true),
+            (-1, false, true),
+        ];
+        for (atype, reaches_admin, below_admin) in stored {
+            assert_eq!(atype >= MembershipType::Admin, reaches_admin, "atype {atype} >= Admin");
+            assert_eq!(atype < MembershipType::Admin, below_admin, "atype {atype} < Admin");
+        }
+
+        // Wire values. Modern clients no longer offer the Manager role, but an old client or a stored
+        // request may still send 3; Custom supersedes it, so it is accepted and folded on.
+        let accepted = [
+            ("0", MembershipType::Owner),
+            ("Owner", MembershipType::Owner),
+            ("1", MembershipType::Admin),
+            ("Admin", MembershipType::Admin),
+            ("2", MembershipType::User),
+            ("User", MembershipType::User),
+            ("3", MembershipType::Custom),
+            ("Manager", MembershipType::Custom),
+            ("4", MembershipType::Custom),
+            ("Custom", MembershipType::Custom),
+        ];
+        for (wire, expected) in accepted {
+            assert!(
+                MembershipType::from_str(wire) == Some(expected),
+                "{wire:?} must parse as the role stored as {}",
+                expected as i32
+            );
+        }
+        for rejected in ["", " ", "3 ", "5", "-1", "manager", "custom", "Manager\n"] {
+            assert!(MembershipType::from_str(rejected).is_none(), "{rejected:?} must not parse");
+        }
+    }
+
+    /// The nine granular permissions are stored as plain columns, so they outlive a role change. Every
+    /// reader gates them on the Custom type for that reason: a flag left behind on a User, an Admin or
+    /// a role this build cannot read must grant nothing.
+    #[test]
+    fn custom_permission_flags_are_type_gated() {
+        type Reader = fn(&Membership) -> bool;
+        type Setter = fn(&mut Membership, bool);
+
+        let permissions: [(&str, Reader, Setter); 9] = [
+            ("manageUsers", Membership::has_manage_users, |m, v| m.manage_users = v),
+            ("manageGroups", Membership::has_manage_groups, |m, v| m.manage_groups = v),
+            ("managePolicies", Membership::has_manage_policies, |m, v| m.manage_policies = v),
+            ("createNewCollections", Membership::has_create_new_collections, |m, v| m.create_new_collections = v),
+            ("editAnyCollection", Membership::has_edit_any_collection, |m, v| m.edit_any_collection = v),
+            ("deleteAnyCollection", Membership::has_delete_any_collection, |m, v| m.delete_any_collection = v),
+            ("accessEventLogs", Membership::has_access_event_logs, |m, v| m.access_event_logs = v),
+            ("accessImportExport", Membership::has_access_import_export, |m, v| m.access_import_export = v),
+            ("accessReports", Membership::has_access_reports, |m, v| m.access_reports = v),
+        ];
+
+        for (name, read, set) in permissions {
+            for atype in [
+                MembershipType::Owner as i32,
+                MembershipType::Admin as i32,
+                MembershipType::User as i32,
+                MembershipType::Custom as i32,
+                UNKNOWN_ATYPE,
+            ] {
+                let mut member = membership(atype);
+                assert!(!read(&member), "{name} must be off while its column is false (atype {atype})");
+
+                set(&mut member, true);
+                assert_eq!(
+                    read(&member),
+                    atype == MembershipType::Custom as i32,
+                    "{name} is only meaningful on a Custom membership (atype {atype})"
+                );
+            }
+        }
+
+        // Clearing has to reach every one of the nine; a forgotten field would leave authority behind
+        // on a member that was just moved off the Custom role.
+        let mut member = membership(MembershipType::Custom as i32);
+        for (_, _, set) in permissions {
+            set(&mut member, true);
+        }
+        member.clear_custom_permissions();
+        for (name, read, _) in permissions {
+            assert!(!read(&member), "{name} survived clear_custom_permissions");
+        }
+
+        // `manageAllCollections` is a client-side aggregate: selected exactly when all three child
+        // permissions are.
+        let all_collections = |atype, create, edit, delete| {
+            let mut member = membership(atype);
+            member.create_new_collections = create;
+            member.edit_any_collection = edit;
+            member.delete_any_collection = delete;
+            member
+        };
+        let custom = MembershipType::Custom as i32;
+        assert!(all_collections(custom, true, true, true).has_manage_all_collections());
+        for (missing, member) in [
+            ("createNewCollections", all_collections(custom, false, true, true)),
+            ("editAnyCollection", all_collections(custom, true, false, true)),
+            ("deleteAnyCollection", all_collections(custom, true, true, false)),
+            // And, like every other reader, the aggregate is gated on the type.
+            ("the Custom role", all_collections(MembershipType::User as i32, true, true, true)),
+        ] {
+            assert!(!member.has_manage_all_collections(), "{missing} missing must clear the aggregate");
+        }
     }
 }

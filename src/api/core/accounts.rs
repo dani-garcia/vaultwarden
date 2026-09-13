@@ -31,7 +31,7 @@ use crate::{
 };
 
 use super::{
-    ciphers::{CipherData, update_cipher_from_data},
+    ciphers::{CipherData, CipherUpdateAuthorization, update_cipher_from_data},
     sends::{SendData, update_send_from_data},
 };
 
@@ -1000,7 +1000,16 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
             // Prevent triggering cipher updates via WebSockets by settings UpdateType::None
             // The user sessions are invalidated because all the ciphers were re-encrypted and thus triggering an update could cause issues.
             // We force the users to logout after the user has been saved to try and prevent these issues.
-            update_cipher_from_data(saved_cipher, cipher_data, &headers, None, &conn, &nt, UpdateType::None).await?;
+            update_cipher_from_data(
+                saved_cipher,
+                cipher_data,
+                &headers,
+                CipherUpdateAuthorization::default(),
+                &conn,
+                &nt,
+                UpdateType::None,
+            )
+            .await?;
         }
     }
 
