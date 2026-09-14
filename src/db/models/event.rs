@@ -58,7 +58,7 @@ pub enum EventType {
     // UserUpdatedTempPassword = 1008, // Not supported
     // UserMigratedKeyToKeyConnector = 1009, // Not supported
     UserRequestedDeviceApproval = 1010,
-    // UserTdeOffboardingPasswordSet = 1011, // Not supported
+    UserTdeOffboardingPasswordSet = 1011,
 
     // Cipher
     CipherCreated = 1100,
