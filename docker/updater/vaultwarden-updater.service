@@ -1,0 +1,22 @@
+[Unit]
+Description=Vaultwarden Docker updater
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/vaultwarden-updater/updater.py /etc/vaultwarden-updater.json
+Restart=on-failure
+RestartSec=5
+RuntimeDirectory=vaultwarden-updater
+RuntimeDirectoryMode=0750
+StateDirectory=vaultwarden-updater
+StateDirectoryMode=0700
+UMask=0077
+# Keep private-registry credentials in the host's Docker credential store.
+# A non-root Vaultwarden container must share the socket directory's numeric group ID.
+Group=root
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

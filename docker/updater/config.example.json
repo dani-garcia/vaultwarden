@@ -1,0 +1,12 @@
+{
+  "project_directory": "/opt/vaultwarden",
+  "compose_files": ["/opt/vaultwarden/compose.yml"],
+  "project": "vaultwarden",
+  "service": "vaultwarden",
+  "data_directory": "/opt/vaultwarden/data",
+  "state_directory": "/var/lib/vaultwarden-updater",
+  "socket": "/run/vaultwarden-updater/updater.sock",
+  "default_image": "registry.example.com/vaultwarden:latest",
+  "image_repositories": ["registry.example.com/vaultwarden"],
+  "health_timeout": 180
+}
