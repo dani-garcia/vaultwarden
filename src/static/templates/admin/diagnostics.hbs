@@ -8,7 +8,11 @@
                 <dl class="row">
                     <dt class="col-sm-5">Server Installed
                         <span class="badge bg-success d-none abbr-badge" id="server-success" title="Latest version is installed.">Ok</span>
+                        {{#if page_data.updater_enabled}}
+                        <button type="button" class="badge bg-warning text-dark border-0 d-none" id="server-warning" title="Update Vaultwarden" disabled>Update</button>
+                        {{else}}
                         <span class="badge bg-warning text-dark d-none abbr-badge" id="server-warning" title="An update is available.">Update</span>
+                        {{/if}}
                         <span class="badge bg-info text-dark d-none abbr-badge" id="server-branch" title="This is a branched version.">Branched</span>
                     </dt>
                     <dd class="col-sm-7">
@@ -49,6 +53,10 @@
                 </dl>
             </div>
         </div>
+
+        {{#if page_data.updater_enabled}}
+        <p id="server-update-status" role="status" aria-live="polite"></p>
+        {{/if}}
 
         <h3>Checks</h3>
         <div class="row">
@@ -254,4 +262,7 @@
     </div>
 </main>
 <script src="{{urlpath}}/vw_static/admin_diagnostics.js"></script>
+{{#if page_data.updater_enabled}}
+<script src="{{urlpath}}/vw_static/admin_updates.js"></script>
+{{/if}}
 <script type="application/json" id="diagnostics_json">{{to_json page_data}}</script>

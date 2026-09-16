@@ -12,6 +12,8 @@ use rocket::{
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+mod updates;
+
 use crate::{
     CONFIG, VERSION,
     api::{
@@ -71,6 +73,8 @@ pub fn routes() -> Vec<Route> {
         get_diagnostics_config,
         resend_user_invite,
         get_diagnostics_http,
+        updates::update_status,
+        updates::start_update,
     ]
 }
 
@@ -781,6 +785,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
         "current_release": VERSION,
+        "updater_enabled": CONFIG.updater_socket().is_some() && !CONFIG.disable_admin_token(),
         "latest_release": latest_vw_release,
         "latest_commit": latest_vw_commit,
         "web_vault_enabled": &CONFIG.web_vault_enabled(),

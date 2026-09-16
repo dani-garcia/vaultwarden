@@ -524,6 +524,10 @@ make_config! {
         /// Enable websocket notifications
         enable_websocket:       bool,   false,  def,    true;
     },
+    updates {
+        /// Updater socket |> Unix socket of the optional host Docker updater. Requires admin authentication.
+        updater_socket: String, false, option;
+    },
     push {
         /// Enable push notifications
         push_enabled:           bool,   false,  def,    false;
