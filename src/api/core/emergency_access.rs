@@ -6,7 +6,7 @@ use crate::{
     CONFIG,
     api::{
         EmptyResult, JsonResult,
-        core::{CipherSyncData, CipherSyncType},
+        core::{CipherSyncData, CipherSyncType, accounts::KDFData},
     },
     auth::{Headers, decode_emergency_access_invite},
     db::{
@@ -615,6 +615,7 @@ async fn takeover_emergency_access(emer_id: EmergencyAccessId, headers: Headers,
         "kdfMemory": grantor_user.client_kdf_memory,
         "kdfParallelism": grantor_user.client_kdf_parallelism,
         "keyEncrypted": &emergency_access.key_encrypted,
+        "salt": master_password_salt(&grantor_user),
         "object": "emergencyAccessTakeover",
     });
 
@@ -623,9 +624,30 @@ async fn takeover_emergency_access(emer_id: EmergencyAccessId, headers: Headers,
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct EmergencyAccessAuthenticationData {
+    salt: String,
+    kdf: KDFData,
+    master_password_authentication_hash: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EmergencyAccessUnlockData {
+    salt: String,
+    kdf: KDFData,
+    master_key_wrapped_user_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct EmergencyAccessPasswordData {
-    new_master_password_hash: String,
-    key: String,
+    // Legacy payload
+    new_master_password_hash: Option<String>,
+    key: Option<String>,
+
+    // Current payload
+    authentication_data: Option<EmergencyAccessAuthenticationData>,
+    unlock_data: Option<EmergencyAccessUnlockData>,
 }
 
 #[post("/emergency-access/<emer_id>/password", data = "<data>")]
@@ -638,8 +660,6 @@ async fn password_emergency_access(
     check_emergency_access_enabled()?;
 
     let data: EmergencyAccessPasswordData = data.into_inner();
-    let new_master_password_hash = &data.new_master_password_hash;
-    //let key = &data.Key;
 
     let requesting_user = headers.user;
     let Some(emergency_access) =
@@ -656,8 +676,33 @@ async fn password_emergency_access(
         err!("Grantor user not found.")
     };
 
+    let (new_master_password_hash, new_key) =
+        if let (Some(authentication_data), Some(unlock_data)) = (data.authentication_data, data.unlock_data) {
+            if authentication_data.kdf != unlock_data.kdf {
+                err!("KDF settings must be equal for authentication and unlock")
+            }
+
+            if authentication_data.salt != unlock_data.salt {
+                err!("Invalid master password salt")
+            }
+
+            if !authentication_data.kdf.matches_user(&grantor_user) {
+                err!("KDF settings do not match the grantor account")
+            }
+
+            if authentication_data.salt != master_password_salt(&grantor_user) {
+                err!("Invalid master password salt")
+            }
+
+            (authentication_data.master_password_authentication_hash, unlock_data.master_key_wrapped_user_key)
+        } else if let (Some(new_master_password_hash), Some(new_key)) = (data.new_master_password_hash, data.key) {
+            (new_master_password_hash, new_key)
+        } else {
+            err!("Invalid request!")
+        };
+
     // change grantor_user password
-    grantor_user.set_password(new_master_password_hash, Some(data.key), true, None, &conn).await?;
+    grantor_user.set_password(&new_master_password_hash, Some(new_key), true, None, &conn).await?;
     grantor_user.save(&conn).await?;
 
     // Disable TwoFactor providers since they will otherwise block logins
@@ -699,6 +744,10 @@ async fn policies_emergency_access(emer_id: EmergencyAccessId, headers: Headers,
         "object": "list",
         "continuationToken": null
     })))
+}
+
+fn master_password_salt(user: &User) -> String {
+    user.email.trim().to_lowercase()
 }
 
 fn is_valid_request(

@@ -91,6 +91,15 @@ pub struct KDFData {
     kdf_parallelism: Option<i32>,
 }
 
+impl KDFData {
+    pub(super) fn matches_user(&self, user: &User) -> bool {
+        self.kdf == user.client_kdf_type
+            && self.kdf_iterations == user.client_kdf_iter
+            && self.kdf_memory == user.client_kdf_memory
+            && self.kdf_parallelism == user.client_kdf_parallelism
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterData {
