@@ -1,5 +1,8 @@
 # Vaultwarden Container Building
 
+For optional updates from the admin diagnostics page, see
+[Admin Docker updates](updater/README.md).
+
 To build and release new testing and stable releases of Vaultwarden we use `docker buildx bake`.<br>
 This can be used locally by running the command yourself, but it is also used by GitHub Actions.
 
