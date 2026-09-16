@@ -1427,6 +1427,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "pm-5594-safari-account-switching",
     "pm-32413-multi-client-password-management",
     // Autofill Team
+    "enable-basic-auth-response",
     "ssh-agent",
     "ssh-agent-v2",
     // Key Management Team
