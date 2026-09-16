@@ -128,6 +128,7 @@ RUN . /env-cargo && \
 # We need to add `--platform` here, because of a podman bug: https://github.com/containers/buildah/issues/4742
 # hadolint ignore=DL3065
 FROM --platform=$TARGETPLATFORM docker.io/library/alpine:3.24
+LABEL org.vaultwarden.admin-updates="1"
 
 ENV ROCKET_PROFILE="release" \
     ROCKET_ADDRESS=0.0.0.0 \
