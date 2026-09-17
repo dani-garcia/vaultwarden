@@ -26,6 +26,8 @@ use crate::{
     util::{NumberOrString, convert_json_key_lcase_first},
 };
 
+use super::accounts::{AuthenticationData, UnlockData};
+
 pub fn routes() -> Vec<Route> {
     routes![
         get_organization,
@@ -2935,48 +2937,6 @@ struct OrganizationUserResetPasswordEnrollmentRequest {
     otp: Option<String>,
 }
 
-#[derive(Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase")]
-struct RecoverAccountKdfData {
-    #[serde(alias = "kdfType")]
-    kdf: i32,
-    #[serde(alias = "iterations")]
-    kdf_iterations: i32,
-    #[serde(alias = "memory")]
-    kdf_memory: Option<i32>,
-    #[serde(alias = "parallelism")]
-    kdf_parallelism: Option<i32>,
-}
-
-impl RecoverAccountKdfData {
-    fn matches_user(&self, user: &User) -> bool {
-        self.kdf == user.client_kdf_type
-            && self.kdf_iterations == user.client_kdf_iter
-            && self.kdf_memory == user.client_kdf_memory
-            && self.kdf_parallelism == user.client_kdf_parallelism
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RecoverAccountAuthenticationData {
-    salt: String,
-    kdf: RecoverAccountKdfData,
-    master_password_authentication_hash: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RecoverAccountUnlockData {
-    salt: String,
-    kdf: RecoverAccountKdfData,
-    master_key_wrapped_user_key: String,
-}
-
-fn master_password_salt(user: &User) -> String {
-    user.email.trim().to_lowercase()
-}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OrganizationUserRecoverAccountRequest {
@@ -2985,8 +2945,8 @@ struct OrganizationUserRecoverAccountRequest {
     key: Option<String>,
 
     // Current payload
-    authentication_data: Option<RecoverAccountAuthenticationData>,
-    unlock_data: Option<RecoverAccountUnlockData>,
+    authentication_data: Option<AuthenticationData>,
+    unlock_data: Option<UnlockData>,
 
     #[serde(default)]
     reset_master_password: bool,
@@ -3103,20 +3063,10 @@ async fn recover_account(
         let (new_master_password_hash, new_key) = if let (Some(authentication_data), Some(unlock_data)) =
             (req.authentication_data, req.unlock_data)
         {
-            if authentication_data.kdf != unlock_data.kdf {
-                err!("KDF settings must be equal for authentication and unlock")
-            }
-
-            if authentication_data.salt != unlock_data.salt {
-                err!("Invalid master password salt")
-            }
+            authentication_data.check(&user, &unlock_data)?;
 
             if !authentication_data.kdf.matches_user(&user) {
                 err!("KDF settings do not match the user account")
-            }
-
-            if authentication_data.salt != master_password_salt(&user) {
-                err!("Invalid master password salt")
             }
 
             (authentication_data.master_password_authentication_hash, unlock_data.master_key_wrapped_user_key)
@@ -3184,7 +3134,7 @@ async fn get_reset_password_details(
         "kdfIterations": user.client_kdf_iter,
         "kdfMemory": user.client_kdf_memory,
         "kdfParallelism": user.client_kdf_parallelism,
-        "masterPasswordSalt": master_password_salt(&user),
+        "masterPasswordSalt": user.master_password_salt(),
         "resetPasswordKey": member.reset_password_key,
         "encryptedPrivateKey": org.private_key,
     })))
