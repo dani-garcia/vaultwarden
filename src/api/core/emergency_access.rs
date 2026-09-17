@@ -6,7 +6,10 @@ use crate::{
     CONFIG,
     api::{
         EmptyResult, JsonResult,
-        core::{CipherSyncData, CipherSyncType, accounts::KDFData},
+        core::{
+            CipherSyncData, CipherSyncType,
+            accounts::{AuthenticationData, UnlockData},
+        },
     },
     auth::{Headers, decode_emergency_access_invite},
     db::{
@@ -615,27 +618,11 @@ async fn takeover_emergency_access(emer_id: EmergencyAccessId, headers: Headers,
         "kdfMemory": grantor_user.client_kdf_memory,
         "kdfParallelism": grantor_user.client_kdf_parallelism,
         "keyEncrypted": &emergency_access.key_encrypted,
-        "salt": master_password_salt(&grantor_user),
+        "salt": grantor_user.master_password_salt(),
         "object": "emergencyAccessTakeover",
     });
 
     Ok(Json(result))
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct EmergencyAccessAuthenticationData {
-    salt: String,
-    kdf: KDFData,
-    master_password_authentication_hash: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct EmergencyAccessUnlockData {
-    salt: String,
-    kdf: KDFData,
-    master_key_wrapped_user_key: String,
 }
 
 #[derive(Deserialize)]
@@ -646,8 +633,8 @@ struct EmergencyAccessPasswordData {
     key: Option<String>,
 
     // Current payload
-    authentication_data: Option<EmergencyAccessAuthenticationData>,
-    unlock_data: Option<EmergencyAccessUnlockData>,
+    authentication_data: Option<AuthenticationData>,
+    unlock_data: Option<UnlockData>,
 }
 
 #[post("/emergency-access/<emer_id>/password", data = "<data>")]
@@ -678,20 +665,10 @@ async fn password_emergency_access(
 
     let (new_master_password_hash, new_key) =
         if let (Some(authentication_data), Some(unlock_data)) = (data.authentication_data, data.unlock_data) {
-            if authentication_data.kdf != unlock_data.kdf {
-                err!("KDF settings must be equal for authentication and unlock")
-            }
-
-            if authentication_data.salt != unlock_data.salt {
-                err!("Invalid master password salt")
-            }
+            authentication_data.check(&grantor_user, &unlock_data)?;
 
             if !authentication_data.kdf.matches_user(&grantor_user) {
                 err!("KDF settings do not match the grantor account")
-            }
-
-            if authentication_data.salt != master_password_salt(&grantor_user) {
-                err!("Invalid master password salt")
             }
 
             (authentication_data.master_password_authentication_hash, unlock_data.master_key_wrapped_user_key)
@@ -744,10 +721,6 @@ async fn policies_emergency_access(emer_id: EmergencyAccessId, headers: Headers,
         "object": "list",
         "continuationToken": null
     })))
-}
-
-fn master_password_salt(user: &User) -> String {
-    user.email.trim().to_lowercase()
 }
 
 fn is_valid_request(

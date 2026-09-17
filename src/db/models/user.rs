@@ -166,6 +166,10 @@ impl User {
         )
     }
 
+    pub fn master_password_salt(&self) -> String {
+        self.email.trim().to_lowercase()
+    }
+
     pub fn check_valid_recovery_code(&self, recovery_code: &str) -> bool {
         if let Some(ref totp_recover) = self.totp_recover {
             crypto::ct_eq(recovery_code, totp_recover.to_lowercase())
