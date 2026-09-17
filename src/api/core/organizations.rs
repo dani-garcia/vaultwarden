@@ -3038,11 +3038,12 @@ async fn recover_account(
         err!("Organization user must be confirmed for password reset functionality");
     }
 
-    let fallback_2fa_email = if req.reset_two_factor && CONFIG.email_2fa_auto_fallback() {
-        TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &conn).await.is_none()
-    } else {
-        false
-    };
+    let fallback_2fa_email =
+        if req.reset_two_factor && CONFIG.mail_enabled() && CONFIG.email_2fa_auto_fallback() && user.verified() {
+            TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &conn).await.is_none()
+        } else {
+            false
+        };
 
     // Sending email first ensure working email configuration and the resulting user notification.
     // Also this might add some protection against security flaws and misuse
