@@ -207,6 +207,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "userDecryption": {
             "masterPasswordUnlock": master_password_unlock,
             "userKeyId": headers.user.key_id,
+            "v2UpgradeToken": headers.user.v2_upgrade_token_json(),
         },
         "object": "sync"
     })))
