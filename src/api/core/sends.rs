@@ -151,21 +151,29 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
         );
     }
 
-    if data.emails.is_some() {
-        err!("Sends with email verification is not supported");
+    if !CONFIG.mail_enabled() && data.emails.is_some() {
+        err!("Email are disabled, cannot send verification code");
     }
 
-    let mut send = Send::new(data.r#type, data.name, data_str, data.key, data.deletion_date.naive_utc());
-    send.user_uuid = Some(user_id);
-    send.notes = data.notes;
-    send.max_access_count = match data.max_access_count {
+    let max_access_count = match data.max_access_count {
         Some(m) => Some(m.into_i32()?),
         _ => None,
     };
-    send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
-    send.disabled = data.disabled;
-    send.hide_email = data.hide_email;
-    send.atype = data.r#type;
+
+    let mut send = Send::new(
+        data.r#type,
+        user_id,
+        data.name,
+        data.notes,
+        data_str,
+        data.key,
+        max_access_count,
+        data.emails,
+        data.expiration_date.map(|d| d.naive_utc()),
+        data.deletion_date.naive_utc(),
+        data.disabled,
+        data.hide_email.unwrap_or(false),
+    );
 
     send.set_password(data.password.as_deref());
 
@@ -629,13 +637,13 @@ async fn put_send(send_id: SendId, data: Json<SendData>, headers: Headers, conn:
     let data: SendData = data.into_inner();
     enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
+    if !CONFIG.mail_enabled() && data.emails.is_some() {
+        err!("Email are disabled, cannot send verification code");
+    }
+
     let Some(mut send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await else {
         err!("Send not found", "Send send_id is invalid or does not belong to user")
     };
-
-    if data.emails.is_some() {
-        err!("Sends with email verification is not supported");
-    }
 
     update_send_from_data(&mut send, data, &headers, &conn, &nt, UpdateType::SyncSendUpdate).await?;
 
@@ -650,7 +658,7 @@ pub async fn update_send_from_data(
     nt: &Notify<'_>,
     ut: UpdateType,
 ) -> EmptyResult {
-    if send.user_uuid.as_ref() != Some(&headers.user.uuid) {
+    if send.user_uuid != headers.user.uuid {
         err!("Send is not owned by user")
     }
 
@@ -685,8 +693,9 @@ pub async fn update_send_from_data(
         _ => None,
     };
     send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
-    send.hide_email = data.hide_email;
+    send.hide_email = data.hide_email.unwrap_or(false);
     send.disabled = data.disabled;
+    send.emails = data.emails.map(|e| e.to_lowercase());
 
     // Only change the value if it's present
     if let Some(password) = data.password {

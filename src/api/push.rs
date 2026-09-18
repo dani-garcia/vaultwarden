@@ -244,9 +244,7 @@ pub async fn push_folder_update(ut: UpdateType, folder: &Folder, device: &Device
 }
 
 pub async fn push_send_update(ut: UpdateType, send: &Send, device: &Device, conn: &DbConn) {
-    if let Some(s) = &send.user_uuid
-        && Device::check_user_has_push_device(s, conn).await
-    {
+    if Device::check_user_has_push_device(&send.user_uuid, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": send.user_uuid,
             "organizationId": null,
