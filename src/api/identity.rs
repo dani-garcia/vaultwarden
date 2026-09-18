@@ -129,7 +129,7 @@ async fn login(
         match &login_result {
             Ok(_) => {
                 log_user_event(
-                    EventType::UserLoggedIn as i32,
+                    EventType::UserLoggedIn,
                     &user_id,
                     client_header.device_type,
                     &client_header.ip.ip,
@@ -139,8 +139,7 @@ async fn login(
             }
             Err(e) => {
                 if let Some(ev) = e.get_event() {
-                    log_user_event(ev.event as i32, &user_id, client_header.device_type, &client_header.ip.ip, &conn)
-                        .await;
+                    log_user_event(ev.event, &user_id, client_header.device_type, &client_header.ip.ip, &conn).await;
                 }
             }
         }
@@ -913,7 +912,7 @@ async fn twofactor_auth(
 
             enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, conn).await?;
 
-            log_user_event(EventType::UserRecovered2fa as i32, &user.uuid, device.atype, &ip.ip, conn).await;
+            log_user_event(EventType::UserRecovered2fa, &user.uuid, device.atype, &ip.ip, conn).await;
 
             // Remove the recovery code, not needed without twofactors
             user.totp_recover = None;
@@ -999,7 +998,7 @@ async fn json_err_twofactor(
             }
 
             Some(tf_type @ TwoFactorType::YubiKey) => {
-                let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, tf_type as i32, conn).await else {
+                let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, tf_type, conn).await else {
                     err!("No YubiKey devices registered")
                 };
 
@@ -1011,7 +1010,7 @@ async fn json_err_twofactor(
             }
 
             Some(tf_type @ TwoFactorType::Email) => {
-                let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, tf_type as i32, conn).await else {
+                let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, tf_type, conn).await else {
                     err!("No twofactor email registered")
                 };
 

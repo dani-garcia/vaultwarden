@@ -3,7 +3,7 @@ use rocket::{Route, serde::json::Json};
 
 use crate::{
     api::{EmptyResult, JsonResult, PasswordOrOtpData, core::log_user_event, core::two_factor::generate_recover_code},
-    auth::{ClientIp, Headers},
+    auth::{ClientIp, Headers, two_factor},
     crypto,
     db::{
         DbConn,
@@ -20,27 +20,23 @@ pub fn routes() -> Vec<Route> {
 
 #[post("/two-factor/get-authenticator", data = "<data>")]
 async fn generate_authenticator(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
     data.validate(&user, false, &conn).await?;
 
-    let type_ = TwoFactorType::Authenticator as i32;
-    let twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await;
+    let twofactor = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Authenticator, &conn).await;
 
     let (enabled, key) = match twofactor {
         Some(tf) => (true, tf.data),
         _ => (false, crypto::encode_random_bytes::<20>(&BASE32)),
     };
 
-    // Upstream seems to also return `userVerificationToken`, but doesn't seem to be used at all.
-    // It should help prevent TOTP disclosure if someone keeps their vault unlocked.
-    // Since it doesn't seem to be used, and also does not cause any issues, lets leave it out of the response.
-    // See: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Auth/Controllers/TwoFactorController.cs#L94
     Ok(Json(json!({
-        "enabled": enabled,
-        "key": key,
-        "object": "twoFactorAuthenticator"
+        "authenticator": json!({
+            "enabled": enabled,
+            "key": key,
+        }),
+        "userVerificationToken": two_factor::authenticator_token(user.uuid, key, enabled),
     })))
 }
 
@@ -49,8 +45,7 @@ async fn generate_authenticator(data: Json<PasswordOrOtpData>, headers: Headers,
 struct EnableAuthenticatorData {
     key: String,
     token: NumberOrString,
-    master_password_hash: Option<String>,
-    otp: Option<String>,
+    user_verification_token: String,
 }
 
 #[post("/two-factor/authenticator", data = "<data>")]
@@ -61,12 +56,7 @@ async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: He
 
     let mut user = headers.user;
 
-    PasswordOrOtpData {
-        master_password_hash: data.master_password_hash,
-        otp: data.otp,
-    }
-    .validate(&user, true, &conn)
-    .await?;
+    two_factor::validate_authenticator(&data.user_verification_token, &user.uuid, &key, false)?;
 
     // Validate key as base32 and 20 bytes length
     let decoded_key: Vec<u8> = if let Ok(decoded) = BASE32.decode(key.as_bytes()) {
@@ -84,12 +74,13 @@ async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: He
 
     generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+    log_user_event(EventType::UserUpdated2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(Json(json!({
-        "enabled": true,
-        "key": key,
-        "object": "twoFactorAuthenticator"
+        "authenticator": json!({
+            "enabled": true,
+            "key": key,
+        }),
     })))
 }
 
@@ -125,8 +116,7 @@ pub async fn validate_totp_code(
         err!("Invalid TOTP secret")
     };
 
-    let mut twofactor = match TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Authenticator as i32, conn).await
-    {
+    let mut twofactor = match TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Authenticator, conn).await {
         Some(tf) => tf,
         _ => TwoFactor::new(user_id.clone(), TwoFactorType::Authenticator, secret.to_owned()),
     };
@@ -184,24 +174,19 @@ pub async fn validate_totp_code(
 #[serde(rename_all = "camelCase")]
 struct DisableAuthenticatorData {
     key: String,
-    master_password_hash: String,
-    r#type: NumberOrString,
+    user_verification_token: String,
 }
 
 #[delete("/two-factor/authenticator", data = "<data>")]
-async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let user = headers.user;
-    let type_ = data.r#type.into_i32()?;
 
-    if !user.check_valid_password(&data.master_password_hash) {
-        err!("Invalid password");
-    }
+    two_factor::validate_authenticator(&data.user_verification_token, &user.uuid, &data.key, true)?;
 
-    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
+    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Authenticator, &conn).await {
         if twofactor.data == data.key {
             twofactor.delete(&conn).await?;
-            log_user_event(EventType::UserDisabled2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-                .await;
+            log_user_event(EventType::UserDisabled2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
         } else {
             err!(format!("TOTP key for user {} does not match recorded value, cannot deactivate", &user.email));
         }
@@ -211,9 +196,5 @@ async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: He
         super::enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await?;
     }
 
-    Ok(Json(json!({
-        "enabled": false,
-        "keys": type_,
-        "object": "twoFactorProvider"
-    })))
+    Ok(())
 }
