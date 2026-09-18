@@ -1,5 +1,5 @@
 "use strict";
-/* global jQuery, _post:readable, BASE_URL:readable, reload:readable, jdenticon:readable */
+/* global DataTable, _post:readable, BASE_URL:readable, reload:readable, jdenticon:readable */
 
 function deleteOrganization(event) {
     event.preventDefault();
@@ -41,8 +41,9 @@ function initActions() {
 
 // onLoad events
 document.addEventListener("DOMContentLoaded", (/*event*/) => {
-    jQuery("#orgs-table").DataTable({
-        "drawCallback": function() {
+    const columnCount = document.getElementById("orgs-table").querySelectorAll("thead th").length;
+    new DataTable("#orgs-table", {
+        "drawCallback": function () {
             initActions();
         },
         "stateSave": true,
@@ -53,7 +54,7 @@ document.addEventListener("DOMContentLoaded", (/*event*/) => {
         ],
         "pageLength": -1, // Default show all
         "columnDefs": [{
-            "targets": [4,5],
+            "targets": [columnCount - 2, columnCount - 1], // Do not include the last two columns into the search/order features
             "searchable": false,
             "orderable": false
         }]

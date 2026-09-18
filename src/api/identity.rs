@@ -3,7 +3,7 @@ use num_traits::FromPrimitive;
 use rocket::{
     Route,
     form::{Form, FromForm},
-    http::{Cookie, CookieJar, SameSite},
+    http::{Accept, Cookie, CookieJar, MediaType, SameSite},
     response::Redirect,
     serde::json::Json,
 };
@@ -234,6 +234,24 @@ async fn sso_login(
                     }
                 )
             }
+            Some((user, None))
+                if user.private_key.is_none()
+                    && !CONFIG.sso_signups_allowed()
+                    && !CONFIG.is_email_domain_allowed(&user.email)
+                    && !CONFIG.mail_enabled()
+                    && Invitation::find_by_mail(&user.email, conn).await.is_none() =>
+            {
+                error!(
+                    "Login failure ({}), no invitation with email ({}) was found",
+                    user_infos.identifier, user.email
+                );
+                err_silent!(
+                    "Missing invitation",
+                    ErrorEvent {
+                        event: EventType::UserFailedLogIn
+                    }
+                )
+            }
             Some((user, None)) if user.private_key.is_some() && !CONFIG.sso_signups_match_email() => {
                 error!(
                     "Login failure ({}), existing non SSO user ({}) with same email ({}) and association is disabled",
@@ -281,7 +299,15 @@ async fn sso_login(
     // Will trigger 2FA flow if needed
     let (user, mut device, twofactor_token, sso_user) = match user_with_sso {
         None => {
-            if !CONFIG.is_email_domain_allowed(&user_infos.email) {
+            if !CONFIG.is_sso_signup_allowed(&user_infos.email) {
+                if CONFIG.signups_domains_whitelist().is_empty() {
+                    err!(
+                        "Signups are disabled. You will need an invitation",
+                        ErrorEvent {
+                            event: EventType::UserFailedLogIn
+                        }
+                    );
+                }
                 err!(
                     "Email domain not allowed",
                     ErrorEvent {
@@ -879,6 +905,12 @@ async fn twofactor_auth(
 
             // Remove all twofactors from the user
             TwoFactor::delete_all_by_user(&user.uuid, conn).await?;
+
+            // No device may keep skipping 2FA once every second factor is gone.
+            // `device` is cleared in memory too, since saving it later would restore its token.
+            Device::clear_twofactor_remember_by_user(&user.uuid, conn).await?;
+            device.delete_twofactor_remember();
+
             enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, conn).await?;
 
             log_user_event(EventType::UserRecovered2fa as i32, &user.uuid, device.atype, &ip.ip, conn).await;
@@ -1024,13 +1056,13 @@ async fn json_err_twofactor(
 }
 
 #[post("/accounts/prelogin", data = "<data>")]
-async fn post_prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
-    prelogin(data, conn).await
+async fn post_prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+    prelogin(data, ip, conn).await
 }
 
 #[post("/accounts/prelogin/password", data = "<data>")]
-async fn prelogin_password(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
-    prelogin(data, conn).await
+async fn prelogin_password(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+    prelogin(data, ip, conn).await
 }
 
 #[post("/accounts/register", data = "<data>")]
@@ -1051,11 +1083,18 @@ enum RegisterVerificationResponse {
     #[response(status = 204)]
     NoContent(()),
     Token(Json<String>),
+    PlainToken(String),
+}
+
+// Return JSON only when the client explicitly requests it, otherwise return plain text.
+fn accepts_json(accept: Option<&Accept>) -> bool {
+    accept.is_some_and(|accept| accept.preferred().media_type() == &MediaType::JSON)
 }
 
 #[post("/accounts/register/send-verification-email", data = "<data>")]
 async fn register_verification_email(
     data: Json<RegisterVerificationData>,
+    accept: Option<&Accept>,
     ip: ClientIp,
     conn: DbConn,
 ) -> ApiResult<RegisterVerificationResponse> {
@@ -1093,7 +1132,11 @@ async fn register_verification_email(
     } else {
         // If email verification is not required, return the token directly
         // the clients will use this token to finish the registration
-        Ok(RegisterVerificationResponse::Token(Json(token)))
+        Ok(if accepts_json(accept) {
+            RegisterVerificationResponse::Token(Json(token))
+        } else {
+            RegisterVerificationResponse::PlainToken(token)
+        })
     }
 }
 

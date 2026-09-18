@@ -63,13 +63,19 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
 
     let user = if let Some(email) = email {
         let Some(user) = User::find_by_mail(email, &conn).await else {
-            err!("Username or password is incorrect. Try again.")
+            err!(
+                "Username or password is incorrect. Try again",
+                format!("IP: {}. Username: {email}.", client_headers.ip.ip)
+            )
         };
 
         if let Some(master_password_hash) = master_password_hash {
             // Check password
             if !user.check_valid_password(master_password_hash) {
-                err!("Username or password is incorrect. Try again.")
+                err!(
+                    "Username or password is incorrect. Try again",
+                    format!("IP: {}. Username: {email}.", client_headers.ip.ip)
+                )
             }
         } else if let Some(auth_request_id) = auth_request_id {
             let Some(auth_request) = AuthRequest::find_by_uuid(auth_request_id, &conn).await else {
@@ -96,7 +102,10 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
         };
         // SSO login only sends device id, so we get the user by the most recently used device
         let Some(user) = User::find_by_device_for_email2fa(device_identifier, &conn).await else {
-            err!("Username or password is incorrect. Try again.")
+            err!(
+                "Username or password is incorrect. Try again",
+                format!("IP: {}. Device: {device_identifier}.", client_headers.ip.ip)
+            )
         };
 
         user

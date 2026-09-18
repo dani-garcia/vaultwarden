@@ -537,10 +537,7 @@ pub fn is_valid_email(email: &str) -> bool {
     let Ok(email_url) = url::Url::parse(&format!("https://{}", email.domain())) else {
         return false;
     };
-    if email_url.path().ne("/") || email_url.domain().is_none() || email_url.query().is_some() {
-        return false;
-    }
-    true
+    email_url.domain().is_some() && email_url.path() == "/" && email_url.query().is_none()
 }
 
 //
