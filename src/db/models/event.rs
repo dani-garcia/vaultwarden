@@ -113,7 +113,7 @@ pub enum EventType {
     OrganizationUserAdminResetTwoFactor = 1519,
     // OrganizationUserRevoked_TwoFactorNonCompliance = 1520,
     // OrganizationUserRevoked_SingleOrganizationNonCompliance = 1521,
-    // OrganizationUserNotificationBannerActionClicked = 1522,
+    OrganizationUserNotificationBannerActionClicked = 1522,
 
     // Organization
     OrganizationUpdated = 1600,
