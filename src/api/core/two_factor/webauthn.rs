@@ -44,6 +44,18 @@ static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
     webauthn.build().expect("Building Webauthn failed")
 });
 
+fn user_verification_policy() -> UserVerificationPolicy {
+    user_verification_policy_from_config(CONFIG.webauthn_2fa_user_verification())
+}
+
+fn user_verification_policy_from_config(preferred: bool) -> UserVerificationPolicy {
+    if preferred {
+        UserVerificationPolicy::Preferred
+    } else {
+        UserVerificationPolicy::Discouraged_DO_NOT_USE
+    }
+}
+
 pub fn routes() -> Vec<Route> {
     routes![get_webauthn, generate_webauthn_challenge, activate_webauthn, activate_webauthn_put, delete_webauthn,]
 }
@@ -150,7 +162,8 @@ async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Hea
     )?;
 
     let mut state = serde_json::to_value(&state)?;
-    state["rs"]["policy"] = Value::String("discouraged".to_owned());
+    let user_verification_policy = user_verification_policy();
+    state["rs"]["policy"] = serde_json::to_value(&user_verification_policy)?;
     state["rs"]["extensions"].as_object_mut().unwrap().clear();
 
     let type_ = TwoFactorType::WebauthnRegisterChallenge;
@@ -160,7 +173,7 @@ async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Hea
     // we need to modify some of the default settings defined by `start_passkey_registration()`.
     challenge.public_key.extensions = None;
     if let Some(asc) = challenge.public_key.authenticator_selection.as_mut() {
-        asc.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
+        asc.user_verification = user_verification_policy;
     }
 
     let mut challenge_value = serde_json::to_value(challenge.public_key)?;
@@ -387,15 +400,16 @@ pub async fn generate_webauthn_login(user_id: &UserId, conn: &DbConn) -> JsonRes
     // Generate a challenge based on the credentials
     let (mut response, state) = WEBAUTHN.start_passkey_authentication(&creds)?;
 
-    // Modify to discourage user verification
+    // Apply the configured user verification policy
     let mut state = serde_json::to_value(&state)?;
-    state["ast"]["policy"] = Value::String("discouraged".to_owned());
+    let user_verification_policy = user_verification_policy();
+    state["ast"]["policy"] = serde_json::to_value(&user_verification_policy)?;
 
     // Add appid, this is only needed for U2F compatibility, so maybe it can be removed as well
     let app_id = format!("{}/app-id.json", CONFIG.domain());
     state["ast"]["appid"] = Value::String(app_id.clone());
 
-    response.public_key.user_verification = UserVerificationPolicy::Discouraged_DO_NOT_USE;
+    response.public_key.user_verification = user_verification_policy;
     response
         .public_key
         .extensions
@@ -515,4 +529,21 @@ fn check_and_update_backup_eligible(
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configured_user_verification_policy() {
+        assert_eq!(
+            serde_json::to_value(user_verification_policy_from_config(false)).unwrap(),
+            "discouraged"
+        );
+        assert_eq!(
+            serde_json::to_value(user_verification_policy_from_config(true)).unwrap(),
+            "preferred"
+        );
+    }
 }
