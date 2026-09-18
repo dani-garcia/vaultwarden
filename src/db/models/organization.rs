@@ -354,25 +354,16 @@ impl Organization {
         }
 
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(organizations::table)
+            mysql {
+                diesel::insert_into(organizations::table)
                     .values(self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(organizations::table)
-                            .filter(organizations::uuid.eq(&self.uuid))
-                            .set(self)
-                            .execute(conn)
-                            .map_res("Error saving organization")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving organization")
-
+                    .map_res("Error saving organization")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(organizations::table)
                     .values(self)
                     .on_conflict(organizations::uuid)
@@ -755,24 +746,16 @@ impl Membership {
         User::update_uuid_revision(&self.user_uuid, conn).await;
 
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(users_organizations::table)
+            mysql {
+                diesel::insert_into(users_organizations::table)
                     .values(self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(users_organizations::table)
-                            .filter(users_organizations::uuid.eq(&self.uuid))
-                            .set(self)
-                            .execute(conn)
-                            .map_res("Error adding user to organization")
-                    },
-                    Err(e) => Err(e.into()),
-                }.map_res("Error adding user to organization")
+                    .map_res("Error adding user to organization")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(users_organizations::table)
                     .values(self)
                     .on_conflict(users_organizations::uuid)
@@ -857,6 +840,21 @@ impl Membership {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
                 .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .load::<Self>(conn)
+                .unwrap_or_default()
+        })
+        .await
+    }
+
+    pub async fn find_accepted_and_confirmed_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
+        conn.run(move |conn| {
+            users_organizations::table
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(
+                    users_organizations::status
+                        .eq(MembershipStatus::Accepted as i32)
+                        .or(users_organizations::status.eq(MembershipStatus::Confirmed as i32)),
+                )
                 .load::<Self>(conn)
                 .unwrap_or_default()
         })
@@ -1221,25 +1219,16 @@ impl Membership {
 impl OrganizationApiKey {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(organization_api_key::table)
+            mysql {
+                diesel::insert_into(organization_api_key::table)
                     .values(self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(organization_api_key::table)
-                            .filter(organization_api_key::uuid.eq(&self.uuid))
-                            .set(self)
-                            .execute(conn)
-                            .map_res("Error saving organization")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving organization")
-
+                    .map_res("Error saving organization")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(organization_api_key::table)
                     .values(self)
                     .on_conflict((organization_api_key::uuid, organization_api_key::org_uuid))

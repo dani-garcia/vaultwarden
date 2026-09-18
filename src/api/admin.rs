@@ -231,7 +231,7 @@ fn validate_token(token: &str) -> bool {
         None => false,
         Some(t) if t.starts_with("$argon2") => {
             use argon2::password_hash::PasswordVerifier;
-            match argon2::password_hash::PasswordHash::new(t) {
+            match argon2::password_hash::phc::PasswordHash::new(t) {
                 Ok(h) => {
                     // NOTE: hash params from `ADMIN_TOKEN` are used instead of what is configured in the `Argon2` instance.
                     argon2::Argon2::default().verify_password(token.trim().as_ref(), &h).is_ok()
@@ -425,7 +425,7 @@ async fn delete_user(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyR
 
     for membership in memberships {
         log_event(
-            EventType::OrganizationUserDeleted as i32,
+            EventType::OrganizationUserDeleted,
             &membership.uuid,
             &membership.org_uuid,
             &ACTING_ADMIN_USER.into(),
@@ -446,7 +446,7 @@ async fn delete_sso_user(user_id: UserId, token: AdminToken, conn: DbConn) -> Em
 
     for membership in memberships {
         log_event(
-            EventType::OrganizationUserUnlinkedSso as i32,
+            EventType::OrganizationUserUnlinkedSso,
             &membership.uuid,
             &membership.org_uuid,
             &ACTING_ADMIN_USER.into(),
@@ -571,7 +571,7 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
     OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
     log_event(
-        EventType::OrganizationUserUpdated as i32,
+        EventType::OrganizationUserUpdated,
         &member_to_edit.uuid,
         &data.org_uuid,
         &ACTING_ADMIN_USER.into(),
@@ -647,7 +647,7 @@ use cached::macros::cached;
 /// Cache this function to prevent API call rate limit. Github only allows 60 requests per hour, and we use 3 here already
 /// It will cache this function for 600 seconds (10 minutes) which should prevent the exhaustion of the rate limit
 /// Any cache will be lost if Vaultwarden is restarted
-#[cached(ttl = 600, sync_writes = "default")]
+#[cached(ttl_secs = 600, sync_writes = "default")]
 async fn get_release_info(has_http_access: bool) -> (String, String, String) {
     // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
     if has_http_access {
