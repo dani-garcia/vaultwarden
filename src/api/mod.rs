@@ -58,7 +58,7 @@ impl PasswordOrOtpData {
     /// Tokens used via this struct can be used multiple times during the process
     /// First for the validation to continue, after that to enable or validate the following actions
     /// This is different per caller, so it can be adjusted to delete the token or not
-    pub async fn validate(&self, user: &User, delete_if_valid: bool, conn: &DbConn) -> EmptyResult {
+    pub async fn validate(&self, user: &mut User, delete_if_valid: bool, conn: &DbConn) -> EmptyResult {
         use crate::api::core::two_factor::protected_actions::validate_protected_action_otp;
 
         match (self.master_password_hash.as_deref(), self.otp.as_deref()) {
@@ -66,6 +66,8 @@ impl PasswordOrOtpData {
                 if !user.check_valid_password(pw_hash) {
                     err!("Invalid password");
                 }
+
+                user.check_persist_kdf_upgrade(pw_hash, conn).await?;
             }
             (None, Some(otp)) => {
                 validate_protected_action_otp(otp, &user.uuid, delete_if_valid, conn).await?;

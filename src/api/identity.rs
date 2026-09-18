@@ -14,7 +14,7 @@ use crate::{
     api::{
         ApiResult, EmptyResult, JsonResult,
         core::{
-            accounts::{PreloginData, RegisterData, kdf_upgrade, prelogin, register},
+            accounts::{PreloginData, RegisterData, prelogin, register},
             log_user_event,
             two_factor::{
                 authenticator, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn, yubikey,
@@ -439,7 +439,7 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
 
     // Change the KDF Iterations (only when not logging in with an auth request)
     if data.auth_request.is_none() {
-        kdf_upgrade(&mut user, password, conn).await?;
+        user.check_persist_kdf_upgrade(password, conn).await?;
     }
 
     let now = Utc::now().naive_utc();
