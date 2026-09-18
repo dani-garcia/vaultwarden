@@ -155,9 +155,9 @@ pub async fn send_token(user_id: &UserId, conn: &DbConn) -> EmptyResult {
 #[post("/two-factor/get-email", data = "<data>")]
 async fn get_email(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&mut user, false, &conn).await?;
 
     let (enabled, mfa_email) =
         if let Some(x) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await {
