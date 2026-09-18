@@ -522,8 +522,16 @@ pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
     expiry_time.to_rfc2822().replace("+0000", "GMT")
 }
 
+pub fn try_parse_date(date: &str) -> Result<NaiveDateTime, chrono::ParseError> {
+    DateTime::parse_from_rfc3339(date).map(|date| date.naive_utc())
+}
+
+/// Parse an RFC 3339 date which is known to be valid.
+///
+/// Request data should use [`try_parse_date`] so malformed input can be returned as a controlled
+/// client error instead of panicking.
 pub fn parse_date(date: &str) -> NaiveDateTime {
-    DateTime::parse_from_rfc3339(date).unwrap().naive_utc()
+    try_parse_date(date).expect("trusted date must be valid RFC 3339")
 }
 
 /// Returns true or false if an email address is valid or not
@@ -746,10 +754,16 @@ where
     }
 }
 
-pub async fn retry_db<F, T, E>(mut func: F, max_tries: u32) -> Result<T, E>
+/// Retry `func` while the database is unavailable.
+///
+/// `should_retry` classifies a failure. Waiting only helps for a database that is not reachable *yet*; an
+/// already-decided failure -- a migration preflight refusing this schema -- returns the same answer every
+/// time, so retrying repeats its output under a misleading "Can't connect to database" heading.
+pub async fn retry_db<F, T, E, R>(mut func: F, max_tries: u32, should_retry: R) -> Result<T, E>
 where
     F: FnMut() -> Result<T, E>,
     E: std::error::Error,
+    R: Fn(&E) -> bool,
 {
     let mut tries = 0;
 
@@ -758,6 +772,10 @@ where
             ok @ Ok(_) => return ok,
             Err(e) => {
                 tries += 1;
+
+                if !should_retry(&e) {
+                    return Err(e);
+                }
 
                 if tries >= max_tries && max_tries > 0 {
                     return Err(e);

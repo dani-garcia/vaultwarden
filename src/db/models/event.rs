@@ -79,6 +79,21 @@ pub enum EventType {
     CipherSoftDeleted = 1115,
     CipherRestored = 1116,
     CipherClientToggledCardNumberVisible = 1117,
+    // CipherClientToggledTOTPSeedVisible = 1118, // Not accepted from clients by upstream either
+    CipherClientCopiedBankAccountNumber = 1119,
+    CipherClientCopiedBankAccountPin = 1120,
+    CipherClientToggledBankAccountNumberVisible = 1121,
+    CipherClientToggledBankAccountPinVisible = 1122,
+    CipherClientCopiedLicenseNumber = 1123,
+    CipherClientToggledLicenseNumberVisible = 1124,
+    CipherClientCopiedPassportNumber = 1125,
+    CipherClientToggledPassportNumberVisible = 1126,
+    CipherClientCopiedSwiftCode = 1127,
+    CipherClientToggledSwiftCodeVisible = 1128,
+    CipherClientCopiedIban = 1129,
+    CipherClientToggledIbanVisible = 1130,
+    CipherClientCopiedNationalIdentificationNumber = 1131,
+    CipherClientToggledNationalIdentificationNumberVisible = 1132,
 
     // Collection
     CollectionCreated = 1300,
@@ -126,6 +141,11 @@ pub enum EventType {
     // OrganizationDisabledKeyConnector = 1607, // Not supported
     // OrganizationSponsorshipsSynced = 1608, // Not supported
     // OrganizationCollectionManagementUpdated = 1609, // Not supported
+    OrganizationItemOrganizationAccepted = 1618,
+    OrganizationItemOrganizationDeclined = 1619,
+    OrganizationAutoConfirmEnabledAdmin = 1620,
+    OrganizationAutoConfirmDisabledAdmin = 1621,
+    OrganizationInviteLinkClientCopied = 1627,
 
     // Policy
     PolicyUpdated = 1700,
@@ -330,20 +350,37 @@ impl Event {
 
     pub async fn find_by_cipher_uuid(
         cipher_uuid: &CipherId,
+        org_uuid: Option<&OrganizationId>,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
         conn: &DbConn,
     ) -> Vec<Self> {
-        conn.run(move |conn| {
-            event::table
-                .filter(event::cipher_uuid.eq(cipher_uuid))
-                .filter(event::event_date.between(start, end))
-                .order_by(event::event_date.desc())
-                .limit(Self::PAGE_SIZE)
-                .load::<Self>(conn)
-                .expect("Error filtering events")
-        })
-        .await
+        conn.run(move |conn| Self::find_by_cipher_uuid_impl(cipher_uuid, org_uuid, start, end, conn)).await
+    }
+
+    fn find_by_cipher_uuid_impl(
+        cipher_uuid: &CipherId,
+        org_uuid: Option<&OrganizationId>,
+        start: &NaiveDateTime,
+        end: &NaiveDateTime,
+        conn: &mut crate::db::DbConnInner,
+    ) -> Vec<Self> {
+        let query = event::table
+            .filter(event::cipher_uuid.eq(cipher_uuid))
+            .filter(event::event_date.between(start, end))
+            .into_boxed();
+
+        // A cipher event request is authorized for exactly one scope: either the cipher's
+        // current organization or its personal owner. Apply that scope before PAGE_SIZE so
+        // rows from another scope cannot consume the page and hide older authorized events.
+        match org_uuid {
+            Some(org_uuid) => query.filter(event::org_uuid.eq(org_uuid)),
+            None => query.filter(event::org_uuid.is_null()),
+        }
+        .order_by(event::event_date.desc())
+        .limit(Self::PAGE_SIZE)
+        .load::<Self>(conn)
+        .expect("Error filtering events")
     }
 
     pub async fn clean_events(conn: &DbConn) -> EmptyResult {
