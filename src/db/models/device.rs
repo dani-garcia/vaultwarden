@@ -146,15 +146,18 @@ impl Device {
         }
 
         db_run! { conn:
-            sqlite, mysql {
+            mysql {
                 crate::util::retry(||
-                    diesel::replace_into(devices::table)
+                    diesel::insert_into(devices::table)
                         .values(&*self)
+                        .on_conflict(diesel::dsl::DuplicatedKeys)
+                        .do_update()
+                        .set(&*self)
                         .execute(conn),
                     10,
                 ).map_res("Error saving device")
             }
-            postgresql {
+            postgresql, sqlite {
                 crate::util::retry(||
                     diesel::insert_into(devices::table)
                         .values(&*self)
@@ -266,9 +269,21 @@ impl Device {
         let devices = Self::find_by_user(user_uuid, conn).await;
         for mut device in devices {
             device.refresh_token = Device::generate_refresh_token();
+            device.twofactor_remember = None;
             device.save(false, conn).await?;
         }
         Ok(())
+    }
+
+    pub async fn clear_twofactor_remember_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+        conn.run(move |conn| {
+            diesel::update(devices::table)
+                .filter(devices::user_uuid.eq(user_uuid))
+                .set(devices::twofactor_remember.eq::<Option<String>>(None))
+                .execute(conn)
+                .map_res("Error removing two factor remember tokens")
+        })
+        .await
     }
 }
 
