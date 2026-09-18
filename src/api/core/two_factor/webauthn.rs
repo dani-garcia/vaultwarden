@@ -114,9 +114,9 @@ async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbC
     }
 
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&mut user, false, &conn).await?;
 
     let (enabled, registrations) = get_webauthn_registrations(&user.uuid, &conn).await?;
     let registrations_json: Vec<Value> = registrations.iter().map(WebauthnRegistration::to_json).collect();
@@ -131,9 +131,9 @@ async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbC
 #[post("/two-factor/get-webauthn-challenge", data = "<data>")]
 async fn generate_webauthn_challenge(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&mut user, false, &conn).await?;
 
     let registrations = get_webauthn_registrations(&user.uuid, &conn)
         .await?
@@ -261,7 +261,7 @@ async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, con
         master_password_hash: data.master_password_hash,
         otp: data.otp,
     }
-    .validate(&user, true, &conn)
+    .validate(&mut user, true, &conn)
     .await?;
 
     // Retrieve and delete the saved challenge state

@@ -120,9 +120,9 @@ async fn generate_yubikey(data: Json<PasswordOrOtpData>, headers: Headers, conn:
     get_yubico_credentials()?;
 
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&mut user, false, &conn).await?;
 
     let user_id = &user.uuid;
     let yubikey_type = TwoFactorType::YubiKey as i32;
@@ -156,7 +156,7 @@ async fn activate_yubikey(data: Json<EnableYubikeyData>, headers: Headers, conn:
         master_password_hash: data.master_password_hash.clone(),
         otp: data.otp.clone(),
     }
-    .validate(&user, true, &conn)
+    .validate(&mut user, true, &conn)
     .await?;
 
     // Check if we already have some data
