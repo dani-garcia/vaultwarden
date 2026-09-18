@@ -2,6 +2,7 @@ use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
 use serde_json::Value;
+use std::cmp;
 
 use crate::{
     CONFIG,
@@ -206,6 +207,7 @@ impl User {
         allow_next_route: Option<Vec<String>>,
         conn: &DbConn,
     ) -> EmptyResult {
+        self.password_iterations = cmp::max(self.password_iterations, CONFIG.password_iterations());
         self.password_hash =
             crypto::hash_password(password.as_bytes(), &self.salt, self.password_iterations.cast_unsigned());
 
@@ -359,6 +361,34 @@ impl User {
                     .execute(conn)
                     .map_res("Error saving user")
             }
+        }
+    }
+
+    pub async fn check_persist_kdf_upgrade(&mut self, pwd_hash: &str, conn: &DbConn) -> EmptyResult {
+        if self.password_iterations < CONFIG.password_iterations() {
+            let old_iteration = self.password_iterations;
+            let old_hash = self.password_hash.clone();
+
+            self.set_password(pwd_hash, None, false, None, conn).await?;
+
+            conn.run(move |conn| {
+                diesel::update(
+                    users::table
+                        .filter(users::uuid.eq(&self.uuid))
+                        .filter(users::password_iterations.eq(old_iteration))
+                        .filter(users::password_hash.eq(old_hash)),
+                )
+                .set((
+                    users::updated_at.eq(Utc::now().naive_utc()),
+                    users::password_iterations.eq(&self.password_iterations),
+                    users::password_hash.eq(&self.password_hash),
+                ))
+                .execute(conn)
+                .map_res("Error updating user KDF iterations")
+            })
+            .await
+        } else {
+            Ok(())
         }
     }
 

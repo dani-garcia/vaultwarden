@@ -104,9 +104,9 @@ async fn get_twofactor(headers: Headers, conn: DbConn) -> Json<Value> {
 #[post("/two-factor/get-recover", data = "<data>")]
 async fn get_recover(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     Ok(Json(json!({
         "code": user.totp_recover,
@@ -129,6 +129,7 @@ pub async fn check_2fa_state(user: &User, device_type: i32, ip: &std::net::IpAdd
     if TwoFactor::find_by_user(&user.uuid, conn).await.is_empty() {
         enforce_2fa_policy(user, &user.uuid, device_type, ip, conn).await?;
     }
+
     Ok(())
 }
 
