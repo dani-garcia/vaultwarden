@@ -23,12 +23,14 @@ services:
     env_file: ${DC_ENV_FILE:-.env}
     environment:
       - ADMIN_TOKEN
+      - CLIENT_KDF_ITER
       - DATABASE_URL
       - CLIENT_SUPPRESS_ONBOARDING
       - EMAIL_2FA_AUTO_FALLBACK
       - I_REALLY_WANT_VOLATILE_STORAGE
       - LOG_LEVEL
       - LOGIN_RATELIMIT_MAX_BURST
+      - PASSWORD_ITERATIONS
       - SMTP_HOST
       - SMTP_FROM
       - SMTP_DEBUG

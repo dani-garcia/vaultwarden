@@ -109,7 +109,6 @@ pub struct UserStampException {
 /// Local methods
 impl User {
     pub const CLIENT_KDF_TYPE_DEFAULT: i32 = UserKdfType::Pbkdf2 as i32;
-    pub const CLIENT_KDF_ITER_DEFAULT: i32 = 600_000;
 
     pub fn new(email: &str, name: Option<String>) -> Self {
         let now = Utc::now().naive_utc();
@@ -147,7 +146,7 @@ impl User {
             excluded_globals: "[]".to_owned(),
 
             client_kdf_type: Self::CLIENT_KDF_TYPE_DEFAULT,
-            client_kdf_iter: Self::CLIENT_KDF_ITER_DEFAULT,
+            client_kdf_iter: CONFIG.client_kdf_iter(),
             client_kdf_memory: None,
             client_kdf_parallelism: None,
 
