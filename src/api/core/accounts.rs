@@ -665,8 +665,8 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
 }
 
 fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
-    if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < 100_000 {
-        err!("PBKDF2 KDF iterations must be at least 100000.")
+    if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < CONFIG.client_kdf_iter() {
+        err!(format!("PBKDF2 KDF iterations must be at least {}.", CONFIG.client_kdf_iter()))
     }
 
     if data.kdf == UserKdfType::Argon2id as i32 {
@@ -1370,7 +1370,7 @@ pub async fn prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> J
 
     let (kdf_type, kdf_iter, kdf_mem, kdf_para) = match User::find_by_mail(&data.email, &conn).await {
         Some(user) => (user.client_kdf_type, user.client_kdf_iter, user.client_kdf_memory, user.client_kdf_parallelism),
-        None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+        None => (User::CLIENT_KDF_TYPE_DEFAULT, CONFIG.client_kdf_iter(), None, None),
     };
 
     Ok(Json(json!({

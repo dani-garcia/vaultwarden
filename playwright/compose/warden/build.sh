@@ -24,7 +24,7 @@ if [[ ! -z "$REPO_URL" ]] && [[ ! -z "$COMMIT_HASH" ]] ; then
 fi
 
 # Lower the KDF iterations default for faster tests.
-sed -i 's/(6e5,2e6,6e5)/(1e5,2e6,1e5)/' /web-vault/app/main.*.js
+sed -i 's/(6e5,2e6,6e5)/(6e3,2e6,6e3)/' /web-vault/app/main.*.js
 
 # Generate a self signed cert
 mkdir -p /data/ssl; cd /data/ssl
