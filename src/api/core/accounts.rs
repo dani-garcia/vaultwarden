@@ -11,9 +11,9 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::{
-        AnonymousNotify, ApiResult, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
+        AnonymousNotify, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
         core::{accept_org_invite, log_user_event, two_factor::email},
-        master_password_policy, register_push_device, unregister_push_device,
+        kdf_upgrade, master_password_policy, register_push_device, unregister_push_device,
     },
     auth::{ClientHeaders, ClientIp, Headers, decode_delete, decode_invite, decode_verify_email},
     crypto,
@@ -665,8 +665,8 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
 }
 
 fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
-    if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < 100_000 {
-        err!("PBKDF2 KDF iterations must be at least 100000.")
+    if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < CONFIG.client_kdf_iter() {
+        err!(format!("PBKDF2 KDF iterations must be at least {}.", CONFIG.client_kdf_iter()))
     }
 
     if data.kdf == UserKdfType::Argon2id as i32 {
@@ -1049,7 +1049,7 @@ async fn post_sstamp(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbCo
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     user.reset_security_stamp(&conn).await?;
     let save_result = user.save(&conn).await;
@@ -1289,9 +1289,9 @@ async fn post_delete_account(data: Json<PasswordOrOtpData>, headers: Headers, co
 #[delete("/accounts", data = "<data>")]
 async fn delete_account(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     user.delete(&conn).await
 }
@@ -1370,7 +1370,7 @@ pub async fn prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> J
 
     let (kdf_type, kdf_iter, kdf_mem, kdf_para) = match User::find_by_mail(&data.email, &conn).await {
         Some(user) => (user.client_kdf_type, user.client_kdf_iter, user.client_kdf_memory, user.client_kdf_parallelism),
-        None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+        None => (User::CLIENT_KDF_TYPE_DEFAULT, CONFIG.client_kdf_iter(), None, None),
     };
 
     Ok(Json(json!({
@@ -1395,19 +1395,6 @@ struct SecretVerificationRequest {
     master_password_hash: String,
 }
 
-// Change the KDF Iterations if necessary
-pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &DbConn) -> ApiResult<()> {
-    if user.password_iterations < CONFIG.password_iterations() {
-        user.password_iterations = CONFIG.password_iterations();
-        user.set_password(pwd_hash, None, false, None, conn).await?;
-
-        if let Err(e) = user.save(conn).await {
-            error!("Error updating user: {e:#?}");
-        }
-    }
-    Ok(())
-}
-
 #[post("/accounts/verify-password", data = "<data>")]
 async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner();
@@ -1426,7 +1413,7 @@ async fn update_api_key(data: Json<PasswordOrOtpData>, rotate: bool, headers: He
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     if rotate || user.api_key.is_none() {
         user.api_key = Some(crypto::generate_api_key());

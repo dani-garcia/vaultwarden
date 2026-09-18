@@ -1716,9 +1716,9 @@ async fn purge_org_vault(
     }
 
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     match Membership::find_confirmed_by_user_and_org(&user.uuid, &organization.org_id, &conn).await {
         Some(member) if member.atype == MembershipType::Owner => {
@@ -1752,7 +1752,7 @@ async fn purge_personal_vault(
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     for cipher in Cipher::find_owned_by_user(&user.uuid, &conn).await {
         cipher.delete(&conn).await?;
