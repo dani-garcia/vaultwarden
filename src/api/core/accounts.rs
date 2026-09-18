@@ -21,9 +21,9 @@ use crate::{
         DbConn, DbPool,
         models::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
-            EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId,
-            MembershipStatus, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId,
-            UserKdfType,
+            EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, KeyId, Membership,
+            MembershipId, MembershipStatus, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User,
+            UserId, UserKdfType,
         },
     },
     mail,
@@ -47,6 +47,7 @@ pub fn routes() -> Vec<rocket::Route> {
         post_set_password,
         post_kdf,
         post_rotatekey,
+        post_user_key,
         post_sstamp,
         post_email_token,
         post_email,
@@ -1067,6 +1068,23 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     save_result
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KeyIdData {
+    user_key_id: KeyId,
+}
+
+#[post("/accounts/key-management/user-key-id", data = "<data>")]
+async fn post_user_key(data: Json<KeyIdData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let mut user = headers.user;
+    if user.key_id.is_some() {
+        err_code!("Unexpected data", Status::UnprocessableEntity.code);
+    }
+
+    user.key_id = Some(data.into_inner().user_key_id);
+    user.save(&conn).await
+}
+
 #[post("/accounts/security-stamp", data = "<data>")]
 async fn post_sstamp(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let data: PasswordOrOtpData = data.into_inner();
@@ -1382,11 +1400,13 @@ pub struct PreloginData {
 }
 
 #[post("/accounts/prelogin", data = "<data>")]
-async fn post_prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
-    prelogin(data, conn).await
+async fn post_prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+    prelogin(data, ip, conn).await
 }
 
-pub async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
+pub async fn prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+    crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
+
     let data: PreloginData = data.into_inner();
 
     let (kdf_type, kdf_iter, kdf_mem, kdf_para) = match User::find_by_mail(&data.email, &conn).await {
@@ -1394,7 +1414,7 @@ pub async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
         None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
     };
 
-    Json(json!({
+    Ok(Json(json!({
         "kdf": kdf_type,
         "kdfIterations": kdf_iter,
         "kdfMemory": kdf_mem,
@@ -1406,7 +1426,7 @@ pub async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
             "parallelism": kdf_para
         },
         "salt": null,
-    }))
+    })))
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Auth/Models/Request/Accounts/SecretVerificationRequestModel.cs
@@ -1637,6 +1657,8 @@ async fn post_auth_request(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    crate::ratelimit::check_limit_unauthenticated(&client_headers.ip.ip)?;
+
     let data = data.into_inner();
 
     let Some(user) = User::find_by_mail(&data.email, &conn).await else {
@@ -1649,7 +1671,7 @@ async fn post_auth_request(
         _ => err!("AuthRequest doesn't exist", "Device verification failed"),
     };
 
-    let mut auth_request = AuthRequest::new(
+    let auth_request = AuthRequest::new(
         user.uuid.clone(),
         data.device_identifier.clone(),
         client_headers.device_type,
@@ -1798,6 +1820,8 @@ async fn get_auth_request_response(
     client_headers: ClientHeaders,
     conn: DbConn,
 ) -> JsonResult {
+    crate::ratelimit::check_limit_unauthenticated(&client_headers.ip.ip)?;
+
     let Some(auth_request) = AuthRequest::find_by_uuid(&auth_request_id, &conn).await else {
         err!("AuthRequest doesn't exist", "User not found")
     };
