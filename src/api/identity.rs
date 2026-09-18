@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::{
-        ApiResult, EmptyResult, JsonResult,
+        ApiResult, EmptyResult, JsonResult, Notify,
         core::{
             accounts::{PreloginData, RegisterData, kdf_upgrade, prelogin, register},
             log_user_event,
@@ -1066,8 +1066,8 @@ async fn prelogin_password(data: Json<PreloginData>, ip: ClientIp, conn: DbConn)
 }
 
 #[post("/accounts/register", data = "<data>")]
-async fn identity_register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
-    register(data, false, conn).await
+async fn identity_register(data: Json<RegisterData>, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    register(data, false, conn, nt).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -1141,8 +1141,8 @@ async fn register_verification_email(
 }
 
 #[post("/accounts/register/finish", data = "<data>")]
-async fn register_finish(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
-    register(data, true, conn).await
+async fn register_finish(data: Json<RegisterData>, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+    register(data, true, conn, nt).await
 }
 
 // https://github.com/bitwarden/jslib/blob/master/common/src/models/request/tokenRequest.ts
