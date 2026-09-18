@@ -235,12 +235,14 @@ async fn delete_organization(
     headers: OwnerHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    let mut user = headers.user;
+
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
     let data: PasswordOrOtpData = data.into_inner();
 
-    data.validate(&headers.user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     match Organization::find_by_uuid(&org_id, &conn).await {
         None => err!("Organization not found"),
@@ -3721,11 +3723,12 @@ async fn put_reset_password_enrollment(
     data: Json<OrganizationUserResetPasswordEnrollmentRequest>,
     conn: DbConn,
 ) -> EmptyResult {
-    if user_id != headers.user.uuid {
+    let mut membership = headers.membership;
+    let mut user = headers.user;
+
+    if user_id != user.uuid {
         err!("User to enroll isn't member of required organization", "The user_id and acting user do not match");
     }
-
-    let mut membership = headers.membership;
 
     check_reset_password_applicable(&org_id, &conn).await?;
 
@@ -3746,7 +3749,7 @@ async fn put_reset_password_enrollment(
             master_password_hash: reset_request.master_password_hash,
             otp: reset_request.otp,
         }
-        .validate(&headers.user, true, &conn)
+        .validate(&mut user, true, &conn)
         .await?;
     }
 
@@ -3762,8 +3765,7 @@ async fn put_reset_password_enrollment(
         EventType::OrganizationUserResetPasswordWithdraw
     };
 
-    log_event(event_type, &membership.uuid, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-        .await;
+    log_event(event_type, &membership.uuid, &org_id, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(())
 }
@@ -3797,10 +3799,10 @@ async fn api_key(
         err!("Organization not found", "Organization id's do not match");
     }
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
     // Validate the owner users password/otp
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     let org_api_key = if let Some(mut org_api_key) = OrganizationApiKey::find_by_org_uuid(org_id, &conn).await {
         if rotate {
