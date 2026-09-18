@@ -1,5 +1,125 @@
 "use strict";
-/* global _post:readable, BASE_URL:readable */
+/* global _post:readable, BASE_URL:readable, qrcode:readable */
+
+const ADMIN_TOTP_SECRET_BYTES = 20;
+const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+let generatedAdminTotpSecret = null;
+
+function encodeBase32(bytes) {
+    let output = "";
+    let buffer = 0;
+    let bits = 0;
+
+    bytes.forEach(byte => {
+        buffer = (buffer << 8) | byte;
+        bits += 8;
+
+        while (bits >= 5) {
+            bits -= 5;
+            output += BASE32_ALPHABET[(buffer >>> bits) & 31];
+        }
+        buffer &= (1 << bits) - 1;
+    });
+
+    if (bits > 0) {
+        output += BASE32_ALPHABET[(buffer << (5 - bits)) & 31];
+    }
+    return output;
+}
+
+function buildAdminTotpUri(secret) {
+    const issuer = "Vaultwarden";
+    const account = "Admin";
+    const label = `${encodeURIComponent(issuer)}:${encodeURIComponent(account)}`;
+    return `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(issuer)}` +
+        "&algorithm=SHA1&digits=6&period=30";
+}
+
+function resetAdminTotpQrDialog() {
+    generatedAdminTotpSecret = null;
+
+    const secretOutput = document.getElementById("adminTotpQrSecret");
+    const qrImage = document.getElementById("adminTotpQrCode");
+    const error = document.getElementById("adminTotpQrError");
+    const useButton = document.getElementById("adminTotpQrUse");
+
+    secretOutput.value = "";
+    qrImage.removeAttribute("src");
+    qrImage.classList.add("d-none");
+    error.textContent = "";
+    error.classList.add("d-none");
+    useButton.disabled = true;
+}
+
+function showAdminTotpQrError(message) {
+    const error = document.getElementById("adminTotpQrError");
+    error.textContent = message;
+    error.classList.remove("d-none");
+}
+
+function generateAdminTotpQr() {
+    resetAdminTotpQrDialog();
+
+    if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
+        showAdminTotpQrError("Secure random number generation is not available in this browser.");
+        return;
+    }
+    if (typeof qrcode !== "function") {
+        showAdminTotpQrError("The local QR code generator could not be loaded.");
+        return;
+    }
+
+    const randomBytes = new Uint8Array(ADMIN_TOTP_SECRET_BYTES);
+    let secret;
+    try {
+        window.crypto.getRandomValues(randomBytes);
+        secret = encodeBase32(randomBytes);
+    } catch (_error) {
+        showAdminTotpQrError("Unable to generate a secure TOTP secret in this browser.");
+        return;
+    } finally {
+        randomBytes.fill(0);
+    }
+
+    try {
+        const qr = qrcode(0, "M");
+        qr.addData(buildAdminTotpUri(secret), "Byte");
+        qr.make();
+
+        generatedAdminTotpSecret = secret;
+        document.getElementById("adminTotpQrSecret").value = secret;
+        const qrImage = document.getElementById("adminTotpQrCode");
+        qrImage.src = qr.createDataURL(5, 20);
+        qrImage.classList.remove("d-none");
+        document.getElementById("adminTotpQrUse").disabled = false;
+    } catch (_error) {
+        resetAdminTotpQrDialog();
+        showAdminTotpQrError("Unable to create the QR code in this browser.");
+    }
+}
+
+function regenerateAdminTotpQr() {
+    if (generatedAdminTotpSecret &&
+        !confirm("Generate a different secret? If you already scanned this QR code, you will need to scan the new one.")) {
+        return;
+    }
+    generateAdminTotpQr();
+}
+
+function useGeneratedAdminTotpSecret() {
+    if (!generatedAdminTotpSecret) {
+        return;
+    }
+
+    const input = document.getElementById("input_admin_totp_secret");
+    const clear = document.querySelector('[data-vw-clear-target="input_admin_totp_secret"]');
+    input.disabled = false;
+    input.value = generatedAdminTotpSecret;
+    if (clear) {
+        clear.checked = false;
+    }
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+}
 
 function smtpTest(event) {
     event.preventDefault();
@@ -38,6 +158,17 @@ function getFormData() {
 
     document.querySelectorAll(".conf-text, .conf-password").forEach(function (e) {
         data[e.name] = e.value || null;
+    });
+
+    document.querySelectorAll(".conf-write-only").forEach(function (e) {
+        const clear = document.querySelector(`[data-vw-clear-target="${e.id}"]`);
+        if (clear && clear.checked) {
+            // An explicit empty string removes the saved config value.
+            data[e.name] = "";
+        } else if (e.value.trim()) {
+            // Omitting an untouched write-only field keeps the currently saved value.
+            data[e.name] = e.value.trim();
+        }
     });
     return data;
 }
@@ -140,6 +271,14 @@ function toggleVis(event) {
     }
 }
 
+function toggleWriteOnlyClear(event) {
+    const input = document.getElementById(event.target.dataset.vwClearTarget);
+    input.disabled = event.target.checked;
+    if (event.target.checked) {
+        input.value = "";
+    }
+}
+
 function masterCheck(check_id, inputs_query) {
     function onChanged(checkbox, inputs_query) {
         return function _fn() {
@@ -211,6 +350,18 @@ document.addEventListener("DOMContentLoaded", (/*event*/) => {
     document.querySelectorAll("button[data-vw-pw-toggle]").forEach(password_toggle_btn => {
         password_toggle_btn.addEventListener("click", toggleVis);
     });
+
+    document.querySelectorAll("input[data-vw-clear-target]").forEach(clear_checkbox => {
+        clear_checkbox.addEventListener("change", toggleWriteOnlyClear);
+    });
+
+    const adminTotpQrDialog = document.getElementById("adminTotpQrDialog");
+    if (adminTotpQrDialog) {
+        adminTotpQrDialog.addEventListener("show.bs.modal", generateAdminTotpQr);
+        adminTotpQrDialog.addEventListener("hidden.bs.modal", resetAdminTotpQrDialog);
+        document.getElementById("adminTotpQrRegenerate").addEventListener("click", regenerateAdminTotpQr);
+        document.getElementById("adminTotpQrUse").addEventListener("click", useGeneratedAdminTotpSecret);
+    }
 
     const btnBackupDatabase = document.getElementById("backupDatabase");
     if (btnBackupDatabase) {
