@@ -108,9 +108,9 @@ async fn get_twofactor(headers: Headers, conn: DbConn) -> Json<Value> {
 #[post("/two-factor/get-recover", data = "<data>")]
 async fn get_recover(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     Ok(Json(json!({
         "code": user.totp_recover,
@@ -137,14 +137,14 @@ struct DisableTwoFactorData {
 #[post("/two-factor/disable", data = "<data>")]
 async fn disable_twofactor(data: Json<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: DisableTwoFactorData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
     // Delete directly after a valid token has been provided
     PasswordOrOtpData {
         master_password_hash: data.master_password_hash,
         otp: data.otp,
     }
-    .validate(&user, true, &conn)
+    .validate(&mut user, true, &conn)
     .await?;
 
     let type_ = data.r#type.into_i32()?;

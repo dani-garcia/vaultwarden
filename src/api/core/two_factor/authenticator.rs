@@ -21,9 +21,9 @@ pub fn routes() -> Vec<Route> {
 #[post("/two-factor/get-authenticator", data = "<data>")]
 async fn generate_authenticator(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&mut user, false, &conn).await?;
 
     let type_ = TwoFactorType::Authenticator as i32;
     let twofactor = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await;
@@ -65,7 +65,7 @@ async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: He
         master_password_hash: data.master_password_hash,
         otp: data.otp,
     }
-    .validate(&user, true, &conn)
+    .validate(&mut user, true, &conn)
     .await?;
 
     // Validate key as base32 and 20 bytes length
