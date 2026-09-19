@@ -5,7 +5,7 @@ use openidconnect::{
     AuthorizationRequest, ClientId, ClientSecret, CsrfToken, EmptyAdditionalClaims, EmptyExtraTokenFields,
     EndpointNotSet, EndpointSet, HttpClientError, HttpRequest, HttpResponse, IdTokenClaims, IdTokenFields, Nonce,
     OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RefreshToken, ResponseType, Scope, StandardErrorResponse,
-    StandardTokenResponse,
+    StandardTokenResponse, SubjectIdentifier,
     core::{
         CoreAuthDisplay, CoreAuthPrompt, CoreClient, CoreClientAuthMethod, CoreErrorResponseType, CoreGenderClaim,
         CoreIdTokenVerifier, CoreJsonWebKey, CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm,
@@ -274,8 +274,12 @@ impl Client {
         }
     }
 
-    pub async fn user_info(&self, access_token: AccessToken) -> ApiResult<CoreUserInfoClaims> {
-        match self.core_client.user_info(access_token, None).request_async(&self.http_client).await {
+    pub async fn user_info(
+        &self,
+        access_token: AccessToken,
+        expected_subject: Option<SubjectIdentifier>,
+    ) -> ApiResult<CoreUserInfoClaims> {
+        match self.core_client.user_info(access_token, expected_subject).request_async(&self.http_client).await {
             Err(err) => err!(format!("Request to user_info endpoint failed: {err}")),
             Ok(user_info) => Ok(user_info),
         }
@@ -283,7 +287,8 @@ impl Client {
 
     pub async fn check_validity(access_token: String) -> EmptyResult {
         let client = Client::cached().await?;
-        match client.user_info(AccessToken::new(access_token)).await {
+        // No expected subject to verify against since only the access_token is kept after login
+        match client.user_info(AccessToken::new(access_token), None).await {
             Err(err) => {
                 err_silent!(format!("Failed to retrieve user info, token has probably been invalidated: {err}"))
             }
