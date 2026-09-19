@@ -27,6 +27,19 @@ a[href$="/settings/sponsored-families"] {
 }
 {{/if}}
 
+{{#if sso_only}}
+{{#if remember_2fa_disabled}}
+/* The Web Vault uses this marker to allow SSO without a pre-entered email. */
+:root {
+  --vw-sso-email-optional: 1;
+}
+.vw-email-form-field,
+.vw-remember-email {
+  @extend %vw-hide;
+}
+{{/if}}
+{{/if}}
+
 /* Hide the default/continue `Email` input field */
 {{#if sso_enabled}}
 .vw-email-continue {
