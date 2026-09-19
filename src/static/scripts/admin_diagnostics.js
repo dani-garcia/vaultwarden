@@ -195,19 +195,41 @@ function checkTimeDrift(utcTimeA, utcTimeB, statusPrefix) {
 }
 
 function checkDomain(browserURL, serverURL) {
-    if (serverURL == browserURL) {
-        document.getElementById("domain-success").classList.remove("d-none");
-        domainCheck = true;
-    } else {
-        document.getElementById("domain-warning").classList.remove("d-none");
-    }
+    try {
+        const browser = new URL(browserURL);
+        const server = new URL(serverURL);
 
-    // Check for HTTPS at domain-server-string
-    if (serverURL.startsWith("https://") ) {
-        document.getElementById("https-success").classList.remove("d-none");
-        httpsCheck = true;
-    } else {
-        document.getElementById("https-warning").classList.remove("d-none");
+        const browserPath = browser.pathname.split("/").filter(Boolean).join("/");
+        const serverPath = server.pathname.split("/").filter(Boolean).join("/");
+
+        if (browser.origin === server.origin && browserPath === serverPath) {
+            document.getElementById("domain-success").classList.remove("d-none");
+            domainCheck = true;
+        } else {
+            document.getElementById("domain-warning").classList.remove("d-none");
+        }
+
+        // Check for HTTPS at domain-server-string
+        if (server.protocol === "https:") {
+            document.getElementById("https-success").classList.remove("d-none");
+            httpsCheck = true;
+        } else {
+            document.getElementById("https-warning").classList.remove("d-none");
+        }
+    } catch {
+        if (serverURL == browserURL) {
+            document.getElementById("domain-success").classList.remove("d-none");
+            domainCheck = true;
+        } else {
+            document.getElementById("domain-warning").classList.remove("d-none");
+        }
+
+        if (serverURL.startsWith("https://")) {
+            document.getElementById("https-success").classList.remove("d-none");
+            httpsCheck = true;
+        } else {
+            document.getElementById("https-warning").classList.remove("d-none");
+        }
     }
 }
 
