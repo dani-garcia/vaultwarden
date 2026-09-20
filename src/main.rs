@@ -588,7 +588,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .mount([basepath, "/icons"].concat(), api::icons_routes())
         .mount([basepath, "/notifications"].concat(), api::notifications_routes());
     // Apple associated-domains and related-origins are origin-root only.
-    if !basepath.is_empty() {
+    if api::should_mount_origin_root_well_known(basepath) {
         instance = instance.mount("/", api::well_known_routes());
     }
     let instance = instance

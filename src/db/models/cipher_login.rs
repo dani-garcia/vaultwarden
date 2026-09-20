@@ -81,6 +81,7 @@ fn project_object_keys(value: &Value, allow: &[&str]) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
     use serde_json::json;
 
     #[test]
@@ -196,6 +197,83 @@ mod tests {
     fn non_object_login_data_is_unchanged() {
         assert_eq!(normalize_login_type_data(Value::Null), Value::Null);
         assert_eq!(normalize_login_type_data(json!([])), json!([]));
+    }
+
+    /// Mirrors Bitwarden SDK 3 `Fido2Credential` (`deny_unknown_fields`).
+    /// iOS Autofill maps a deserialize InnerError here to CTAP2 VendorError(240).
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[allow(dead_code)]
+    struct SdkFido2Credential {
+        credential_id: Option<String>,
+        key_type: Option<String>,
+        key_algorithm: Option<String>,
+        key_curve: Option<String>,
+        key_value: Option<String>,
+        rp_id: Option<String>,
+        user_handle: Option<String>,
+        user_name: Option<String>,
+        counter: Option<String>,
+        rp_name: Option<String>,
+        user_display_name: Option<String>,
+        discoverable: Option<String>,
+        creation_date: Option<String>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SdkLogin {
+        fido2_credentials: Option<Vec<SdkFido2Credential>>,
+    }
+
+    fn extra_key_credential() -> Value {
+        json!({
+            "credentialId": "enc-id",
+            "keyType": "enc-type",
+            "keyAlgorithm": "enc-alg",
+            "keyCurve": "enc-curve",
+            "keyValue": "enc-key",
+            "rpId": "enc-rp",
+            "userHandle": "enc-uh",
+            "userName": "enc-un",
+            "counter": "enc-c",
+            "rpName": "enc-rn",
+            "userDisplayName": "enc-dn",
+            "discoverable": "enc-d",
+            "creationDate": "2024-06-07T14:12:36.150000Z",
+            "prf": {"enabled": true},
+            "transports": ["internal"],
+            "backupEligible": true
+        })
+    }
+
+    #[test]
+    fn sdk_simulator_rejects_extra_keys_like_ios_vendor_error_240() {
+        let err = serde_json::from_value::<SdkFido2Credential>(extra_key_credential()).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field"),
+            "SDK deny_unknown_fields must fail on prf/transports/backupEligible: {err}"
+        );
+    }
+
+    #[test]
+    fn sdk_simulator_accepts_projected_credentials() {
+        let out = normalize_login_type_data(json!({
+            "username": "enc",
+            "fido2Credentials": [extra_key_credential()]
+        }));
+        let login: SdkLogin = serde_json::from_value(out).expect("projected login must deserialize");
+        assert!(login.fido2_credentials.as_ref().is_some_and(|creds| creds.len() == 1));
+    }
+
+    #[test]
+    fn sdk_has_fido2_is_none_after_empty_array_is_normalized() {
+        let out = normalize_login_type_data(json!({"fido2Credentials": []}));
+        let login: SdkLogin = serde_json::from_value(out).expect("login");
+        assert!(
+            login.fido2_credentials.is_none(),
+            "SDK has_fido2 is is_some(); [] would mark every login as a passkey"
+        );
     }
 
     #[test]
