@@ -15,13 +15,16 @@ use crate::{
     auth::{ClientIp, WsAccessTokenHeader},
     db::{
         DbConn,
-        models::{AuthRequestId, Cipher, CollectionId, Device, DeviceId, Folder, PushId, Send as DbSend, User, UserId},
+        models::{
+            AuthRequestId, Cipher, CollectionId, Device, DeviceId, Folder, OrgPolicy, PushId, Send as DbSend, User,
+            UserId,
+        },
     },
 };
 
 use super::{
-    push::push_auth_request, push::push_auth_response, push_cipher_update, push_folder_update, push_logout,
-    push_send_update, push_user_update,
+    push::push_auth_request, push::push_auth_response, push::push_policy_update, push_cipher_update,
+    push_folder_update, push_logout, push_send_update, push_user_update,
 };
 
 pub static WS_USERS: LazyLock<Arc<WebSocketUsers>> = LazyLock::new(|| {
@@ -510,6 +513,33 @@ impl WebSocketUsers {
         }
     }
 
+    pub async fn send_policy_update(&self, policy: &OrgPolicy, user_ids: &[UserId], conn: &DbConn) {
+        // Skip any processing if both WebSockets and Push are not active
+        if *NOTIFICATIONS_DISABLED {
+            return;
+        }
+        debug!(
+            "Sending SyncPolicy ({}) for policy type {} of organization {} to {} member(s)",
+            UpdateType::SyncPolicy as i32,
+            policy.atype,
+            policy.org_uuid,
+            user_ids.len()
+        );
+        if CONFIG.enable_websocket() {
+            let data = create_policy_update(policy);
+
+            for user_id in user_ids {
+                self.send_update(user_id, &data).await;
+            }
+        }
+
+        if CONFIG.push_enabled() {
+            for user_id in user_ids {
+                push_policy_update(policy, user_id, conn).await;
+            }
+        }
+    }
+
     pub async fn send_auth_request(&self, user_id: &UserId, auth_request_uuid: &str, device: &Device, conn: &DbConn) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
@@ -642,6 +672,32 @@ fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id:
     serialize(&value)
 }
 
+// Follows upstream's `SyncPolicyPushNotification`, with the fields Vaultwarden stores.
+// `Data` is sent as the raw string, like upstream's policy entity does, and there is no
+// revision date because Vaultwarden does not keep one per policy.
+// No acting device: upstream does not exclude it either, so the client which changed the policy syncs too.
+fn create_policy_update(policy: &OrgPolicy) -> Vec<u8> {
+    use rmpv::Value as V;
+
+    create_update(
+        vec![
+            ("OrganizationId".into(), policy.org_uuid.to_string().into()),
+            (
+                "Policy".into(),
+                V::Map(vec![
+                    ("Id".into(), policy.uuid.as_ref().as_str().into()),
+                    ("OrganizationId".into(), policy.org_uuid.to_string().into()),
+                    ("Type".into(), policy.atype.into()),
+                    ("Data".into(), policy.data.as_str().into()),
+                    ("Enabled".into(), policy.enabled.into()),
+                ]),
+            ),
+        ],
+        UpdateType::SyncPolicy,
+        None,
+    )
+}
+
 fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: &UserId) -> Vec<u8> {
     use rmpv::Value as V;
 
@@ -700,6 +756,13 @@ pub enum UpdateType {
     // NotificationStatus = 21, // Not supported
 
     // RefreshSecurityTasks = 22, // Not supported
+
+    // OrganizationBankAccountVerified = 23, // Not supported
+    // ProviderBankAccountVerified = 24, // Not supported
+
+    // Upstream calls this `PolicyChanged`, the clients call it `SyncPolicy`
+    SyncPolicy = 25,
+
     None = 100,
 }
 

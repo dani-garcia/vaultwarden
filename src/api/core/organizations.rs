@@ -2082,6 +2082,7 @@ async fn put_policy(
     pol_type: i32,
     data: Json<PutPolicy>,
     headers: AdminHeaders,
+    nt: Notify<'_>,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2092,6 +2093,11 @@ async fn put_policy(
     let Some(pol_type_enum) = OrgPolicyType::from_i32(pol_type) else {
         err!("Invalid or unsupported policy type")
     };
+
+    // Collect the members before applying the policy, since enabling the TwoFactorAuthentication or
+    // SingleOrg policy revokes members below, and those clients need to know about the change too.
+    let member_ids: Vec<UserId> =
+        Membership::find_confirmed_by_org(&org_id, &conn).await.into_iter().map(|m| m.user_uuid).collect();
 
     // Bitwarden only allows the Reset Password policy when Single Org policy is enabled
     // Vaultwarden encouraged to use multiple orgs instead of groups because groups were not available in the past
@@ -2192,6 +2198,9 @@ async fn put_policy(
     )
     .await;
 
+    // Let the members sync, so the new policy applies without waiting for the next periodic sync
+    nt.send_policy_update(&policy, &member_ids, &conn).await;
+
     Ok(Json(policy.to_json()))
 }
 
@@ -2202,9 +2211,10 @@ async fn put_policy_vnext(
     pol_type: i32,
     data: Json<PutPolicy>,
     headers: AdminHeaders,
+    nt: Notify<'_>,
     conn: DbConn,
 ) -> JsonResult {
-    put_policy(org_id, pol_type, data, headers, conn).await
+    put_policy(org_id, pol_type, data, headers, nt, conn).await
 }
 
 #[get("/plans")]
