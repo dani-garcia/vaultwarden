@@ -1,7 +1,4 @@
-use std::{
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
-};
+use std::cmp::Ordering;
 
 use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, Deref, Display, From};
@@ -24,8 +21,8 @@ use crate::{
 use macros::UuidFromParam;
 
 use super::{
-    Cipher, CipherId, Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy,
-    OrgPolicyType, TwoFactor, User, UserId,
+    Cipher, CipherId, Collection, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy, OrgPolicyType,
+    TwoFactor, User, UserId,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -536,7 +533,13 @@ impl Membership {
         })
     }
 
-    pub async fn to_json_user_details(&self, include_collections: bool, include_groups: bool, conn: &DbConn) -> Value {
+    // Used by admins to view other members, so nothing here may depend on this member's status
+    pub async fn to_json_details_for_admin(
+        &self,
+        include_collections: bool,
+        include_groups: bool,
+        conn: &DbConn,
+    ) -> Value {
         let user = User::find_by_uuid(&self.user_uuid, conn).await.unwrap();
 
         // Because BitWarden want the status to be -1 for revoked users we need to catch that here.
@@ -559,52 +562,23 @@ impl Membership {
 
         // Check if a user is in a group which has access to all collections
         // If that is the case, we should not return individual collections!
+        // This is used by admins to view other members, so it must not depend on the membership status
         let full_access_group =
-            CONFIG.org_groups_enabled() && Group::is_in_full_access_group(&self.user_uuid, &self.org_uuid, conn).await;
+            CONFIG.org_groups_enabled() && GroupUser::has_full_access_by_member(&self.org_uuid, &self.uuid, conn).await;
 
         // If collections are to be included, only include them if the user does not have full access via a group or defined to the user it self
+        // Only the collections assigned directly are returned, the ones assigned via a group are returned via a special group endpoint
         let collections: Vec<Value> = if include_collections && !(full_access_group || self.access_all) {
-            // Get all collections for the user here already to prevent more queries
-            let cu: HashMap<CollectionId, CollectionUser> =
-                CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
-                    .await
-                    .into_iter()
-                    .map(|cu| (cu.collection_uuid.clone(), cu))
-                    .collect();
-
-            // Get all collection groups for this user to prevent there inclusion
-            let cg: HashSet<CollectionId> = CollectionGroup::find_by_user(&self.user_uuid, conn)
+            CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
                 .await
                 .into_iter()
-                .map(|cg| cg.collections_uuid)
-                .collect();
-
-            Collection::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
-                .await
-                .into_iter()
-                .filter_map(|c| {
-                    let (read_only, hide_passwords, manage) = if self.has_full_access() {
-                        (false, false, self.atype >= MembershipType::Manager)
-                    } else if let Some(cu) = cu.get(&c.uuid) {
-                        (
-                            cu.read_only,
-                            cu.hide_passwords,
-                            cu.manage || (self.atype == MembershipType::Manager && !cu.read_only && !cu.hide_passwords),
-                        )
-                    // If previous checks failed it might be that this user has access via a group, but we should not return those elements here
-                    // Those are returned via a special group endpoint
-                    } else if cg.contains(&c.uuid) {
-                        return None;
-                    } else {
-                        (true, true, false)
-                    };
-
-                    Some(json!({
-                        "id": c.uuid,
-                        "readOnly": read_only,
-                        "hidePasswords": hide_passwords,
-                        "manage": manage,
-                    }))
+                .map(|cu| {
+                    json!({
+                        "id": cu.collection_uuid,
+                        "readOnly": cu.read_only,
+                        "hidePasswords": cu.hide_passwords,
+                        "manage": cu.manage || (self.atype == MembershipType::Manager && !cu.read_only && !cu.hide_passwords),
+                    })
                 })
                 .collect()
         } else {
@@ -1032,17 +1006,6 @@ impl Membership {
         .await
     }
 
-    pub async fn get_orgs_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<OrganizationId> {
-        conn.run(move |conn| {
-            users_organizations::table
-                .filter(users_organizations::user_uuid.eq(user_uuid))
-                .select(users_organizations::org_uuid)
-                .load::<OrganizationId>(conn)
-                .unwrap_or_default()
-        })
-        .await
-    }
-
     pub async fn find_by_user_and_policy(user_uuid: &UserId, policy_type: OrgPolicyType, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             users_organizations::table
@@ -1126,6 +1089,7 @@ impl Membership {
                         .and(ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(
                     users_organizations::atype.eq_any(vec![MembershipType::Owner as i32, MembershipType::Admin as i32]),
                 )

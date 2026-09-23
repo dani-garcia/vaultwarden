@@ -2180,8 +2180,15 @@ impl CipherSyncData {
             }
         }
 
+        // Generate a HashMap with the Organization UUID as key and the Membership record
+        let members: HashMap<OrganizationId, Membership> = Membership::find_confirmed_by_user(user_id, conn)
+            .await
+            .into_iter()
+            .map(|m| (m.org_uuid.clone(), m))
+            .collect();
+
         // Generate a list of Cipher UUID's containing a Vec with one or more Attachment records
-        let orgs = Membership::get_orgs_by_user(user_id, conn).await;
+        let orgs: Vec<OrganizationId> = members.keys().cloned().collect();
         let attachments = Attachment::find_all_by_user_and_orgs(user_id, &orgs, conn).await;
         let mut cipher_attachments: HashMap<CipherId, Vec<Attachment>> = HashMap::with_capacity(attachments.len());
         for attachment in attachments {
@@ -2195,13 +2202,6 @@ impl CipherSyncData {
         for (cipher, collection) in user_cipher_collections {
             cipher_collections.entry(cipher).or_default().push(collection);
         }
-
-        // Generate a HashMap with the Organization UUID as key and the Membership record
-        let members: HashMap<OrganizationId, Membership> = Membership::find_confirmed_by_user(user_id, conn)
-            .await
-            .into_iter()
-            .map(|m| (m.org_uuid.clone(), m))
-            .collect();
 
         // Generate a HashMap with the User_Collections UUID as key and the CollectionUser record
         let user_collections: HashMap<CollectionId, CollectionUser> = CollectionUser::find_by_user(user_id, conn)
