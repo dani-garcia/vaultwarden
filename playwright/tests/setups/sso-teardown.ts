@@ -6,7 +6,7 @@ const utils = require('../../global-utils');
 utils.loadEnv();
 
 test('Keycloak teardown', async () => {
-    if( process.env.PW_KEEP_SERVICE_RUNNNING === "true" ) {
+    if( process.env.PW_KEEP_SERVICE_RUNNING === "true" ) {
         console.log("Keep Keycloak running");
     } else {
         console.log("Keycloak stopping");

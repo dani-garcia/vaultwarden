@@ -659,6 +659,11 @@ make_config! {
         events_days_retain:     i64,    false,   option;
     },
 
+    client {
+        /// Control whether clients onboarding interstitials are suppressed |> post-login welcome dialogs, extension install prompts, setup extension redirects, and premium upsell modals
+        client_suppress_onboarding:         bool, true,   def,    false;
+    },
+
     /// Advanced settings
     advanced {
         /// Client IP header |> If not present, the remote IP is used.
@@ -812,6 +817,8 @@ make_config! {
         sso_enabled:                    bool,   true,   def,    false;
         /// Only SSO login |> Disable Email+Master Password login
         sso_only:                       bool,   true,   def,    false;
+        /// Allow SSO flow to create account |> You probably want to disable it when using a public provider
+        sso_signups_allowed:            bool,   true,   def,    true;
         /// Allow email association |> Associate existing non-SSO user based on email
         sso_signups_match_email:        bool,   true,   def,    true;
         /// Allow unknown email verification status |> Allowing this with `SSO_SIGNUPS_MATCH_EMAIL=true` open potential account takeover.
@@ -1157,11 +1164,8 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                     }
 
                     #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        if !metadata.permissions().mode() & 0o111 != 0 {
-                            err!(format!("sendmail command at `{path:?}` isn't executable"));
-                        }
+                    if nix::unistd::access(&path, nix::unistd::AccessFlags::X_OK).is_err() {
+                        err!(format!("sendmail command at `{path:?}` isn't executable"));
                     }
                 }
             }
@@ -1268,7 +1272,7 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     if !cfg.disable_admin_token {
         match cfg.admin_token.as_ref() {
             Some(t) if t.starts_with("$argon2") => {
-                if let Err(e) = argon2::password_hash::PasswordHash::new(t) {
+                if let Err(e) = argon2::password_hash::phc::PasswordHash::new(t) {
                     err!(format!("The configured Argon2 PHC in `ADMIN_TOKEN` is invalid: '{e}'"))
                 }
             }
@@ -1421,7 +1425,9 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "desktop-ui-migration-milestone-4",
     // Auth Team
     "pm-5594-safari-account-switching",
+    "pm-32413-multi-client-password-management",
     // Autofill Team
+    "enable-basic-auth-response",
     "ssh-agent",
     "ssh-agent-v2",
     // Key Management Team
@@ -1434,8 +1440,11 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "mutual-tls",
     "cxp-import-mobile",
     "cxp-export-mobile",
+    "pm-34171-card-scanner",
     // Platform Team
     "pm-30529-webauthn-related-origins",
+    // Vault Team
+    "pm-32009-new-item-types",
 ];
 
 impl Config {
@@ -1501,6 +1510,9 @@ impl Config {
         let operator = storage::operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
         operator.write(&CONFIG_FILENAME, config_str).await?;
 
+        // Invalidate CSS Cache because several config items might have impact on the rendered CSS
+        crate::api::invalidate_css_cache();
+
         Ok(())
     }
 
@@ -1533,6 +1545,17 @@ impl Config {
     pub fn is_signup_allowed(&self, email: &str) -> bool {
         if self.signups_domains_whitelist().is_empty() {
             self.signups_allowed()
+        } else {
+            // The whitelist setting overrides the signups_allowed setting.
+            self.is_email_domain_allowed(email)
+        }
+    }
+
+    /// Tests whether SSO signup is allowed for an email address, taking into
+    /// account the sso_signups_allowed and signups_domains_whitelist settings.
+    pub fn is_sso_signup_allowed(&self, email: &str) -> bool {
+        if self.signups_domains_whitelist().is_empty() {
+            self.sso_signups_allowed()
         } else {
             // The whitelist setting overrides the signups_allowed setting.
             self.is_email_domain_allowed(email)
@@ -1582,6 +1605,9 @@ impl Config {
             writer._usr = usr;
             writer._overrides = Vec::new();
         }
+
+        // Invalidate CSS Cache because several config items might have impact on the rendered CSS
+        crate::api::invalidate_css_cache();
 
         Ok(())
     }
@@ -1723,7 +1749,7 @@ where
     reg!("email/email_footer");
     reg!("email/email_footer_text");
 
-    reg!("email/admin_reset_password", ".html");
+    reg!("email/admin_account_recovery", ".html");
     reg!("email/change_email_existing", ".html");
     reg!("email/change_email_invited", ".html");
     reg!("email/change_email", ".html");

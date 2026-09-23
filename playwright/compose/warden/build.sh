@@ -22,3 +22,14 @@ if [[ ! -z "$REPO_URL" ]] && [[ ! -z "$COMMIT_HASH" ]] ; then
 
     mv build /web-vault
 fi
+
+# Lower the KDF iterations default for faster tests.
+sed -i 's/(6e5,2e6,6e5)/(1e5,2e6,1e5)/' /web-vault/app/main.*.js
+
+# Generate a self signed cert
+mkdir -p /data/ssl; cd /data/ssl
+
+openssl req -x509 -out localhost.crt -keyout localhost.key \
+  -newkey rsa:2048 -nodes -sha256 \
+  -subj '/CN=localhost' -extensions EXT -config <( \
+   printf "[dn]\nCN=localhost\n[req]\ndistinguished_name = dn\n[EXT]\nsubjectAltName=DNS:localhost\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth")

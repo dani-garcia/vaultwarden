@@ -1,4 +1,4 @@
-import { firefox, type FullConfig } from '@playwright/test';
+import { type FullConfig } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import fs from 'fs';
 
