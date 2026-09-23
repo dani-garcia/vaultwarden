@@ -222,6 +222,7 @@ table! {
         signed_public_key -> Nullable<Text>,
         security_state -> Nullable<Text>,
         security_version -> Nullable<Integer>,
+        v2_upgrade_token -> Nullable<Text>,
     }
 }
 
@@ -268,6 +269,7 @@ table! {
         access_event_logs -> Bool,
         access_import_export -> Bool,
         access_reports -> Bool,
+        v2_upgrade_token -> Nullable<Text>,
     }
 }
 
