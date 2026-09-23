@@ -135,9 +135,9 @@ pub async fn send_token(user_id: &UserId, conn: &DbConn) -> EmptyResult {
 #[post("/two-factor/get-email", data = "<data>")]
 async fn get_email(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&mut user, false, &conn).await?;
 
     let (enabled, mfa_email) =
         match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &conn).await {
@@ -168,13 +168,13 @@ struct SendEmailData {
 #[post("/two-factor/send-email", data = "<data>")]
 async fn send_email(data: Json<SendEmailData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: SendEmailData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
     PasswordOrOtpData {
         master_password_hash: data.master_password_hash,
         otp: data.otp,
     }
-    .validate(&user, false, &conn)
+    .validate(&mut user, false, &conn)
     .await?;
 
     if !CONFIG._enable_email_2fa() {
@@ -219,7 +219,7 @@ async fn email(data: Json<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
         master_password_hash: data.master_password_hash,
         otp: data.otp,
     }
-    .validate(&user, true, &conn)
+    .validate(&mut user, true, &conn)
     .await?;
 
     let type_ = TwoFactorType::EmailVerificationChallenge as i32;

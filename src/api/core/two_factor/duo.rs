@@ -92,9 +92,9 @@ const DISABLED_MESSAGE_DEFAULT: &str = "<To use the global Duo keys, please leav
 #[post("/two-factor/get-duo", data = "<data>")]
 async fn get_duo(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&mut user, false, &conn).await?;
 
     let data = get_user_duo_data(&user.uuid, &conn).await;
 
@@ -164,7 +164,7 @@ async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, conn: DbConn)
         master_password_hash: data.master_password_hash.clone(),
         otp: data.otp.clone(),
     }
-    .validate(&user, true, &conn)
+    .validate(&mut user, true, &conn)
     .await?;
 
     let (data, data_str) = if check_duo_fields_custom(&data) {
