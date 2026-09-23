@@ -383,23 +383,36 @@ impl WebSocketUsers {
     }
 
     pub async fn send_logout(&self, user: &User, acting_device: Option<&Device>, conn: &DbConn) {
+        self.send_logout_with_reason(user, acting_device, None, conn).await;
+    }
+
+    /// A logout that clients may handle differently depending on `reason`, e.g. syncing instead of
+    /// logging out after a key rotation that kept the sessions alive.
+    pub async fn send_logout_with_reason(
+        &self,
+        user: &User,
+        acting_device: Option<&Device>,
+        reason: Option<LogOutReason>,
+        conn: &DbConn,
+    ) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
         }
         let acting_device_id = acting_device.map(|d| d.uuid.clone());
-        let data = create_update(
-            vec![("UserId".into(), user.uuid.to_string().into()), ("Date".into(), serialize_date(user.updated_at))],
-            UpdateType::LogOut,
-            acting_device_id,
-        );
+        let mut payload =
+            vec![("UserId".into(), user.uuid.to_string().into()), ("Date".into(), serialize_date(user.updated_at))];
+        if let Some(reason) = reason {
+            payload.push(("Reason".into(), (reason as i32).into()));
+        }
+        let data = create_update(payload, UpdateType::LogOut, acting_device_id);
 
         if CONFIG.enable_websocket() {
             self.send_update(&user.uuid, &data).await;
         }
 
         if CONFIG.push_enabled() {
-            push_logout(user, acting_device, conn).await;
+            push_logout(user, acting_device, reason, conn).await;
         }
     }
 
@@ -665,6 +678,15 @@ fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id
 
 fn create_ping() -> Vec<u8> {
     serialize(&Value::Array(vec![6.into()]))
+}
+
+/// Why a logout was pushed. Absent for a plain logout.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/main/src/Core/Enums/PushNotificationLogOutReason.cs>
+/// (`KdfChange = 0` is not sent by vaultwarden yet.)
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum LogOutReason {
+    KeyRotation = 1,
 }
 
 // https://github.com/bitwarden/server/blob/375af7c43b10d9da03525d41452f95de3f921541/src/Core/Enums/PushType.cs

@@ -197,10 +197,13 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         Value::Null
     };
 
-    // Upstream omits this when unset rather than sending null.
+    // Upstream omits these two when unset rather than sending null.
     let mut user_decryption = json!({ "masterPasswordUnlock": master_password_unlock });
     if let Some(key_id) = &headers.user.key_id {
         user_decryption["userKeyId"] = json!(key_id);
+    }
+    if let Some(v2_upgrade_token) = headers.user.v2_upgrade_token_json() {
+        user_decryption["v2UpgradeToken"] = v2_upgrade_token;
     }
 
     Ok(Json(json!({

@@ -221,6 +221,7 @@ table! {
         signed_public_key -> Nullable<Text>,
         security_state -> Nullable<Text>,
         security_version -> Nullable<Integer>,
+        v2_upgrade_token -> Nullable<Text>,
     }
 }
 
@@ -258,6 +259,7 @@ table! {
         atype -> Integer,
         reset_password_key -> Nullable<Text>,
         external_id -> Nullable<Text>,
+        v2_upgrade_token -> Nullable<Text>,
     }
 }
 

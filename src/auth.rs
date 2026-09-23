@@ -30,7 +30,7 @@ use crate::{
         models::{
             AttachmentId, CipherId, Collection, CollectionId, Device, DeviceId, DeviceType, EmergencyAccessId,
             EventType, Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, OrganizationId,
-            SendFileId, SendId, User, UserId, UserStampException,
+            SendFileId, SendId, User, UserId,
         },
     },
     error::Error,
@@ -667,31 +667,13 @@ impl<'r> FromRequest<'r> for Headers {
         };
 
         if user.security_stamp != claims.sstamp {
-            if let Some(stamp_exception) =
-                user.stamp_exception.as_deref().and_then(|s| serde_json::from_str::<UserStampException>(s).ok())
-            {
-                let Some(current_route) = request.route().and_then(|r| r.name.as_deref()) else {
-                    err_handler!("Error getting current route for stamp exception")
-                };
+            let Some(current_route) = request.route().and_then(|r| r.name.as_deref()) else {
+                err_handler!("Error getting current route for stamp exception")
+            };
 
-                // Check if the stamp exception has expired first.
-                // Then, check if the current route matches any of the allowed routes.
-                // After that check the stamp in exception matches the one in the claims.
-                if Utc::now().timestamp() > stamp_exception.expire {
-                    // If the stamp exception has been expired remove it from the database.
-                    // This prevents checking this stamp exception for new requests.
-                    let mut user = user;
-                    user.reset_stamp_exception();
-                    if let Err(e) = user.save(&conn).await {
-                        error!("Error updating user: {e:#?}");
-                    }
-                    err_handler!("Stamp exception is expired")
-                } else if !stamp_exception.routes.contains(&current_route.to_owned()) {
-                    err_handler!("Invalid security stamp: Current route and exception route do not match")
-                } else if stamp_exception.security_stamp != claims.sstamp {
-                    err_handler!("Invalid security stamp for matched stamp exception")
-                }
-            } else {
+            // Expired exceptions are dropped the next time the stamp is reset, not here: writing them
+            // back from this request could undo a reset made since the user was read.
+            if !user.stamp_exceptions().iter().any(|e| e.allows(&claims.sstamp, current_route)) {
                 err_handler!("Invalid security stamp")
             }
         }
