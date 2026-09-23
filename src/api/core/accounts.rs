@@ -628,6 +628,8 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
                 err!("Invalid master password salt")
             }
 
+            validate_key_id_unchanged(&user, &unlock_data)?;
+
             (authentication_data.master_password_authentication_hash, unlock_data.master_key_wrapped_user_key)
         } else if let (Some(new_master_password_hash), Some(new_key)) = (data.new_master_password_hash, data.key) {
             (new_master_password_hash, new_key)
@@ -713,6 +715,21 @@ struct UnlockData {
     salt: String,
     kdf: KDFData,
     master_key_wrapped_user_key: String,
+    contained_key_id: Option<KeyId>,
+}
+
+/// A password or KDF change re-wraps the same user key, so a key id sent with it has to be the
+/// current one. Either may be missing: from a client that predates key ids, or a user whose key id
+/// isn't known yet. There is nothing to compare in those cases.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/main/src/Core/KeyManagement/Models/Data/MasterPasswordUnlockData.cs>
+fn validate_key_id_unchanged(user: &User, unlock_data: &UnlockData) -> EmptyResult {
+    if let (Some(current), Some(contained)) = (&user.key_id, &unlock_data.contained_key_id)
+        && current != contained
+    {
+        err!("Invalid user key sent in master-password unlock data.")
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -738,6 +755,8 @@ async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, conn: DbConn, nt:
     if headers.user.email != data.authentication_data.salt || headers.user.email != data.unlock_data.salt {
         err!("Invalid master password salt")
     }
+
+    validate_key_id_unchanged(&headers.user, &data.unlock_data)?;
 
     let mut user = headers.user;
 
@@ -1036,8 +1055,9 @@ struct KeyIdData {
 #[post("/accounts/key-management/user-key-id", data = "<data>")]
 async fn post_user_key(data: Json<KeyIdData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let mut user = headers.user;
+    // Only a backfill for accounts that have none. Afterwards the id changes with the key, in a rotation.
     if user.key_id.is_some() {
-        err_code!("Unexpected data", Status::UnprocessableEntity.code);
+        err!("User key id is already set.")
     }
 
     user.key_id = Some(data.into_inner().user_key_id);
