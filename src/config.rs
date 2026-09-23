@@ -1435,8 +1435,11 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     // Key Management Team
     "biometrics-sdk-ipc",
     "windows-native-credential-sync",
+    "pm-30144-sdk-key-rotation",
+    "pm-31050-no-logout-key-upgrade-rotation",
     "enable-account-encryption-v2-jit-password-registration",
     "pm-27278-v2-password-registration",
+    "force-upgrade-v2-encryption",
     // Mobile Team
     "pm-34171-card-scanner",
     // Platform Team
