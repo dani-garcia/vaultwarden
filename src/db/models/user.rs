@@ -6,6 +6,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::EmptyResult,
+    auth::DEFAULT_ACCESS_VALIDITY,
     crypto,
     db::{
         DbConn,
@@ -109,11 +110,26 @@ enum UserStatus {
     _Disabled = 2,
 }
 
+/// A previous security stamp that is still accepted, until `expire`.
 #[derive(Serialize, Deserialize)]
 pub struct UserStampException {
-    pub routes: Vec<String>,
+    /// The routes the stamp is still accepted on, or `None` for any route.
+    pub routes: Option<Vec<String>>,
     pub security_stamp: String,
     pub expire: i64,
+}
+
+impl UserStampException {
+    pub fn is_expired(&self) -> bool {
+        Utc::now().timestamp() > self.expire
+    }
+
+    /// Whether this exception lets a token carrying `security_stamp` through on `route`.
+    pub fn allows(&self, security_stamp: &str, route: &str) -> bool {
+        !self.is_expired()
+            && self.security_stamp == security_stamp
+            && self.routes.as_ref().is_none_or(|routes| routes.iter().any(|r| r == route))
+    }
 }
 
 /// Local methods
@@ -239,7 +255,35 @@ impl User {
 
     pub async fn reset_security_stamp(&mut self, conn: &DbConn) -> EmptyResult {
         self.security_stamp = get_uuid();
+        // A reset is meant to end the other sessions, which a key rotation's grace would undo. The
+        // route exceptions stay, since they are set right before a reset, for the stamp it replaces.
+        self.retain_stamp_exceptions(|e| e.routes.is_some());
         Device::rotate_refresh_tokens_by_user(&self.uuid, conn).await?;
+        Ok(())
+    }
+
+    /// Resets the security stamp after a key rotation, while letting the access tokens already
+    /// issued keep working until they expire.
+    ///
+    /// This is what upstream does: there the stamp is only checked when a token is refreshed, so a
+    /// rotation invalidates refresh tokens but not the access tokens in use. Clients rely on it to
+    /// keep a session going across a rotation. Chained rotations keep every earlier stamp that is
+    /// still within its window.
+    pub async fn reset_security_stamp_after_key_rotation(&mut self, conn: &DbConn) -> EmptyResult {
+        let previous_stamp = self.security_stamp.clone();
+        let mut grace: Vec<UserStampException> =
+            self.stamp_exceptions().into_iter().filter(|e| e.routes.is_none() && !e.is_expired()).collect();
+
+        self.reset_security_stamp(conn).await?;
+
+        grace.push(UserStampException {
+            routes: None,
+            security_stamp: previous_stamp,
+            expire: (Utc::now() + *DEFAULT_ACCESS_VALIDITY).timestamp(),
+        });
+        let mut exceptions = self.stamp_exceptions();
+        exceptions.extend(grace);
+        self.set_stamp_exceptions(&exceptions);
         Ok(())
     }
 
@@ -251,17 +295,56 @@ impl User {
     ///   After these 2 minutes this stamp will expire.
     ///
     pub fn set_stamp_exception(&mut self, route_exception: Vec<String>) {
-        let stamp_exception = UserStampException {
-            routes: route_exception,
+        self.set_stamp_exceptions(&[UserStampException {
+            routes: Some(route_exception),
             security_stamp: self.security_stamp.clone(),
             expire: (Utc::now() + TimeDelta::try_minutes(2).unwrap()).timestamp(),
-        };
-        self.stamp_exception = Some(serde_json::to_string(&stamp_exception).unwrap_or_default());
+        }]);
     }
 
-    /// Resets the stamp_exception to prevent re-use of the previous security-stamp
-    pub fn reset_stamp_exception(&mut self) {
-        self.stamp_exception = None;
+    /// The previous security stamps that are still accepted, expired ones included.
+    pub fn stamp_exceptions(&self) -> Vec<UserStampException> {
+        let Some(stored) = self.stamp_exception.as_deref() else {
+            return Vec::new();
+        };
+        // Before key rotations kept sessions alive, only a single route exception was stored.
+        serde_json::from_str::<Vec<UserStampException>>(stored)
+            .or_else(|_| serde_json::from_str::<UserStampException>(stored).map(|e| vec![e]))
+            .unwrap_or_default()
+    }
+
+    fn set_stamp_exceptions(&mut self, exceptions: &[UserStampException]) {
+        self.stamp_exception = if exceptions.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&exceptions).unwrap_or_default())
+        };
+    }
+
+    /// Persists only `stamp_exception`, for callers holding a user read earlier in the request.
+    ///
+    /// A full `save` would write back every other column as it was read, undoing anything saved in
+    /// the meantime, such as the new keys of a key rotation made from another device.
+    pub async fn save_stamp_exceptions(&self, conn: &DbConn) -> EmptyResult {
+        let uuid = self.uuid.clone();
+        let stamp_exception = self.stamp_exception.clone();
+        conn.run(move |conn| {
+            diesel::update(users::table.filter(users::uuid.eq(uuid)))
+                .set(users::stamp_exception.eq(stamp_exception))
+                .execute(conn)
+                .map_res("Error updating user stamp exceptions")
+        })
+        .await
+    }
+
+    /// Drops the stamp exceptions that don't match `keep`. Returns whether any were dropped.
+    pub fn retain_stamp_exceptions(&mut self, keep: impl Fn(&UserStampException) -> bool) -> bool {
+        let mut exceptions = self.stamp_exceptions();
+        let before = exceptions.len();
+        exceptions.retain(keep);
+        let changed = exceptions.len() != before;
+        self.set_stamp_exceptions(&exceptions);
+        changed
     }
 
     pub fn display_name(&self) -> &str {
@@ -327,8 +410,8 @@ impl User {
         })
     }
 
-    pub fn v2_upgrade_token_json(&self) -> Value {
-        self.v2_upgrade_token.as_ref().and_then(|token| serde_json::from_str(token).ok()).unwrap_or(Value::Null)
+    pub fn v2_upgrade_token_json(&self) -> Option<Value> {
+        self.v2_upgrade_token.as_ref().and_then(|token| serde_json::from_str(token).ok())
     }
 
     pub async fn to_json(&self, conn: &DbConn) -> Value {

@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::{
-        AnonymousNotify, ApiResult, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
+        AnonymousNotify, ApiResult, EmptyResult, JsonResult, LogOutReason, Notify, PasswordOrOtpData, UpdateType,
         core::{accept_org_invite, log_user_event, two_factor::email},
         master_password_policy, register_push_device, unregister_push_device,
     },
@@ -48,8 +48,10 @@ pub fn routes() -> Vec<rocket::Route> {
         post_password,
         post_set_password,
         post_kdf,
+        get_key_rotation_data,
         post_rotatekey,
         post_user_key,
+        post_rotate_user_keys,
         post_sstamp,
         post_email_token,
         post_email,
@@ -298,6 +300,35 @@ impl AccountKeysData {
             private_key,
             public_key,
             v2,
+        })
+    }
+}
+
+impl WrappedAccountCryptographicState {
+    /// This shape is v2-only: the key pairs and security state were already required by the
+    /// deserializer, so only the values still need checking. A missing signed public key or an
+    /// unknown algorithm has to be an error rather than a fallback to v1, which would silently turn
+    /// a rotation into a downgrade.
+    fn validate(self) -> ApiResult<ValidatedAccountKeys> {
+        let Some(signed_public_key) = self.public_key_encryption_key_pair.signed_public_key else {
+            err!("No signed public key provided for a v2 account")
+        };
+        let Some(signature_algorithm) = SignatureAlgorithm::from_str(&self.signature_key_pair.signature_algorithm)
+        else {
+            err!(format!("Unsupported signature algorithm: {}", self.signature_key_pair.signature_algorithm))
+        };
+
+        Ok(ValidatedAccountKeys {
+            private_key: self.public_key_encryption_key_pair.wrapped_private_key,
+            public_key: self.public_key_encryption_key_pair.public_key,
+            v2: Some(ValidatedV2AccountKeys {
+                signed_public_key,
+                signing_key: self.signature_key_pair.wrapped_signing_key,
+                verifying_key: self.signature_key_pair.verifying_key,
+                signature_algorithm,
+                security_state: self.security_state.security_state,
+                security_version: self.security_state.security_version,
+            }),
         })
     }
 }
@@ -1023,16 +1054,18 @@ struct UpdateEmergencyAccessData {
 #[serde(rename_all = "camelCase")]
 struct UpdateResetPasswordData {
     organization_id: OrganizationId,
-    reset_password_key: String,
+    // Absent in a v1 -> v2 upgrade, which keeps the key the organization already holds
+    reset_password_key: Option<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KeyData {
     account_unlock_data: RotateAccountUnlockData,
-    account_keys: RotateAccountKeys,
+    account_keys: AccountKeysData,
     account_data: RotateAccountData,
     old_master_key_authentication_hash: String,
+    new_user_key_id: Option<KeyId>,
 }
 
 #[derive(Deserialize)]
@@ -1041,6 +1074,8 @@ struct RotateAccountUnlockData {
     emergency_access_unlock_data: Vec<UpdateEmergencyAccessData>,
     master_password_unlock_data: MasterPasswordUnlockData,
     organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
+    #[serde(flatten)]
+    common: CommonUnlockData,
 }
 
 #[derive(Deserialize)]
@@ -1053,13 +1088,28 @@ struct MasterPasswordUnlockData {
     email: String,
     master_key_authentication_hash: String,
     master_key_encrypted_user_key: String,
+    contained_key_id: Option<KeyId>,
 }
 
-#[derive(Deserialize)]
+/// The unlock data both rotation endpoints share. Vaultwarden has neither trusted device encryption
+/// nor passkey login, so `key-rotation-data` reports none of either and these must arrive empty.
+#[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-struct RotateAccountKeys {
-    user_key_encrypted_account_private_key: String,
-    account_public_key: String,
+struct CommonUnlockData {
+    #[serde(default)]
+    passkey_unlock_data: Vec<Value>,
+    #[serde(default)]
+    device_key_unlock_data: Vec<Value>,
+    v2_upgrade_token: Option<V2UpgradeTokenData>,
+}
+
+/// Lets clients that still hold the v1 user key derive the v2 one after another client upgraded the
+/// account, so a v1 -> v2 upgrade doesn't have to log every other session out. Opaque to us.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct V2UpgradeTokenData {
+    wrapped_user_key1: String,
+    wrapped_user_key2: String,
 }
 
 #[derive(Deserialize)]
@@ -1068,6 +1118,131 @@ struct RotateAccountData {
     ciphers: Vec<CipherData>,
     folders: Vec<UpdateFolderData>,
     sends: Vec<SendData>,
+}
+
+/// Body of `rotate-user-keys`, which rotates the keys without touching the master password.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RotateUserKeysData {
+    wrapped_account_cryptographic_state: WrappedAccountCryptographicState,
+    unlock_data: RotateUserKeysUnlockData,
+    account_data: RotateAccountData,
+    unlock_method_data: UnlockMethodData,
+    new_user_key_id: Option<KeyId>,
+}
+
+/// The v2-only account cryptographic state, where all three parts are mandatory.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WrappedAccountCryptographicState {
+    public_key_encryption_key_pair: PublicKeyEncryptionKeyPairData,
+    signature_key_pair: SignatureKeyPairData,
+    security_state: SecurityStateData,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RotateUserKeysUnlockData {
+    emergency_access_unlock_data: Vec<UpdateEmergencyAccessData>,
+    organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
+    #[serde(flatten)]
+    common: CommonUnlockData,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UnlockMethodData {
+    unlock_method: i32,
+    master_password_unlock_data: Option<RotateMasterPasswordUnlockData>,
+    // `keyConnectorKeyWrappedUserKey` is deliberately not read: that unlock method is rejected.
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RotateMasterPasswordUnlockData {
+    kdf: KDFData,
+    salt: String,
+    master_key_wrapped_user_key: String,
+    contained_key_id: Option<KeyId>,
+}
+
+/// The user key wrapped in the master password unlock data has to be the new one.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/main/src/Core/KeyManagement/Models/Data/MasterPasswordUnlockData.cs>
+fn validate_contained_key_id(contained_key_id: Option<&KeyId>, new_user_key_id: Option<&KeyId>) -> EmptyResult {
+    match (contained_key_id, new_user_key_id) {
+        // Neither is sent by clients that predate key ids
+        (None, None) => Ok(()),
+        (Some(contained), Some(new)) if contained == new => Ok(()),
+        _ => err!("Invalid user key sent in master-password unlock data."),
+    }
+}
+
+/// Ref: <https://github.com/bitwarden/server/blob/main/src/Api/KeyManagement/Enums/UnlockMethod.cs>
+enum UnlockMethod {
+    Tde = 0,
+    MasterPassword = 1,
+    KeyConnector = 2,
+}
+
+/// The rotation-specific checks on the new account keys.
+///
+/// A rotation re-wraps the existing keys under a new user key; it must not swap the identity the
+/// account presents to others. So the public key never changes, and for an account that is already
+/// v2 the verifying key doesn't either — only the *wrapped* signing key does. A v1 account may gain
+/// a signature key pair, which is the v1 -> v2 upgrade.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/main/src/Core/KeyManagement/UserKey/Implementations/RotateUserAccountKeysCommand.cs>
+async fn validate_rotation_account_keys(keys: &ValidatedAccountKeys, user: &User, conn: &DbConn) -> EmptyResult {
+    if user.public_key.as_ref() != Some(&keys.public_key) {
+        err!("Changing the asymmetric keypair is not possible during key rotation")
+    }
+
+    let Some(v2) = &keys.v2 else {
+        if user.is_v2() {
+            err!("Cannot downgrade an account from v2 to v1 encryption during key rotation")
+        }
+        // A v1 rotation: the private key stays wrapped by an AES-CBC-HMAC user key
+        if enc_string_type(&keys.private_key) != Some(ENC_TYPE_AES_CBC_256_HMAC_SHA256) {
+            err!("The provided account private key was not wrapped with AES-256-CBC-HMAC")
+        }
+        return Ok(());
+    };
+
+    // Both a v2 rotation and the v1 -> v2 upgrade end up with a COSE user key wrapping the private keys
+    if enc_string_type(&v2.signing_key) != Some(ENC_TYPE_COSE_ENCRYPT0) {
+        err!("The provided signing key data is not wrapped with XChaCha20-Poly1305.")
+    }
+    if enc_string_type(&keys.private_key) != Some(ENC_TYPE_COSE_ENCRYPT0) {
+        err!("The provided private key encryption key is not wrapped with XChaCha20-Poly1305.")
+    }
+    if v2.verifying_key.is_empty() || v2.signed_public_key.is_empty() || v2.security_state.is_empty() {
+        err!("The v2 account keys are missing the verifying key, signed public key or security state")
+    }
+
+    if !user.is_v2() {
+        // The v1 -> v2 upgrade, which is where the signature key pair comes from
+        return Ok(());
+    }
+
+    let Some(key_pair) = UserSignatureKeyPair::find_active_by_user(&user.uuid, conn).await else {
+        err!("The account is missing its signature key pair")
+    };
+    if key_pair.verifying_key != v2.verifying_key {
+        err!("Changing the verifying key is not possible during key rotation")
+    }
+
+    Ok(())
+}
+
+/// `AesCbc256_HmacSha256_B64`, the v1 user key
+const ENC_TYPE_AES_CBC_256_HMAC_SHA256: &str = "2";
+/// `CoseEncrypt0B64`, the v2 user key
+const ENC_TYPE_COSE_ENCRYPT0: &str = "7";
+
+/// The encryption type of an EncString, the number before the first `.`.
+fn enc_string_type(enc_string: &str) -> Option<&str> {
+    enc_string.split_once('.').map(|(enc_type, _)| enc_type)
 }
 
 fn validate_keydata(
@@ -1087,14 +1262,35 @@ fn validate_keydata(
     {
         err!("Changing the kdf variant or email is not supported during key rotation");
     }
-    if user.public_key.as_ref() != Some(&data.account_keys.account_public_key) {
-        err!("Changing the asymmetric keypair is not possible during key rotation")
-    }
 
+    validate_rotation_data(
+        &data.account_data,
+        &data.account_unlock_data.emergency_access_unlock_data,
+        &data.account_unlock_data.organization_account_recovery_unlock_data,
+        existing_ciphers,
+        existing_folders,
+        existing_emergency_access,
+        existing_memberships,
+        existing_sends,
+    )
+}
+
+/// A rotation re-encrypts everything under the new user key, so anything left out would be
+/// unreadable afterwards. Both rotation endpoints require the client to send the complete set.
+#[expect(clippy::too_many_arguments, reason = "Every collection has to be cross-checked")]
+fn validate_rotation_data(
+    account_data: &RotateAccountData,
+    emergency_access_unlock_data: &[UpdateEmergencyAccessData],
+    organization_account_recovery_unlock_data: &[UpdateResetPasswordData],
+    existing_ciphers: &[Cipher],
+    existing_folders: &[Folder],
+    existing_emergency_access: &[EmergencyAccess],
+    existing_memberships: &[Membership],
+    existing_sends: &[Send],
+) -> EmptyResult {
     // Check that we're correctly rotating all the user's ciphers
     let existing_cipher_ids = existing_ciphers.iter().map(|c| &c.uuid).collect::<HashSet<&CipherId>>();
-    let provided_cipher_ids = data
-        .account_data
+    let provided_cipher_ids = account_data
         .ciphers
         .iter()
         .filter(|c| c.organization_id.is_none())
@@ -1106,8 +1302,7 @@ fn validate_keydata(
 
     // Check that we're correctly rotating all the user's folders
     let existing_folder_ids = existing_folders.iter().map(|f| &f.uuid).collect::<HashSet<&FolderId>>();
-    let provided_folder_ids =
-        data.account_data.folders.iter().filter_map(|f| f.id.as_ref()).collect::<HashSet<&FolderId>>();
+    let provided_folder_ids = account_data.folders.iter().filter_map(|f| f.id.as_ref()).collect::<HashSet<&FolderId>>();
     if !provided_folder_ids.is_superset(&existing_folder_ids) {
         err!("All existing folders must be included in the rotation")
     }
@@ -1115,12 +1310,8 @@ fn validate_keydata(
     // Check that we're correctly rotating all the user's emergency access keys
     let existing_emergency_access_ids =
         existing_emergency_access.iter().map(|ea| &ea.uuid).collect::<HashSet<&EmergencyAccessId>>();
-    let provided_emergency_access_ids = data
-        .account_unlock_data
-        .emergency_access_unlock_data
-        .iter()
-        .map(|ea| &ea.id)
-        .collect::<HashSet<&EmergencyAccessId>>();
+    let provided_emergency_access_ids =
+        emergency_access_unlock_data.iter().map(|ea| &ea.id).collect::<HashSet<&EmergencyAccessId>>();
     if !provided_emergency_access_ids.is_superset(&existing_emergency_access_ids) {
         err!("All existing emergency access keys must be included in the rotation")
     }
@@ -1128,9 +1319,7 @@ fn validate_keydata(
     // Check that we're correctly rotating all the user's reset password keys
     let existing_reset_password_ids =
         existing_memberships.iter().map(|m| &m.org_uuid).collect::<HashSet<&OrganizationId>>();
-    let provided_reset_password_ids = data
-        .account_unlock_data
-        .organization_account_recovery_unlock_data
+    let provided_reset_password_ids = organization_account_recovery_unlock_data
         .iter()
         .map(|rp| &rp.organization_id)
         .collect::<HashSet<&OrganizationId>>();
@@ -1140,7 +1329,7 @@ fn validate_keydata(
 
     // Check that we're correctly rotating all the user's sends
     let existing_send_ids = existing_sends.iter().map(|s| &s.uuid).collect::<HashSet<&SendId>>();
-    let provided_send_ids = data.account_data.sends.iter().filter_map(|s| s.id.as_ref()).collect::<HashSet<&SendId>>();
+    let provided_send_ids = account_data.sends.iter().filter_map(|s| s.id.as_ref()).collect::<HashSet<&SendId>>();
     if !provided_send_ids.is_superset(&existing_send_ids) {
         err!("All existing sends must be included in the rotation")
     }
@@ -1148,32 +1337,130 @@ fn validate_keydata(
     Ok(())
 }
 
+/// The public keys and encrypted keysets that participate in a key rotation, so the client can
+/// re-share the new user key without having to piece this together from several endpoints.
+///
+/// The four collections must always be present, even when empty: the SDK errors out if any of them
+/// is missing. `trustedDeviceKeyData` and `passkeyKeyData` are always empty here, since vaultwarden
+/// supports neither trusted device encryption nor passkey (PRF) login.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/main/src/Core/KeyManagement/UserKey/Queries/KeyRotationDataQuery.cs>
+#[get("/accounts/key-management/key-rotation-data")]
+async fn get_key_rotation_data(headers: Headers, conn: DbConn) -> JsonResult {
+    let user_id = &headers.user.uuid;
+
+    let mut organization_data = Vec::new();
+    for membership in Membership::find_by_user(user_id, &conn).await {
+        // Only memberships actually enrolled in account recovery take part in the rotation.
+        if membership.reset_password_key.is_none() {
+            continue;
+        }
+        let Some(org) = Organization::find_by_uuid(&membership.org_uuid, &conn).await else {
+            continue;
+        };
+        let Some(public_key) = org.public_key else {
+            continue;
+        };
+        organization_data.push(json!({
+            "organizationId": org.uuid,
+            "organizationName": org.name,
+            "organizationPublicKey": public_key,
+            "object": "organizationPasswordResetKeyData",
+        }));
+    }
+
+    let mut emergency_access_data = Vec::new();
+    for emergency_access in EmergencyAccess::find_all_confirmed_by_grantor_uuid(user_id, &conn).await {
+        // Without a stored key there is nothing to re-share.
+        if emergency_access.key_encrypted.is_none() {
+            continue;
+        }
+        let Some(grantee_id) = emergency_access.grantee_uuid.clone() else {
+            continue;
+        };
+        let Some(grantee) = User::find_by_uuid(&grantee_id, &conn).await else {
+            continue;
+        };
+        let Some(public_key) = grantee.public_key.clone() else {
+            continue;
+        };
+        emergency_access_data.push(json!({
+            "id": emergency_access.uuid,
+            "granteeId": grantee_id,
+            "granteeName": grantee.name,
+            "granteeEmail": grantee.email,
+            "publicKey": public_key,
+            "object": "emergencyAccessKeyData",
+        }));
+    }
+
+    Ok(Json(json!({
+        "organizationPasswordResetKeyData": organization_data,
+        "emergencyAccessKeyData": emergency_access_data,
+        "trustedDeviceKeyData": [],
+        "passkeyKeyData": [],
+        "object": "keyRotationData",
+    })))
+}
+
+/// How the new user key gets wrapped, which is the one part the two rotation endpoints don't share.
+enum UnlockRotation {
+    /// `rotate-user-account-keys`: the master password changes along with the keys.
+    PasswordChange {
+        authentication_hash: String,
+        wrapped_user_key: String,
+    },
+    /// `rotate-user-keys`: the password is untouched, only the wrapped user key is replaced.
+    WrappedUserKeyOnly {
+        wrapped_user_key: String,
+    },
+}
+
+/// Everything a rotation replaces, once each endpoint's wrapper has been peeled off.
+struct RotateData {
+    account_keys: ValidatedAccountKeys,
+    account_data: RotateAccountData,
+    emergency_access_unlock_data: Vec<UpdateEmergencyAccessData>,
+    organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
+    v2_upgrade_token: Option<V2UpgradeTokenData>,
+    /// Only v2 (COSE) user keys have an id, so this is `None` for a v1 -> v1 rotation.
+    new_user_key_id: Option<KeyId>,
+    unlock: UnlockRotation,
+}
+
+impl CommonUnlockData {
+    /// We advertise no trusted devices or passkeys in `key-rotation-data`, so a client sending
+    /// either has produced keys for something that doesn't exist here. Silently dropping them would
+    /// leave the client believing an unlock method was rotated when it wasn't.
+    fn validate(&self) -> EmptyResult {
+        if !self.passkey_unlock_data.is_empty() {
+            err!("Passkey unlock is not supported")
+        }
+        if !self.device_key_unlock_data.is_empty() {
+            err!("Trusted device unlock is not supported")
+        }
+        Ok(())
+    }
+}
+
 #[post("/accounts/key-management/rotate-user-account-keys", data = "<data>")]
 async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
-    // TODO: See if we can wrap everything within a SQL Transaction. If something fails it should revert everything.
     let data: KeyData = data.into_inner();
 
     if !headers.user.check_valid_password(&data.old_master_key_authentication_hash) {
         err!("Invalid password")
     }
 
-    // Validate the import before continuing
-    // Bitwarden does not process the import if there is one item invalid.
-    // Since we check for the size of the encrypted note length, we need to do that here to pre-validate it.
-    // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
-    Cipher::validate_cipher_data(&data.account_data.ciphers)?;
+    data.account_unlock_data.common.validate()?;
 
     let user_id = &headers.user.uuid;
-
-    // TODO: Ideally we'd do everything after this point in a single transaction.
-
-    let mut existing_ciphers = Cipher::find_owned_by_user(user_id, &conn).await;
-    let mut existing_folders = Folder::find_by_user(user_id, &conn).await;
-    let mut existing_emergency_access = EmergencyAccess::find_all_confirmed_by_grantor_uuid(user_id, &conn).await;
+    let existing_ciphers = Cipher::find_owned_by_user(user_id, &conn).await;
+    let existing_folders = Folder::find_by_user(user_id, &conn).await;
+    let existing_emergency_access = EmergencyAccess::find_all_confirmed_by_grantor_uuid(user_id, &conn).await;
     let mut existing_memberships = Membership::find_by_user(user_id, &conn).await;
     // We only rotate the reset password key if it is set.
     existing_memberships.retain(|m| m.reset_password_key.is_some());
-    let mut existing_sends = Send::find_by_user(user_id, &conn).await;
+    let existing_sends = Send::find_by_user(user_id, &conn).await;
 
     validate_keydata(
         &data,
@@ -1184,6 +1471,93 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         &existing_sends,
         &headers.user,
     )?;
+
+    validate_contained_key_id(
+        data.account_unlock_data.master_password_unlock_data.contained_key_id.as_ref(),
+        data.new_user_key_id.as_ref(),
+    )?;
+
+    let unlock = UnlockRotation::PasswordChange {
+        authentication_hash: data.account_unlock_data.master_password_unlock_data.master_key_authentication_hash,
+        wrapped_user_key: data.account_unlock_data.master_password_unlock_data.master_key_encrypted_user_key,
+    };
+
+    rotate_account(
+        RotateData {
+            account_keys: data.account_keys.validate()?,
+            account_data: data.account_data,
+            emergency_access_unlock_data: data.account_unlock_data.emergency_access_unlock_data,
+            organization_account_recovery_unlock_data: data
+                .account_unlock_data
+                .organization_account_recovery_unlock_data,
+            // This endpoint always logs every session out, so an upgrade token is never kept here. That
+            // also clears one left over from an earlier upgrade. Ref: upstream's AccountsKeyManagementController
+            v2_upgrade_token: None,
+            new_user_key_id: data.new_user_key_id,
+            unlock,
+        },
+        (existing_ciphers, existing_folders, existing_emergency_access, existing_memberships, existing_sends),
+        headers,
+        conn,
+        nt,
+    )
+    .await
+}
+
+type ExistingRotationData = (Vec<Cipher>, Vec<Folder>, Vec<EmergencyAccess>, Vec<Membership>, Vec<Send>);
+
+/// The body shared by both rotation endpoints: re-save every piece of data the client re-encrypted,
+/// then swap the account keys and the wrapped user key.
+async fn rotate_account(
+    data: RotateData,
+    existing: ExistingRotationData,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    // TODO: See if we can wrap everything within a SQL Transaction. If something fails it should revert everything.
+    let (
+        mut existing_ciphers,
+        mut existing_folders,
+        mut existing_emergency_access,
+        mut existing_memberships,
+        mut existing_sends,
+    ) = existing;
+
+    validate_rotation_account_keys(&data.account_keys, &headers.user, &conn).await?;
+
+    // The upgrade token only means anything for a v1 account moving to v2: it lets sessions still
+    // holding the v1 user key pick up the v2 one instead of being forced to re-authenticate. For an
+    // account that is already v2 it is meaningless, so it gets discarded and the security stamp is
+    // reset, as a rotation otherwise would. That ends the refresh tokens, while the access tokens in
+    // use run out on their own, as upstream.
+    let is_upgrade = data.v2_upgrade_token.is_some() && !headers.user.is_v2();
+    let upgrade_token = match &data.v2_upgrade_token {
+        Some(token) if is_upgrade => Some(serde_json::to_string(token)?),
+        _ => None,
+    };
+
+    // An upgrade can't re-wrap the account recovery keys: that needs the organization's public key
+    // to be trusted, and an upgrade shows the user no prompt. So the stored keys are kept, and each
+    // organization gets the upgrade token instead, to unwrap the v2 user key with.
+    // Ref: upstream's OrganizationUserRotationValidator
+    for reset_password_data in &data.organization_account_recovery_unlock_data {
+        let has_key = reset_password_data.reset_password_key.as_deref().is_some_and(|k| !k.is_empty());
+        if is_upgrade && has_key {
+            err!("Account recovery keys cannot be rotated during a V1 to V2 upgrade rotation.")
+        }
+        if !is_upgrade && !has_key {
+            err!("Account recovery keys cannot be null or empty during rotation.")
+        }
+    }
+
+    // Validate the import before continuing
+    // Bitwarden does not process the import if there is one item invalid.
+    // Since we check for the size of the encrypted note length, we need to do that here to pre-validate it.
+    // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
+    Cipher::validate_cipher_data(&data.account_data.ciphers)?;
+
+    // TODO: Ideally we'd do everything after this point in a single transaction.
 
     // Update folder data
     for folder_data in data.account_data.folders {
@@ -1200,7 +1574,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     }
 
     // Update emergency access data
-    for emergency_access_data in data.account_unlock_data.emergency_access_unlock_data {
+    for emergency_access_data in data.emergency_access_unlock_data {
         let Some(saved_emergency_access) =
             existing_emergency_access.iter_mut().find(|ea| ea.uuid == emergency_access_data.id)
         else {
@@ -1212,14 +1586,17 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     }
 
     // Update reset password data
-    for reset_password_data in data.account_unlock_data.organization_account_recovery_unlock_data {
+    for reset_password_data in data.organization_account_recovery_unlock_data {
         let Some(membership) =
             existing_memberships.iter_mut().find(|m| m.org_uuid == reset_password_data.organization_id)
         else {
             err!("Reset password doesn't exist")
         };
 
-        membership.reset_password_key = Some(reset_password_data.reset_password_key);
+        if !is_upgrade {
+            membership.reset_password_key = reset_password_data.reset_password_key;
+        }
+        membership.v2_upgrade_token.clone_from(&upgrade_token);
         membership.save(&conn).await?;
     }
 
@@ -1249,25 +1626,126 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
 
     // Update user data
     let mut user = headers.user;
+    let keep_sessions_alive = is_upgrade;
+    user.v2_upgrade_token = upgrade_token;
 
-    user.private_key = Some(data.account_keys.user_key_encrypted_account_private_key);
-    user.set_password(
-        &data.account_unlock_data.master_password_unlock_data.master_key_authentication_hash,
-        Some(data.account_unlock_data.master_password_unlock_data.master_key_encrypted_user_key),
-        true,
-        None,
-        &conn,
-    )
-    .await?;
+    data.account_keys.apply(&mut user)?;
+    // The old id names a key that no longer exists, so it is replaced even when the new key has none.
+    user.key_id = data.new_user_key_id;
 
-    let save_result = user.save(&conn).await;
+    match data.unlock {
+        UnlockRotation::PasswordChange {
+            authentication_hash,
+            wrapped_user_key,
+        } => {
+            user.set_password(&authentication_hash, Some(wrapped_user_key), false, None, &conn).await?;
+        }
+        UnlockRotation::WrappedUserKeyOnly {
+            wrapped_user_key,
+        } => {
+            user.akey = wrapped_user_key;
+        }
+    }
+    if !keep_sessions_alive {
+        user.reset_security_stamp_after_key_rotation(&conn).await?;
+    }
+
+    // The key pair goes first: if saving the user then fails during an upgrade, the account is still
+    // v1 and the key pair unused, instead of a v2 account without one, which no client could unlock.
+    // A failure between the two writes of a v2 rotation still needs a transaction to undo.
+    data.account_keys.save_signature_key_pair(&user.uuid, &conn).await?;
+    user.save(&conn).await?;
 
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
-    nt.send_logout(&user, Some(&headers.device), &conn).await;
+    // When the sessions were kept alive, the reason lets the other clients sync the new keys (through
+    // the upgrade token) instead of logging out, if they have `pm-31050-no-logout-key-upgrade-rotation`.
+    let reason = keep_sessions_alive.then_some(LogOutReason::KeyRotation);
+    nt.send_logout_with_reason(&user, Some(&headers.device), reason, &conn).await;
 
-    save_result
+    Ok(())
+}
+
+/// Rotates the account keys without changing the master password.
+///
+/// Unlike `rotate-user-account-keys` this carries no proof of the master password: the request is
+/// authorized by the session alone, which is how upstream defines it, and the client has to be
+/// unlocked to produce the payload in the first place.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/main/src/Api/KeyManagement/Controllers/AccountsKeyManagementController.cs>
+#[post("/accounts/key-management/rotate-user-keys", data = "<data>")]
+async fn post_rotate_user_keys(
+    data: Json<RotateUserKeysData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    let data: RotateUserKeysData = data.into_inner();
+
+    data.unlock_data.common.validate()?;
+
+    let unlock = if data.unlock_method_data.unlock_method == UnlockMethod::MasterPassword as i32 {
+        let Some(unlock_data) = data.unlock_method_data.master_password_unlock_data else {
+            err!("Missing master password unlock data")
+        };
+        if headers.user.client_kdf_type != unlock_data.kdf.kdf
+            || headers.user.client_kdf_iter != unlock_data.kdf.kdf_iterations
+            || headers.user.client_kdf_memory != unlock_data.kdf.kdf_memory
+            || headers.user.client_kdf_parallelism != unlock_data.kdf.kdf_parallelism
+        {
+            err!("Changing the kdf variant is not supported during key rotation")
+        }
+        if unlock_data.salt != headers.user.email {
+            err!("Invalid master password salt")
+        }
+        validate_contained_key_id(unlock_data.contained_key_id.as_ref(), data.new_user_key_id.as_ref())?;
+        UnlockRotation::WrappedUserKeyOnly {
+            wrapped_user_key: unlock_data.master_key_wrapped_user_key,
+        }
+    } else if data.unlock_method_data.unlock_method == UnlockMethod::Tde as i32 {
+        err!("Trusted device encryption is not supported")
+    } else if data.unlock_method_data.unlock_method == UnlockMethod::KeyConnector as i32 {
+        err!("Key connector is not supported")
+    } else {
+        err!("Unrecognized unlock method")
+    };
+
+    let user_id = &headers.user.uuid;
+    let existing_ciphers = Cipher::find_owned_by_user(user_id, &conn).await;
+    let existing_folders = Folder::find_by_user(user_id, &conn).await;
+    let existing_emergency_access = EmergencyAccess::find_all_confirmed_by_grantor_uuid(user_id, &conn).await;
+    let mut existing_memberships = Membership::find_by_user(user_id, &conn).await;
+    existing_memberships.retain(|m| m.reset_password_key.is_some());
+    let existing_sends = Send::find_by_user(user_id, &conn).await;
+
+    validate_rotation_data(
+        &data.account_data,
+        &data.unlock_data.emergency_access_unlock_data,
+        &data.unlock_data.organization_account_recovery_unlock_data,
+        &existing_ciphers,
+        &existing_folders,
+        &existing_emergency_access,
+        &existing_memberships,
+        &existing_sends,
+    )?;
+
+    rotate_account(
+        RotateData {
+            account_keys: data.wrapped_account_cryptographic_state.validate()?,
+            account_data: data.account_data,
+            emergency_access_unlock_data: data.unlock_data.emergency_access_unlock_data,
+            organization_account_recovery_unlock_data: data.unlock_data.organization_account_recovery_unlock_data,
+            v2_upgrade_token: data.unlock_data.common.v2_upgrade_token,
+            new_user_key_id: data.new_user_key_id,
+            unlock,
+        },
+        (existing_ciphers, existing_folders, existing_emergency_access, existing_memberships, existing_sends),
+        headers,
+        conn,
+        nt,
+    )
+    .await
 }
 
 #[derive(Deserialize)]

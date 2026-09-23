@@ -24,6 +24,7 @@ use crate::{
             Archive, Attachment, AttachmentId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup,
             CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, KeyId,
             Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
+            is_data_blob_encrypted,
         },
     },
     util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
@@ -195,6 +196,15 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         Value::Null
     };
 
+    // Upstream omits these two when unset rather than sending null.
+    let mut user_decryption = json!({ "masterPasswordUnlock": master_password_unlock });
+    if let Some(key_id) = &headers.user.key_id {
+        user_decryption["userKeyId"] = json!(key_id);
+    }
+    if let Some(v2_upgrade_token) = headers.user.v2_upgrade_token_json() {
+        user_decryption["v2UpgradeToken"] = v2_upgrade_token;
+    }
+
     Ok(Json(json!({
         "profile": user_json,
         "folders": folders_json,
@@ -204,11 +214,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "ciphers": ciphers_json,
         "domains": domains_json,
         "sends": sends_json,
-        "userDecryption": {
-            "masterPasswordUnlock": master_password_unlock,
-            "userKeyId": headers.user.key_id,
-            "v2UpgradeToken": headers.user.v2_upgrade_token_json(),
-        },
+        "userDecryption": user_decryption,
         "object": "sync"
     })))
 }
@@ -285,7 +291,8 @@ pub struct CipherData {
     Passport = 8
     */
     pub r#type: i32,
-    pub name: String,
+    // Absent on a blob-encrypted cipher, whose name is sealed inside `data`
+    pub name: Option<String>,
     pub notes: Option<String>,
     fields: Option<Value>,
 
@@ -298,6 +305,9 @@ pub struct CipherData {
     bank_account: Option<Value>,
     drivers_license: Option<Value>,
     passport: Option<Value>,
+
+    // The sealed blob of a v2 account's cipher, which replaces all of the fields above
+    data: Option<String>,
 
     favorite: Option<bool>,
     reprompt: Option<i32>,
@@ -318,6 +328,34 @@ pub struct CipherData {
     // updating an existing cipher.
     last_known_revision_date: Option<String>,
     archived_date: Option<String>,
+}
+
+/// Upstream's `[StringLength(500000)]` on `CipherRequestModel.Data`
+const MAX_CIPHER_DATA_LENGTH: usize = 500_000;
+
+impl CipherData {
+    /// Checks the content the way upstream's model validation does, before anything is saved.
+    /// On failure, returns the offending field and the message for it.
+    ///
+    /// Ref: <https://github.com/bitwarden/server/blob/main/src/Api/Vault/Models/Request/CipherRequestModel.cs>
+    pub fn validate_content(&self) -> Result<(), (&'static str, String)> {
+        if let Some(data) = &self.data
+            && data.len() > MAX_CIPHER_DATA_LENGTH
+        {
+            return Err((
+                "Data",
+                format!("The field Data must be a string with a maximum length of {MAX_CIPHER_DATA_LENGTH}."),
+            ));
+        }
+
+        // A blob carries the name inside it, so only the other formats need one
+        let is_blob = self.data.as_deref().is_some_and(is_data_blob_encrypted);
+        if !is_blob && self.name.as_deref().is_none_or(|n| n.trim().is_empty()) {
+            return Err(("Name", String::from("The Name field is required.")));
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -362,7 +400,7 @@ async fn post_ciphers_create(
     // cipher.save() below.
     enforce_personal_ownership_policy(Some(&data.cipher), &headers, &conn).await?;
 
-    let mut cipher = Cipher::new(data.cipher.r#type, data.cipher.name.clone());
+    let mut cipher = Cipher::new(data.cipher.r#type, data.cipher.name.clone().unwrap_or_default());
     cipher.user_uuid = Some(headers.user.uuid.clone());
     cipher.save(&conn).await?;
 
@@ -403,7 +441,7 @@ async fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn, nt
     // needed when creating a new cipher, so just ignore it unconditionally.
     data.last_known_revision_date = None;
 
-    let mut cipher = Cipher::new(data.r#type, data.name.clone());
+    let mut cipher = Cipher::new(data.r#type, data.name.clone().unwrap_or_default());
     update_cipher_from_data(&mut cipher, data, &headers, None, &conn, &nt, UpdateType::SyncCipherCreate).await?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &conn).await?))
@@ -451,6 +489,10 @@ pub async fn update_cipher_from_data(
     }
 
     enforce_personal_ownership_policy(Some(&data), headers, conn).await?;
+
+    if let Err((_, message)) = data.validate_content() {
+        err!(message)
+    }
 
     // Check that the client isn't updating an existing cipher with stale data.
     // And only perform this check when not importing ciphers, else the date/time check will fail.
@@ -539,6 +581,15 @@ pub async fn update_cipher_from_data(
         }
     }
 
+    // A blob replaces every content field, so the per-type data below neither applies nor exists.
+    // `validate_content` made sure anything else has a name.
+    let blob = data.data.filter(|d| is_data_blob_encrypted(d));
+    let name = if blob.is_some() {
+        String::new()
+    } else {
+        data.name.unwrap_or_default()
+    };
+
     let type_data_opt = match data.r#type {
         1 => data.login,
         2 => data.secure_note,
@@ -551,23 +602,25 @@ pub async fn update_cipher_from_data(
         _ => err!("Invalid type"),
     };
 
-    let type_data = if let Some(mut data) = type_data_opt {
+    let stored_data = if let Some(blob) = blob {
+        blob
+    } else if let Some(mut data) = type_data_opt {
         // Remove the 'Response' key from the base object.
         data.as_object_mut().unwrap().remove("response");
         // Remove the 'Response' key from every Uri.
         if data["uris"].is_array() {
             data["uris"] = clean_cipher_data(data["uris"].clone());
         }
-        data
+        data.to_string()
     } else {
         err!("Data missing")
     };
 
     cipher.key = data.key;
-    cipher.name = data.name;
+    cipher.name = name;
     cipher.notes = data.notes;
     cipher.fields = data.fields.map(|f| clean_cipher_data(f).to_string());
-    cipher.data = type_data.to_string();
+    cipher.data = stored_data;
     cipher.password_history = data.password_history.map(|f| f.to_string());
     cipher.reprompt = data.reprompt.filter(|r| *r == RepromptType::None as i32 || *r == RepromptType::Password as i32);
 
@@ -665,7 +718,7 @@ async fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbC
         let folder_id = relations_map.get(&index).and_then(|i| folders.get(*i).cloned());
         cipher_data.folder_id = folder_id;
 
-        let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
+        let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone().unwrap_or_default());
         update_cipher_from_data(&mut cipher, cipher_data, &headers, None, &conn, &nt, UpdateType::None).await?;
     }
 
