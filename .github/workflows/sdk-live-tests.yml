@@ -1,0 +1,65 @@
+name: SDK live tests
+permissions: {}
+
+# Runs the live-server integration tests of bitwarden/sdk-internal against this branch.
+# Only started by hand: it builds the SDK too, and the tests aren't in a released SDK yet.
+on:
+  workflow_dispatch:
+    inputs:
+      sdk_ref:
+        description: "Branch, tag or commit of bitwarden/sdk-internal to test with"
+        required: true
+        default: "km/live-server-integration-tests"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  sdk-live-tests:
+    name: SDK live tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: "Install dependencies Ubuntu"
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libssl-dev pkg-config
+
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Checkout sdk-internal"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: bitwarden/sdk-internal
+          ref: ${{ inputs.sdk_ref }}
+          path: sdk-internal
+          persist-credentials: false
+
+      # Each checkout pins its own toolchain in rust-toolchain.toml
+      - name: "Install toolchains"
+        run: |
+          rustup toolchain install
+          cd sdk-internal
+          rustup toolchain install
+          rustup target add wasm32-unknown-unknown
+          rustup component add rust-src
+
+      - name: "Setup Node"
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+
+      - name: "Install binaryen"
+        run: npm i -g binaryen
+
+      - name: "Run the SDK live tests"
+        run: tools/sdk-live-tests/run.sh --sdk-dir sdk-internal
+
+      - name: "Upload logs"
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-live-tests-logs
+          path: target/sdk-live-tests/**/*.log
