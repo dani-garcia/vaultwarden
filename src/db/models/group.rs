@@ -249,6 +249,7 @@ impl Group {
                         .and(groups::organizations_uuid.eq(users_organizations::org_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(groups::access_all.eq(true))
                 .select(groups::organizations_uuid)
                 .distinct()
@@ -387,6 +388,7 @@ impl CollectionGroup {
                         .and(collections::org_uuid.eq(groups::organizations_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .select(collections_groups::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading user collection groups")

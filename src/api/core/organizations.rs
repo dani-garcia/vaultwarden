@@ -415,8 +415,9 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
     let col_users = CollectionUser::find_by_organization_swap_user_uuid_with_member_uuid(&org_id, &conn).await;
     // Generate a HashMap to get the correct MembershipType per user to determine the manage permission
     // We use the uuid instead of the user_uuid here, since that is what is used in CollectionUser
+    // This lists other members for admins, so it must not depend on the membership status
     let membership_type: HashMap<MembershipId, i32> =
-        Membership::find_confirmed_by_org(&org_id, &conn).await.into_iter().map(|m| (m.uuid, m.atype)).collect();
+        Membership::find_by_org(&org_id, &conn).await.into_iter().map(|m| (m.uuid, m.atype)).collect();
 
     // check if current user has full access to the organization (either directly or via any group)
     let has_full_access_to_org = member.has_full_access()
@@ -818,11 +819,9 @@ async fn get_org_collection_detail(
 
             // Generate a HashMap to get the correct MembershipType per user to determine the manage permission
             // We use the uuid instead of the user_uuid here, since that is what is used in CollectionUser
-            let membership_type: HashMap<MembershipId, i32> = Membership::find_confirmed_by_org(&org_id, &conn)
-                .await
-                .into_iter()
-                .map(|m| (m.uuid, m.atype))
-                .collect();
+            // This lists other members for admins, so it must not depend on the membership status
+            let membership_type: HashMap<MembershipId, i32> =
+                Membership::find_by_org(&org_id, &conn).await.into_iter().map(|m| (m.uuid, m.atype)).collect();
 
             let users: Vec<Value> =
                 CollectionUser::find_by_org_and_coll_swap_user_uuid_with_member_uuid(&org_id, &collection.uuid, &conn)
@@ -960,8 +959,9 @@ async fn get_members(
 
     let mut users_json = Vec::new();
     for u in Membership::find_by_org(&org_id, &conn).await {
+        // The user can be a manager instead of an admin, but we've checked above that they have full access
         users_json.push(
-            u.to_json_user_details(
+            u.to_json_details_for_admin(
                 data.include_collections.unwrap_or(false),
                 data.include_groups.unwrap_or(false),
                 &conn,
@@ -1516,7 +1516,9 @@ async fn get_user(
     // In this case, when groups are requested we also need to include collections.
     // Else these will not be shown in the interface, and could lead to missing collections when saved.
     let include_groups = data.include_groups.unwrap_or(false);
-    Ok(Json(user.to_json_user_details(data.include_collections.unwrap_or(include_groups), include_groups, &conn).await))
+    Ok(Json(
+        user.to_json_details_for_admin(data.include_collections.unwrap_or(include_groups), include_groups, &conn).await,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -1834,6 +1836,10 @@ async fn post_org_import(
     let org_id = query.organization_id;
     if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
+    }
+    // OrgMemberHeaders also allows invited and accepted members, which are not allowed to import
+    if headers.membership.status != MembershipStatus::Confirmed as i32 {
+        err!("You need to be a Member of the Organization to call this endpoint")
     }
     let data: ImportData = data.into_inner();
 

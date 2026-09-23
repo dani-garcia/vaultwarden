@@ -1003,6 +1003,7 @@ impl Cipher {
                             .eq(ciphers_collections::collection_uuid)
                             .and(collections_groups::groups_uuid.eq(groups::uuid))),
                     )
+                    .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
                         users_organizations::access_all
                             .eq(true) // User has access all
@@ -1034,6 +1035,7 @@ impl Cipher {
                             .eq(ciphers_collections::collection_uuid)
                             .and(users_collections::user_uuid.eq(user_uuid.clone()))),
                     )
+                    .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
                         users_organizations::access_all
                             .eq(true) // User has access all
@@ -1078,6 +1080,7 @@ impl Cipher {
                             .eq(ciphers_collections::collection_uuid)
                             .and(collections_groups::groups_uuid.eq(groups::uuid))),
                     )
+                    .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
                         users_organizations::access_all
                             .eq(true) // User has access all
@@ -1110,6 +1113,7 @@ impl Cipher {
                             .eq(ciphers_collections::collection_uuid)
                             .and(users_collections::user_uuid.eq(user_uuid.clone()))),
                     )
+                    .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
                         users_organizations::access_all
                             .eq(true) // User has access all
@@ -1161,6 +1165,7 @@ impl Cipher {
                 .or_filter(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
                 .or_filter(groups::access_all.eq(true)) //Access via group
                 .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .select(ciphers_collections::all_columns)
                 .distinct()
                 .load::<(CipherId, CollectionId)>(conn)
