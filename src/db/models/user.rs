@@ -257,7 +257,10 @@ impl User {
         self.security_stamp = get_uuid();
         // A reset is meant to end the other sessions, which a key rotation's grace would undo. The
         // route exceptions stay, since they are set right before a reset, for the stamp it replaces.
-        self.retain_stamp_exceptions(|e| e.routes.is_some());
+        // This is also where expired exceptions get dropped.
+        let mut exceptions = self.stamp_exceptions();
+        exceptions.retain(|e| e.routes.is_some() && !e.is_expired());
+        self.set_stamp_exceptions(&exceptions);
         Device::rotate_refresh_tokens_by_user(&self.uuid, conn).await?;
         Ok(())
     }
@@ -321,32 +324,6 @@ impl User {
         };
     }
 
-    /// Persists only `stamp_exception`, for callers holding a user read earlier in the request.
-    ///
-    /// A full `save` would write back every other column as it was read, undoing anything saved in
-    /// the meantime, such as the new keys of a key rotation made from another device.
-    pub async fn save_stamp_exceptions(&self, conn: &DbConn) -> EmptyResult {
-        let uuid = self.uuid.clone();
-        let stamp_exception = self.stamp_exception.clone();
-        conn.run(move |conn| {
-            diesel::update(users::table.filter(users::uuid.eq(uuid)))
-                .set(users::stamp_exception.eq(stamp_exception))
-                .execute(conn)
-                .map_res("Error updating user stamp exceptions")
-        })
-        .await
-    }
-
-    /// Drops the stamp exceptions that don't match `keep`. Returns whether any were dropped.
-    pub fn retain_stamp_exceptions(&mut self, keep: impl Fn(&UserStampException) -> bool) -> bool {
-        let mut exceptions = self.stamp_exceptions();
-        let before = exceptions.len();
-        exceptions.retain(keep);
-        let changed = exceptions.len() != before;
-        self.set_stamp_exceptions(&exceptions);
-        changed
-    }
-
     pub fn display_name(&self) -> &str {
         // default to email if name is empty
         if self.name.is_empty() {
@@ -363,7 +340,7 @@ impl User {
         if !self.is_v2() {
             return None;
         }
-        UserSignatureKeyPair::find_active_by_user(&self.uuid, conn).await
+        UserSignatureKeyPair::find_by_user(&self.uuid, conn).await
     }
 
     pub async fn account_keys_json(&self, conn: &DbConn) -> Value {
@@ -699,7 +676,18 @@ pub struct UserId(String);
 )]
 #[deref(forward)]
 #[from(forward)]
-pub struct KeyId(String);
+pub struct KeyId(#[serde(deserialize_with = "deserialize_key_id")] String);
+
+/// Rejects a key id from a request that isn't 16 bytes as lowercase hex, as upstream's `[KeyId]` does.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/main/src/Core/KeyManagement/Models/Data/KeyId.cs>
+fn deserialize_key_id<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let key_id = <String as serde::Deserialize>::deserialize(deserializer)?;
+    if key_id.len() != 32 || !key_id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(serde::de::Error::custom("Key id must be a 32 character lowercase hex-encoded string."));
+    }
+    Ok(key_id)
+}
 
 impl SsoUser {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {

@@ -662,7 +662,7 @@ impl<'r> FromRequest<'r> for Headers {
             err_handler!("Invalid device id")
         };
 
-        let Some(mut user) = User::find_by_uuid(&user_id, &conn).await else {
+        let Some(user) = User::find_by_uuid(&user_id, &conn).await else {
             err_handler!("Device has no user associated")
         };
 
@@ -671,16 +671,9 @@ impl<'r> FromRequest<'r> for Headers {
                 err_handler!("Error getting current route for stamp exception")
             };
 
-            let allowed = user.stamp_exceptions().iter().any(|e| e.allows(&claims.sstamp, current_route));
-
-            // Drop the expired exceptions, so they aren't checked for every request from now on.
-            if user.retain_stamp_exceptions(|e| !e.is_expired())
-                && let Err(e) = user.save_stamp_exceptions(&conn).await
-            {
-                error!("Error updating user: {e:#?}");
-            }
-
-            if !allowed {
+            // Expired exceptions are dropped the next time the stamp is reset, not here: writing them
+            // back from this request could undo a reset made since the user was read.
+            if !user.stamp_exceptions().iter().any(|e| e.allows(&claims.sstamp, current_route)) {
                 err_handler!("Invalid security stamp")
             }
         }

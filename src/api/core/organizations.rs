@@ -1885,7 +1885,7 @@ async fn post_org_import(
         cipher_data.folder_id = None;
         // Replace the client-provided, unvalidated organizationId with the real target org
         cipher_data.organization_id = Some(org_id.clone());
-        let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone().unwrap_or_default());
+        let mut cipher = Cipher::new(cipher_data.r#type, String::new());
         update_cipher_from_data(
             &mut cipher,
             cipher_data,

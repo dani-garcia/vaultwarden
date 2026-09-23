@@ -71,7 +71,12 @@ pub struct Cipher {
 ///
 /// Ref: <https://github.com/bitwarden/server/blob/main/src/Core/Vault/Entities/Cipher.cs>
 pub fn is_data_blob_encrypted(data: &str) -> bool {
-    serde_json::from_str::<Value>(data).is_ok_and(|d| d.get("format_version").is_some())
+    serde_json::from_str::<Value>(data).is_ok_and(|d| is_blob_value(&d))
+}
+
+/// [`is_data_blob_encrypted`] for `data` that was already parsed.
+fn is_blob_value(data: &Value) -> bool {
+    data.get("format_version").is_some()
 }
 
 pub enum RepromptType {
@@ -121,8 +126,9 @@ impl Cipher {
                     .insert(format!("Ciphers[{index}].Notes"), serde_json::to_value([&max_note_size_msg]).unwrap());
             }
 
-            if let Err((field, message)) = cipher.validate_content() {
-                validation_errors.insert(format!("Ciphers[{index}].{field}"), serde_json::to_value([message]).unwrap());
+            if let Err(e) = cipher.validate_content(cipher.is_blob()) {
+                validation_errors
+                    .insert(format!("Ciphers[{index}].{}", e.field), serde_json::to_value([e.message]).unwrap());
             }
 
             // Validate the password history if it contains `null` values and if so, return a warning
@@ -169,7 +175,10 @@ impl Cipher {
     ) -> Result<Value, crate::Error> {
         use crate::util::{format_date, validate_and_format_date};
 
-        let is_blob_encrypted = is_data_blob_encrypted(&self.data);
+        // Parsed once here, since `data` can be large and this runs for every cipher in a sync.
+        // `LowerCase` only lowercases the first letter of each key, so it keeps `format_version`.
+        let type_data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data);
+        let is_blob_encrypted = type_data.as_ref().is_ok_and(is_blob_value);
 
         let mut attachments_json: Value = Value::Null;
         if let Some(cipher_sync_data) = cipher_sync_data {
@@ -360,28 +369,25 @@ impl Cipher {
 
         if is_blob_encrypted {
             // The blob holds all of the content, so it is sent back as-is and the structured fields
-            // stay null, as upstream does.
+            // stay null, as upstream does. Only the name needs clearing, the others are never stored.
             json_object["data"] = json!(self.data);
             json_object["name"] = Value::Null;
-            json_object["notes"] = Value::Null;
-            json_object["fields"] = Value::Null;
-            json_object["passwordHistory"] = Value::Null;
         } else {
-            json_object[key] = self.legacy_type_data_json();
+            json_object[key] = self.legacy_type_data_json(type_data);
         }
         Ok(json_object)
     }
 
-    /// The per-type data (`login`, `card`, …) of a legacy cipher, with fixups for values that are
-    /// known to break clients.
-    fn legacy_type_data_json(&self) -> Value {
+    /// The per-type data (`login`, `card`, …) of a legacy cipher, from `type_data` as parsed from
+    /// `self.data`, with fixups for values that are known to break clients.
+    fn legacy_type_data_json(&self, type_data: Result<Value, serde_json::Error>) -> Value {
         use crate::util::validate_and_format_date;
 
         // Get the type_data or a default to an empty json object '{}'.
         // If not passing an empty object, mobile clients will crash.
-        let mut type_data_json = serde_json::from_str::<LowerCase<Value>>(&self.data)
+        let mut type_data_json = type_data
             .inspect_err(|_| warn!("Error parsing data field for {}", self.uuid))
-            .map_or_else(|_| Value::Object(serde_json::Map::new()), |d| d.data);
+            .unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
 
         // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
         // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.

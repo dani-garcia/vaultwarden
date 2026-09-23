@@ -9,7 +9,6 @@ use crate::{
     error::MapResult,
     util::get_uuid,
 };
-use macros::UuidFromParam;
 
 use super::UserId;
 
@@ -47,26 +46,11 @@ pub enum SignatureAlgorithm {
 }
 
 impl SignatureAlgorithm {
-    pub fn from_str(algorithm: &str) -> Option<Self> {
+    pub fn parse(algorithm: &str) -> Option<Self> {
         match algorithm {
             "ed25519" => Some(Self::Ed25519),
             "mldsa44" => Some(Self::MlDsa44),
             _ => None,
-        }
-    }
-
-    pub fn from_i32(algorithm: i32) -> Option<Self> {
-        match algorithm {
-            0 => Some(Self::Ed25519),
-            1 => Some(Self::MlDsa44),
-            _ => None,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Ed25519 => "ed25519",
-            Self::MlDsa44 => "mldsa44",
         }
     }
 }
@@ -128,9 +112,8 @@ impl UserSignatureKeyPair {
         }
     }
 
-    /// The key pair currently in use by the user. There is at most one today, enforced by a unique
-    /// index on `user_uuid`.
-    pub async fn find_active_by_user(user_uuid: &UserId, conn: &DbConn) -> Option<Self> {
+    /// The user's key pair. There is at most one, enforced by a unique index on `user_uuid`.
+    pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Option<Self> {
         conn.run(move |conn| {
             user_signature_key_pairs::table
                 .filter(user_signature_key_pairs::user_uuid.eq(user_uuid))
@@ -150,20 +133,5 @@ impl UserSignatureKeyPair {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    AsRef,
-    Deref,
-    DieselNewType,
-    Display,
-    From,
-    FromForm,
-    Hash,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    UuidFromParam,
-)]
+#[derive(Clone, Debug, AsRef, Deref, DieselNewType, Display, From, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserSignatureKeyPairId(String);

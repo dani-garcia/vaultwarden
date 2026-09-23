@@ -1437,6 +1437,8 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "pm-31050-no-logout-key-upgrade-rotation",
     "pm-27278-v2-password-registration",
     "enable-account-encryption-v2-jit-password-registration",
+    "pm-30144-sdk-key-rotation",
+    "force-upgrade-v2-encryption",
     // Mobile Team
     "anon-addy-self-host-alias",
     "simple-login-self-host-alias",
