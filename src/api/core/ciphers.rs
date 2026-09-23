@@ -190,7 +190,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
             // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "masterKeyEncryptedUserKey": headers.user.akey,
             "masterKeyWrappedUserKey": headers.user.akey,
-            "salt": headers.user.email,
+            "salt": headers.user.master_password_salt(),
             "containedKeyId": headers.user.key_id,
         })
     } else {
@@ -201,6 +201,9 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     let mut user_decryption = json!({ "masterPasswordUnlock": master_password_unlock });
     if let Some(key_id) = &headers.user.key_id {
         user_decryption["userKeyId"] = json!(key_id);
+    }
+    if let Some(v2_upgrade_token) = headers.user.v2_upgrade_token_json() {
+        user_decryption["v2UpgradeToken"] = v2_upgrade_token;
     }
 
     Ok(Json(json!({
@@ -564,6 +567,40 @@ pub async fn update_cipher_from_data(
     nt: &Notify<'_>,
     ut: UpdateType,
 ) -> EmptyResult {
+    enforce_personal_ownership_policy(Some(&data), headers, conn).await?;
+    save_cipher_data(cipher, data, headers, shared_to_collections, conn, nt, ut).await
+}
+
+/// [`update_cipher_from_data`] for a rotation: like upstream, the personal ownership policy doesn't apply.
+pub async fn rotate_cipher_data(
+    cipher: &mut Cipher,
+    data: CipherData,
+    headers: &Headers,
+    conn: &DbConn,
+    nt: &Notify<'_>,
+) -> EmptyResult {
+    save_cipher_data(cipher, data, headers, None, conn, nt, UpdateType::None).await
+}
+
+/// The checks of [`rotate_cipher_data`] that need the database, to run on every cipher before the first is saved
+pub async fn validate_rotated_cipher(
+    cipher: &Cipher,
+    data: &CipherData,
+    headers: &Headers,
+    conn: &DbConn,
+) -> EmptyResult {
+    validate_cipher_update(cipher, data, headers, conn, UpdateType::None).await
+}
+
+async fn save_cipher_data(
+    cipher: &mut Cipher,
+    data: CipherData,
+    headers: &Headers,
+    shared_to_collections: Option<Vec<CollectionId>>,
+    conn: &DbConn,
+    nt: &Notify<'_>,
+    ut: UpdateType,
+) -> EmptyResult {
     // Cleanup cipher data, like removing the 'Response' key.
     // This key is somewhere generated during Javascript so no way for us this fix this.
     // Also, upstream only retrieves keys they actually want to store, and thus skip the 'Response' key.
@@ -577,8 +614,6 @@ pub async fn update_cipher_from_data(
         }
         json_data
     }
-
-    enforce_personal_ownership_policy(Some(&data), headers, conn).await?;
 
     let is_blob = data.is_blob();
     data.validate_content(is_blob)?;
