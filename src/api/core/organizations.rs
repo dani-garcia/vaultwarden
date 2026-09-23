@@ -8,7 +8,7 @@ use crate::{
     CONFIG,
     api::admin::FAKE_ADMIN_UUID,
     api::{
-        EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
+        ApiResult, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
     auth::{AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite},
@@ -2771,8 +2771,26 @@ struct OrganizationUserRecoverAccountRequest {
 // But the clients do not seem to use this at all
 // Just add it here in case they will
 #[get("/organizations/<org_id>/public-key")]
-async fn get_organization_public_key(org_id: OrganizationId, headers: OrgMemberHeaders, conn: DbConn) -> JsonResult {
-    if org_id != headers.membership.org_uuid {
+async fn get_organization_public_key(
+    org_id: OrganizationId,
+    headers: Headers,
+    member: Result<OrgMemberHeaders, &'static str>,
+    conn: DbConn,
+) -> JsonResult {
+    // SSO users without an org get the fake one, whose key the v2 JIT password flow fetches anyway
+    if org_id.eq_ignore_ascii_case(FAKE_SSO_IDENTIFIER) && headers.user.private_key.is_none() {
+        return Ok(Json(json!({
+            "object": "organizationPublicKey",
+            "publicKey": fake_sso_org_public_key().await?,
+        })));
+    }
+    let member = match member {
+        Ok(member) => member,
+        // The guard already logged it
+        Err(e) => return Err(crate::error::Error::new_msg(e).with_code(Status::Unauthorized.code)),
+    };
+
+    if org_id != member.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
     let Some(org) = Organization::find_by_uuid(&org_id, &conn).await else {
@@ -2785,11 +2803,30 @@ async fn get_organization_public_key(org_id: OrganizationId, headers: OrgMemberH
     })))
 }
 
+/// The SDK only uses this key to wrap an account recovery key that it never sends for the fake org,
+/// so it is made once and its private half dropped.
+async fn fake_sso_org_public_key() -> ApiResult<String> {
+    static PUBLIC_KEY: std::sync::LazyLock<Option<String>> = std::sync::LazyLock::new(|| {
+        let der = openssl::rsa::Rsa::generate(2048).and_then(|rsa| rsa.public_key_to_der()).ok()?;
+        Some(data_encoding::BASE64.encode(&der))
+    });
+
+    let Ok(Some(public_key)) = tokio::task::spawn_blocking(|| PUBLIC_KEY.clone()).await else {
+        err!("Failed to generate the organization key")
+    };
+    Ok(public_key)
+}
+
 // Obsolete - Renamed to public-key (2023.8), left for backwards compatibility with older clients
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Controllers/OrganizationsController.cs#L487-L492
 #[get("/organizations/<org_id>/keys")]
-async fn get_organization_keys(org_id: OrganizationId, headers: OrgMemberHeaders, conn: DbConn) -> JsonResult {
-    get_organization_public_key(org_id, headers, conn).await
+async fn get_organization_keys(
+    org_id: OrganizationId,
+    headers: Headers,
+    member: Result<OrgMemberHeaders, &'static str>,
+    conn: DbConn,
+) -> JsonResult {
+    get_organization_public_key(org_id, headers, member, conn).await
 }
 
 // Will allow to reset 2FA too

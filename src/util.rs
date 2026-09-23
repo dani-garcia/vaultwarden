@@ -839,6 +839,12 @@ pub fn parse_experimental_client_feature_flags(
         .collect()
 }
 
+/// Whether the admin enabled this supported client feature flag
+pub fn is_client_feature_flag_enabled(flag: &str) -> bool {
+    parse_experimental_client_feature_flags(&CONFIG.experimental_client_feature_flags(), &FeatureFlagFilter::ValidOnly)
+        .contains_key(flag)
+}
+
 /// TODO: This is extracted from IpAddr::is_global, which is unstable:
 /// https://doc.rust-lang.org/nightly/std/net/enum.IpAddr.html#method.is_global
 /// Remove once https://github.com/rust-lang/rust/issues/27709 is merged
