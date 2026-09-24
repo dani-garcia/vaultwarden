@@ -2,6 +2,7 @@ mod archive;
 mod attachment;
 mod auth_request;
 mod cipher;
+mod cipher_login;
 mod collection;
 mod device;
 mod emergency_access;

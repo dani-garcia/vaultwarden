@@ -220,6 +220,7 @@ fn config() -> Json<Value> {
         &FeatureFlagFilter::ValidOnly,
     );
     feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
+    feature_states.insert("pm-30529-webauthn-related-origins".to_owned(), true);
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
