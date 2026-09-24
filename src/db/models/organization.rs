@@ -56,6 +56,18 @@ pub struct Membership {
     pub external_id: Option<String>,
 }
 
+impl Membership {
+    #[inline(always)]
+    pub fn is_admin(&self) -> bool {
+        self.atype == MembershipType::Admin as i32
+    }
+
+    #[inline(always)]
+    pub fn is_owner(&self) -> bool {
+        self.atype == MembershipType::Owner as i32
+    }
+}
+
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = organization_api_key)]
 #[diesel(primary_key(uuid, org_uuid))]
