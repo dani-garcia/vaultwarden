@@ -474,11 +474,15 @@ pub fn generate_2fa_remember_claims(device_uuid: DeviceId, user_uuid: UserId) ->
     let time_now = Utc::now();
     TwoFactorRememberClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_days(30).unwrap()).timestamp(),
+        exp: two_factor_remember_expiration(time_now, CONFIG.two_factor_remember_days()),
         iss: JWT_2FA_REMEMBER_ISSUER.to_string(),
         sub: device_uuid,
         user_uuid,
     }
+}
+
+fn two_factor_remember_expiration(time_now: DateTime<Utc>, remember_days: i64) -> i64 {
+    (time_now + TimeDelta::try_days(remember_days).expect("TWO_FACTOR_REMEMBER_DAYS is validated")).timestamp()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
