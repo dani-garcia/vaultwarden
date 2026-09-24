@@ -149,9 +149,13 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
 
     if CONFIG.org_groups_enabled() {
         for group_data in &data.groups {
-            let group_uuid = if let Some(group) =
+            let group_uuid = if let Some(mut group) =
                 Group::find_by_external_id_and_org(&group_data.external_id, &org_id, &conn).await
             {
+                if group.name != group_data.name {
+                    group.name = group_data.name.clone();
+                    group.save(&conn).await?;
+                }
                 group.uuid
             } else {
                 let mut group =
