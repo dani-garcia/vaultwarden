@@ -74,9 +74,7 @@ impl Device {
 
     /// Matches upstream `DeviceExtensions.IsTrusted` / device list responses.
     pub fn is_trusted(&self) -> bool {
-        self.encrypted_user_key.as_ref().is_some_and(|s| !s.is_empty())
-            && self.encrypted_public_key.as_ref().is_some_and(|s| !s.is_empty())
-            && self.encrypted_private_key.as_ref().is_some_and(|s| !s.is_empty())
+        self.encrypted_user_key.is_some() && self.encrypted_public_key.is_some() && self.encrypted_private_key.is_some()
     }
 
     pub fn to_json(&self) -> Value {
@@ -87,13 +85,13 @@ impl Device {
             "identifier": self.uuid,
             "creationDate": format_date(&self.created_at),
             "isTrusted": self.is_trusted(),
-            "encryptedUserKey": Self::enc_string_json(&self.encrypted_user_key),
-            "encryptedPublicKey": Self::enc_string_json(&self.encrypted_public_key),
+            "encryptedUserKey": Self::enc_string_json(self.encrypted_user_key.as_ref()),
+            "encryptedPublicKey": Self::enc_string_json(self.encrypted_public_key.as_ref()),
             "object":"device"
         })
     }
 
-    fn enc_string_json(v: &Option<String>) -> Value {
+    fn enc_string_json(v: Option<&String>) -> Value {
         match v {
             Some(s) if !s.is_empty() => Value::String(s.clone()),
             _ => Value::Null,
@@ -128,7 +126,42 @@ impl Device {
     }
 
     pub fn is_mobile(&self) -> bool {
-        matches!(DeviceType::from_i32(self.atype), DeviceType::Android | DeviceType::Ios)
+        matches!(DeviceType::from_i32(self.atype), DeviceType::Android | DeviceType::Ios | DeviceType::AndroidAmazon)
+    }
+
+    pub fn is_browser(&self) -> bool {
+        matches!(
+            DeviceType::from_i32(self.atype),
+            DeviceType::ChromeBrowser
+                | DeviceType::FirefoxBrowser
+                | DeviceType::OperaBrowser
+                | DeviceType::EdgeBrowser
+                | DeviceType::IEBrowser
+                | DeviceType::UnknownBrowser
+                | DeviceType::DuckDuckGoBrowser
+        )
+    }
+
+    pub fn is_desktop(&self) -> bool {
+        matches!(
+            DeviceType::from_i32(self.atype),
+            DeviceType::WindowsDesktop | DeviceType::MacOsDesktop | DeviceType::LinuxDesktop
+        )
+    }
+
+    pub fn is_extension(&self) -> bool {
+        matches!(
+            DeviceType::from_i32(self.atype),
+            DeviceType::ChromeExtension
+                | DeviceType::FirefoxExtension
+                | DeviceType::OperaExtension
+                | DeviceType::EdgeExtension
+        )
+    }
+
+    // https://github.com/bitwarden/server/blob/v2026.4.2/src/Identity/Utilities/LoginApprovingClientTypes.cs
+    pub fn can_approve_trusted_login(&self) -> bool {
+        self.is_browser() || self.is_extension() || self.is_desktop() || self.is_mobile()
     }
 }
 
@@ -151,8 +184,8 @@ impl DeviceWithAuthRequest {
             "creationDate": format_date(&self.device.created_at),
             "devicePendingAuthRequest": auth_request,
             "isTrusted": self.device.is_trusted(),
-            "encryptedPublicKey": Device::enc_string_json(&self.device.encrypted_public_key),
-            "encryptedUserKey": Device::enc_string_json(&self.device.encrypted_user_key),
+            "encryptedPublicKey": Device::enc_string_json(self.device.encrypted_public_key.as_ref()),
+            "encryptedUserKey": Device::enc_string_json(self.device.encrypted_user_key.as_ref()),
             "object": "device",
         })
     }
