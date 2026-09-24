@@ -605,7 +605,13 @@ impl Membership {
         })
     }
 
-    pub async fn to_json_user_details(&self, include_collections: bool, include_groups: bool, conn: &DbConn) -> Value {
+    // Used by admins to view other members, so nothing here may depend on this member's status
+    pub async fn to_json_details_for_admin(
+        &self,
+        include_collections: bool,
+        include_groups: bool,
+        conn: &DbConn,
+    ) -> Value {
         let user = User::find_by_uuid(&self.user_uuid, conn).await.unwrap();
 
         // Because BitWarden want the status to be -1 for revoked users we need to catch that here.
@@ -1180,17 +1186,6 @@ impl Membership {
                 .filter(users_organizations::user_uuid.eq(user_uuid))
                 .load::<Self>(conn)
                 .expect("Error loading user organizations")
-        })
-        .await
-    }
-
-    pub async fn get_orgs_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<OrganizationId> {
-        conn.run(move |conn| {
-            users_organizations::table
-                .filter(users_organizations::user_uuid.eq(user_uuid))
-                .select(users_organizations::org_uuid)
-                .load::<OrganizationId>(conn)
-                .unwrap_or_default()
         })
         .await
     }

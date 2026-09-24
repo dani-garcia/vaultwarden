@@ -406,6 +406,7 @@ impl Collection {
                             .and(collections_groups::collections_uuid.eq(collections::uuid))),
                     )
                     .filter(collections::uuid.eq(uuid))
+                    .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
                         users_collections::collection_uuid
                             .eq(uuid)
@@ -445,6 +446,7 @@ impl Collection {
                             .and(users_organizations::user_uuid.eq(user_uuid))),
                     )
                     .filter(collections::uuid.eq(uuid))
+                    .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(users_collections::collection_uuid.eq(uuid).or(
                         // Directly accessed collection
                         custom_membership_with_edit_any_collection().or(
@@ -469,7 +471,8 @@ impl Collection {
                     .inner_join(
                         users_organizations::table.on(collections::org_uuid
                             .eq(users_organizations::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid.clone()))),
+                            .and(users_organizations::user_uuid.eq(user_uuid.clone()))
+                            .and(users_organizations::status.eq(MembershipStatus::Confirmed as i32))),
                     )
                     .left_join(
                         users_collections::table.on(users_collections::collection_uuid
@@ -515,7 +518,8 @@ impl Collection {
                     .inner_join(
                         users_organizations::table.on(collections::org_uuid
                             .eq(users_organizations::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid.clone()))),
+                            .and(users_organizations::user_uuid.eq(user_uuid.clone()))
+                            .and(users_organizations::status.eq(MembershipStatus::Confirmed as i32))),
                     )
                     .left_join(
                         users_collections::table.on(users_collections::collection_uuid
@@ -566,6 +570,7 @@ impl Collection {
                         .and(collections_groups::collections_uuid.eq(collections::uuid))),
                 )
                 .filter(collections::uuid.eq(&self.uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(
                     users_collections::collection_uuid
                         .eq(&self.uuid)
@@ -797,10 +802,18 @@ impl CollectionUser {
         .await
     }
 
+    // Only returns the collections of organizations the user is a confirmed member of
     pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             users_collections::table
+                .inner_join(collections::table.on(collections::uuid.eq(users_collections::collection_uuid)))
+                .inner_join(
+                    users_organizations::table.on(users_organizations::org_uuid
+                        .eq(collections::org_uuid)
+                        .and(users_organizations::user_uuid.eq(users_collections::user_uuid))),
+                )
                 .filter(users_collections::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .select(users_collections::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading users_collections")
