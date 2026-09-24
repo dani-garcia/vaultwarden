@@ -845,6 +845,10 @@ make_config! {
         sso_auth_only_not_session:      bool,   true,   def,    false;
         /// Client cache for discovery endpoint. |> Duration in seconds (0 or less to disable). More details: https://github.com/dani-garcia/vaultwarden/wiki/Enabling-SSO-support-using-OpenId-Connect#client-cache
         sso_client_cache_expiration:    u64,    true,   def,    0;
+        /// Skip 2FA for SSO/social login |> `false` keeps Vaultwarden 2FA, `true` always skips it, `auto` skips it only when the IdP returns an MFA AMR or ACR claim
+        sso_2fa_skip:                   String, true,   def,    "false".to_owned();
+        /// SSO 2FA AMR values |> Comma-separated AMR values that satisfy `SSO_2FA_SKIP=auto`
+        sso_2fa_amr:                    String, true,   def,    "mfa,otp,fido2,webauthn,hwk".to_owned();
         /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
         sso_debug_tokens:               bool,   true,   def,    false;
     },
@@ -1114,6 +1118,10 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
         validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
+    }
+
+    if !matches!(cfg.sso_2fa_skip.as_str(), "false" | "true" | "auto") {
+        err!("`SSO_2FA_SKIP` must be one of: false, true, auto");
     }
 
     if cfg._enable_yubico {
@@ -1707,6 +1715,10 @@ impl Config {
 
     pub fn sso_authorize_extra_params_vec(&self) -> Vec<(String, String)> {
         url::form_urlencoded::parse(self.sso_authorize_extra_params().as_bytes()).into_owned().collect()
+    }
+
+    pub fn sso_2fa_amr_vec(&self) -> Vec<String> {
+        self.sso_2fa_amr().split(',').map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned).collect()
     }
 }
 

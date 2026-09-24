@@ -353,7 +353,20 @@ async fn sso_login(
         Some((mut user, sso_user)) => {
             let mut device = get_device(&data, conn, &user).await?;
 
-            let twofactor_token = twofactor_auth(&mut user, &data, &mut device, ip, client_version, conn).await?;
+            let skip_2fa = match CONFIG.sso_2fa_skip().as_str() {
+                "true" => true,
+                "auto" => {
+                    let amr_values = CONFIG.sso_2fa_amr_vec();
+                    user_infos.acr.as_deref() == Some(sso::SSO_2FA_ACR)
+                        || user_infos.amr.as_ref().is_some_and(|amr| amr.iter().any(|method| amr_values.contains(method)))
+                }
+                _ => false,
+            };
+            let twofactor_token = if skip_2fa {
+                None
+            } else {
+                twofactor_auth(&mut user, &data, &mut device, ip, client_version, conn).await?
+            };
 
             if user.private_key.is_none() {
                 // User was invited a stub was created
