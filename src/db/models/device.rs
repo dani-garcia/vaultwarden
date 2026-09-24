@@ -74,9 +74,7 @@ impl Device {
 
     /// Matches upstream `DeviceExtensions.IsTrusted` / device list responses.
     pub fn is_trusted(&self) -> bool {
-        self.encrypted_user_key.as_ref().is_some_and(|s| !s.is_empty())
-            && self.encrypted_public_key.as_ref().is_some_and(|s| !s.is_empty())
-            && self.encrypted_private_key.as_ref().is_some_and(|s| !s.is_empty())
+        self.encrypted_user_key.is_some() && self.encrypted_public_key.is_some() && self.encrypted_private_key.is_some()
     }
 
     pub fn to_json(&self) -> Value {
@@ -128,7 +126,42 @@ impl Device {
     }
 
     pub fn is_mobile(&self) -> bool {
-        matches!(DeviceType::from_i32(self.atype), DeviceType::Android | DeviceType::Ios)
+        matches!(DeviceType::from_i32(self.atype), DeviceType::Android | DeviceType::Ios | DeviceType::AndroidAmazon)
+    }
+
+    pub fn is_browser(&self) -> bool {
+        matches!(
+            DeviceType::from_i32(self.atype),
+            DeviceType::ChromeBrowser
+                | DeviceType::FirefoxBrowser
+                | DeviceType::OperaBrowser
+                | DeviceType::EdgeBrowser
+                | DeviceType::IEBrowser
+                | DeviceType::UnknownBrowser
+                | DeviceType::DuckDuckGoBrowser
+        )
+    }
+
+    pub fn is_desktop(&self) -> bool {
+        matches!(
+            DeviceType::from_i32(self.atype),
+            DeviceType::WindowsDesktop | DeviceType::MacOsDesktop | DeviceType::LinuxDesktop
+        )
+    }
+
+    pub fn is_extension(&self) -> bool {
+        matches!(
+            DeviceType::from_i32(self.atype),
+            DeviceType::ChromeExtension
+                | DeviceType::FirefoxExtension
+                | DeviceType::OperaExtension
+                | DeviceType::EdgeExtension
+        )
+    }
+
+    // https://github.com/bitwarden/server/blob/v2026.4.2/src/Identity/Utilities/LoginApprovingClientTypes.cs
+    pub fn can_approve_trusted_login(&self) -> bool {
+        self.is_browser() || self.is_extension() || self.is_desktop() || self.is_mobile()
     }
 }
 
