@@ -510,9 +510,8 @@ impl Membership {
             "familySponsorshipValidUntil": null,
             "familySponsorshipToDelete": null,
             "accessSecretsManager": false,
-            // limit collection creation to managers with access_all permission to prevent issues
-            "limitCollectionCreation": self.atype < MembershipType::Manager || !self.access_all,
-            "limitCollectionDeletion": true,
+            "limitCollectionCreation": self.atype < MembershipType::Manager, // If less then a manager return true, to limit collection creations
+            "limitCollectionDeletion": self.atype < MembershipType::Manager, // If less then a manager return true, to limit collection deletions
             "limitItemDeletion": false,
             "allowAdminAccessToAllCollectionItems": true,
             "userIsManagedByOrganization": false, // Means not managed via the Members UI, like SSO
