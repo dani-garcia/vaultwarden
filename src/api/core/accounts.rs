@@ -66,14 +66,12 @@ pub fn routes() -> Vec<rocket::Route> {
         get_known_device,
         get_all_devices,
         get_device,
+        post_device_lost_trust,
         post_device_token,
         put_device_token,
         put_clear_device_token,
         post_clear_device_token,
         put_device_keys,
-        post_device_keys,
-        put_device_keys_by_uuid,
-        post_device_keys_by_uuid,
         get_tasks,
         post_auth_request,
         get_auth_request,
@@ -1518,6 +1516,18 @@ async fn get_all_devices(headers: Headers, conn: DbConn) -> JsonResult {
     })))
 }
 
+#[post("/devices/lost-trust")]
+async fn post_device_lost_trust(headers: Headers, conn: DbConn) -> JsonResult {
+    let mut device = headers.device;
+
+    device.encrypted_user_key = None;
+    device.encrypted_public_key = None;
+    device.encrypted_private_key = None;
+    device.save(true, &conn).await?;
+
+    Ok(Json(json!({})))
+}
+
 #[get("/devices/identifier/<device_id>")]
 async fn get_device(device_id: DeviceId, headers: Headers, conn: DbConn) -> JsonResult {
     let Some(device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &conn).await else {
@@ -1593,16 +1603,19 @@ async fn post_clear_device_token(device_id: DeviceId, ip: ClientIp, conn: DbConn
     put_clear_device_token(device_id, ip, conn).await
 }
 
-// https://github.com/bitwarden/server/blob/v2026.3.1/src/Api/Controllers/DevicesController.cs
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DeviceKeysData {
+    #[serde(alias = "EncryptedUserKey")]
     encrypted_user_key: String,
+    #[serde(alias = "EncryptedPublicKey")]
     encrypted_public_key: String,
+    #[serde(alias = "EncryptedPrivateKey")]
     encrypted_private_key: String,
 }
 
-#[put("/devices/identifier/<device_id>/keys", data = "<data>")]
+// https://github.com/bitwarden/server/blob/v2026.3.1/src/Api/Controllers/DevicesController.cs
+#[put("/devices/<device_id>/keys", data = "<data>")]
 async fn put_device_keys(
     device_id: DeviceId,
     data: Json<DeviceKeysData>,
@@ -1612,52 +1625,16 @@ async fn put_device_keys(
     if headers.device.uuid != device_id {
         err!("No device found");
     }
-    let Some(mut device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &conn).await else {
-        err!("No device found");
-    };
+
+    let mut device = headers.device;
     let data = data.into_inner();
-    if data.encrypted_user_key.is_empty()
-        || data.encrypted_public_key.is_empty()
-        || data.encrypted_private_key.is_empty()
-    {
-        err!("Invalid device keys");
-    }
-    device.encrypted_user_key = Some(data.encrypted_user_key);
-    device.encrypted_public_key = Some(data.encrypted_public_key);
-    device.encrypted_private_key = Some(data.encrypted_private_key);
+
+    device.encrypted_user_key = Some(data.encrypted_user_key).filter(|k| !k.is_empty());
+    device.encrypted_public_key = Some(data.encrypted_public_key).filter(|k| !k.is_empty());
+    device.encrypted_private_key = Some(data.encrypted_private_key).filter(|k| !k.is_empty());
     device.save(true, &conn).await?;
+
     Ok(Json(device.to_json()))
-}
-
-#[post("/devices/identifier/<device_id>/keys", data = "<data>")]
-async fn post_device_keys(
-    device_id: DeviceId,
-    data: Json<DeviceKeysData>,
-    headers: Headers,
-    conn: DbConn,
-) -> JsonResult {
-    put_device_keys(device_id, data, headers, conn).await
-}
-
-// Bitwarden server: `PUT|POST devices/{identifier}/keys` (not `devices/identifier/.../keys`).
-#[put("/devices/<device_id>/keys", data = "<data>")]
-async fn put_device_keys_by_uuid(
-    device_id: DeviceId,
-    data: Json<DeviceKeysData>,
-    headers: Headers,
-    conn: DbConn,
-) -> JsonResult {
-    put_device_keys(device_id, data, headers, conn).await
-}
-
-#[post("/devices/<device_id>/keys", data = "<data>")]
-async fn post_device_keys_by_uuid(
-    device_id: DeviceId,
-    data: Json<DeviceKeysData>,
-    headers: Headers,
-    conn: DbConn,
-) -> JsonResult {
-    put_device_keys(device_id, data, headers, conn).await
 }
 
 #[get("/tasks")]
