@@ -288,7 +288,19 @@ pub async fn exchange_code(
 
     let email_verified = id_claims.email_verified().or(user_info.email_verified());
 
-    let user_name = id_claims.preferred_username().or(user_info.preferred_username()).map(|un| un.to_string());
+    let configured_claim = CONFIG.sso_name_claim();
+
+    let extract_claim = |claims: &serde_json::Value, claim_key: &str| -> Option<String> {
+        claims.get(claim_key).and_then(|v| v.as_str()).map(|s| s.to_string())
+    };
+
+    let id_claims_json = serde_json::to_value(&id_claims).unwrap_or_default();
+    let user_info_json = serde_json::to_value(&user_info).unwrap_or_default();
+
+    let user_name = extract_claim(&id_claims_json, &configured_claim)
+        .or_else(|| extract_claim(&user_info_json, &configured_claim))
+        .or_else(|| id_claims.preferred_username().map(|n| n.to_string()))
+        .or_else(|| user_info.preferred_username().map(|n| n.to_string()));
 
     let refresh_token = token_response.refresh_token().map(openidconnect::RefreshToken::secret);
     if refresh_token.is_none() && CONFIG.sso_scopes_vec().contains(&"offline_access".to_owned()) {
