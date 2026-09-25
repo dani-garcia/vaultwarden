@@ -19,7 +19,8 @@ use crate::{
 use macros::UuidFromParam;
 
 use super::{
-    Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
+    Cipher, Collection, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor,
+    TwoFactorIncomplete,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
@@ -361,6 +362,7 @@ impl User {
         EmergencyAccess::delete_all_by_user(&self.uuid, conn).await?;
         EmergencyAccess::delete_all_by_grantee_email(&self.email, conn).await?;
         Membership::delete_all_by_user(&self.uuid, conn).await?;
+        Collection::release_all_by_user(&self.uuid, &self.email, conn).await?;
         Cipher::delete_all_by_user(&self.uuid, conn).await?;
         Favorite::delete_all_by_user(&self.uuid, conn).await?;
         Folder::delete_all_by_user(&self.uuid, conn).await?;
@@ -378,6 +380,30 @@ impl User {
     pub async fn update_uuid_revision(uuid: &UserId, conn: &DbConn) {
         if let Err(e) = Self::update_revision_impl(uuid, &Utc::now().naive_utc(), conn).await {
             warn!("Failed to update revision for {uuid}: {e:#?}");
+        }
+    }
+
+    pub async fn update_uuid_revisions(uuids: Vec<UserId>, conn: &DbConn) {
+        if uuids.is_empty() {
+            return;
+        }
+        let updated_at = Utc::now().naive_utc();
+        if let Err(e) = conn
+            .run(move |conn| {
+                retry(
+                    || {
+                        diesel::update(users::table.filter(users::uuid.eq_any(&uuids)))
+                            .set(users::updated_at.eq(updated_at))
+                            .execute(conn)
+                    },
+                    10,
+                )
+                .map(|_| ())
+                .map_res("Error updating user revisions")
+            })
+            .await
+        {
+            warn!("Failed to update user revisions: {e:#?}");
         }
     }
 

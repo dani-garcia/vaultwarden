@@ -381,6 +381,16 @@ impl OrgPolicy {
         false
     }
 
+    /// Whether the personal ownership (upstream: organization data ownership) policy of the member's organization
+    /// applies to them. Like upstream, it exempts Owners, Admins and members that are not confirmed.
+    pub async fn is_personal_ownership_enforced_for(member: &Membership, conn: &DbConn) -> bool {
+        member.has_status(MembershipStatus::Confirmed)
+            && member.atype < MembershipType::Admin
+            && Self::find_by_org_and_type(&member.org_uuid, OrgPolicyType::PersonalOwnership, conn)
+                .await
+                .is_some_and(|p| p.enabled)
+    }
+
     pub async fn is_enabled_for_member(member_uuid: &MembershipId, policy_type: OrgPolicyType, conn: &DbConn) -> bool {
         if let Some(member) = Membership::find_by_uuid(member_uuid, conn).await
             && let Some(policy) = OrgPolicy::find_by_org_and_type(&member.org_uuid, policy_type, conn).await

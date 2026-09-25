@@ -540,6 +540,48 @@ pub fn is_valid_email(email: &str) -> bool {
     email_url.domain().is_some() && email_url.path() == "/" && email_url.query().is_none()
 }
 
+/// Returns whether the value has the form of an encrypted string, like upstream's `EncryptedStringAttribute`:
+/// `<type>.<piece>|<piece>...` with a known encryption type, its number of base64 pieces, and the fixed decoded
+/// lengths of the IV (16 bytes) and the MAC (32 bytes). Without a type it is the legacy `iv|ct[|mac]` format.
+pub fn is_valid_enc_string(value: &str) -> bool {
+    const IV: Option<usize> = Some(16);
+    const MAC: Option<usize> = Some(32);
+    const ANY: Option<usize> = None;
+
+    let (pieces, rest): (&[Option<usize>], &str) = match value.split_once('.') {
+        Some((header, rest)) => match header.parse::<u8>() {
+            // AesCbc256_B64
+            Ok(0) => (&[IV, ANY], rest),
+            // AesCbc256_HmacSha256_B64
+            Ok(2) => (&[IV, ANY, MAC], rest),
+            // Rsa2048_OaepSha256_B64, Rsa2048_OaepSha1_B64, and type 7: a CBOR encoded Encrypt0 message
+            Ok(3 | 4 | 7) => (&[ANY], rest),
+            // Rsa2048_OaepSha256_HmacSha256_B64, Rsa2048_OaepSha1_HmacSha256_B64
+            Ok(5 | 6) => (&[ANY, ANY], rest),
+            _ => return false,
+        },
+        None if value.matches('|').count() == 2 => (&[IV, ANY, MAC], value),
+        None => (&[IV, ANY], value),
+    };
+
+    let parts: Vec<&str> = rest.split('|').collect();
+    parts.len() == pieces.len() && parts.iter().zip(pieces).all(|(part, len)| is_valid_base64_piece(part, *len))
+}
+
+/// Base64 with padding and, like upstream, any value for the unused bits of the last character.
+fn is_valid_base64_piece(piece: &str, decoded_len: Option<usize>) -> bool {
+    let bytes = piece.as_bytes();
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
+        return false;
+    }
+    let padding = bytes.iter().rev().take_while(|&&b| b == b'=').count();
+    if padding > 2 {
+        return false;
+    }
+    bytes[..bytes.len() - padding].iter().all(|b| b.is_ascii_alphanumeric() || *b == b'+' || *b == b'/')
+        && decoded_len.is_none_or(|len| bytes.len() / 4 * 3 - padding == len)
+}
+
 //
 // Deployment environment methods
 //
