@@ -13,7 +13,7 @@ use crate::{
 };
 use macros::UuidFromParam;
 
-use super::{CollectionId, Membership, MembershipId, MembershipStatus, OrganizationId, User, UserId};
+use super::{Collection, CollectionId, Membership, MembershipId, MembershipStatus, OrganizationId, User, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = groups)]
@@ -84,9 +84,6 @@ impl Group {
     }
 
     pub async fn to_json_details(&self, conn: &DbConn) -> Value {
-        // If both read_only and hide_passwords are false, then manage should be true
-        // You can't have an entry with read_only and manage, or hide_passwords and manage
-        // Or an entry with everything to false
         let collections_groups: Vec<Value> = CollectionGroup::find_by_group(&self.uuid, &self.organizations_uuid, conn)
             .await
             .iter()
@@ -138,15 +135,13 @@ impl CollectionGroup {
     }
 
     pub fn to_json_details_for_group(&self) -> Value {
-        // If both read_only and hide_passwords are false, then manage should be true
-        // You can't have an entry with read_only and manage, or hide_passwords and manage
-        // Or an entry with everything to false
-        // For backwards compatibility and migration proposes we keep checking read_only and hide_password
+        // `manage` is a stored permission of its own and is reported exactly as stored: read/write
+        // access is not management.
         json!({
             "id": self.groups_uuid,
             "readOnly": self.read_only,
             "hidePasswords": self.hide_passwords,
-            "manage": self.manage || (!self.read_only && !self.hide_passwords),
+            "manage": self.manage,
         })
     }
 }
@@ -261,6 +256,9 @@ impl Group {
 
     pub async fn is_in_full_access_group(user_uuid: &UserId, org_uuid: &OrganizationId, conn: &DbConn) -> bool {
         conn.run(move |conn| {
+            // Security: the membership linked through `groups_users` must be confirmed and belong to the
+            // same organization as the group, or a cross-organization row would pass as full access to
+            // that organization.
             groups::table
                 .inner_join(groups_users::table.on(groups_users::groups_uuid.eq(groups::uuid)))
                 .inner_join(
@@ -317,6 +315,15 @@ impl Group {
 
 impl CollectionGroup {
     pub async fn save(&mut self, org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
+        // Security: never persist a cross-organization link between a collection and a group --
+        // attaching a foreign-tenant group to this organization's collection would grant its members
+        // access. Defense in depth, so no route can create one even if its own validation is wrong.
+        if Collection::find_by_uuid_and_org(&self.collections_uuid, org_uuid, conn).await.is_none()
+            || Group::find_by_uuid_and_org(&self.groups_uuid, org_uuid, conn).await.is_none()
+        {
+            err!("Collection and group must belong to the same organization")
+        }
+
         let group_users = GroupUser::find_by_group(&self.groups_uuid, org_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
@@ -469,6 +476,16 @@ impl CollectionGroup {
 
 impl GroupUser {
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+        // Security: never persist a cross-organization link between a group and a membership -- that
+        // would grant a member of one organization access to another's collections through an
+        // access-all group. Defense in depth, so no route can create one even if its own validation is wrong.
+        let Some(member) = Membership::find_by_uuid(&self.users_organizations_uuid, conn).await else {
+            err!("Member not found while assigning to group")
+        };
+        if Group::find_by_uuid_and_org(&self.groups_uuid, &member.org_uuid, conn).await.is_none() {
+            err!("Group and member must belong to the same organization")
+        }
+
         self.update_user_revision(conn).await;
 
         let values = (
