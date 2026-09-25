@@ -531,6 +531,57 @@ pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTi
     send_email(address, &subject, body_html, body_text).await
 }
 
+/// Tells the administrators of an organization that one of their members is waiting to have a
+/// device let in. Trusted device encryption falls back to this when the member has no other device
+/// of their own left to ask.
+pub async fn send_device_approval_requested(
+    address: &str,
+    org_id: &OrganizationId,
+    org_name: &str,
+    user_email: &str,
+    user_name: &str,
+) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/device_approval_requested",
+        json!({
+            // Straight to the page that answers these, the same route the upstream admin console
+            // uses for them.
+            "url": format!("{}/#/organizations/{}/settings/device-approvals", CONFIG.domain(), org_id),
+            "img_src": CONFIG._smtp_img_src(),
+            "org_name": org_name,
+            "user_email": user_email,
+            "user_name": user_name,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
+/// The other half of the above: the member learns that a device of theirs was let in, so an
+/// approval they did not ask for does not pass unnoticed.
+pub async fn send_trusted_device_admin_approval(
+    address: &str,
+    org_name: &str,
+    dt: &NaiveDateTime,
+    ip: &str,
+    device: &str,
+) -> EmptyResult {
+    let fmt = "%A, %B %_d, %Y at %r %Z";
+    let (subject, body_html, body_text) = get_text(
+        "email/trusted_device_admin_approval",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "org_name": org_name,
+            "datetime": crate::util::format_naive_datetime_local(dt, fmt),
+            "ip": ip,
+            "device": device,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_incomplete_2fa_login(
     address: &str,
     ip: &str,

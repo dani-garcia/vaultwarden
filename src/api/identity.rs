@@ -30,9 +30,9 @@ use crate::{
     db::{
         DbConn,
         models::{
-            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeResponseError,
-            OrganizationApiKey, OrganizationId, SendId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete,
-            TwoFactorType, User, UserId,
+            AuthRequest, AuthRequestId, Device, DeviceId, DeviceType, EventType, Invitation, Membership,
+            OIDCCodeResponseError, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, SendId,
+            SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
     },
     error::MapResult,
@@ -382,7 +382,7 @@ async fn sso_login(
     // We passed 2FA get auth tokens
     let auth_tokens = sso::redeem(&device, &user, data.client_id, sso_user, sso_auth, user_infos, conn).await?;
 
-    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
+    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, true, conn, ip).await
 }
 
 async fn password_login(
@@ -504,7 +504,166 @@ async fn password_login(
 
     let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password, data.client_id);
 
-    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
+    authenticated_response(&user, &mut device, auth_tokens, twofactor_token, false, conn, ip).await
+}
+
+/// Whether the account creation the clients run when nothing else is on offer can succeed here.
+///
+/// A client that gets the trusted device options, but neither a master password nor an approval an
+/// administrator could give, decides it is looking at a fresh account and walks it through creation:
+/// generate the account keys and post them, enrol into the account recovery of the organization behind
+/// the SSO login, then trust the device. Every one of those has to be able to go through: if enrolment
+/// is refused the keys are already written, and the next login fails at posting them a second time,
+/// leaving an account that can never be unlocked at all.
+///
+/// So the same conditions the enrolment endpoint enforces are checked here, before the client has
+/// written anything. Withholding the options instead sends it to setting a master password, which works
+/// and leaves the door to trusted devices open for the next login.
+async fn account_creation_can_succeed(user: &User, conn: &DbConn) -> bool {
+    // `POST /accounts/keys` refuses to replace the keys of an account that has them, and the
+    // clients post a freshly generated pair without looking.
+    if user.private_key.is_some() || user.public_key.is_some() {
+        return false;
+    }
+
+    // The organization the client enrols into is the one `GET /organizations/<identifier>/auto-enroll-status`
+    // hands it, so ask the same question here.
+    let Some(membership) = Membership::find_main_user_org(&user.uuid, conn).await else {
+        return false;
+    };
+
+    // That lookup only rules out the `Revoked` status itself, which revoking never actually writes: it
+    // shifts the status out of the active range instead, so a revoked membership comes back from it like
+    // any other. The enrolment endpoint runs behind `OrgMemberHeaders` and turns exactly those away.
+    if !membership.is_active() {
+        return false;
+    }
+
+    // What `check_reset_password_applicable` demands of that organization.
+    if !CONFIG.mail_enabled() {
+        return false;
+    }
+    if !OrgPolicy::find_by_org_and_type(&membership.org_uuid, OrgPolicyType::ResetPassword, conn)
+        .await
+        .is_some_and(|policy| policy.enabled)
+    {
+        return false;
+    }
+
+    // Enrolling wraps the user key for the organization, so it needs its public key.
+    Organization::find_by_uuid(&membership.org_uuid, conn)
+        .await
+        .is_some_and(|org| org.public_key.is_some_and(|key| !key.is_empty()))
+}
+
+/// The ways an account could get through the trusted device flow, which is what decides whether
+/// offering it leads anywhere.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Four independent facts about one account, not a state that could be an enum"
+)]
+struct TrustedDeviceWaysIn {
+    /// This device already holds the keys, so it unlocks without asking anyone.
+    device_is_trusted: bool,
+    /// A master password to fall back on.
+    has_master_password: bool,
+    /// An administrator of an organization who could let a new device in, which they can only do
+    /// once the member enrolled into account recovery.
+    has_admin_approval: bool,
+    /// Nothing set up yet, but the account creation the clients run in that case would go through.
+    can_create_account: bool,
+}
+
+impl TrustedDeviceWaysIn {
+    /// Whether the trusted device options belong in a login response, and in which of their two roles.
+    ///
+    /// `Some(true)` means they are only there to walk a user without a master password off the feature
+    /// after it was switched off; `None` means they are withheld, because nothing the client could do
+    /// with them would work. The order mirrors how the clients read them: a trusted device unlocks
+    /// straight away, otherwise an administrator to ask or a master password to type is offered, and only
+    /// when there is neither does the client try to create a fresh account.
+    fn offer(&self, enabled: bool) -> Option<bool> {
+        // Once the feature is switched off again, a user without a master password would be locked out
+        // of their own vault. Keep telling their still trusted devices about it so their client can walk
+        // them through setting one while they can still unlock.
+        let offboarding = !enabled && self.offboarding_candidate();
+        if !(enabled || offboarding) {
+            return None;
+        }
+
+        let leads_somewhere =
+            self.device_is_trusted || self.has_admin_approval || self.has_master_password || self.can_create_account;
+        leads_somewhere.then_some(offboarding)
+    }
+
+    /// A user who is still on a trusted device and has no master password to fall back on, and so
+    /// has to be told when the feature goes away.
+    fn offboarding_candidate(&self) -> bool {
+        self.device_is_trusted && !self.has_master_password
+    }
+}
+
+/// Trusted device encryption ("passwordless SSO"): instead of deriving the user key from a master
+/// password, the client keeps a copy of it on the device, wrapped for a key pair that the device
+/// generated. Its presence in the response is what makes the clients offer the flow at all.
+///
+/// Upstream ties this to the SSO configuration of an organization; Vaultwarden configures SSO for the
+/// whole server, so `SSO_TRUSTED_DEVICE_ENCRYPTION` decides it here. Either way it stays an SSO feature,
+/// a password login never gets these options.
+/// https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/UserDecryptionOptionsBuilder.cs
+async fn trusted_device_option(user: &User, device: &Device, conn: &DbConn) -> Option<Value> {
+    let enabled = CONFIG.sso_trusted_device_encryption();
+
+    let mut ways_in = TrustedDeviceWaysIn {
+        device_is_trusted: device.is_trusted(),
+        has_master_password: !user.password_hash.is_empty(),
+        has_admin_approval: false,
+        can_create_account: false,
+    };
+
+    // Answered ahead of everything else so a server that does not offer trusted devices, and has no
+    // user left on them, does no work for the feature at all.
+    if !(enabled || ways_in.offboarding_candidate()) {
+        return None;
+    }
+
+    let memberships = Membership::find_by_user(&user.uuid, conn).await;
+
+    // An admin can only take over the approval once the member handed them a key to work with, which is
+    // what enrolling into account recovery does. The same condition the request itself is created and
+    // answered under, so this does not announce a way out that would be refused the moment it is taken.
+    ways_in.has_admin_approval = memberships.iter().any(Membership::can_use_admin_approval);
+
+    // Only worth asking when nothing cheaper already lets the client in.
+    if !(ways_in.device_is_trusted || ways_in.has_admin_approval || ways_in.has_master_password) {
+        ways_in.can_create_account = account_creation_can_succeed(user, conn).await;
+    }
+
+    let offboarding = ways_in.offer(enabled)?;
+
+    // Any other device of this user that could show an approval prompt. The user unlocks a new
+    // device from one of these, or with the master password if they have one.
+    let has_login_approving_device = Device::find_by_user(&user.uuid, conn)
+        .await
+        .iter()
+        .any(|other| other.uuid != device.uuid && DeviceType::from_i32(other.atype).can_approve_login_requests());
+
+    // Whether the user is on the answering side of that. The clients use it to push someone who could
+    // approve others, but has no master password themselves, into setting one. Every active membership
+    // counts, not only a confirmed one: an administrator provisioned by this very login holds the role
+    // before anybody has confirmed them. See `has_manage_reset_password_role_for_tde`.
+    let has_manage_reset_password_permission =
+        memberships.iter().any(Membership::has_manage_reset_password_role_for_tde);
+
+    Some(json!({
+        "HasAdminApproval": ways_in.has_admin_approval,
+        "HasLoginApprovingDevice": has_login_approving_device,
+        "HasManageResetPasswordPermission": has_manage_reset_password_permission,
+        "IsTdeOffboarding": offboarding,
+        "EncryptedPrivateKey": device.trusted_private_key(),
+        "EncryptedUserKey": device.trusted_user_key(),
+        "Object": "trustedDeviceUserDecryptionOption"
+    }))
 }
 
 async fn authenticated_response(
@@ -512,6 +671,7 @@ async fn authenticated_response(
     device: &mut Device,
     auth_tokens: auth::AuthTokens,
     twofactor_token: Option<String>,
+    sso_login: bool,
     conn: &DbConn,
     ip: &ClientIp,
 ) -> JsonResult {
@@ -573,6 +733,16 @@ async fn authenticated_response(
         Value::Null
     };
 
+    let mut user_decryption_options = json!({
+        "HasMasterPassword": has_master_password,
+        "MasterPasswordUnlock": master_password_unlock,
+        "Object": "userDecryptionOptions"
+    });
+
+    if sso_login && let Some(option) = trusted_device_option(user, device, conn).await {
+        user_decryption_options["TrustedDeviceOption"] = option;
+    }
+
     let mut result = json!({
         "access_token": auth_tokens.access_token(),
         "expires_in": auth_tokens.expires_in(),
@@ -588,11 +758,7 @@ async fn authenticated_response(
         "MasterPasswordPolicy": master_password_policy,
         "scope": auth_tokens.scope(),
         "AccountKeys": account_keys,
-        "UserDecryptionOptions": {
-            "HasMasterPassword": has_master_password,
-            "MasterPasswordUnlock": master_password_unlock,
-            "Object": "userDecryptionOptions"
-        },
+        "UserDecryptionOptions": user_decryption_options,
     });
 
     if !user.akey.is_empty() {
@@ -1366,4 +1532,44 @@ async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure,
     );
 
     Ok(Redirect::temporary(String::from(auth_url)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Withheld wherever nothing the client could do with them would work. Once the feature is switched
+    /// off they are only kept for a user left on a trusted device without a master password, so their
+    /// client can walk them off the feature while they can still unlock.
+    #[test]
+    fn the_trusted_device_options_are_offered_where_they_lead_somewhere() {
+        // enabled, device trusted, master password, admin approval, can create an account => offer
+        for (enabled, device_is_trusted, has_master_password, has_admin_approval, can_create_account, expected) in [
+            (false, false, false, false, false, None),
+            (false, false, true, false, false, None),
+            (false, true, true, false, false, None),
+            (false, true, false, false, false, Some(true)),
+            // Only a device that still unlocks is walked off, an administrator to ask is no reason to.
+            (false, false, false, true, false, None),
+            // Nothing set up, nobody to ask, and account creation would fail at the enrolment: the one
+            // combination that would leave the account half built.
+            (true, false, false, false, false, None),
+            (true, true, false, false, false, Some(false)),
+            (true, false, true, false, false, Some(false)),
+            (true, false, false, true, false, Some(false)),
+            (true, false, false, false, true, Some(false)),
+        ] {
+            let ways_in = TrustedDeviceWaysIn {
+                device_is_trusted,
+                has_master_password,
+                has_admin_approval,
+                can_create_account,
+            };
+            assert_eq!(
+                ways_in.offer(enabled),
+                expected,
+                "{enabled} {device_is_trusted} {has_master_password} {has_admin_approval} {can_create_account}"
+            );
+        }
+    }
 }
