@@ -10,7 +10,9 @@ use crate::{
     auth::{AdminHeaders, Headers},
     db::{
         DbConn, DbPool,
-        models::{Cipher, CipherId, Event, EventType, Membership, MembershipId, OrganizationId, UserId},
+        models::{
+            Cipher, CipherAccessScope, CipherId, Event, EventType, Membership, MembershipId, OrganizationId, UserId,
+        },
     },
     util::parse_date,
 };
@@ -224,7 +226,8 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                 // user can actually access it instead of trusting the provided cipher uuid.
                 if let Some(cipher_uuid) = &event.cipher_id
                     && let Some(cipher) = Cipher::find_by_uuid(cipher_uuid, &conn).await
-                    && cipher.is_accessible_to_user(&headers.user.uuid, &conn).await
+                    // Like upstream, also for the members' My Items an admin opened from a report
+                    && cipher.is_accessible_to_user(&headers.user.uuid, CipherAccessScope::OrganizationAdmin, &conn).await
                     && let Some(org_id) = cipher.organization_uuid
                 {
                     log_event_impl(

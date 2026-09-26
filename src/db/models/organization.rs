@@ -12,8 +12,8 @@ use crate::{
     db::{
         DbConn,
         schema::{
-            ciphers, ciphers_collections, collections_groups, groups, groups_users, org_policies, organization_api_key,
-            organizations, users, users_collections, users_organizations,
+            ciphers, ciphers_collections, collections, collections_groups, groups, groups_users, org_policies,
+            organization_api_key, organizations, users, users_collections, users_organizations,
         },
     },
     error::MapResult,
@@ -21,8 +21,8 @@ use crate::{
 use macros::UuidFromParam;
 
 use super::{
-    Cipher, CipherId, Collection, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy, OrgPolicyType,
-    TwoFactor, User, UserId,
+    Cipher, CipherId, Collection, CollectionCipher, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy,
+    OrgPolicyType, TwoFactor, User, UserId,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -216,7 +216,7 @@ impl Organization {
             "useApi": true,
             "useDisableSMAdsForUsers": true, // Hide Secrets Manager ads
             "useInviteLinks": false, // Not (yet) supported
-            "useMyItems": false, // Not (yet) supported
+            "useMyItems": true,
             "useOrganizationDomains": false, // Not supported (Linked to SSO)
             "usePam": false, // Not supported
             "usePhishingBlocker": false,
@@ -492,7 +492,7 @@ impl Membership {
             "useRiskInsights": false, // Not supported (Not AGPLv3 Licensed)
             "useDisableSMAdsForUsers": true, // Hide Secrets Manager ads
             "useInviteLinks": false, // Not (yet) supported
-            "useMyItems": false, // Not (yet) supported
+            "useMyItems": true,
             "useOrganizationDomains": false, // Not supported (Linked to SSO)
             "usePam": false, // Not supported
             "usePhishingBlocker": false,
@@ -569,9 +569,12 @@ impl Membership {
         // If collections are to be included, only include them if the user does not have full access via a group or defined to the user it self
         // Only the collections assigned directly are returned, the ones assigned via a group are returned via a special group endpoint
         let collections: Vec<Value> = if include_collections && !(full_access_group || self.access_all) {
+            // Like upstream, a member's My Items collection is not part of their collection access
+            let my_items = Collection::find_default_by_user_and_org(&self.user_uuid, &self.org_uuid, conn).await;
             CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
                 .await
                 .into_iter()
+                .filter(|cu| my_items.as_ref().is_none_or(|c| c.uuid != cu.collection_uuid))
                 .map(|cu| {
                     json!({
                         "id": cu.collection_uuid,
@@ -742,15 +745,60 @@ impl Membership {
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
         User::update_uuid_revision(&self.user_uuid, conn).await;
 
-        CollectionUser::delete_all_by_user_and_org(&self.user_uuid, &self.org_uuid, conn).await?;
-        GroupUser::delete_all_by_member(&self.uuid, conn).await?;
-
-        conn.run(move |conn| {
-            diesel::delete(users_organizations::table.filter(users_organizations::uuid.eq(self.uuid)))
-                .execute(conn)
+        // Offboarding, like upstream's `OrganizationUser_DeleteById`: the member's My Items collection and its items
+        // stay in the organization as a shared collection, named by the former member's email address. Converted in
+        // the same transaction as the removal, so a failure can't convert it while the member stays, and by the
+        // member rather than by a collection looked up beforehand.
+        let (member_uuid, user_uuid, org_uuid) = (self.uuid, self.user_uuid, self.org_uuid);
+        let converted = conn
+            .run(move |conn| {
+                conn.transaction::<_, diesel::result::Error, _>(|conn| {
+                    // Writes first: SQLite can't turn a transaction that started with a read into a writing one
+                    // once another connection wrote meanwhile, and fails without waiting ("database is locked").
+                    diesel::delete(groups_users::table.filter(groups_users::users_organizations_uuid.eq(&member_uuid)))
+                        .execute(conn)?;
+                    // The membership goes before the conversion: its row lock (the write lock on SQLite) makes a
+                    // concurrent creation of the member's My Items collection either finish first, so the conversion
+                    // below finds it, or wait and then find the member gone. See
+                    // `Collection::create_default_user_collections()`.
+                    diesel::delete(users_organizations::table.filter(users_organizations::uuid.eq(&member_uuid)))
+                        .execute(conn)?;
+                    let my_items = collections::table
+                        .filter(collections::org_uuid.eq(&org_uuid))
+                        .filter(collections::default_user_uuid.eq(&user_uuid));
+                    let converted = my_items.select(collections::uuid).load::<CollectionId>(conn)?;
+                    let email = users::table
+                        .filter(users::uuid.eq(&user_uuid))
+                        .select(users::email)
+                        .first::<String>(conn)
+                        .optional()?;
+                    diesel::update(my_items)
+                        .set((
+                            collections::default_user_uuid.eq(None::<UserId>),
+                            collections::default_user_collection_email.eq(email),
+                        ))
+                        .execute(conn)?;
+                    diesel::delete(
+                        users_collections::table.filter(users_collections::user_uuid.eq(&user_uuid)).filter(
+                            users_collections::collection_uuid.eq_any(
+                                collections::table
+                                    .filter(collections::org_uuid.eq(&org_uuid))
+                                    .select(collections::uuid),
+                            ),
+                        ),
+                    )
+                    .execute(conn)?;
+                    Ok(converted)
+                })
                 .map_res("Error removing user from organization")
-        })
-        .await
+            })
+            .await?;
+
+        // The members that now reach the former My Items collection sync it
+        for collection_uuid in &converted {
+            CollectionCipher::update_users_revision(collection_uuid, conn).await;
+        }
+        Ok(())
     }
 
     pub async fn delete_all_by_organization(org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
@@ -1028,6 +1076,7 @@ impl Membership {
         conn.run(move |conn| {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .left_join(users_collections::table.on(users_collections::user_uuid.eq(users_organizations::user_uuid)))
                 .left_join(
                     ciphers_collections::table.on(ciphers_collections::collection_uuid
@@ -1054,6 +1103,7 @@ impl Membership {
         conn.run(move |conn| {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .inner_join(
                     groups_users::table.on(groups_users::users_organizations_uuid.eq(users_organizations::uuid)),
                 )
@@ -1110,6 +1160,7 @@ impl Membership {
         conn.run(move |conn| {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .left_join(users_collections::table.on(users_collections::user_uuid.eq(users_organizations::user_uuid)))
                 .filter(users_organizations::access_all.eq(true).or(
                     // AccessAll..

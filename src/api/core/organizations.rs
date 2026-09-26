@@ -15,15 +15,15 @@ use crate::{
     db::{
         DbConn,
         models::{
-            Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
-            Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, TwoFactor, TwoFactorType, User,
-            UserId,
+            Cipher, CipherAccessScope, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId,
+            CollectionUser, EventType, Group, GroupId, GroupUser, Invitation, Membership, MembershipId,
+            MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
+            OrganizationId, TwoFactor, TwoFactorType, User, UserId,
         },
     },
     mail,
     sso::FAKE_SSO_IDENTIFIER,
-    util::{NumberOrString, convert_json_key_lcase_first},
+    util::{NumberOrString, convert_json_key_lcase_first, is_valid_enc_string},
 };
 
 pub fn routes() -> Vec<Route> {
@@ -77,6 +77,7 @@ pub fn routes() -> Vec<Route> {
         get_organization_public_key,
         bulk_public_keys,
         revoke_member,
+        revoke_self,
         bulk_revoke_members,
         restore_member,
         restore_member_vnext,
@@ -130,7 +131,8 @@ struct OrganizationUpdateData {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FullCollectionData {
-    name: String,
+    // Optional on updates only: the clients send none for a former My Items collection, like upstream
+    name: Option<String>,
     groups: Vec<CollectionGroupData>,
     users: Vec<CollectionMembershipData>,
     external_id: Option<String>,
@@ -439,7 +441,10 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
         .collect();
 
     let mut data = Vec::new();
-    for col in Collection::find_by_organization(&org_id, &conn).await {
+    // Like upstream, the members' My Items collections are not managed here
+    for col in
+        Collection::find_by_organization(&org_id, &conn).await.into_iter().filter(|c| !c.is_default_user_collection())
+    {
         // check whether the current user has access to the given collection
         let assigned = has_full_access_to_org
             || CollectionUser::has_access_to_collection_by_user(&col.uuid, &member.user_uuid, &conn).await
@@ -490,8 +495,14 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
     })))
 }
 
+// The shared collections only, like upstream
 async fn get_org_collections_impl(org_id: &OrganizationId, conn: &DbConn) -> Value {
-    Collection::find_by_organization(org_id, conn).await.iter().map(Collection::to_json).collect::<Value>()
+    Collection::find_by_organization(org_id, conn)
+        .await
+        .iter()
+        .filter(|c| !c.is_default_user_collection())
+        .map(Collection::to_json)
+        .collect::<Value>()
 }
 
 #[post("/organizations/<org_id>/collections", data = "<data>")]
@@ -511,7 +522,10 @@ async fn post_organization_collections(
         err!("You don't have permission to create collections")
     }
 
-    let collection = Collection::new(org_id.clone(), data.name, data.external_id);
+    let Some(name) = data.name else {
+        err!("The Name field is required.")
+    };
+    let collection = Collection::new(org_id.clone(), name, data.external_id);
     collection.save(&conn).await?;
 
     log_event(
@@ -578,21 +592,42 @@ async fn post_bulk_access_collections(
         err!("Can't find organization details")
     }
 
-    // The collections and members are checked below, the groups only here.
+    // Like upstream, check the groups, members and collections before changing any collection
     let org_groups = Group::find_by_organization(&org_id, &conn).await;
     let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
     if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
         err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id, org_id))
     }
 
-    for col_id in data.collection_ids {
-        let Some(collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &conn).await else {
+    let mut members = Vec::with_capacity(data.users.len());
+    for user in &data.users {
+        let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await else {
+            err!("User is not part of organization")
+        };
+        if !member.access_all {
+            members.push((member, user));
+        }
+    }
+
+    let mut collections = Vec::with_capacity(data.collection_ids.len());
+    for col_id in &data.collection_ids {
+        let Some(collection) = Collection::find_by_uuid_and_org(col_id, &org_id, &conn).await else {
             err!("Collection not found")
         };
 
         if !collection.is_manageable_by_user(&headers.membership.user_uuid, &conn).await {
             err!("Collection not found", "The current user isn't a manager for this collection")
         }
+
+        if collection.is_default_user_collection() {
+            err!("You cannot add access to collections with the type as DefaultUserCollection.")
+        }
+
+        collections.push(collection);
+    }
+
+    for collection in collections {
+        let col_id = collection.uuid.clone();
 
         // update collection modification date
         collection.save(&conn).await?;
@@ -616,15 +651,7 @@ async fn post_bulk_access_collections(
         }
 
         CollectionUser::delete_all_by_collection(&col_id, &conn).await?;
-        for user in &data.users {
-            let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await else {
-                err!("User is not part of organization")
-            };
-
-            if member.access_all {
-                continue;
-            }
-
+        for (member, user) in &members {
             CollectionUser::save(&member.user_uuid, &col_id, user.read_only, user.hide_passwords, user.manage, &conn)
                 .await?;
         }
@@ -666,7 +693,16 @@ async fn post_organization_collection_update(
         err!("Collection not found")
     };
 
-    collection.name = data.name;
+    if collection.is_default_user_collection() {
+        err!("You cannot edit a collection with the type as DefaultUserCollection.")
+    }
+
+    // A former My Items collection is shown by its former owner's email address, its name stays as it is
+    if collection.default_user_collection_email.is_none()
+        && let Some(name) = data.name.filter(|n| !n.trim().is_empty())
+    {
+        collection.name = name;
+    }
     collection.external_id = match data.external_id {
         Some(external_id) if !external_id.trim().is_empty() => Some(external_id),
         _ => None,
@@ -723,6 +759,9 @@ async fn delete_organization_collection_impl(
     let Some(collection) = Collection::find_by_uuid_and_org(col_id, org_id, conn).await else {
         err!("Collection not found", "Collection does not exist or does not belong to this organization")
     };
+    if collection.is_default_user_collection() {
+        err!("You cannot delete a collection with the type as DefaultUserCollection.")
+    }
     log_event(
         EventType::CollectionDeleted,
         &collection.uuid,
@@ -777,6 +816,16 @@ async fn bulk_delete_organization_collections(
     let collections = data.ids;
 
     let headers = ManagerHeaders::from_loose(headers, &collections, &conn).await?;
+
+    // Like upstream, reject them all before deleting any
+    for col_id in &collections {
+        if Collection::find_by_uuid_and_org(col_id, &org_id, &conn)
+            .await
+            .is_some_and(|c| c.is_default_user_collection())
+        {
+            err!("You cannot delete collections with the type as DefaultUserCollection.")
+        }
+    }
 
     for col_id in collections {
         delete_organization_collection_impl(&org_id, &col_id, &headers, &conn).await?;
@@ -883,18 +932,29 @@ struct OrgIdData {
     organization_id: OrganizationId,
 }
 
+#[derive(FromForm)]
+struct OrgDetailsData {
+    #[field(name = "organizationId")]
+    organization_id: OrganizationId,
+    // Set by the organization reports, which also cover the members' My Items
+    #[field(name = "includeMemberItems", default = false)]
+    include_member_items: bool,
+}
+
 #[get("/ciphers/organization-details?<data..>")]
-async fn get_org_details(data: OrgIdData, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
+async fn get_org_details(data: OrgDetailsData, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
     if data.organization_id != headers.membership.org_uuid {
         err_code!("Resource not found.", "Organization id's do not match", Status::NotFound.code);
     }
 
+    // Together with the Manager guard, this is the organization-wide cipher authority upstream requires to include
+    // the members' My Items as well
     if !headers.membership.has_full_access() {
         err_code!("Resource not found.", "User does not have full access", Status::NotFound.code);
     }
 
     Ok(Json(json!({
-        "data": get_org_details_impl(&data.organization_id, &headers.host, &headers.user.uuid, &conn).await?,
+        "data": get_org_details_impl(&data.organization_id, &headers.host, &headers.user.uuid, data.include_member_items, &conn).await?,
         "object": "list",
         "continuationToken": null,
     })))
@@ -904,14 +964,32 @@ async fn get_org_details_impl(
     org_id: &OrganizationId,
     host: &str,
     user_id: &UserId,
+    include_member_items: bool,
     conn: &DbConn,
 ) -> Result<Value, crate::Error> {
-    let ciphers = Cipher::find_by_org(org_id, conn).await;
+    let mut ciphers = Cipher::find_by_org(org_id, conn).await;
+    if !include_member_items {
+        // Like upstream, leave out the items that are only in the members' My Items collections
+        let my_items_only = CollectionCipher::find_my_items_only_by_orgs(vec![org_id.clone()], conn).await;
+        ciphers.retain(|c| !my_items_only.contains(&c.uuid));
+    }
+    let my_items = CollectionCipher::find_my_items_by_org(org_id, conn).await;
     let cipher_sync_data = CipherSyncData::new(user_id, CipherSyncType::Organization, conn).await;
 
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
-        ciphers_json.push(c.to_json(host, user_id, Some(&cipher_sync_data), CipherSyncType::Organization, conn).await?);
+        let mut details = c.to_json(host, user_id, Some(&cipher_sync_data), CipherSyncType::Organization, conn).await?;
+        // Like upstream, the members' items list all their collections, including the My Items ones, and the
+        // organization's items none of those
+        if let Some(cipher_my_items) = my_items.get(&c.uuid)
+            && let Some(collection_ids) = details["collectionIds"].as_array_mut()
+        {
+            collection_ids.retain(|id| id.as_str().is_none_or(|id| !cipher_my_items.iter().any(|c| c.as_ref() == id)));
+            if include_member_items {
+                collection_ids.extend(cipher_my_items.iter().map(|c| json!(c)));
+            }
+        }
+        ciphers_json.push(details);
     }
     Ok(json!(ciphers_json))
 }
@@ -1023,8 +1101,10 @@ struct InviteData {
 
 impl InviteData {
     async fn validate(&self, org_id: &OrganizationId, conn: &DbConn) -> EmptyResult {
+        // A My Items collection can't be assigned, it fails like a collection of another organization, like upstream
         let org_collections = Collection::find_by_organization(org_id, conn).await;
-        let org_collection_ids: HashSet<&CollectionId> = org_collections.iter().map(|c| &c.uuid).collect();
+        let org_collection_ids: HashSet<&CollectionId> =
+            org_collections.iter().filter(|c| !c.is_default_user_collection()).map(|c| &c.uuid).collect();
         if let Some(e) = self.collections.iter().flatten().find(|c| !org_collection_ids.contains(&c.id)) {
             err!("Invalid collection", format!("Collection {} does not belong to organization {}!", e.id, org_id))
         }
@@ -1349,12 +1429,30 @@ async fn accept_invite(
 struct ConfirmData {
     id: Option<MembershipId>,
     key: Option<String>,
+    // The encrypted name of the member's My Items collection, sent by the clients whenever they confirm or restore
+    // a member, and when they demote one from Owner or Admin
+    default_user_collection_name: Option<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BulkConfirmData {
     keys: Option<Vec<ConfirmData>>,
+    default_user_collection_name: Option<String>,
+}
+
+/// Like upstream's `[EncryptedString]` and `[EncryptedStringLength(1000)]`, the name of a My Items collection has to
+/// be an encrypted string: the collection can't be renamed afterwards.
+fn check_default_user_collection_name(name: Option<&str>) -> EmptyResult {
+    if let Some(name) = name {
+        if name.len() > 1000 {
+            err!("The field DefaultUserCollectionName exceeds the maximum encrypted value length of 1000 characters.")
+        }
+        if !is_valid_enc_string(name) {
+            err!("DefaultUserCollectionName is not a valid encrypted string.")
+        }
+    }
+    Ok(())
 }
 
 #[post("/organizations/<org_id>/users/confirm", data = "<data>")]
@@ -1369,6 +1467,7 @@ async fn bulk_confirm_invite(
         err!("Organization not found", "Organization id's do not match");
     }
     let data = data.into_inner();
+    check_default_user_collection_name(data.default_user_collection_name.as_deref())?;
 
     let mut bulk_response = Vec::new();
     match data.keys {
@@ -1376,10 +1475,14 @@ async fn bulk_confirm_invite(
             for invite in keys {
                 let member_id = invite.id.unwrap();
                 let user_key = invite.key.unwrap_or_default();
-                let err_msg = match confirm_invite_impl(&org_id, &member_id, &user_key, &headers, &conn, &nt).await {
-                    Ok(()) => String::new(),
-                    Err(e) => format!("{e:?}"),
-                };
+                let collection_name = data.default_user_collection_name.as_deref();
+                let err_msg =
+                    match confirm_invite_impl(&org_id, &member_id, &user_key, collection_name, &headers, &conn, &nt)
+                        .await
+                    {
+                        Ok(()) => String::new(),
+                        Err(e) => format!("{e:?}"),
+                    };
 
                 bulk_response.push(json!(
                     {
@@ -1410,14 +1513,25 @@ async fn confirm_invite(
     nt: Notify<'_>,
 ) -> EmptyResult {
     let data = data.into_inner();
+    check_default_user_collection_name(data.default_user_collection_name.as_deref())?;
     let user_key = data.key.unwrap_or_default();
-    confirm_invite_impl(&org_id, &member_id, &user_key, &headers, &conn, &nt).await
+    confirm_invite_impl(
+        &org_id,
+        &member_id,
+        &user_key,
+        data.default_user_collection_name.as_deref(),
+        &headers,
+        &conn,
+        &nt,
+    )
+    .await
 }
 
 async fn confirm_invite_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
     key: &str,
+    default_collection_name: Option<&str>,
     headers: &AdminHeaders,
     conn: &DbConn,
     nt: &Notify<'_>,
@@ -1472,13 +1586,18 @@ async fn confirm_invite_impl(
         mail::send_invite_confirmed(&address, &org_name).await?;
     }
 
-    let save_result = member_to_confirm.save(conn).await;
+    let mut result = member_to_confirm.save(conn).await;
+    // Only once the membership is stored as confirmed, like upstream: a concurrent policy update then either
+    // finds this member confirmed or this check finds the policy enabled, so the member always gets one.
+    if result.is_ok() {
+        result = Collection::create_default_user_collection(&member_to_confirm, default_collection_name, conn).await;
+    }
 
     if let Some(user) = User::find_by_uuid(&member_to_confirm.user_uuid, conn).await {
         nt.send_user_update(UpdateType::SyncOrgKeys, &user, headers.device.push_uuid.as_ref(), conn).await;
     }
 
-    save_result
+    result
 }
 
 #[get("/organizations/<org_id>/users/mini-details", rank = 1)]
@@ -1529,6 +1648,7 @@ struct EditUserData {
     groups: Option<Vec<GroupId>>,
     #[serde(default)]
     permissions: HashMap<String, Value>,
+    default_user_collection_name: Option<String>,
 }
 
 #[put("/organizations/<org_id>/users/<member_id>", data = "<data>", rank = 1)]
@@ -1554,6 +1674,7 @@ async fn edit_member(
         err!("Organization not found", "Organization id's do not match");
     }
     let data: EditUserData = data.into_inner();
+    check_default_user_collection_name(data.default_user_collection_name.as_deref())?;
 
     // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
     // The from_str() will convert the custom role type into a manager role type
@@ -1597,6 +1718,8 @@ async fn edit_member(
         }
     }
 
+    // Upstream creates the My Items collection of a member demoted from Owner or Admin
+    let demoted = member_to_edit.atype >= MembershipType::Admin && new_type < MembershipType::Admin;
     member_to_edit.access_all = access_all;
     member_to_edit.atype = new_type as i32;
 
@@ -1604,15 +1727,26 @@ async fn edit_member(
     // We need to perform the check after changing the type since `admin` is exempt.
     OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
-    // Delete all the odd collections
-    for c in CollectionUser::find_by_organization_and_user_uuid(&org_id, &member_to_edit.user_uuid, &conn).await {
-        c.delete(&conn).await?;
+    // Like upstream, reject a My Items collection before changing anything
+    let org_collections: HashMap<CollectionId, Collection> =
+        Collection::find_by_organization(&org_id, &conn).await.into_iter().map(|c| (c.uuid.clone(), c)).collect();
+    if !access_all
+        && data
+            .collections
+            .iter()
+            .flatten()
+            .any(|col| org_collections.get(&col.id).is_some_and(Collection::is_default_user_collection))
+    {
+        err!("Default collections cannot be assigned to a member.")
     }
+
+    // Delete all the odd collections, but keep the member's My Items
+    CollectionUser::delete_all_but_my_items_by_user_and_org(&member_to_edit.user_uuid, &org_id, &conn).await?;
 
     // If no accessAll, add the collections received
     if !access_all {
         for col in data.collections.iter().flatten() {
-            match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn).await {
+            match org_collections.get(&col.id) {
                 None => err!("Collection not found in Organization"),
                 Some(collection) => {
                     CollectionUser::save(
@@ -1650,7 +1784,17 @@ async fn edit_member(
     )
     .await;
 
-    member_to_edit.save(&conn).await
+    member_to_edit.save(&conn).await?;
+    // Only once the demotion is stored, like upstream, see `confirm_invite_impl()`
+    if demoted {
+        Collection::create_default_user_collection(
+            &member_to_edit,
+            data.default_user_collection_name.as_deref(),
+            &conn,
+        )
+        .await?;
+    }
+    Ok(())
 }
 
 #[delete("/organizations/<org_id>/users", data = "<data>")]
@@ -1794,7 +1938,8 @@ async fn bulk_public_keys(
 }
 
 use super::ciphers::CipherData;
-use super::ciphers::update_cipher_from_data;
+use super::ciphers::{ValidatedCollections, import_folders, update_cipher_from_data};
+use super::folders::FolderData;
 
 // The import endpoint only ever uses the name/id/external_id of a collection.
 // Bitwarden's own server ignores `groups`/`users` here too, so do not make them
@@ -1813,6 +1958,11 @@ struct ImportData {
     ciphers: Vec<CipherData>,
     collections: Vec<ImportCollectionData>,
     collection_relationships: Vec<RelationsData>,
+    // The clients keep the folders of an import into My Items
+    #[serde(default)]
+    folders: Vec<FolderData>,
+    #[serde(default)]
+    folder_relationships: Vec<RelationsData>,
 }
 
 #[derive(Deserialize)]
@@ -1851,23 +2001,29 @@ async fn post_org_import(
 
     let existing_collections: HashMap<CollectionId, Collection> =
         Collection::find_by_organization(&org_id, &conn).await.into_iter().map(|c| (c.uuid.clone(), c)).collect();
-    let mut collections: Vec<CollectionId> = Vec::with_capacity(data.collections.len());
-    for col in data.collections {
-        let existing = col.id.as_ref().and_then(|col_id| existing_collections.get(col_id));
-        let collection_uuid = if let Some(collection) = existing {
+    // Check every collection before creating any
+    for col in &data.collections {
+        if let Some(collection) = col.id.as_ref().and_then(|col_id| existing_collections.get(col_id)) {
             // When not an Owner or Admin, check if the member is allowed to write to the collection.
-            if headers.membership.atype < MembershipType::Admin
+            // Only its owner can import into a My Items collection.
+            if (headers.membership.atype < MembershipType::Admin || collection.is_default_user_collection())
                 && !collection.is_writable_by_user(&headers.membership.user_uuid, &conn).await
             {
                 err!(Compact, "The current user isn't allowed to manage this collection")
             }
-            collection.uuid.clone()
-        } else {
+        } else if headers.membership.atype <= MembershipType::Manager && !headers.membership.has_full_access() {
             // We do not allow users or managers which can not manage all collections to create new collections
             // If there is any collection other than an existing import collection, abort the import.
-            if headers.membership.atype <= MembershipType::Manager && !headers.membership.has_full_access() {
-                err!(Compact, "The current user isn't allowed to create new collections")
-            }
+            err!(Compact, "The current user isn't allowed to create new collections")
+        }
+    }
+
+    let mut collections: Vec<CollectionId> = Vec::with_capacity(data.collections.len());
+    for col in data.collections {
+        let existing = col.id.as_ref().and_then(|col_id| existing_collections.get(col_id));
+        let collection_uuid = if let Some(collection) = existing {
+            collection.uuid.clone()
+        } else {
             let new_collection = Collection::new(org_id.clone(), col.name, col.external_id);
             new_collection.save(&conn).await?;
             new_collection.uuid
@@ -1885,10 +2041,13 @@ async fn post_org_import(
 
     let headers: Headers = headers.into();
 
+    let folder_relations = data.folder_relationships.into_iter().map(|r| (r.key, r.value));
+    let cipher_folders = import_folders(data.folders, folder_relations, &headers.user.uuid, &conn).await?;
+
     let mut ciphers: Vec<CipherId> = Vec::with_capacity(data.ciphers.len());
-    for mut cipher_data in data.ciphers {
-        // Always clear folder_id's via an organization import
-        cipher_data.folder_id = None;
+    for (index, mut cipher_data) in data.ciphers.into_iter().enumerate() {
+        // Only the folder relationships of the import set a folder, never the client-provided folderId
+        cipher_data.folder_id = cipher_folders.get(&index).cloned();
         // Replace the client-provided, unvalidated organizationId with the real target org
         cipher_data.organization_id = Some(org_id.clone());
         let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
@@ -1896,7 +2055,7 @@ async fn post_org_import(
             &mut cipher,
             cipher_data,
             &headers,
-            Some(collections.clone()),
+            Some(ValidatedCollections::Checked(collections.clone())),
             &conn,
             &nt,
             UpdateType::None,
@@ -1960,22 +2119,44 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
         }
     }
 
+    let mut ciphers = Vec::with_capacity(data.cipher_ids.len());
     for cipher_id in &data.cipher_ids {
         // Only act on existing cipher uuid's
         // Do not abort the operation just ignore it, it could be a cipher was just deleted for example
         if let Some(cipher) = Cipher::find_by_uuid_and_org(cipher_id, &data.organization_id, &conn).await
-            && cipher.is_write_accessible_to_user(&headers.user.uuid, &conn).await
+            && cipher.is_write_accessible_to_user(&headers.user.uuid, CipherAccessScope::OrganizationAdmin, &conn).await
         {
-            // When selecting a specific collection from the left filter list, and use the bulk option, you can remove an item from that collection
-            // In these cases the client will call this endpoint twice, once for adding the new collections and a second for deleting.
-            if data.remove_collections {
-                for collection in &data.collection_ids {
-                    CollectionCipher::delete(&cipher.uuid, collection, &conn).await?;
-                }
-            } else {
-                for collection in &data.collection_ids {
-                    CollectionCipher::save(&cipher.uuid, collection, &conn).await?;
-                }
+            ciphers.push(cipher);
+        }
+    }
+
+    // Only the user's own My Items collection can be among them, check all ciphers before changing any
+    let my_items =
+        user_collections.values().find(|c| c.is_default_user_collection()).filter(|_| !data.remove_collections);
+    if let Some(my_items) = my_items {
+        for cipher in &ciphers {
+            my_items.check_cipher_assignment(
+                &HashSet::from_iter(cipher.get_accessible_collections(headers.user.uuid.clone(), &conn).await),
+                &CollectionCipher::find_my_items_of_cipher(&cipher.uuid, &conn).await,
+            )?;
+        }
+    }
+
+    for cipher in ciphers {
+        // When selecting a specific collection from the left filter list, and use the bulk option, you can remove an item from that collection
+        // In these cases the client will call this endpoint twice, once for adding the new collections and a second for deleting.
+        if data.remove_collections {
+            for collection in &data.collection_ids {
+                CollectionCipher::delete(&cipher.uuid, collection, &conn).await?;
+            }
+        } else {
+            // Moved into My Items, an unassigned cipher is taken away from the members with organization-wide access,
+            // so they sync as well
+            if my_items.is_some() {
+                cipher.update_users_revision(&conn).await;
+            }
+            for collection in &data.collection_ids {
+                CollectionCipher::save(&cipher.uuid, collection, &conn).await?;
             }
         }
     }
@@ -2076,10 +2257,14 @@ struct PolicyData {
 #[derive(Deserialize)]
 struct PutPolicy {
     policy: PolicyData,
-    // Ignore metadata for now as we do not yet support this
-    // "metadata": {
-    //     "defaultUserCollectionName": "2.xx|xx==|xx="
-    // }
+    metadata: Option<PolicyMetadata>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PolicyMetadata {
+    // Sent with the organization data ownership policy, see `ConfirmData`
+    default_user_collection_name: Option<String>,
 }
 
 #[put("/organizations/<org_id>/policies/<pol_type>", data = "<data>")]
@@ -2093,11 +2278,17 @@ async fn put_policy(
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let data: PolicyData = data.into_inner().policy;
+    let PutPolicy {
+        policy: data,
+        metadata,
+    } = data.into_inner();
 
     let Some(pol_type_enum) = OrgPolicyType::from_i32(pol_type) else {
         err!("Invalid or unsupported policy type")
     };
+    if pol_type_enum == OrgPolicyType::PersonalOwnership {
+        check_default_user_collection_name(metadata.as_ref().and_then(|m| m.default_user_collection_name.as_deref()))?;
+    }
 
     // Bitwarden only allows the Reset Password policy when Single Org policy is enabled
     // Vaultwarden encouraged to use multiple orgs instead of groups because groups were not available in the past
@@ -2198,6 +2389,18 @@ async fn put_policy(
     )
     .await;
 
+    // Only once the policy is stored, like upstream: a concurrent confirm, restore or demotion then either finds
+    // the policy enabled or is among the confirmed members loaded here.
+    // Unlike upstream, this runs on every enabled update, not only when the policy gets enabled. The clients send
+    // the name on every save, so saving the policy again creates the ones still missing: those of the members of
+    // organizations that enabled the policy before upgrading, of members confirmed by clients that sent no name,
+    // and of a failed earlier attempt.
+    if pol_type_enum == OrgPolicyType::PersonalOwnership && data.enabled {
+        let collection_name = metadata.as_ref().and_then(|m| m.default_user_collection_name.as_deref());
+        let members = Membership::find_confirmed_by_org(&org_id, &conn).await;
+        Collection::create_default_user_collections(&members, collection_name, &conn).await?;
+    }
+
     Ok(Json(policy.to_json()))
 }
 
@@ -2290,6 +2493,39 @@ async fn revoke_member(
     revoke_member_impl(&org_id, &member_id, &headers, &conn).await
 }
 
+// Called by the clients when a member declines to transfer their personal items into their My Items collection,
+// as the organization data ownership policy asks of them.
+#[put("/organizations/<org_id>/users/revoke-self")]
+async fn revoke_self(org_id: OrganizationId, headers: OrgMemberHeaders, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
+    if org_id != headers.membership.org_uuid {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    let mut member = headers.membership;
+
+    if !OrgPolicy::is_personal_ownership_enforced_for(&member, &conn).await {
+        err!(
+            "User is not eligible for self-revocation. The organization data ownership policy must be enabled and the user must be a confirmed member."
+        )
+    }
+
+    member.revoke();
+    member.save(&conn).await?;
+
+    log_event(
+        EventType::OrganizationUserSelfRevoked,
+        &member.uuid,
+        &org_id,
+        &headers.user.uuid,
+        headers.device.atype,
+        &headers.ip.ip,
+        &conn,
+    )
+    .await;
+
+    nt.send_user_update(UpdateType::SyncOrgKeys, &headers.user, headers.device.push_uuid.as_ref(), &conn).await;
+    Ok(())
+}
+
 #[put("/organizations/<org_id>/users/revoke", data = "<data>")]
 async fn bulk_revoke_members(
     org_id: OrganizationId,
@@ -2373,16 +2609,23 @@ async fn revoke_member_impl(
     Ok(())
 }
 
-#[put("/organizations/<org_id>/users/<member_id>/restore/vnext")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RestoreMemberData {
+    default_user_collection_name: Option<String>,
+}
+
+#[put("/organizations/<org_id>/users/<member_id>/restore/vnext", data = "<data>")]
 async fn restore_member_vnext(
     org_id: OrganizationId,
     member_id: MembershipId,
+    data: Json<RestoreMemberData>,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
-    // Vaultwarden does not (yet) support the per User Collection linked to the `Enforce organization data ownership` policy.
-    // Therefor we ignore the `defaultUserCollectionName` data sent and just call restore_member
-    restore_member_impl(&org_id, &member_id, &headers, &conn).await
+    let collection_name = data.into_inner().default_user_collection_name;
+    check_default_user_collection_name(collection_name.as_deref())?;
+    restore_member_impl(&org_id, &member_id, collection_name.as_deref(), &headers, &conn).await
 }
 
 #[put("/organizations/<org_id>/users/<member_id>/restore")]
@@ -2392,13 +2635,20 @@ async fn restore_member(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
-    restore_member_impl(&org_id, &member_id, &headers, &conn).await
+    restore_member_impl(&org_id, &member_id, None, &headers, &conn).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BulkRestoreMemberData {
+    ids: Vec<MembershipId>,
+    default_user_collection_name: Option<String>,
 }
 
 #[put("/organizations/<org_id>/users/restore", data = "<data>")]
 async fn bulk_restore_members(
     org_id: OrganizationId,
-    data: Json<BulkMembershipIds>,
+    data: Json<BulkRestoreMemberData>,
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {
@@ -2406,10 +2656,12 @@ async fn bulk_restore_members(
         err!("Organization not found", "Organization id's do not match");
     }
     let data = data.into_inner();
+    let collection_name = data.default_user_collection_name.as_deref();
+    check_default_user_collection_name(collection_name)?;
 
     let mut bulk_response = Vec::new();
     for member_id in data.ids {
-        let err_msg = match restore_member_impl(&org_id, &member_id, &headers, &conn).await {
+        let err_msg = match restore_member_impl(&org_id, &member_id, collection_name, &headers, &conn).await {
             Ok(()) => String::new(),
             Err(e) => format!("{e:?}"),
         };
@@ -2433,6 +2685,7 @@ async fn bulk_restore_members(
 async fn restore_member_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
+    default_collection_name: Option<&str>,
     headers: &AdminHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
@@ -2464,6 +2717,9 @@ async fn restore_member_impl(
                 conn,
             )
             .await;
+
+            // Only once the restore is stored, like upstream, see `confirm_invite_impl()`
+            Collection::create_default_user_collection(&member, default_collection_name, conn).await?;
         }
         Some(_) => err!("User is already active"),
         None => err!("User not found in organization"),
@@ -2565,6 +2821,12 @@ impl GroupRequest {
         let org_collection_ids: HashSet<&CollectionId> = org_collections.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.collections.iter().find(|c| !org_collection_ids.contains(&c.id)) {
             err!("Invalid collection", format!("Collection {} does not belong to organization {}!", e.id, org_id))
+        }
+        if org_collections
+            .iter()
+            .any(|c| c.is_default_user_collection() && self.collections.iter().any(|g| g.id == c.uuid))
+        {
+            err!("You cannot modify group access for collections with the type as DefaultUserCollection.")
         }
 
         let org_memberships = Membership::find_by_org(org_id, conn).await;
@@ -3231,7 +3493,7 @@ async fn get_org_export(org_id: OrganizationId, headers: AdminHeaders, conn: DbC
 
     Ok(Json(json!({
         "collections": convert_json_key_lcase_first(get_org_collections_impl(&org_id, &conn).await),
-        "ciphers": convert_json_key_lcase_first(get_org_details_impl(&org_id, &headers.host, &headers.user.uuid, &conn).await?),
+        "ciphers": convert_json_key_lcase_first(get_org_details_impl(&org_id, &headers.host, &headers.user.uuid, false, &conn).await?),
     })))
 }
 
