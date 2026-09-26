@@ -555,7 +555,18 @@ pub struct UserId(String);
 )]
 #[deref(forward)]
 #[from(forward)]
-pub struct KeyId(String);
+pub struct KeyId(#[serde(deserialize_with = "deserialize_key_id")] String);
+
+/// Rejects a key id from a request that isn't 16 bytes as lowercase hex, as upstream's `[KeyId]` does.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/main/src/Core/KeyManagement/Models/Data/KeyId.cs>
+fn deserialize_key_id<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let key_id = <String as serde::Deserialize>::deserialize(deserializer)?;
+    if key_id.len() != 32 || !key_id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(serde::de::Error::custom("Key id must be a 32 character lowercase hex-encoded string."));
+    }
+    Ok(key_id)
+}
 
 impl SsoUser {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
