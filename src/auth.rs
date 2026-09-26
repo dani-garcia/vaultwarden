@@ -253,7 +253,7 @@ impl LoginJwtClaims {
             premium: true,
             name: user.name.clone(),
             email: user.email.clone(),
-            email_verified: !CONFIG.mail_enabled() || user.verified_at.is_some(),
+            email_verified: user.verified(),
 
             // ---
             // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
