@@ -17,8 +17,8 @@ use crate::{
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
             Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, TwoFactor, TwoFactorType, User,
-            UserId,
+            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, SendControlsPolicyData,
+            SendOptionsPolicyData, SendWhoCanAccessType, TwoFactor, TwoFactorType, User, UserId,
         },
     },
     mail,
@@ -2178,6 +2178,10 @@ async fn put_policy(
         }
     }
 
+    if pol_type_enum == OrgPolicyType::SendControls && data.enabled {
+        validate_send_controls(data.data.as_ref())?;
+    }
+
     let mut policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await {
         Some(p) => p,
         None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "{}".to_owned()),
@@ -2186,6 +2190,8 @@ async fn put_policy(
     policy.enabled = data.enabled;
     policy.data = serde_json::to_string(&data.data)?;
     policy.save(&conn).await?;
+
+    sync_send_policies(pol_type_enum, &policy, &org_id, &conn).await?;
 
     log_event(
         EventType::PolicyUpdated,
@@ -2199,6 +2205,90 @@ async fn put_policy(
     .await;
 
     Ok(Json(policy.to_json()))
+}
+
+fn validate_send_controls(data: Option<&Value>) -> EmptyResult {
+    let data = match serde_json::from_value::<Option<SendControlsPolicyData>>(data.cloned().unwrap_or_default()) {
+        Ok(data) => data.unwrap_or_default(),
+        Err(e) => err!(format!("Invalid Send controls policy data: {e}")),
+    };
+
+    // Vaultwarden rejects Sends carrying recipient emails, so members could not create any Send.
+    if data.required_access_type() == Some(SendWhoCanAccessType::SpecificPeople) {
+        err!("Sends with email verification are not supported, so that access type cannot be required")
+    }
+
+    // Upstream only allows domains together with the specific people type, ruled out above.
+    if data.allowed_domains.is_some() {
+        err!("Allowed domains can only be set when the required access type is set to specific people")
+    }
+
+    // A non positive value would mean no Send could ever satisfy the policy.
+    if data.deletion_hours.is_some_and(|hours| hours < 1) {
+        err!("The maximum lifetime of a Send has to be at least one hour")
+    }
+
+    Ok(())
+}
+
+/// `Send controls` absorbs the legacy `DisableSend` and `Send Options` policies. Like upstream we
+/// mirror changes in both directions so older clients keep enforcing the same rules and a rollback
+/// stays safe; enforcement in `sends.rs` therefore stays authoritative for those two flags.
+///
+/// Ref: https://github.com/bitwarden/server/blob/main/src/Core/AdminConsole/OrganizationFeatures/Policies/PolicyEventHandlers/SendControlsSyncPolicyEvent.cs
+async fn sync_send_policies(
+    pol_type: OrgPolicyType,
+    saved: &OrgPolicy,
+    org_id: &OrganizationId,
+    conn: &DbConn,
+) -> EmptyResult {
+    match pol_type {
+        OrgPolicyType::SendControls => {
+            let data = saved.send_controls_data();
+            // Upstream leaves the data of the DisableSend policy untouched, it carries no options.
+            let mut disable_send = find_or_new_policy(org_id, OrgPolicyType::DisableSend, conn).await;
+            disable_send.enabled = saved.enabled && data.disable_send;
+            disable_send.save(conn).await?;
+
+            let mut send_options = find_or_new_policy(org_id, OrgPolicyType::SendOptions, conn).await;
+            send_options.enabled = saved.enabled && data.disable_hide_email;
+            send_options.data = serde_json::to_string(&SendOptionsPolicyData {
+                disable_hide_email: data.disable_hide_email,
+            })?;
+            send_options.save(conn).await?;
+        }
+        OrgPolicyType::DisableSend | OrgPolicyType::SendOptions => {
+            let disable_send = OrgPolicy::find_by_org_and_type(org_id, OrgPolicyType::DisableSend, conn)
+                .await
+                .is_some_and(|p| p.enabled);
+            let send_options = OrgPolicy::find_by_org_and_type(org_id, OrgPolicyType::SendOptions, conn).await;
+
+            // Keep every restriction that only exists on the Send controls policy.
+            let mut controls = find_or_new_policy(org_id, OrgPolicyType::SendControls, conn).await;
+            let mut data = controls.send_controls_data();
+            data.disable_send = disable_send;
+            // Upstream reads this out of the data of the legacy policy regardless of whether that
+            // policy is enabled, the enabled flag is only folded into the container below.
+            data.disable_hide_email = send_options
+                .as_ref()
+                .and_then(|p| serde_json::from_str::<SendOptionsPolicyData>(&p.data).ok())
+                .is_some_and(|d| d.disable_hide_email);
+
+            controls.enabled = disable_send || send_options.is_some_and(|p| p.enabled);
+            controls.data = serde_json::to_string(&data)?;
+            controls.save(conn).await?;
+        }
+        _ => (),
+    }
+
+    Ok(())
+}
+
+async fn find_or_new_policy(org_id: &OrganizationId, pol_type: OrgPolicyType, conn: &DbConn) -> OrgPolicy {
+    match OrgPolicy::find_by_org_and_type(org_id, pol_type, conn).await {
+        Some(p) => p,
+        None => OrgPolicy::new(org_id.clone(), pol_type, false, "null".to_owned()),
+    }
 }
 
 // Deprecated with client v2026.5.0
@@ -3290,4 +3380,26 @@ async fn rotate_api_key(
     conn: DbConn,
 ) -> JsonResult {
     api_key(&org_id, data, true, headers, conn).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn send_controls_validation_rejects_only_the_unsupported_restrictions() {
+        let validate = |json: &str| validate_send_controls(Some(&serde_json::from_str(json).unwrap()));
+
+        for invalid in [r#"{"whoCanAccess":2}"#, r#"{"allowedDomains":"a.b"}"#, r#"{"deletionHours":0}"#, "1"] {
+            assert!(validate(invalid).is_err(), "should reject {invalid}");
+        }
+        // What the web vault sends, and the two fields only reachable through the API.
+        for valid in [
+            r#"{"disableSend":true,"disableHideEmail":true,"whoCanAccess":1,"allowedDomains":null}"#,
+            r#"{"deletionHours":1,"allowedSendTypes":[0]}"#,
+            "null",
+        ] {
+            assert!(validate(valid).is_ok(), "should accept {valid}");
+        }
+    }
 }
