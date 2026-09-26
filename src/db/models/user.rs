@@ -71,6 +71,7 @@ pub struct User {
     pub external_id: Option<String>, // Todo: Needs to be removed in the future, this is not used anymore.
 
     pub key_id: Option<KeyId>,
+    pub uses_key_connector: bool,
 }
 
 #[derive(Identifiable, Queryable, Insertable)]
@@ -158,6 +159,7 @@ impl User {
             external_id: None, // Todo: Needs to be removed in the future, this is not used anymore.
 
             key_id: None,
+            uses_key_connector: false,
         }
     }
 
@@ -271,7 +273,8 @@ impl User {
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).await.is_empty();
 
         // TODO: Might want to save the status field in the DB
-        let status = if self.password_hash.is_empty() {
+        // Key connector users have an empty password hash but are not invited
+        let status = if self.password_hash.is_empty() && !self.uses_key_connector {
             UserStatus::Invited
         } else {
             UserStatus::Enabled
@@ -313,7 +316,7 @@ impl User {
             "providerOrganizations": [],
             "forcePasswordReset": false,
             "avatarColor": self.avatar_color,
-            "usesKeyConnector": false,
+            "usesKeyConnector": self.uses_key_connector,
             "creationDate": format_date(&self.created_at),
             "object": "profile",
         })
