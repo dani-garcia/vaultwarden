@@ -22,17 +22,14 @@ use crate::{
     util::NumberOrString,
 };
 
-/// Drops every emergency access of `user_id`, granted as well as held, and tells the grantors which
-/// contacts they lost: those are other users which would otherwise silently lose part of their setup.
-/// Like Bitwarden, one mail per grantor listing all of its removed contacts.
+/// Deletes emergency access granted by or to `user_id` and sends each grantor one mail listing lost contacts.
 /// https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/Auth/UserFeatures/EmergencyAccess/Commands/DeleteEmergencyAccessCommand.cs
 pub async fn delete_all_emergency_access_of_user(user_id: &UserId, conn: &DbConn) -> EmptyResult {
-    // The same rows `EmergencyAccess::delete_all_by_user` would load, loaded once and deleted below.
+    // Keep the rows that `delete_all_by_user` would discard so notifications can name the contacts.
     let mut removed = EmergencyAccess::find_all_by_grantor_uuid(user_id, conn).await;
     removed.extend(EmergencyAccess::find_all_by_grantee_uuid(user_id, conn).await);
 
-    // Group by grantor so that each of them gets a single mail listing all of its removed contacts.
-    // Collected before deleting, which consumes the rows.
+    // Collect before deletion and group into one mail per grantor.
     let mut by_grantor: HashMap<UserId, Vec<String>> = HashMap::new();
     if CONFIG.mail_enabled() {
         for emergency_access in &removed {
@@ -276,8 +273,7 @@ async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, co
         err!("You can not set yourself as an emergency contact.")
     }
 
-    // Emergency access would hand this account to somebody the organization never vetted, which is why
-    // Bitwarden forbids it for members of an organization which confirms its members automatically.
+    // Auto-confirm organizations forbid handing member accounts to unvetted emergency-access contacts.
     if AutoConfirmRequirement::for_user(&grantor_user.uuid, &conn).await.forbids_emergency_access() {
         err!("You are a member of an organization which does not allow emergency access.")
     }

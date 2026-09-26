@@ -202,8 +202,7 @@ async fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn
     if !CONFIG.is_org_creation_allowed(&headers.user.email) {
         err!("User not allowed to create organizations")
     }
-    // Stricter than the SingleOrg policy below, which exempts owners and admins: an organization which
-    // confirms members automatically forbids every one of them, in any role and status, another membership.
+    // Unlike SingleOrg, auto-confirm forbids additional memberships for every role and status.
     // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Organizations/SelfHostedOrganizationSignUpCommand.cs
     if AutoConfirmRequirement::for_user(&headers.user.uuid, &conn).await.forbids_creating_organization() {
         err!(
@@ -1202,9 +1201,8 @@ async fn send_invite(
             group_entry.save(&conn).await?;
         }
 
-        // With mail disabled an existing user is accepted right away, so no accept request follows.
-        // Last step on purpose: an admin client may confirm the member the moment it is told about it,
-        // and by then the collections and groups of the invite have to be in place.
+        // With mail disabled this is the only Accepted transition. Notify last so collections and groups
+        // exist before an admin client can confirm the member.
         notify_pending_auto_confirm(&new_member, &conn, &nt).await;
     }
 
@@ -1393,8 +1391,7 @@ async fn bulk_confirm_invite(
     bulk_confirm(&org_id, data.into_inner(), &headers, &conn, &nt, false).await
 }
 
-/// Shared by the manual and the automatic bulk confirmation, which only differ in the checks a member
-/// has to pass: see `confirm_invite_impl` and `auto_confirm_member_impl`.
+/// Shared by manual and automatic bulk confirmation; their member checks remain separate.
 async fn bulk_confirm(
     org_id: &OrganizationId,
     data: BulkConfirmData,
@@ -1411,7 +1408,7 @@ async fn bulk_confirm(
     match data.keys {
         Some(keys) => {
             for invite in keys {
-                // Never unwrap the id, this is client supplied and a missing one must not take the request down
+                // A missing client-supplied id must not abort the bulk request.
                 let Some(member_id) = invite.id else {
                     error!("Ignoring a bulk confirm entry without a member id");
                     continue;
@@ -1483,14 +1480,14 @@ async fn confirm_invite_impl(
         err!("Only Owners can confirm Managers, Admins or Owners")
     }
 
-    confirm_member(member_to_confirm, key, headers, conn, nt).await
+    confirm_member(member_to_confirm, key, EventType::OrganizationUserConfirmed, headers, conn, nt).await
 }
 
-/// Shared by the manual and the automatic confirmation, both hand us the organization key encrypted
-/// with the public key of the member to confirm.
+/// Shared confirmation after the manual or automatic checks have passed.
 async fn confirm_member(
     mut member_to_confirm: Membership,
     key: &str,
+    event_type: EventType,
     headers: &AdminHeaders,
     conn: &DbConn,
     nt: &Notify<'_>,
@@ -1507,16 +1504,15 @@ async fn confirm_member(
     // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
     OrgPolicy::check_user_allowed(&member_to_confirm, "confirm", conn).await?;
 
-    // Emergency access would let a grantee take over the account of a member nobody vetted and reach
-    // the organization vault. Enabling the policy drops existing grants, this covers a member which
-    // brings one along afterwards. Like Bitwarden, this applies to manual confirmation as well.
+    // Remove emergency access created after policy activation; it could expose the organization vault.
+    // Bitwarden applies this to manual confirmation as well.
     // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/OrganizationUsers/ConfirmOrganizationUserCommand.cs
     if OrgPolicy::is_auto_confirm_enabled(&org_id, conn).await {
         delete_all_emergency_access_of_user(&member_to_confirm.user_uuid, conn).await?;
     }
 
     log_event(
-        EventType::OrganizationUserConfirmed,
+        event_type,
         &member_to_confirm.uuid,
         &org_id,
         &headers.user.uuid,
@@ -1549,9 +1545,7 @@ async fn confirm_member(
     save_result
 }
 
-// Automatic user confirmation. The server can never confirm a member itself: that means encrypting the
-// organization key with the public key of the member, and the server does not have the organization key.
-// All we do is tell an admin client which members are waiting, the client does the work in the background.
+// The server lacks the organization key; an admin client performs auto-confirmation in the background.
 // https://bitwarden.com/help/automatic-confirmation/
 
 #[get("/organizations/<org_id>/users/pending-auto-confirm")]
@@ -1637,7 +1631,7 @@ async fn auto_confirm_member_impl(
         err!("This member can not be confirmed automatically")
     }
 
-    confirm_member(member_to_confirm, key, headers, conn, nt).await
+    confirm_member(member_to_confirm, key, EventType::OrganizationUserAutomaticallyConfirmed, headers, conn, nt).await
 }
 
 #[get("/organizations/<org_id>/users/mini-details", rank = 1)]
@@ -2289,8 +2283,7 @@ async fn put_policy(
         None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "{}".to_owned()),
     };
 
-    // Automatic confirmation hands out organization access unattended, so it needs the server wide
-    // config option and the Single Org policy on top.
+    // Unattended confirmation requires the server option and SingleOrg.
     // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/PolicyEventHandlers/AutomaticUserConfirmationPolicyEventHandler.cs
     let enables_auto_confirm = pol_type_enum == OrgPolicyType::AutomaticUserConfirmation && data.enabled;
     // Checked on every save, even when the policy is still stored as enabled from before the option was turned off.
@@ -2298,16 +2291,14 @@ async fn put_policy(
         err!("Automatic user confirmation is not enabled on this server.")
     }
 
-    // Only the step from disabled to enabled validates and has side effects. The web vault saves on
-    // every edit, and re-running the below would keep wiping newly created emergency access.
+    // Only disabled -> enabled has side effects; repeating them on each save would delete new emergency access.
     let auto_confirm_turned_on = enables_auto_confirm && !policy.enabled;
     if auto_confirm_turned_on {
         if !OrgPolicy::is_enabled(&org_id, OrgPolicyType::SingleOrg, &conn).await {
             err!("Single Organization policy is not enabled. It is mandatory for this policy to be enabled.")
         }
 
-        // Every member has to be compliant already. Contrary to the Single Org policy below we do not
-        // revoke the others: this policy also binds owners and admins, which could lock the org out.
+        // Reject non-compliant members instead of revoking them: Owner/Admin are covered and could lock out the org.
         for member in Membership::find_by_org(&org_id, &conn).await {
             if member.counts_for_auto_confirm()
                 && Membership::count_accepted_confirmed_and_revoked_by_user(&member.user_uuid, &org_id, &conn).await > 0
@@ -2317,7 +2308,7 @@ async fn put_policy(
         }
     }
 
-    // Also prevent the Single Org policy to be disabled while automatic user confirmation depends on it
+    // Keep SingleOrg enabled while automatic confirmation depends on it.
     if pol_type_enum == OrgPolicyType::SingleOrg
         && !data.enabled
         && OrgPolicy::is_auto_confirm_enabled(&org_id, &conn).await
@@ -2376,20 +2367,17 @@ async fn put_policy(
     policy.data = serde_json::to_string(&data.data)?;
     policy.save(&conn).await?;
 
-    // Emergency access would hand a member account to somebody outside this organization, which
-    // defeats vetting members; Bitwarden drops these on enable and blocks new ones (`emergency_access.rs`).
-    // Runs after the policy is stored so a failed save destroys nothing, and skips invited members: an
-    // invitation is created without their consent and must never delete data of an account that never joined.
+    // Remove emergency access only after saving and only for joined members. A failed save must delete
+    // nothing, and an unaccepted invitation must not delete account data. New relationships are blocked elsewhere.
     if auto_confirm_turned_on {
         for member in Membership::find_by_org(&org_id, &conn).await {
-            if !member.counts_for_auto_confirm() {
-                continue;
+            if member.counts_for_auto_confirm() {
+                info!(
+                    "Removing emergency access of {} because automatic user confirmation was enabled for {org_id}",
+                    member.user_uuid
+                );
+                delete_all_emergency_access_of_user(&member.user_uuid, &conn).await?;
             }
-            info!(
-                "Removing emergency access of {} because automatic user confirmation was enabled for {org_id}",
-                member.user_uuid
-            );
-            delete_all_emergency_access_of_user(&member.user_uuid, &conn).await?;
         }
     }
 
@@ -2659,9 +2647,8 @@ async fn restore_member_impl(
             // This check need to be done after restoring to work with the correct status
             OrgPolicy::check_user_allowed(&member, "restore", conn).await?;
 
-            // A restore adds no second accept step, so emergency access created while revoked would
-            // outlive the revocation. Like enabling the policy this leaves a merely invited member alone,
-            // an invitation must never delete data of an account that never joined.
+            // Restore has no Accepted transition, so remove emergency access created while revoked.
+            // Invited remains exempt because that account never joined.
             // https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/OrganizationUsers/RestoreUser/v1/RestoreOrganizationUserCommand.cs
             if member.counts_for_auto_confirm() && OrgPolicy::is_auto_confirm_enabled(org_id, conn).await {
                 delete_all_emergency_access_of_user(&member.user_uuid, conn).await?;

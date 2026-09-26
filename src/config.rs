@@ -796,8 +796,7 @@ make_config! {
         org_groups_enabled:            bool, false, def, false;
 
         /// Enable automatic user confirmation (Know the risks!) |> Allows organizations to enable the automatic user confirmation policy.
-        /// Members which accepted an invitation are then confirmed unattended by the browser extension of an unlocked admin,
-        /// without any human reviewing the invitation. Bitwarden only enables this per organization on request, we keep it off by default.
+        /// Accepted members can be confirmed unattended by an unlocked admin extension; disabled by default.
         org_auto_confirm_enabled:      bool, false, def, false;
 
         /// Increase note size limit (Know the risks!) |> Sets the secure note size limit to 100_000 instead of the default 10_000.
@@ -1884,8 +1883,7 @@ handlebars::handlebars_helper!(vwver: | vw_version: String |
 mod tests {
     use super::*;
 
-    /// The registry runs in strict mode, so a placeholder the sender does not fill only blows up when the
-    /// mail is actually sent. Render both templates with the data the sender passes.
+    /// Render both strict templates with exactly the data supplied by the sender.
     #[test]
     fn emergency_access_grantees_removed_renders() {
         let hb = load_templates(std::env::temp_dir());
@@ -1899,10 +1897,9 @@ mod tests {
             let rendered = hb.render(name, &data).unwrap_or_else(|e| panic!("{name} failed to render: {e:?}"));
             let (subject, body) = rendered.split_once("<!---------------->").expect("no subject separator");
             assert_eq!(subject.trim(), "Emergency contacts removed");
-            assert!(
-                body.contains("first@example.com") && body.contains("second@example.com"),
-                "{name} misses a contact"
-            );
+            for email in ["first@example.com", "second@example.com"] {
+                assert!(body.contains(email), "{name} misses {email}");
+            }
         }
     }
 }

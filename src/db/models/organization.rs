@@ -917,24 +917,18 @@ impl Membership {
         .await
     }
 
-    /// Whether this membership counts for the automatic user confirmation policy, which exempts no role
-    /// and only one status: an open invitation, because that account did not join yet and may still
-    /// decline. Every revoked membership counts, it is restored without another accept step.
+    /// Every role and status except Invited counts; Revoked counts because restore has no accept step.
     /// https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/Enforcement/AutoConfirm/AutomaticUserConfirmationPolicyEnforcementHandler.cs
     pub fn counts_for_auto_confirm(&self) -> bool {
         self.status != MembershipStatus::Invited as i32
     }
 
-    /// Whether an admin client may confirm this membership without a human looking at it: only a member
-    /// which accepted its invitation and holds the plain User role. Every elevated role keeps needing a
-    /// manual confirmation by an Owner.
+    /// Only an Accepted plain User may be auto-confirmed; elevated roles require manual confirmation.
     pub fn can_be_auto_confirmed(&self) -> bool {
         self.status == MembershipStatus::Accepted as i32 && self.atype == MembershipType::User
     }
 
-    /// The same rule as [`Membership::counts_for_auto_confirm`] as a query: how many organizations besides
-    /// `excluded_org` the user belongs to. Contrary to `count_accepted_and_confirmed_by_user`, which the
-    /// SingleOrg policy uses, this counts revoked memberships, which are stored below `Invited`.
+    /// Counts non-Invited memberships outside `excluded_org`, including Revoked; stricter than SingleOrg.
     pub async fn count_accepted_confirmed_and_revoked_by_user(
         user_uuid: &UserId,
         excluded_org: &OrganizationId,
@@ -1317,24 +1311,16 @@ mod tests {
         assert!(MembershipType::Manager == MembershipType::from_str("4").unwrap());
     }
 
-    fn member_with_status(status: i32) -> Membership {
-        let mut member =
-            Membership::new(UserId::from(String::from("user")), OrganizationId::from(String::from("org")), None);
-        member.status = status;
-        member
-    }
-
-    /// Every membership but an open invitation counts for the auto confirm policy, revoked ones included,
-    /// while only an accepted plain member may be confirmed without a human looking at it.
+    /// All but Invited count for the policy; only an Accepted plain User may be auto-confirmed.
     #[test]
     fn auto_confirm_membership_rules() {
+        let mut member = Membership::new("user".to_owned().into(), "org".to_owned().into(), None);
         for status in
             [MembershipStatus::Invited as i32, MembershipStatus::Accepted as i32, MembershipStatus::Confirmed as i32]
         {
-            let mut member = member_with_status(status);
-            let accepted = status == MembershipStatus::Accepted as i32;
+            member.status = status;
             assert_eq!(member.counts_for_auto_confirm(), status != MembershipStatus::Invited as i32, "status {status}");
-            assert_eq!(member.can_be_auto_confirmed(), accepted, "status {status}");
+            assert_eq!(member.can_be_auto_confirmed(), status == MembershipStatus::Accepted as i32, "status {status}");
 
             assert!(member.revoke(), "status {status} can not be revoked");
             assert!(member.counts_for_auto_confirm(), "revoked {status} must count");
@@ -1343,7 +1329,7 @@ mod tests {
             assert!(member.status < MembershipStatus::Invited as i32, "revoked {status} must stay below Invited");
         }
 
-        let mut member = member_with_status(MembershipStatus::Accepted as i32);
+        member.status = MembershipStatus::Accepted as i32;
         for atype in [MembershipType::Owner, MembershipType::Admin, MembershipType::Manager] {
             member.atype = atype as i32;
             assert!(!member.can_be_auto_confirmed(), "type {} must not be confirmed automatically", atype as i32);

@@ -220,8 +220,7 @@ fn config() -> Json<Value> {
         &FeatureFlagFilter::ValidOnly,
     );
     feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
-    // Web vaults up to 2026.4.x only offer the policy when this flag is on; newer ones look at
-    // `useAutomaticUserConfirmation` alone, so sending it stays harmless.
+    // Web vaults through 2026.4.x need this flag; newer clients use `useAutomaticUserConfirmation`.
     feature_states.insert("pm-19934-auto-confirm-organization-users".to_owned(), CONFIG.org_auto_confirm_enabled());
 
     Json(json!({
@@ -280,9 +279,8 @@ fn api_not_found() -> Json<Value> {
     }))
 }
 
-/// Tells everybody who can confirm this member that it accepted its invitation and is waiting. Only the
-/// browser extension of an unlocked admin acts upon this, it holds the organization key the server never
-/// has. Call this wherever a membership reaches the accepted state.
+/// Notifies eligible admins when a member reaches Accepted; their unlocked browser extension holds the
+/// organization key and performs confirmation. Call this at every transition to Accepted.
 pub async fn notify_pending_auto_confirm(member: &Membership, conn: &DbConn, nt: &Notify<'_>) {
     if !member.can_be_auto_confirmed() || !OrgPolicy::is_auto_confirm_enabled(&member.org_uuid, conn).await {
         return;
@@ -298,8 +296,7 @@ pub async fn notify_pending_auto_confirm(member: &Membership, conn: &DbConn, nt:
     }
 }
 
-/// Accepts every open invitation of a user at once, as done when mail is disabled, and notifies for each
-/// of them. See [`notify_pending_auto_confirm`].
+/// Accepts all invitations at once and notifies for each; used when mail is disabled.
 pub async fn accept_user_invitations(user_id: &UserId, conn: &DbConn, nt: &Notify<'_>) -> EmptyResult {
     let invited = Membership::find_invited_by_user(user_id, conn).await;
 

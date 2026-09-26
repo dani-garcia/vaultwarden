@@ -394,9 +394,7 @@ pub async fn send_emergency_access_invite_accepted(address: &str, grantee_email:
     send_email(address, &subject, body_html, body_text).await
 }
 
-/// Tells a grantor which emergency access contacts were dropped. Deliberately does not name the reason:
-/// the recipient can be outside the organization which triggered this and has no business learning about
-/// the memberships of others. Bitwarden keeps this generic as well.
+/// Lists removed emergency-access contacts without leaking the triggering organization or memberships.
 pub async fn send_emergency_access_grantees_removed(address: &str, grantee_emails: &[String]) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/emergency_access_grantees_removed",
