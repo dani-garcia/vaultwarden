@@ -1205,8 +1205,7 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         err!("To use email 2FA as automatic fallback, email 2fa has to be enabled!");
     }
 
-    // Without a mail transport the verification code can never be delivered, which would lock
-    // affected users out of every device they have not logged in from before.
+    // Without a mail transport the code can never arrive, locking users out of every new device.
     if cfg.new_device_verification && !(cfg._enable_smtp && (cfg.smtp_host.is_some() || cfg.use_sendmail)) {
         err!("To enable new device verification, a mail transport must be configured")
     }

@@ -280,7 +280,7 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
 }
 
 // Kept to prevent 404 errors, current clients read `verifyDevices` from the profile and change it
-// via `/api/accounts/verify-devices`. See `new_device_verification` for the details.
+// via `/api/accounts/verify-devices`.
 //
 // See the following Bitwarden PR's regarding this feature.
 // https://github.com/bitwarden/clients/pull/2843

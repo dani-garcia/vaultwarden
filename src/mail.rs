@@ -531,8 +531,7 @@ pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTi
     send_email(address, &subject, body_html, body_text).await
 }
 
-/// Sends the code a user has to enter before an unknown device may log in. Not the same as
-/// `send_new_device_logged_in`, which only notifies after a login already succeeded.
+/// Mails the code for an unknown device, unlike `send_new_device_logged_in`, which notifies after a login.
 pub async fn send_new_device_verification(
     address: &str,
     token: &str,
