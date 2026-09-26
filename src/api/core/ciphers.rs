@@ -2027,19 +2027,14 @@ async fn delete_cipher_by_uuid(
             )
             .await;
         }
+    } else if *delete_options == CipherDeleteOptions::HardSingle {
+        // Before the deletion removes the collections that decide who has to sync: without them, the cipher would
+        // count as unassigned and reach everybody with organization-wide access, also for My Items.
+        let user_ids = cipher.update_users_revision(conn).await;
+        cipher.delete(conn).await?;
+        nt.send_cipher_update(UpdateType::SyncLoginDelete, &cipher, &user_ids, &headers.device, None, conn).await;
     } else {
         cipher.delete(conn).await?;
-        if *delete_options == CipherDeleteOptions::HardSingle {
-            nt.send_cipher_update(
-                UpdateType::SyncLoginDelete,
-                &cipher,
-                &cipher.update_users_revision(conn).await,
-                &headers.device,
-                None,
-                conn,
-            )
-            .await;
-        }
     }
 
     if let Some(org_id) = cipher.organization_uuid {

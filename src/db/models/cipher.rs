@@ -527,7 +527,11 @@ impl Cipher {
     /// Saves the cipher and adds it to the collections in one transaction, so it can't end up in the organization
     /// without them.
     pub async fn save_with_collections(&mut self, collection_uuids: &[CollectionId], conn: &DbConn) -> EmptyResult {
-        self.update_users_revision(conn).await;
+        // The members that had the cipher as stored sync as well. Not the ones of `self`: not linked to its collections
+        // yet, it would count as unassigned and reach everybody with organization-wide access, also for My Items.
+        if let Some(stored) = Self::find_by_uuid(&self.uuid, conn).await {
+            stored.update_users_revision(conn).await;
+        }
         self.updated_at = Utc::now().naive_utc();
 
         let rows: Vec<_> = collection_uuids
