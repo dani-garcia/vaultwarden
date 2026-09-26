@@ -18,6 +18,7 @@ extend-ignore-re = [
     "COSE",
     "COSEKey",
     "COSEAlgorithm",
+    "CoseEncrypt0",
     # Ignore this specific string as it's valid
     "Ensure they are valid OTPs",
     # This word is misspelled upstream

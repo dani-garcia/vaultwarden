@@ -6,6 +6,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::EmptyResult,
+    auth::DEFAULT_ACCESS_VALIDITY,
     crypto,
     db::{
         DbConn,
@@ -78,6 +79,9 @@ pub struct User {
     pub signed_public_key: Option<String>,
     pub security_state: Option<String>,
     pub security_version: Option<i32>,
+    /// JSON `{"wrappedUserKey1": ..., "wrappedUserKey2": ...}`, letting clients that still hold the
+    /// v1 user key obtain the v2 one after another client performed the upgrade. Opaque to us.
+    pub v2_upgrade_token: Option<String>,
 }
 
 #[derive(Identifiable, Queryable, Insertable)]
@@ -106,11 +110,26 @@ enum UserStatus {
     _Disabled = 2,
 }
 
+/// A previous security stamp that is still accepted, until `expire`.
 #[derive(Serialize, Deserialize)]
 pub struct UserStampException {
-    pub routes: Vec<String>,
+    /// The routes the stamp is still accepted on, or `None` for any route.
+    pub routes: Option<Vec<String>>,
     pub security_stamp: String,
     pub expire: i64,
+}
+
+impl UserStampException {
+    pub fn is_expired(&self) -> bool {
+        Utc::now().timestamp() > self.expire
+    }
+
+    /// Whether this exception lets a token carrying `security_stamp` through on `route`.
+    pub fn allows(&self, security_stamp: &str, route: &str) -> bool {
+        !self.is_expired()
+            && self.security_stamp == security_stamp
+            && self.routes.as_ref().is_none_or(|routes| routes.iter().any(|r| r == route))
+    }
 }
 
 /// Local methods
@@ -169,6 +188,7 @@ impl User {
             signed_public_key: None,
             security_state: None,
             security_version: None,
+            v2_upgrade_token: None,
         }
     }
 
@@ -235,7 +255,38 @@ impl User {
 
     pub async fn reset_security_stamp(&mut self, conn: &DbConn) -> EmptyResult {
         self.security_stamp = get_uuid();
+        // A reset is meant to end the other sessions, which a key rotation's grace would undo. The
+        // route exceptions stay, since they are set right before a reset, for the stamp it replaces.
+        // This is also where expired exceptions get dropped.
+        let mut exceptions = self.stamp_exceptions();
+        exceptions.retain(|e| e.routes.is_some() && !e.is_expired());
+        self.set_stamp_exceptions(&exceptions);
         Device::rotate_refresh_tokens_by_user(&self.uuid, conn).await?;
+        Ok(())
+    }
+
+    /// Resets the security stamp after a key rotation, while letting the access tokens already
+    /// issued keep working until they expire.
+    ///
+    /// This is what upstream does: there the stamp is only checked when a token is refreshed, so a
+    /// rotation invalidates refresh tokens but not the access tokens in use. Clients rely on it to
+    /// keep a session going across a rotation. Chained rotations keep every earlier stamp that is
+    /// still within its window.
+    pub async fn reset_security_stamp_after_key_rotation(&mut self, conn: &DbConn) -> EmptyResult {
+        let previous_stamp = self.security_stamp.clone();
+        let mut grace: Vec<UserStampException> =
+            self.stamp_exceptions().into_iter().filter(|e| e.routes.is_none() && !e.is_expired()).collect();
+
+        self.reset_security_stamp(conn).await?;
+
+        grace.push(UserStampException {
+            routes: None,
+            security_stamp: previous_stamp,
+            expire: (Utc::now() + *DEFAULT_ACCESS_VALIDITY).timestamp(),
+        });
+        let mut exceptions = self.stamp_exceptions();
+        exceptions.extend(grace);
+        self.set_stamp_exceptions(&exceptions);
         Ok(())
     }
 
@@ -247,17 +298,30 @@ impl User {
     ///   After these 2 minutes this stamp will expire.
     ///
     pub fn set_stamp_exception(&mut self, route_exception: Vec<String>) {
-        let stamp_exception = UserStampException {
-            routes: route_exception,
+        self.set_stamp_exceptions(&[UserStampException {
+            routes: Some(route_exception),
             security_stamp: self.security_stamp.clone(),
             expire: (Utc::now() + TimeDelta::try_minutes(2).unwrap()).timestamp(),
-        };
-        self.stamp_exception = Some(serde_json::to_string(&stamp_exception).unwrap_or_default());
+        }]);
     }
 
-    /// Resets the stamp_exception to prevent re-use of the previous security-stamp
-    pub fn reset_stamp_exception(&mut self) {
-        self.stamp_exception = None;
+    /// The previous security stamps that are still accepted, expired ones included.
+    pub fn stamp_exceptions(&self) -> Vec<UserStampException> {
+        let Some(stored) = self.stamp_exception.as_deref() else {
+            return Vec::new();
+        };
+        // Before key rotations kept sessions alive, only a single route exception was stored.
+        serde_json::from_str::<Vec<UserStampException>>(stored)
+            .or_else(|_| serde_json::from_str::<UserStampException>(stored).map(|e| vec![e]))
+            .unwrap_or_default()
+    }
+
+    fn set_stamp_exceptions(&mut self, exceptions: &[UserStampException]) {
+        self.stamp_exception = if exceptions.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&exceptions).unwrap_or_default())
+        };
     }
 
     pub fn display_name(&self) -> &str {
@@ -321,6 +385,10 @@ impl User {
             "verifyingKey": verifying_key,
             "object": "publicKeys"
         })
+    }
+
+    pub fn v2_upgrade_token_json(&self) -> Option<Value> {
+        self.v2_upgrade_token.as_ref().and_then(|token| serde_json::from_str(token).ok())
     }
 
     pub async fn to_json(&self, conn: &DbConn) -> Value {
