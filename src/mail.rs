@@ -394,6 +394,20 @@ pub async fn send_emergency_access_invite_accepted(address: &str, grantee_email:
     send_email(address, &subject, body_html, body_text).await
 }
 
+/// Lists removed emergency-access contacts without leaking the triggering organization or memberships.
+pub async fn send_emergency_access_grantees_removed(address: &str, grantee_emails: &[String]) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/emergency_access_grantees_removed",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "grantee_emails": grantee_emails,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_emergency_access_invite_confirmed(address: &str, grantor_name: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/emergency_access_invite_confirmed",

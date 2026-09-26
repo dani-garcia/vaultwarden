@@ -201,6 +201,7 @@ impl Organization {
             "maxCollections": null,
             "maxStorageGb": i16::MAX, // The value doesn't matter, we don't check server-side
             "use2fa": true,
+            "useAutomaticUserConfirmation": CONFIG.org_auto_confirm_enabled(),
             "useCustomPermissions": true,
             "useDirectory": false, // Is supported, but this value isn't checked anywhere (yet)
             "useEvents": CONFIG.org_events_enabled(),
@@ -486,6 +487,7 @@ impl Membership {
             "useKeyConnector": false,
             "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
             "usePasswordManager": true,
+            "useAutomaticUserConfirmation": CONFIG.org_auto_confirm_enabled(),
             "useCustomPermissions": true,
             "useActivateAutofillPolicy": false,
             "useAdminSponsoredFamilies": false,
@@ -889,6 +891,40 @@ impl Membership {
         .await
     }
 
+    /// Every role and status except Invited counts; Revoked counts because restore has no accept step.
+    /// https://github.com/bitwarden/server/blob/b3d1eb9a7854322f106efa55c191c1a4da9f8645/src/Core/AdminConsole/OrganizationFeatures/Policies/Enforcement/AutoConfirm/AutomaticUserConfirmationPolicyEnforcementHandler.cs
+    pub fn counts_for_auto_confirm(&self) -> bool {
+        self.status != MembershipStatus::Invited as i32
+    }
+
+    /// Only an Accepted plain User may be auto-confirmed; elevated roles require manual confirmation.
+    pub fn can_be_auto_confirmed(&self) -> bool {
+        self.status == MembershipStatus::Accepted as i32 && self.atype == MembershipType::User
+    }
+
+    /// Counts non-Invited memberships outside `excluded_org`, including Revoked; stricter than SingleOrg.
+    pub async fn count_accepted_confirmed_and_revoked_by_user(
+        user_uuid: &UserId,
+        excluded_org: &OrganizationId,
+        conn: &DbConn,
+    ) -> i64 {
+        conn.run(move |conn| {
+            users_organizations::table
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::org_uuid.ne(excluded_org))
+                .filter(
+                    users_organizations::status
+                        .eq(MembershipStatus::Accepted as i32)
+                        .or(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                        .or(users_organizations::status.lt(MembershipStatus::Invited as i32)),
+                )
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0)
+        })
+        .await
+    }
+
     pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             users_organizations::table
@@ -1237,5 +1273,30 @@ mod tests {
         assert!(MembershipType::Admin > MembershipType::Manager);
         assert!(MembershipType::Manager > MembershipType::User);
         assert!(MembershipType::Manager == MembershipType::from_str("4").unwrap());
+    }
+
+    /// All but Invited count for the policy; only an Accepted plain User may be auto-confirmed.
+    #[test]
+    fn auto_confirm_membership_rules() {
+        let mut member = Membership::new("user".to_owned().into(), "org".to_owned().into(), None);
+        for status in
+            [MembershipStatus::Invited as i32, MembershipStatus::Accepted as i32, MembershipStatus::Confirmed as i32]
+        {
+            member.status = status;
+            assert_eq!(member.counts_for_auto_confirm(), status != MembershipStatus::Invited as i32, "status {status}");
+            assert_eq!(member.can_be_auto_confirmed(), status == MembershipStatus::Accepted as i32, "status {status}");
+
+            assert!(member.revoke(), "status {status} can not be revoked");
+            assert!(member.counts_for_auto_confirm(), "revoked {status} must count");
+            assert!(!member.can_be_auto_confirmed(), "revoked {status} must not be confirmed automatically");
+            // `count_accepted_confirmed_and_revoked_by_user` relies on this.
+            assert!(member.status < MembershipStatus::Invited as i32, "revoked {status} must stay below Invited");
+        }
+
+        member.status = MembershipStatus::Accepted as i32;
+        for atype in [MembershipType::Owner, MembershipType::Admin, MembershipType::Manager] {
+            member.atype = atype as i32;
+            assert!(!member.can_be_auto_confirmed(), "type {} must not be confirmed automatically", atype as i32);
+        }
     }
 }
