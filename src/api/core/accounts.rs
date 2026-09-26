@@ -93,6 +93,15 @@ pub struct KDFData {
     kdf_parallelism: Option<i32>,
 }
 
+impl KDFData {
+    pub(super) fn matches_user(&self, user: &User) -> bool {
+        self.kdf == user.client_kdf_type
+            && self.kdf_iterations == user.client_kdf_iter
+            && self.kdf_memory == user.client_kdf_memory
+            && self.kdf_parallelism == user.client_kdf_parallelism
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterData {
@@ -701,18 +710,32 @@ fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AuthenticationData {
+pub(super) struct AuthenticationData {
     salt: String,
-    kdf: KDFData,
-    master_password_authentication_hash: String,
+    pub(super) kdf: KDFData,
+    pub(super) master_password_authentication_hash: String,
+}
+
+impl AuthenticationData {
+    pub(super) fn check(&self, user: &User, unlock: &UnlockData) -> EmptyResult {
+        if self.kdf != unlock.kdf {
+            err!("KDF settings must be equal for authentication and unlock")
+        }
+
+        if self.salt != user.master_password_salt() || self.salt != unlock.salt {
+            err!("Invalid master password salt")
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct UnlockData {
+pub(super) struct UnlockData {
     salt: String,
     kdf: KDFData,
-    master_key_wrapped_user_key: String,
+    pub(super) master_key_wrapped_user_key: String,
 }
 
 #[derive(Deserialize)]
@@ -731,13 +754,7 @@ async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, conn: DbConn, nt:
         err!("Invalid password")
     }
 
-    if data.authentication_data.kdf != data.unlock_data.kdf {
-        err!("KDF settings must be equal for authentication and unlock")
-    }
-
-    if headers.user.email != data.authentication_data.salt || headers.user.email != data.unlock_data.salt {
-        err!("Invalid master password salt")
-    }
+    data.authentication_data.check(&headers.user, &data.unlock_data)?;
 
     let mut user = headers.user;
 
