@@ -1207,7 +1207,10 @@ async fn bulk_reinvite_members(
     for member_id in data.ids {
         let err_msg = match reinvite_member_impl(&org_id, &member_id, &headers.user.email, &conn).await {
             Ok(()) => String::new(),
-            Err(e) => format!("{e:?}"),
+            Err(e) => {
+                warn!("Unable to reinvite member {member_id}: {e:?}");
+                e.message().to_owned()
+            }
         };
 
         bulk_response.push(json!(
@@ -1378,7 +1381,10 @@ async fn bulk_confirm_invite(
                 let user_key = invite.key.unwrap_or_default();
                 let err_msg = match confirm_invite_impl(&org_id, &member_id, &user_key, &headers, &conn, &nt).await {
                     Ok(()) => String::new(),
-                    Err(e) => format!("{e:?}"),
+                    Err(e) => {
+                        warn!("Unable to confirm member {member_id}: {e:?}");
+                        e.message().to_owned()
+                    }
                 };
 
                 bulk_response.push(json!(
@@ -1670,7 +1676,10 @@ async fn bulk_delete_member(
     for member_id in data.ids {
         let err_msg = match delete_member_impl(&org_id, &member_id, &headers, &conn, &nt).await {
             Ok(()) => String::new(),
-            Err(e) => format!("{e:?}"),
+            Err(e) => {
+                warn!("Unable to delete member {member_id}: {e:?}");
+                e.message().to_owned()
+            }
         };
 
         bulk_response.push(json!(
@@ -2308,7 +2317,10 @@ async fn bulk_revoke_members(
             for member_id in members {
                 let err_msg = match revoke_member_impl(&org_id, &member_id, &headers, &conn).await {
                     Ok(()) => String::new(),
-                    Err(e) => format!("{e:?}"),
+                    Err(e) => {
+                        warn!("Unable to revoke member {member_id}: {e:?}");
+                        e.message().to_owned()
+                    }
                 };
 
                 bulk_response.push(json!(
@@ -2411,7 +2423,10 @@ async fn bulk_restore_members(
     for member_id in data.ids {
         let err_msg = match restore_member_impl(&org_id, &member_id, &headers, &conn).await {
             Ok(()) => String::new(),
-            Err(e) => format!("{e:?}"),
+            Err(e) => {
+                warn!("Unable to restore member {member_id}: {e:?}");
+                e.message().to_owned()
+            }
         };
 
         bulk_response.push(json!(
