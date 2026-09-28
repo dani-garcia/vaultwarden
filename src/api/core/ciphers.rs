@@ -23,7 +23,7 @@ use crate::{
         models::{
             Archive, Attachment, AttachmentId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup,
             CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, KeyId,
-            Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
+            Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, SendType, UserId,
         },
     },
     util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
@@ -127,7 +127,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     let mut ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn).await;
 
     // Filter out SSH keys if the client version is less than 2024.12.0
-    let show_ssh_keys = if let Some(client_version) = client_version {
+    let show_ssh_keys = if let Some(client_version) = &client_version {
         let ver_match = semver::VersionReq::parse(">=2024.12.0").unwrap();
         ver_match.matches(&client_version.0)
     } else {
@@ -156,8 +156,14 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     let folders_json: Vec<Value> =
         Folder::find_by_user(&headers.user.uuid, &conn).await.iter().map(Folder::to_json).collect();
 
-    let sends_json: Vec<Value> =
-        Send::find_by_user(&headers.user.uuid, &conn).await.iter().map(Send::to_json).collect();
+    // Item Sends fail the whole sync of clients that don't know them (the Android app has no fallback)
+    let show_item_sends = api::core::sends::client_supports_item_sends(headers.device.atype, client_version.as_ref());
+    let sends_json: Vec<Value> = Send::find_by_user(&headers.user.uuid, &conn)
+        .await
+        .iter()
+        .filter(|s| show_item_sends || s.atype != SendType::Item as i32)
+        .map(Send::to_json)
+        .collect();
 
     let policies_json: Vec<Value> =
         OrgPolicy::find_confirmed_by_user(&headers.user.uuid, &conn).await.iter().map(OrgPolicy::to_json).collect();
