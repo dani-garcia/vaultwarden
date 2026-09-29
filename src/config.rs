@@ -54,9 +54,11 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
 });
 
 pub type Pass = String;
+pub type AdminTotpSecret = String;
 
 macro_rules! make_config {
     // Support string print
+    ( @supportstr $name:ident, $value:expr, AdminTotpSecret, option ) => { serde_json::to_value(&$value.as_ref().map(|_| String::from("***"))).unwrap() };
     ( @supportstr $name:ident, $value:expr, Pass, option ) => { serde_json::to_value(&$value.as_ref().map(|_| String::from("***"))).unwrap() }; // Optional pass, we map to an Option<String> with "***"
     ( @supportstr $name:ident, $value:expr, Pass, $none_action:ident ) => { "***".into() }; // Required pass, we return "***"
     ( @supportstr $name:ident, $value:expr, $ty:ty, option ) => { serde_json::to_value(&$value).unwrap() }; // Optional other or string, we convert to json
@@ -66,6 +68,18 @@ macro_rules! make_config {
     // Group or empty string
     ( @show ) => { "" };
     ( @show $lit:literal ) => { $lit };
+
+    // Write-only values are shown as empty inputs and never serialized to the admin settings page.
+    ( @formvalue $value:expr, AdminTotpSecret ) => { serde_json::Value::Null };
+    ( @formvalue $value:expr, $ty:ident ) => { serde_json::to_value($value).unwrap_or_default() };
+    ( @writeonly AdminTotpSecret ) => { true };
+    ( @writeonly $ty:ident ) => { false };
+    ( @configured $value:expr, AdminTotpSecret ) => {
+        $value.as_ref().is_some_and(|value| !value.trim().is_empty())
+    };
+    ( @configured $value:expr, $ty:ident ) => { false };
+    ( @userconfigured $value:expr, AdminTotpSecret ) => { $value.is_some() };
+    ( @userconfigured $value:expr, $ty:ident ) => { false };
 
     // Wrap the optionals in an Option type
     ( @type $ty:ty, option) => { Option<$ty> };
@@ -336,6 +350,9 @@ macro_rules! make_config {
             name: &'static str,
             value: serde_json::Value,
             default: serde_json::Value,
+            write_only: bool,
+            configured: bool,
+            user_configured: bool,
             #[serde(rename = "type")]
             r#type: &'static str,
             doc: ElementDoc,
@@ -362,7 +379,7 @@ macro_rules! make_config {
             pub fn prepare_json(&self) -> serde_json::Value {
                 fn get_form_type(rust_type: &'static str) -> &'static str {
                     match rust_type {
-                        "Pass" => "password",
+                        "Pass" | "AdminTotpSecret" => "password",
                         "String" => "text",
                         "bool" => "checkbox",
                         _ => "number"
@@ -377,10 +394,10 @@ macro_rules! make_config {
                     }
                 }
 
-                let (def, cfg, overridden) = {
+                let (def, cfg, usr, overridden) = {
                     // Lock the inner as short as possible and clone what is needed to prevent deadlocks
                     let inner = &self.inner.read().unwrap();
-                    (inner._env.build(), inner.config.clone(), inner._overrides.clone())
+                    (inner._env.build(), inner.config.clone(), inner._usr.clone(), inner._overrides.clone())
                 };
 
                 let data: Vec<GroupData> = vec![
@@ -395,8 +412,11 @@ macro_rules! make_config {
                             ElementData {
                                 editable: $editable,
                                 name: stringify!($name),
-                                value: serde_json::to_value(&cfg.$name).unwrap_or_default(),
-                                default: serde_json::to_value(&def.$name).unwrap_or_default(),
+                                value: make_config! { @formvalue &cfg.$name, $ty },
+                                default: make_config! { @formvalue &def.$name, $ty },
+                                write_only: make_config! { @writeonly $ty },
+                                configured: make_config! { @configured &cfg.$name, $ty },
+                                user_configured: make_config! { @userconfigured &usr.$name, $ty },
                                 r#type: get_form_type(stringify!($ty)),
                                 doc: get_doc(concat!($($doc),+)),
                                 overridden: overridden.contains(&pastey::paste!(stringify!([<$name:upper>]))),
@@ -651,6 +671,9 @@ make_config! {
 
         /// Admin token/Argon2 PHC |> The plain text token or Argon2 PHC string used to authenticate in this very same page. Changing it here will not deauthorize the current session!
         admin_token:            Pass,   true,   option;
+
+        /// Admin TOTP secret |> Base32-encoded secret containing at least 16 bytes of secret data. When set, logging in to the admin page additionally requires a time-based one-time code. Leave blank to keep the saved secret. Has no effect when DISABLE_ADMIN_TOKEN is enabled!
+        admin_totp_secret:      AdminTotpSecret, true, option;
 
         /// Invitation organization name |> Name shown in the invitation emails that don't come from a specific organization
         invitation_org_name:    String, true,   def,    "Vaultwarden".to_owned();
@@ -934,6 +957,28 @@ make_config! {
         /// Auto-enable 2FA (Know the risks!) |> Automatically setup email 2FA as fallback provider when needed
         email_2fa_auto_fallback: bool,  true,   def,      false;
     },
+}
+
+impl ConfigBuilder {
+    /// Write-only admin form semantics for the TOTP secret: an omitted value keeps the value stored in
+    /// `config.json`, an empty value removes the stored override and a non-empty value replaces it.
+    fn prepare_admin_update(&mut self, current_user_config: &Self) {
+        self.admin_totp_secret = match self.admin_totp_secret.take() {
+            None => current_user_config.admin_totp_secret.clone(),
+            Some(secret) if secret.trim().is_empty() => None,
+            Some(secret) => Some(secret.trim().to_uppercase()),
+        };
+    }
+}
+
+fn validate_admin_totp_secret(secret: &str) -> Result<(), Error> {
+    let Ok(decoded_secret) = data_encoding::BASE32.decode(secret.trim().to_uppercase().as_bytes()) else {
+        err!("`ADMIN_TOTP_SECRET` is not a valid base32-encoded string")
+    };
+    if decoded_secret.len() < 16 {
+        err!("`ADMIN_TOTP_SECRET` must contain at least 128 bits (16 bytes) of secret data")
+    }
+    Ok(())
 }
 
 fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
@@ -1286,6 +1331,10 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
             }
             _ => {}
         }
+
+        if let Some(ref secret) = cfg.admin_totp_secret {
+            validate_admin_totp_secret(secret)?;
+        }
     }
 
     if cfg.increase_note_size_limit {
@@ -1480,6 +1529,8 @@ impl Config {
 
         // Remove values that are not editable
         if ignore_non_editable {
+            let current_user_config = self.inner.read().unwrap()._usr.clone();
+            builder.prepare_admin_update(&current_user_config);
             builder.clear_non_editable();
         }
 
@@ -1771,7 +1822,6 @@ where
     reg!("admin/users");
     reg!("admin/organizations");
     reg!("admin/diagnostics");
-
     reg!("404");
 
     reg!(@withfallback "scss/vaultwarden.scss");

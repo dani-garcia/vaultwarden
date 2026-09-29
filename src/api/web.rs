@@ -289,6 +289,9 @@ pub fn static_files(filename: &str) -> Result<(ContentType, &'static [u8]), Erro
         "admin.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/admin.css"))),
         "admin.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin.js"))),
         "admin_settings.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_settings.js"))),
+        "qrcode-generator-2.0.4.js" => {
+            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/qrcode-generator-2.0.4.js")))
+        }
         "admin_users.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_users.js"))),
         "admin_organizations.js" => {
             Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_organizations.js")))
