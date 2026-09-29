@@ -380,7 +380,7 @@ async fn sso_login(
     *user_id = Some(user.uuid.clone());
 
     // We passed 2FA get auth tokens
-    let auth_tokens = sso::redeem(&device, &user, data.client_id, sso_user, sso_auth, user_infos, conn).await?;
+    let auth_tokens = sso::redeem(&device, &user, data.client_id, sso_user, sso_auth, user_infos, &ip.ip, conn).await?;
 
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
 }
