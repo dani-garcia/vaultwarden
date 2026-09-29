@@ -582,6 +582,8 @@ make_config! {
         domain_path:            String, false,  auto,   |c| extract_url_path(&c.domain);
         /// Enable web vault
         web_vault_enabled:      bool,   false,  def,    true;
+        /// Passkey login and vault unlock |> Default-off support for passkey sign-in and optional PRF vault unlock.
+        passkeys_enabled: bool, false, def, false;
 
         /// Allow Sends |> Controls whether users are allowed to create Bitwarden Sends.
         /// This setting applies globally to all users. To control this on a per-org basis instead, use the "Disable Send" org policy.

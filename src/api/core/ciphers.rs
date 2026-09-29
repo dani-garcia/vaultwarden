@@ -195,6 +195,16 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         Value::Null
     };
 
+    let mut user_decryption = json!({"masterPasswordUnlock": master_password_unlock, "userKeyId": headers.user.key_id});
+    if super::passkeys::account_passkeys_allowed() {
+        let options = super::passkeys::sync_options(&headers.user, &conn).await?;
+        user_decryption["webAuthnPrfOptions"] = if options.is_empty() {
+            Value::Null
+        } else {
+            json!(options)
+        };
+    }
+
     Ok(Json(json!({
         "profile": user_json,
         "folders": folders_json,
@@ -204,10 +214,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "ciphers": ciphers_json,
         "domains": domains_json,
         "sends": sends_json,
-        "userDecryption": {
-            "masterPasswordUnlock": master_password_unlock,
-            "userKeyId": headers.user.key_id,
-        },
+        "userDecryption": user_decryption,
         "object": "sync"
     })))
 }

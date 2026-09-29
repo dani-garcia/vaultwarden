@@ -12,7 +12,7 @@ use crate::{
         models::DeviceId,
         schema::{invitations, sso_users, twofactor_incomplete, users},
     },
-    error::MapResult,
+    error::{Error, MapResult},
     sso::OIDCIdentifier,
     util::{format_date, get_uuid, retry},
 };
@@ -348,6 +348,58 @@ impl User {
         }
     }
 
+    /// Update only the asymmetric pair, without replaying unrelated fields from
+    /// an earlier request snapshot over a completed key rotation.
+    pub async fn replace_keypair_if_current(
+        &mut self,
+        private_key: String,
+        public_key: String,
+        conn: &DbConn,
+    ) -> EmptyResult {
+        let expected = (
+            self.uuid.clone(),
+            self.security_stamp.clone(),
+            self.akey.clone(),
+            self.private_key.clone(),
+            self.public_key.clone(),
+        );
+        let replacement = (private_key.clone(), public_key.clone());
+        let updated_at = Utc::now().naive_utc();
+        conn.run(move |conn| {
+            conn.transaction::<_, Error, _>(|conn| {
+                let failed = || Error::new_msg("Unable to update account keys");
+                diesel::update(users::table.filter(users::uuid.eq(&expected.0)))
+                    .set(users::uuid.eq(&expected.0))
+                    .execute(conn)
+                    .map_err(|_| failed())?;
+                let current =
+                    users::table.filter(users::uuid.eq(&expected.0)).first::<Self>(conn).map_err(|_| failed())?;
+                if !current.enabled
+                    || current.security_stamp != expected.1
+                    || current.akey != expected.2
+                    || current.private_key != expected.3
+                    || current.public_key != expected.4
+                {
+                    return Err(Error::new_msg("Account keys changed. Sync and try again."));
+                }
+                diesel::update(users::table.filter(users::uuid.eq(&expected.0)))
+                    .set((
+                        users::private_key.eq(&replacement.0),
+                        users::public_key.eq(&replacement.1),
+                        users::updated_at.eq(updated_at),
+                    ))
+                    .execute(conn)
+                    .map_err(|_| failed())?;
+                Ok(())
+            })
+        })
+        .await?;
+        self.private_key = Some(private_key);
+        self.public_key = Some(public_key);
+        self.updated_at = updated_at;
+        Ok(())
+    }
+
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
         for member in Membership::find_confirmed_by_user(&self.uuid, conn).await {
             if member.atype == MembershipType::Owner
@@ -357,6 +409,7 @@ impl User {
             }
         }
 
+        super::WebAuthnCredential::delete_all_by_user(&self.uuid, conn).await?;
         super::Send::delete_all_by_user(&self.uuid, conn).await?;
         EmergencyAccess::delete_all_by_user(&self.uuid, conn).await?;
         EmergencyAccess::delete_all_by_grantee_email(&self.email, conn).await?;

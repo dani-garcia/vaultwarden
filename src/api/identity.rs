@@ -8,6 +8,8 @@ use rocket::{
     serde::json::Json,
 };
 use serde_json::Value;
+use webauthn_rs::prelude::{Credential as WebauthnCredentialData, Passkey, PasskeyAuthentication};
+use webauthn_rs_proto::{PublicKeyCredential, UserVerificationPolicy};
 
 use crate::{
     CONFIG,
@@ -16,6 +18,7 @@ use crate::{
         core::{
             accounts::{PreloginData, RegisterData, kdf_upgrade, prelogin, register},
             log_user_event,
+            two_factor::webauthn::WEBAUTHN,
             two_factor::{
                 authenticator, duo, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn,
                 yubikey,
@@ -32,7 +35,7 @@ use crate::{
         models::{
             AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeResponseError,
             OrganizationApiKey, OrganizationId, SendId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete,
-            TwoFactorType, User, UserId,
+            TwoFactorType, User, UserId, WebAuthnCredential, WebAuthnLoginChallenge,
         },
     },
     error::MapResult,
@@ -52,7 +55,8 @@ pub fn routes() -> Vec<Route> {
         prevalidate,
         authorize,
         oidcsignin,
-        oidcsignin_error
+        oidcsignin_error,
+        get_webauthn_login_assertion_options
     ]
 }
 
@@ -72,7 +76,18 @@ async fn login(
             check_is_some(data.refresh_token.as_ref(), "refresh_token cannot be blank")?;
             refresh_login(data, &conn, &client_header.ip).await
         }
-        "password" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
+        "webauthn" | "password" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
+        "webauthn" if CONFIG.passkeys_enabled() && CONFIG.is_webauthn_2fa_supported() => {
+            check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
+            check_is_some(data.token.as_ref(), "token cannot be blank")?;
+            check_is_some(data.device_response.as_ref(), "deviceResponse cannot be blank")?;
+            check_is_some(data.scope.as_ref(), "scope cannot be blank")?;
+            check_is_some(data.device_identifier.as_ref(), "device_identifier cannot be blank")?;
+            check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
+            check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
+            webauthn_login(data, &mut user_id, &conn, &client_header.ip).await
+        }
+        "webauthn" => err!("Passkey sign-in is not enabled"),
         "password" => {
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
             check_is_some(data.password.as_ref(), "password cannot be blank")?;
@@ -505,6 +520,105 @@ async fn password_login(
     let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password, data.client_id);
 
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
+}
+
+// The discoverable request does not identify an account. Keep challenge state in the
+// database and consume it atomically before WebAuthn verification.
+#[get("/accounts/webauthn/assertion-options")]
+async fn get_webauthn_login_assertion_options(conn: DbConn, ip: ClientIp) -> JsonResult {
+    if !CONFIG.passkeys_enabled() || !CONFIG.is_webauthn_2fa_supported() || (CONFIG.sso_enabled() && CONFIG.sso_only())
+    {
+        err!("Passkey sign-in is not enabled")
+    }
+    crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
+    let (mut response, state) = WEBAUTHN.start_passkey_authentication(&[])?;
+    response.public_key.allow_credentials.clear();
+    response.public_key.user_verification = UserVerificationPolicy::Required;
+    let token = util::get_uuid();
+    WebAuthnLoginChallenge::create(&token, serde_json::to_string(&state)?, Utc::now().timestamp(), &conn).await?;
+    Ok(Json(json!({
+        "options": response.public_key,
+        "token": token,
+        "object": "webAuthnLoginAssertionOptions"
+    })))
+}
+
+async fn webauthn_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbConn, ip: &ClientIp) -> JsonResult {
+    AuthMethod::Webauthn.check_scope(data.scope.as_ref())?;
+    crate::ratelimit::check_limit_login(&ip.ip)?;
+    let response: PublicKeyCredential = serde_json::from_str(data.device_response.as_deref().unwrap())
+        .map_err(|_| crate::error::Error::new_msg("Invalid passkey assertion"))?;
+    let token = data.token.as_deref().unwrap();
+    let Some(state_json) = WebAuthnLoginChallenge::consume(token, Utc::now().timestamp(), conn).await? else {
+        err!("Invalid or expired passkey challenge")
+    };
+    let hash = crate::api::core::passkeys::passkey_credential_id_hash(response.raw_id.as_slice());
+    let Some((mut credential, user)) = WebAuthnCredential::find_login_account(&hash, conn).await? else {
+        err!("Invalid passkey assertion")
+    };
+    *user_id = Some(user.uuid.clone());
+    if !user.enabled {
+        err!("This user has been disabled")
+    }
+    let Some(handle) = response.response.user_handle.as_ref() else {
+        err!("Invalid passkey user handle")
+    };
+    let expected_uuid =
+        uuid::Uuid::parse_str(&user.uuid).map_err(|_| crate::error::Error::new_msg("Invalid passkey user handle"))?;
+    if !crypto::ct_eq(handle.as_slice(), expected_uuid.as_bytes()) {
+        err!("Invalid passkey user handle")
+    }
+    let previous = credential.credential.clone();
+    let mut passkey: Passkey =
+        serde_json::from_str(&previous).map_err(|_| crate::error::Error::new_msg("Invalid stored passkey"))?;
+    if !crypto::ct_eq(passkey.cred_id().as_slice(), response.raw_id.as_slice()) {
+        err!("Invalid passkey credential")
+    }
+    // Discoverable assertion handling follows the state/credential approach in
+    // Vaultwarden PR 7370 (branch snapshot f7f2007), with database-backed one-use state here.
+    let mut state: Value = serde_json::from_str(&state_json)?;
+    let Some(credentials) = state.pointer_mut("/ast/credentials").and_then(Value::as_array_mut) else {
+        err!("Invalid passkey challenge state")
+    };
+    credentials.push(serde_json::to_value(WebauthnCredentialData::from(passkey.clone()))?);
+    let state: PasskeyAuthentication = serde_json::from_value(state)?;
+    let verified = WEBAUTHN
+        .finish_passkey_authentication(&response, &state)
+        .map_err(|_| crate::error::Error::new_msg("Invalid passkey assertion"))?;
+    if !crypto::ct_eq(verified.cred_id().as_slice(), passkey.cred_id().as_slice()) {
+        err!("Invalid passkey credential")
+    }
+    let previous_counter = crate::api::core::passkeys::passkey_counter(&passkey);
+    if passkey.update_credential(&verified) == Some(true) && verified.counter() > previous_counter {
+        credential.credential = serde_json::to_string(&passkey)?;
+        credential.update_authentication(&previous, conn).await?;
+    }
+    // Rotation or deletion may have committed during assertion verification.
+    // Build the token and PRF response from one current account/credential pair.
+    let Some((current_credential, current_user)) = WebAuthnCredential::find_login_account(&hash, conn).await? else {
+        err!("Passkey changed. Please try again.")
+    };
+    if !WebAuthnCredential::same_login_epoch(&credential, &user, &current_credential, &current_user) {
+        err!("Account or passkey changed. Please try again.")
+    }
+    if !current_user.enabled {
+        err!("This user has been disabled")
+    }
+    // User verification by the authenticator satisfies this grant's login factor.
+    // Other grants retain their existing two-step-login behavior and enrollment.
+    let mut device = get_device(&data, conn, &current_user).await?;
+    let tokens = auth::AuthTokens::new(&device, &current_user, AuthMethod::Webauthn, data.client_id);
+    let mut result = authenticated_response(&current_user, &mut device, tokens, None, conn, ip).await?;
+    if current_credential.has_prf_keyset() {
+        let value = &mut result.0["UserDecryptionOptions"]["WebAuthnPrfOption"];
+        *value = json!({
+            "CredentialId": passkey.cred_id(),
+            "Transports": WebauthnCredentialData::from(passkey).transports.unwrap_or_default(),
+            "EncryptedPrivateKey": current_credential.encrypted_private_key,
+            "EncryptedUserKey": current_credential.encrypted_user_key,
+        });
+    }
+    Ok(result)
 }
 
 async fn authenticated_response(
@@ -1047,6 +1161,8 @@ async fn json_err_twofactor(
                 | TwoFactorType::U2fRegisterChallenge
                 | TwoFactorType::Webauthn
                 | TwoFactorType::WebauthnLoginChallenge
+                | TwoFactorType::WebauthnPasskeyRegisterChallenge
+                | TwoFactorType::WebauthnPasskeyAssertionChallenge
                 | TwoFactorType::WebauthnRegisterChallenge,
             ) => { /* Nothing special to do for these providers */ }
         }
@@ -1204,6 +1320,13 @@ struct ConnectData {
     code: Option<OIDCCode>,
     #[field(name = uncased("code_verifier"))]
     code_verifier: Option<OIDCCodeVerifier>,
+
+    // Needed for grant_type="webauthn". Native clients send deviceResponse as JSON text.
+    #[field(name = uncased("token"))]
+    token: Option<String>,
+    #[field(name = uncased("deviceResponse"))]
+    #[field(name = uncased("device_response"))]
+    device_response: Option<String>,
 
     // Needed for send access
     send_id: Option<SendId>,

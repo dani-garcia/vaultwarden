@@ -54,11 +54,13 @@ app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secon
 }
 {{/if}}
 
+{{#unless passkeys_enabled}}
 /* Hide the `Log in with passkey` settings */
 app-user-layout app-password-settings app-webauthn-login-settings {
   @extend %vw-hide;
 }
-/* Hide Log in with passkey on the login page */
+{{/unless}}
+{{#unless passkey_login_available}}
 {{#if (webver ">=2025.5.1")}}
 .vw-passkey-login {
   @extend %vw-hide;
@@ -68,6 +70,7 @@ app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secon
   @extend %vw-hide;
 }
 {{/if}}
+{{/unless}}
 
 /* Hide the or text followed by the two buttons hidden above */
 {{#if (webver ">=2025.5.1")}}

@@ -35,6 +35,7 @@ A nearly complete implementation of the Bitwarden Client API is provided, includ
  * [Attachments](https://bitwarden.com/help/attachments/)
  * [Website icons](https://bitwarden.com/help/website-icons/)
  * [Personal API Key](https://bitwarden.com/help/personal-api-key/)
+ * [Passkey login and vault unlock](#passkeys-experimental) (experimental, opt-in)
  * [Organizations](https://bitwarden.com/help/getting-started-organizations/)
    - [Collections](https://bitwarden.com/help/about-collections/),
      [Password Sharing](https://bitwarden.com/help/sharing/),
@@ -74,6 +75,22 @@ While Vaultwarden is based upon the [Rocket web framework](https://rocket.rs) wh
 
 > [!TIP]
 >**For more detailed examples on how to install, use and configure Vaultwarden you can check our [Wiki](https://github.com/dani-garcia/vaultwarden/wiki).**
+
+### Passkeys (experimental)
+
+Set `PASSKEYS_ENABLED=true` to enable passkey registration and sign-in with
+compatible clients. A passkey can also unlock the vault when the client, browser
+and authenticator support WebAuthn PRF and encryption is enabled during
+enrollment. Without PRF, a passkey signs you in but the master password is still
+needed to unlock the vault. Existing master-password unlock remains available.
+
+With `SSO_ONLY=true`, users must still sign in through their identity provider;
+an enrolled PRF-capable passkey can unlock the vault afterward. Passkeys do not
+reset a forgotten master password. Keep a working fallback and regular backups
+of your database and files before testing this experimental feature. Disabling
+the flag rejects passkey sign-in and stops advertising passkey unlock without
+deleting registrations; it cannot revoke data already cached by a client. An
+older server cannot provide this new unlock method.
 
 ### Docker/Podman CLI
 
