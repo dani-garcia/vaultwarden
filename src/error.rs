@@ -160,6 +160,11 @@ impl Error {
     }
 
     #[must_use]
+    pub const fn get_code(&self) -> u16 {
+        self.code
+    }
+
+    #[must_use]
     pub fn with_event(mut self, event: ErrorEvent) -> Self {
         self.event = Some(event);
         self
