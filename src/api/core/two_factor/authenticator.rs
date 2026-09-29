@@ -192,9 +192,7 @@ async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: He
         }
     }
 
-    if TwoFactor::find_by_user(&user.uuid, &conn).await.is_empty() {
-        super::enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await?;
-    }
+    super::check_2fa_state(&user, headers.device.atype, &headers.ip.ip, &conn).await?;
 
     Ok(())
 }

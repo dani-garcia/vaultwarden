@@ -13,8 +13,8 @@ use crate::{
     db::{
         DbConn, DbPool,
         models::{
-            DeviceType, EventType, Membership, MembershipType, OrgPolicyType, Organization, OrganizationId, TwoFactor,
-            TwoFactorIncomplete, TwoFactorType, User, UserId,
+            Device, DeviceType, EventType, Membership, MembershipType, OrgPolicyType, Organization, OrganizationId,
+            TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
     },
     mail,
@@ -120,6 +120,14 @@ async fn generate_recover_code(user: &mut User, conn: &DbConn) {
         user.totp_recover = Some(totp_recover);
         user.save(conn).await.ok();
     }
+}
+
+pub async fn check_2fa_state(user: &User, device_type: i32, ip: &std::net::IpAddr, conn: &DbConn) -> EmptyResult {
+    if TwoFactor::find_by_user(&user.uuid, conn).await.is_empty() {
+        Device::clear_twofactor_remember_by_user(&user.uuid, conn).await?;
+        enforce_2fa_policy(user, &user.uuid, device_type, ip, conn).await?;
+    }
+    Ok(())
 }
 
 pub async fn enforce_2fa_policy(

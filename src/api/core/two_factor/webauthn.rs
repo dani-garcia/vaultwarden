@@ -394,8 +394,8 @@ async fn inner_delete_webauthns(
         }
     }
 
-    if keys.is_empty() && TwoFactor::find_by_user(&user.uuid, conn).await.is_empty() {
-        super::enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, conn).await?;
+    if keys.is_empty() {
+        super::check_2fa_state(&user, headers.device.atype, &headers.ip.ip, conn).await?;
     }
 
     Ok(Json(json!({

@@ -214,9 +214,7 @@ async fn delete_yubikeys(data: Json<VerificationTokenData>, headers: Headers, co
         log_user_event(EventType::UserDisabled2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
     }
 
-    if TwoFactor::find_by_user(&user.uuid, &conn).await.is_empty() {
-        super::enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await?;
-    }
+    super::check_2fa_state(&user, headers.device.atype, &headers.ip.ip, &conn).await?;
 
     Ok(())
 }
