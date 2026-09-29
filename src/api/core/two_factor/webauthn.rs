@@ -305,12 +305,10 @@ async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, con
 
     log_user_event(EventType::UserUpdated2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
-    let keys_json: Vec<Value> = registrations.iter().map(WebauthnRegistration::to_json).collect();
-
     Ok(Json(json!({
         "webAuthn": json!({
             "enabled": true,
-            "keys": keys_json,
+            "keys": registrations.iter().map(WebauthnRegistration::to_json).collect::<Vec<Value>>(),
         }),
     })))
 }
@@ -328,12 +326,12 @@ struct DeleteWebauthnData {
 }
 
 #[delete("/two-factor/webauthn", data = "<data>")]
-async fn delete_webauthn(data: Json<DeleteWebauthnData>, headers: Headers, conn: DbConn) -> EmptyResult {
+async fn delete_webauthn(data: Json<DeleteWebauthnData>, headers: Headers, conn: DbConn) -> JsonResult {
     inner_delete_webauthns(&data.user_verification_token, |key| key.id != data.id, headers, &conn).await
 }
 
 #[delete("/two-factor/webauthn/all", data = "<data>")]
-async fn delete_webauthns(data: Json<VerificationTokenData>, headers: Headers, conn: DbConn) -> EmptyResult {
+async fn delete_webauthns(data: Json<VerificationTokenData>, headers: Headers, conn: DbConn) -> JsonResult {
     inner_delete_webauthns(&data.user_verification_token, |_| false, headers, &conn).await
 }
 
@@ -342,7 +340,7 @@ async fn inner_delete_webauthns(
     retain: impl Fn(&WebauthnRegistration) -> bool,
     headers: Headers,
     conn: &DbConn,
-) -> EmptyResult {
+) -> JsonResult {
     let user = headers.user;
 
     let Some(mut tf) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Webauthn, conn).await else {
@@ -400,7 +398,12 @@ async fn inner_delete_webauthns(
         super::enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, conn).await?;
     }
 
-    Ok(())
+    Ok(Json(json!({
+        "webAuthn": json!({
+            "enabled": !keys.is_empty(),
+            "keys": keys.iter().map(WebauthnRegistration::to_json).collect::<Vec<Value>>(),
+        }),
+    })))
 }
 
 pub async fn get_webauthn_registrations(
