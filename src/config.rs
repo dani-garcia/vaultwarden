@@ -1428,6 +1428,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "pm-32413-multi-client-password-management",
     // Autofill Team
     "enable-basic-auth-response",
+    "fill-assist-targeting-rules",
     "ssh-agent",
     "ssh-agent-v2",
     // Key Management Team
