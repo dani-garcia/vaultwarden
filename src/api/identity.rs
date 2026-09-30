@@ -48,6 +48,7 @@ pub fn routes() -> Vec<Route> {
         prelogin_password,
         identity_register,
         register_verification_email,
+        register_verification_email_clicked,
         register_finish,
         prevalidate,
         authorize,
@@ -1078,6 +1079,13 @@ struct RegisterVerificationData {
     // receiveMarketingEmails: bool,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegisterVerificationEmailClickedData {
+    email: String,
+    email_verification_token: String,
+}
+
 #[derive(rocket::Responder)]
 enum RegisterVerificationResponse {
     #[response(status = 204)]
@@ -1138,6 +1146,25 @@ async fn register_verification_email(
             RegisterVerificationResponse::PlainToken(token)
         })
     }
+}
+
+#[post("/accounts/register/verification-email-clicked", data = "<data>")]
+async fn register_verification_email_clicked(
+    data: Json<RegisterVerificationEmailClickedData>,
+    conn: DbConn,
+) -> EmptyResult {
+    let data = data.into_inner();
+    let token_valid = auth::decode_register_verify(&data.email_verification_token)
+        .is_ok_and(|claims| claims.verified && claims.sub.eq_ignore_ascii_case(&data.email));
+    let user_exists = User::find_by_mail(&data.email, &conn)
+        .await
+        .is_some_and(|user| !user.password_hash.is_empty() || user.private_key.is_some());
+
+    if !token_valid || user_exists {
+        err!("Expired link. Please restart registration or try logging in. You may already have an account")
+    }
+
+    Ok(())
 }
 
 #[post("/accounts/register/finish", data = "<data>")]

@@ -206,7 +206,7 @@ pub async fn send_verify_email(address: &str, user_id: &UserId) -> EmptyResult {
 
 pub async fn send_register_verify_email(email: &str, token: &str) -> EmptyResult {
     let mut query = url::Url::parse("https://query.builder").unwrap();
-    query.query_pairs_mut().append_pair("email", email).append_pair("token", token);
+    query.query_pairs_mut().append_pair("email", email).append_pair("token", token).append_pair("fromEmail", "true");
     let Some(query_string) = query.query() else {
         err!("Failed to build verify URL query parameters")
     };
