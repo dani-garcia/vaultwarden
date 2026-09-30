@@ -29,12 +29,17 @@ export async function startTrusted(test: Test, page: Page) {
 
 export async function trustedUnlock(test: Test, page: Page) {
     await test.step('Unlock', async () => {
-        await page.getByRole('button', { name: users.user1.name, exact: true }).click();
-        await page.getByRole('menuitem', { name: 'Log out' }).click();
-
         await landing(test, page, users.user1, { noReset: true });
         await expect(page).toHaveTitle(/Vaults/);
     });
+}
+
+export async function logOutUnlockTrusted(test: Test, page: Page) {
+    await test.step('Log out', async () => {
+        await page.getByRole('button', { name: users.user1.name, exact: true }).click();
+        await page.getByRole('menuitem', { name: 'Log out' }).click();
+    });
+    await trustedUnlock(test, page);
 }
 
 test('Trusted', async ({ browser, page }) => {
@@ -61,7 +66,7 @@ test('Trusted', async ({ browser, page }) => {
             await utils.checkNotification(page, 'Device Trusted');
         });
 
-        await trustedUnlock(test, page);
+        await logOutUnlockTrusted(test, page);
     });
 
     const context2 = await browser.newContext();
@@ -90,6 +95,31 @@ test('Trusted', async ({ browser, page }) => {
             await utils.checkNotification(page2, 'Device Trusted');
         });
 
+        await logOutUnlockTrusted(test, page2);
+    });
+
+    let newPassword = "TotoNewPassword";
+    await test.step('Rotate key', async () => {
+        await page.getByRole('button', { name: users.user1.name }).click();
+        await page.getByRole('menuitem', { name: 'Account settings' }).click();
+        await page.getByRole('link', { name: 'Security' }).click();
+        await page.getByRole('link', { name: 'Master password' }).click();
+
+        await expect(page.getByRole('heading', { name: 'Change master password' })).toBeVisible();
+        await page.getByRole('textbox', { name: 'Current master password * (required)' }).fill(users.user1.password);
+        await page.getByRole('textbox', { name: 'New master password * (required)', exact: true }).fill(newPassword);
+        await page.getByRole('textbox', { name: 'Confirm new master password * (required)', exact: true }).fill(newPassword);
+        await page.getByRole('checkbox', { name: 'Check known data breaches for this password' }).uncheck();
+        await page.getByRole('checkbox', { name: "Also rotate my account's encryption key" }).check();
+        await page.getByRole('button', { name: 'Yes' }).click();
+        await page.getByRole('button', { name: 'Change master password' }).click();
+
+        await expect(page.getByRole('heading', { name: 'Log in', exact: true })).toBeVisible();
+        await expect(page2.getByRole('heading', { name: 'Log in', exact: true })).toBeVisible();
+    });
+
+    await test.step('Still trusted', async () => {
+        await trustedUnlock(test, page);
         await trustedUnlock(test, page2);
     });
 
@@ -97,7 +127,7 @@ test('Trusted', async ({ browser, page }) => {
         await page.getByRole('link', { name: 'Settings' }).click();
         await page.getByRole('button', { name: 'Deauthorise sessions' }).click();;
         await expect(page.getByRole('heading', { name: 'Deauthorise sessions' })).toBeVisible();
-        await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).fill(users.user1.password);
+        await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).fill(newPassword);
         await page.getByRole('button', { name: 'Deauthorise sessions' }).click();
     });
 
