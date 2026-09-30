@@ -77,6 +77,14 @@ impl Device {
         self.encrypted_user_key.is_some() && self.encrypted_public_key.is_some() && self.encrypted_private_key.is_some()
     }
 
+    pub fn lost_trust(&mut self) -> bool {
+        let lost = self.is_trusted();
+        self.encrypted_private_key = None;
+        self.encrypted_public_key = None;
+        self.encrypted_user_key = None;
+        lost
+    }
+
     pub fn to_json(&self) -> Value {
         json!({
             "id": self.uuid,

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use rocket::{
@@ -68,6 +68,7 @@ pub fn routes() -> Vec<rocket::Route> {
         get_device,
         post_device_lost_trust,
         post_device_token,
+        post_devices_untrust,
         put_device_token,
         put_clear_device_token,
         post_clear_device_token,
@@ -800,6 +801,9 @@ struct RotateAccountUnlockData {
     emergency_access_unlock_data: Vec<UpdateEmergencyAccessData>,
     master_password_unlock_data: MasterPasswordUnlockData,
     organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
+
+    #[serde(default)]
+    device_key_unlock_data: Vec<UpdateDeviceKeysData>,
 }
 
 #[derive(Deserialize)]
@@ -812,6 +816,14 @@ struct MasterPasswordUnlockData {
     email: String,
     master_key_authentication_hash: String,
     master_key_encrypted_user_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateDeviceKeysData {
+    device_id: DeviceId,
+    encrypted_user_key: String,
+    encrypted_public_key: String,
 }
 
 #[derive(Deserialize)]
@@ -829,9 +841,11 @@ struct RotateAccountData {
     sends: Vec<SendData>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_keydata(
     data: &KeyData,
     existing_ciphers: &[Cipher],
+    existing_devices: &[Device],
     existing_folders: &[Folder],
     existing_emergency_access: &[EmergencyAccess],
     existing_memberships: &[Membership],
@@ -897,6 +911,15 @@ fn validate_keydata(
         err!("All existing reset password keys must be included in the rotation")
     }
 
+    // Check that we're correctly rotating all the user's trusted device
+    let existing_trusted_device_ids =
+        existing_devices.iter().filter(|d| d.is_trusted()).map(|c| &c.uuid).collect::<HashSet<&DeviceId>>();
+    let provided_device_ids =
+        data.account_unlock_data.device_key_unlock_data.iter().map(|rp| &rp.device_id).collect::<HashSet<&DeviceId>>();
+    if !provided_device_ids.is_superset(&existing_trusted_device_ids) {
+        err!("All existing trusted device keys must be included in the rotation")
+    }
+
     // Check that we're correctly rotating all the user's sends
     let existing_send_ids = existing_sends.iter().map(|s| &s.uuid).collect::<HashSet<&SendId>>();
     let provided_send_ids = data.account_data.sends.iter().filter_map(|s| s.id.as_ref()).collect::<HashSet<&SendId>>();
@@ -927,6 +950,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // TODO: Ideally we'd do everything after this point in a single transaction.
 
     let mut existing_ciphers = Cipher::find_owned_by_user(user_id, &conn).await;
+    let existing_devices = Device::find_by_user(user_id, &conn).await;
     let mut existing_folders = Folder::find_by_user(user_id, &conn).await;
     let mut existing_emergency_access = EmergencyAccess::find_all_confirmed_by_grantor_uuid(user_id, &conn).await;
     let mut existing_memberships = Membership::find_by_user(user_id, &conn).await;
@@ -937,6 +961,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     validate_keydata(
         &data,
         &existing_ciphers,
+        &existing_devices,
         &existing_folders,
         &existing_emergency_access,
         &existing_memberships,
@@ -980,6 +1005,20 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
 
         membership.reset_password_key = Some(reset_password_data.reset_password_key);
         membership.save(&conn).await?;
+    }
+
+    // Update device
+    let mut device_updates: HashMap<DeviceId, UpdateDeviceKeysData> =
+        data.account_unlock_data.device_key_unlock_data.into_iter().map(|d| (d.device_id.clone(), d)).collect();
+    for mut device in existing_devices {
+        if let Some(update) = device_updates.remove(&device.uuid) {
+            device.encrypted_public_key = Some(update.encrypted_public_key);
+            device.encrypted_user_key = Some(update.encrypted_user_key);
+            device.save(true, &conn).await?;
+        } else if device.is_trusted() {
+            device.lost_trust();
+            device.save(true, &conn).await?;
+        }
     }
 
     // Update send data
@@ -1517,15 +1556,40 @@ async fn get_all_devices(headers: Headers, conn: DbConn) -> JsonResult {
 }
 
 #[post("/devices/lost-trust")]
-async fn post_device_lost_trust(headers: Headers, conn: DbConn) -> JsonResult {
+async fn post_device_lost_trust(headers: Headers, conn: DbConn) -> EmptyResult {
     let mut device = headers.device;
 
-    device.encrypted_user_key = None;
-    device.encrypted_public_key = None;
-    device.encrypted_private_key = None;
-    device.save(true, &conn).await?;
+    if device.lost_trust() {
+        device.save(true, &conn).await?;
+    }
 
-    Ok(Json(json!({})))
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DevicesUntrusted {
+    devices: Vec<DeviceId>,
+}
+
+#[post("/devices/untrust", data = "<data>")]
+async fn post_devices_untrust(headers: Headers, data: Json<DevicesUntrusted>, conn: DbConn) -> EmptyResult {
+    let untrusted = data.into_inner();
+    if !untrusted.devices.is_empty() {
+        for device_id in untrusted.devices {
+            warn!("Cannot find user {} device {} to untrust", device_id, headers.user.email);
+
+            if let Some(mut device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &conn).await {
+                if device.lost_trust() {
+                    device.save(true, &conn).await?;
+                }
+            } else {
+                warn!("Cannot find user {} device {} to untrust", device_id, headers.user.email);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[get("/devices/identifier/<device_id>")]
