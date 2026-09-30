@@ -587,6 +587,9 @@ make_config! {
         /// This setting applies globally to all users. To control this on a per-org basis instead, use the "Disable Send" org policy.
         sends_allowed:          bool,   true,   def,    true;
 
+        /// Fill Assist Rules URL |> HTTPS URL for the server-wide Fill Assist rules feed base directory.
+        fill_assist_rules_url: String, true, def, "https://fillassist.bitwarden.com".to_owned();
+
         /// HIBP Api Key |> HaveIBeenPwned API Key, request it here: https://haveibeenpwned.com/API/Key
         hibp_api_key:           Pass,   true,   option;
 
@@ -995,6 +998,21 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     if !dom.starts_with("http://") && !dom.starts_with("https://") {
         err!(
             "DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"
+        );
+    }
+
+    let valid_fill_assist_rules_url = Url::parse(&cfg.fill_assist_rules_url).is_ok_and(|url| {
+        url.scheme() == "https"
+            && url.has_host()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.query().is_none()
+            && url.fragment().is_none()
+            && cfg.fill_assist_rules_url.trim() == cfg.fill_assist_rules_url
+    });
+    if !valid_fill_assist_rules_url {
+        err!(
+            "`FILL_ASSIST_RULES_URL` must be a valid HTTPS URL without credentials, query parameters, fragments, or surrounding whitespace."
         );
     }
 
@@ -1420,6 +1438,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     // Autofill Team
     "undetermined-cipher-scenario-logic",
     "enable-basic-auth-response",
+    "fill-assist-targeting-rules",
     "ssh-agent-v2",
     // Key Management Team
     "windows-native-credential-sync",
