@@ -834,7 +834,7 @@ make_config! {
         /// Authorization request extra parameters
         sso_authorize_extra_params:     String, true,  def,    String::new();
         /// SSO name claim |> The OIDC claim to use for the user's display name. Falls back to `preferred_username`.
-        sso_name_claim:                 String, true,  def,   "name".to_string();
+        sso_name_claim:                 String, true,  def,    String::new();
         /// Use PKCE during Authorization flow
         sso_pkce:                       bool,   true,   def,    true;
         /// Regex for additional trusted Id token audience |> By default only the client_id is trusted.
