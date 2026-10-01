@@ -138,15 +138,15 @@ impl CollectionGroup {
     }
 
     pub fn to_json_details_for_group(&self) -> Value {
-        // If both read_only and hide_passwords are false, then manage should be true
-        // You can't have an entry with read_only and manage, or hide_passwords and manage
-        // Or an entry with everything to false
-        // For backwards compatibility and migration proposes we keep checking read_only and hide_password
+        // Return the stored manage flag. Deriving it from !read_only && !hide_passwords turned the group
+        // permission "Can edit items" (readOnly=false, hidePasswords=false, manage=false) into "Can manage"
+        // in GET /organizations/<org>/collections/details, while GET /groups/<id>/details reported the stored
+        // value. Saving the collection access dialog then persisted manage=true.
         json!({
             "id": self.groups_uuid,
             "readOnly": self.read_only,
             "hidePasswords": self.hide_passwords,
-            "manage": self.manage || (!self.read_only && !self.hide_passwords),
+            "manage": self.manage,
         })
     }
 }
