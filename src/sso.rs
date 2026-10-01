@@ -289,18 +289,45 @@ pub async fn exchange_code(
     let email_verified = id_claims.email_verified().or(user_info.email_verified());
 
     let configured_claim = CONFIG.sso_name_claim();
+    let mut user_name = None;
 
-    let extract_claim = |claims: &serde_json::Value, claim_key: &str| -> Option<String> {
-        claims.get(claim_key).and_then(|v| v.as_str()).map(|s| s.to_string())
-    };
+    if configured_claim == "name" {
+        user_name = id_claims
+            .name()
+            .and_then(|n| n.get(id_claims.locale().as_ref()).or_else(|| n.get(None)))
+            .or_else(|| {
+                user_info
+                    .name()
+                    .and_then(|n| n.get(user_info.locale().as_ref()).or_else(|| n.get(None)))
+            })
+            .map(|n| n.to_string())
+            .filter(|s| !s.trim().is_empty());
+    } else if !configured_claim.is_empty() {
+        let extract_claim = |claims: &serde_json::Value, claim_key: &str| -> Option<String> {
+            claims.get(claim_key)
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .filter(|s| !s.trim().is_empty())
+        };
 
-    let id_claims_json = serde_json::to_value(&id_claims).unwrap_or_default();
-    let user_info_json = serde_json::to_value(&user_info).unwrap_or_default();
+        let id_claims_json = serde_json::to_value(&id_claims).unwrap_or_default();
+        let user_info_json = serde_json::to_value(&user_info).unwrap_or_default();
 
-    let user_name = extract_claim(&id_claims_json, &configured_claim)
-        .or_else(|| extract_claim(&user_info_json, &configured_claim))
-        .or_else(|| id_claims.preferred_username().map(|n| n.to_string()))
-        .or_else(|| user_info.preferred_username().map(|n| n.to_string()));
+        user_name = extract_claim(&id_claims_json, &configured_claim)
+            .or_else(|| extract_claim(&user_info_json, &configured_claim));
+    }
+
+    let user_name = user_name
+        .or_else(|| {
+            id_claims.preferred_username()
+                .map(|n| n.to_string())
+                .filter(|s| !s.trim().is_empty())
+        })
+        .or_else(|| {
+            user_info.preferred_username()
+                .map(|n| n.to_string())
+                .filter(|s| !s.trim().is_empty())
+        });
 
     let refresh_token = token_response.refresh_token().map(openidconnect::RefreshToken::secret);
     if refresh_token.is_none() && CONFIG.sso_scopes_vec().contains(&"offline_access".to_owned()) {
