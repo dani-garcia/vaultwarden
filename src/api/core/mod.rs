@@ -217,7 +217,11 @@ fn config() -> Json<Value> {
     // iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
     let mut feature_states = parse_experimental_client_feature_flags(
         &CONFIG.experimental_client_feature_flags(),
-        &FeatureFlagFilter::ValidOnly,
+        &if CONFIG.experimental_client_feature_flags_allow_unsupported() {
+            FeatureFlagFilter::Unfiltered
+        } else {
+            FeatureFlagFilter::ValidOnly
+        },
     );
     feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
 

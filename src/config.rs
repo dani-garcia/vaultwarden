@@ -723,6 +723,9 @@ make_config! {
 
         /// Customize the enabled feature flags on the clients |> This is a comma separated list of feature flags to enable.
         experimental_client_feature_flags: String, false, def, String::new();
+        /// Allow unsupported client feature flags |> Pass all configured experimental client feature flags to clients, including flags outside the supported list.
+        /// Unsupported flags remain visible in admin diagnostics and may require functionality Vaultwarden does not provide.
+        experimental_client_feature_flags_allow_unsupported: bool, false, def, false;
 
         /// Require new device emails |> When a user logs in an email is required to be sent.
         /// If sending the email fails the login attempt will fail.
@@ -1066,7 +1069,7 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         &cfg.experimental_client_feature_flags,
         &FeatureFlagFilter::InvalidOnly,
     );
-    if !invalid_flags.is_empty() {
+    if !cfg.experimental_client_feature_flags_allow_unsupported && !invalid_flags.is_empty() {
         let feature_flags_error = format!(
             "Unrecognized experimental client feature flags: {invalid_flags:?}.\n\
                      Please ensure all feature flags are spelled correctly and that they are supported in this version.\n\
@@ -1873,3 +1876,49 @@ handlebars::handlebars_helper!(webver: | web_vault_version: String |
 handlebars::handlebars_helper!(vwver: | vw_version: String |
     semver::VersionReq::parse(&vw_version).expect("Invalid Vaultwarden version compare string").matches(&VW_VERSION)
 );
+
+#[cfg(test)]
+mod tests {
+    use super::{ConfigBuilder, validate_config};
+
+    fn config_with_unsupported_feature_flag() -> ConfigBuilder {
+        ConfigBuilder {
+            database_url: Some("sqlite://feature-flags-test.sqlite3".to_owned()),
+            experimental_client_feature_flags: Some("unsupported-test-feature".to_owned()),
+            ..ConfigBuilder::default()
+        }
+    }
+
+    #[test]
+    fn unsupported_feature_flags_are_rejected_on_update_by_default() {
+        let config = config_with_unsupported_feature_flag().build();
+
+        assert!(!config.experimental_client_feature_flags_allow_unsupported);
+        assert!(validate_config(&config, false).is_ok());
+        let error = validate_config(&config, true).unwrap_err();
+        assert!(error.to_string().contains("Unrecognized experimental client feature flags"));
+    }
+
+    #[test]
+    fn unsupported_feature_flags_can_be_allowed_on_startup_and_update() {
+        let mut builder = config_with_unsupported_feature_flag();
+        builder.experimental_client_feature_flags_allow_unsupported = Some(true);
+        let config = builder.build();
+
+        assert!(validate_config(&config, false).is_ok());
+        assert!(validate_config(&config, true).is_ok());
+    }
+
+    #[test]
+    fn allowing_unsupported_feature_flags_preserves_other_validation() {
+        let mut builder = config_with_unsupported_feature_flag();
+        builder.experimental_client_feature_flags_allow_unsupported = Some(true);
+        builder.smtp_security = Some("invalid-security".to_owned());
+        let config = builder.build();
+
+        for on_update in [false, true] {
+            let error = validate_config(&config, on_update).unwrap_err();
+            assert!(error.to_string().contains("SMTP_SECURITY"));
+        }
+    }
+}

@@ -815,7 +815,6 @@ pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
 }
 
 pub enum FeatureFlagFilter {
-    #[allow(dead_code)]
     Unfiltered,
     ValidOnly,
     InvalidOnly,
