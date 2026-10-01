@@ -199,6 +199,26 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                     .await;
                 }
             }
+            // Only the vault notification banner click is accepted from clients. The rest of
+            // the 1500..=1599 range is written server-side and must not be forgeable by a client.
+            t if t == EventType::OrganizationUserNotificationBannerActionClicked as i32 => {
+                if let Some(org_id) = &event.organization_id
+                    && let Some(membership) =
+                        Membership::find_confirmed_by_user_and_org(&headers.user.uuid, org_id, &conn).await
+                {
+                    log_event_impl(
+                        event.r#type,
+                        &membership.uuid,
+                        org_id,
+                        &headers.user.uuid,
+                        headers.device.atype,
+                        Some(event_date),
+                        &headers.ip.ip,
+                        &conn,
+                    )
+                    .await;
+                }
+            }
             _ => {
                 // The cipher determines the organization the event is logged to, so make sure the
                 // user can actually access it instead of trusting the provided cipher uuid.

@@ -69,6 +69,8 @@ pub struct User {
     pub avatar_color: Option<String>,
 
     pub external_id: Option<String>, // Todo: Needs to be removed in the future, this is not used anymore.
+
+    pub key_id: Option<KeyId>,
 }
 
 #[derive(Identifiable, Queryable, Insertable)]
@@ -154,6 +156,8 @@ impl User {
             avatar_color: None,
 
             external_id: None, // Todo: Needs to be removed in the future, this is not used anymore.
+
+            key_id: None,
         }
     }
 
@@ -259,6 +263,11 @@ impl User {
             orgs_json.push(c.to_json(conn).await);
         }
 
+        let mut orgs_new_json = Vec::new();
+        for c in Membership::find_accepted_and_confirmed_by_user(&self.uuid, conn).await {
+            orgs_new_json.push(c.to_json(conn).await);
+        }
+
         let twofactor_enabled = !TwoFactor::find_by_user(&self.uuid, conn).await.is_empty();
 
         // TODO: Might want to save the status field in the DB
@@ -299,6 +308,7 @@ impl User {
             "privateKey": self.private_key,
             "securityStamp": self.security_stamp,
             "organizations": orgs_json,
+            "organizationsNew": orgs_new_json,
             "providers": [],
             "providerOrganizations": [],
             "forcePasswordReset": false,
@@ -526,6 +536,26 @@ impl Invitation {
 #[deref(forward)]
 #[from(forward)]
 pub struct UserId(String);
+
+#[derive(
+    Clone,
+    Debug,
+    DieselNewType,
+    FromForm,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    AsRef,
+    Deref,
+    Display,
+    From,
+    UuidFromParam,
+)]
+#[deref(forward)]
+#[from(forward)]
+pub struct KeyId(String);
 
 impl SsoUser {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {

@@ -1429,6 +1429,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "pm-5594-safari-account-switching",
     "pm-32413-multi-client-password-management",
     // Autofill Team
+    "enable-basic-auth-response",
     "ssh-agent",
     "ssh-agent-v2",
     // Key Management Team
@@ -1441,8 +1442,11 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "mutual-tls",
     "cxp-import-mobile",
     "cxp-export-mobile",
+    "pm-34171-card-scanner",
     // Platform Team
     "pm-30529-webauthn-related-origins",
+    // Vault Team
+    "pm-32009-new-item-types",
 ];
 
 impl Config {
