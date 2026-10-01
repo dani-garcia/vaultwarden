@@ -187,6 +187,7 @@ impl Client {
         client_challenge: OIDCCodeChallenge,
         redirect_uri: String,
         binding_hash: Option<String>,
+        login_hint: Option<String>,
     ) -> ApiResult<(Url, SsoAuth)> {
         let scopes = CONFIG.sso_scopes_vec().into_iter().map(Scope::new);
         let base64_state = data_encoding::BASE64.encode(state.to_string().as_bytes());
@@ -206,6 +207,12 @@ impl Client {
             auth_req = auth_req
                 .add_extra_param::<&str, String>("code_challenge", client_challenge.clone().into())
                 .add_extra_param("code_challenge_method", "S256");
+        }
+
+        if CONFIG.sso_login_hint()
+            && let Some(value) = login_hint
+        {
+            auth_req = auth_req.add_extra_param("login_hint", value);
         }
 
         let (auth_url, _, nonce) = auth_req.url();
