@@ -711,6 +711,7 @@ impl Cipher {
                 // Only allow group access via a confirmed membership, since
                 // groups_users rows are kept when a membership is revoked.
                 .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .filter(ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()))
                 .select((collections_groups::read_only, collections_groups::hide_passwords, collections_groups::manage))
                 .load::<(bool, bool, bool)>(conn)
                 .expect("Error getting group access restrictions")
