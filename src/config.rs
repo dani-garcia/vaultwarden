@@ -1435,6 +1435,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "ssh-key-vault-item",
     "pm-25373-windows-biometrics-v2",
     "pm-26340-linux-biometrics-v2",
+    "windows-native-credential-sync",
     // Mobile Team
     "anon-addy-self-host-alias",
     "simple-login-self-host-alias",
