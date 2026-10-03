@@ -3,14 +3,17 @@ use chrono::{TimeDelta, Utc};
 use rocket::request::{FromRequest, Outcome, Request};
 
 use crate::{
+    CONFIG,
     api::ApiResult,
     auth,
     auth::{BasicJwtClaims, ClientIp},
+    crypto,
     db::{
         DbConn,
-        models::{Send, SendId},
+        models::{SendId, SendOTP},
     },
     error::{Error, ErrorKind},
+    mail,
 };
 
 fn generate_send_access_claims(send_id: &SendId) -> BasicJwtClaims {
@@ -68,6 +71,8 @@ impl SendTokens {
     pub async fn generate_tokens(
         access_id: &str,
         password: Option<String>,
+        email: Option<String>,
+        otp: Option<String>,
         ip: &ClientIp,
         conn: &DbConn,
     ) -> ApiResult<SendTokens> {
@@ -75,7 +80,7 @@ impl SendTokens {
             return Self::invalid_error(&format!("Can't convert {access_id}"), "send_id_invalid", false);
         };
 
-        let Some(mut send) = Send::find_by_uuid(&send_id, conn).await else {
+        let Some((mut send, o_otp)) = SendOTP::find_with_send(&send_id, email.as_ref(), conn).await else {
             return Self::invalid_error(&format!("Can't find {send_id}"), "send_id_invalid", false);
         };
 
@@ -87,6 +92,41 @@ impl SendTokens {
 
         if !send.is_accessible() {
             return Self::invalid_error(&format!("Send {send_id}, not accessible"), "send_id_invalid", true);
+        }
+
+        if !CONFIG.mail_enabled() && send.emails.is_some() {
+            return Self::invalid_error(
+                &format!("Send {send_id}, email disabled but require verification"),
+                "send_id_invalid",
+                false,
+            );
+        }
+
+        if let Some(mut split) = send.emails.as_ref().map(|s| s.split(',')) {
+            let now = Utc::now().naive_utc();
+            match email.as_ref() {
+                Some(e) if split.any(|s| s == e) => {
+                    match (otp, o_otp) {
+                        (Some(code), Some(db_otp)) if code == db_otp.code && now < db_otp.expiration_date => (),
+                        (None, _) => {
+                            // SEND OTP CODE
+                            let code = crypto::generate_email_token(CONFIG.email_token_size());
+                            SendOTP::new(send_id, e, code.clone()).save(conn).await?;
+                            mail::send_sends_otp(e, &code).await?;
+                            return Self::expected_error("Email OTP required", "email_and_otp_required");
+                        }
+                        _ => return Self::invalid_error(&format!("Send {send_id}, disabled"), "send_id_invalid", true),
+                    }
+                }
+                Some(e) => {
+                    return Self::invalid_error(
+                        &format!("Send {send_id}, invalid access from {e}"),
+                        "send_id_invalid",
+                        false,
+                    );
+                }
+                None => return Self::expected_error("Email validation required", "email_required"),
+            }
         }
 
         if send.password_hash.is_some() {
