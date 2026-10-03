@@ -54,11 +54,24 @@ struct PasswordOrOtpData {
     otp: Option<String>,
 }
 
+// Change the KDF Iterations if necessary
+async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &DbConn) -> EmptyResult {
+    if user.password_iterations < CONFIG.password_iterations() {
+        user.password_iterations = CONFIG.password_iterations();
+        user.set_password(pwd_hash, None, false, None, conn).await?;
+
+        if let Err(e) = user.save(conn).await {
+            error!("Error updating user: {e:#?}");
+        }
+    }
+    Ok(())
+}
+
 impl PasswordOrOtpData {
     /// Tokens used via this struct can be used multiple times during the process
     /// First for the validation to continue, after that to enable or validate the following actions
     /// This is different per caller, so it can be adjusted to delete the token or not
-    pub async fn validate(&self, user: &User, delete_if_valid: bool, conn: &DbConn) -> EmptyResult {
+    pub async fn validate(&self, user: &mut User, delete_if_valid: bool, conn: &DbConn) -> EmptyResult {
         use crate::api::core::two_factor::protected_actions::validate_protected_action_otp;
 
         match (self.master_password_hash.as_deref(), self.otp.as_deref()) {
@@ -66,6 +79,8 @@ impl PasswordOrOtpData {
                 if !user.check_valid_password(pw_hash) {
                     err!("Invalid password");
                 }
+
+                kdf_upgrade(user, pw_hash, conn).await?;
             }
             (None, Some(otp)) => {
                 validate_protected_action_otp(otp, &user.uuid, delete_if_valid, conn).await?;

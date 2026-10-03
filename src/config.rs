@@ -661,7 +661,9 @@ make_config! {
 
     client {
         /// Control whether clients onboarding interstitials are suppressed |> post-login welcome dialogs, extension install prompts, setup extension redirects, and premium upsell modals
-        client_suppress_onboarding:         bool, true,   def,    false;
+        client_suppress_onboarding:         bool,   true,   def,    false;
+        /// In most cases this value is set by the client |> Will block clients from setting too low of a value in `accounts::post_kdf`
+        client_kdf_iter:                    i32,    false,  def,    600_000;
     },
 
     /// Advanced settings
@@ -938,6 +940,21 @@ make_config! {
     },
 }
 
+fn check_iterations(cfg: &ConfigItems, iterations: i32, key: &str) -> Result<(), Error> {
+    if iterations < 100_000 {
+        if let Ok(url) = Url::parse(&cfg.domain)
+            && url.domain().is_none()
+        {
+            // Warn only if it's probably not exposed externnaly
+            println!("[WARNING] {key} should be at least 100000 or higher. The default is 600000!");
+        } else {
+            err!(format!("{key} should be at least 100000 or higher. The default is 600000!"));
+        }
+    }
+
+    Ok(())
+}
+
 fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     // Validate connection URL is valid and DB feature is enabled
     #[cfg(sqlite)]
@@ -972,9 +989,8 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         }
     }
 
-    if cfg.password_iterations < 100_000 {
-        err!("PASSWORD_ITERATIONS should be at least 100000 or higher. The default is 600000!");
-    }
+    check_iterations(cfg, cfg.password_iterations, "PASSWORD_ITERATIONS")?;
+    check_iterations(cfg, cfg.client_kdf_iter, "CLIENT_KDF_ITER")?;
 
     let limit = 256;
     if cfg.database_max_conns < 1 || cfg.database_max_conns > limit {
