@@ -32,7 +32,7 @@ use crate::{
 
 use super::{
     ciphers::{CipherData, update_cipher_from_data},
-    sends::{SendData, update_send_from_data},
+    sends::SendData,
 };
 
 pub fn routes() -> Vec<rocket::Route> {
@@ -982,11 +982,13 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
 
     // Update send data
     for send_data in data.account_data.sends {
-        let Some(send) = existing_sends.iter_mut().find(|s| &s.uuid == send_data.id.as_ref().unwrap()) else {
+        let Some(send) = send_data.id.as_ref().and_then(|id| existing_sends.iter_mut().find(|s| &s.uuid == id)) else {
             err!("Send doesn't exist")
         };
 
-        update_send_from_data(send, send_data, &headers, &conn, &nt, UpdateType::None).await?;
+        // Like upstream, only the key changes on rotation
+        send.akey = send_data.key;
+        send.save(&conn).await?;
     }
 
     // Update cipher data
