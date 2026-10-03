@@ -220,6 +220,13 @@ auth-input-password > form > bit-form-field:nth-child(4) {
   @extend %vw-hide;
 }
 {{/unless}}
+
+{{#unless email_change_allowed}}
+/* Hide the whole `Change email` section, including its heading, if not allowed */
+div:has(> app-change-email) {
+  @extend %vw-hide;
+}
+{{/unless}}
 /**** End Dynamic Vaultwarden Changes ****/
 /**** Include a special user stylesheet for custom changes ****/
 {{#if load_user_scss}}

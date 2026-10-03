@@ -905,23 +905,23 @@ mod tests {
     fn validate_web_vault_compare() {
         // web_vault_compare(active, latest)
         // Test normal versions
-        assert!(web_vault_compare("2025.12.0", "2025.12.1") == -1);
-        assert!(web_vault_compare("2025.12.1", "2025.12.1") == 0);
-        assert!(web_vault_compare("2025.12.2", "2025.12.1") == 1);
+        assert_eq!(web_vault_compare("2025.12.0", "2025.12.1"), -1);
+        assert_eq!(web_vault_compare("2025.12.1", "2025.12.1"), 0);
+        assert_eq!(web_vault_compare("2025.12.2", "2025.12.1"), 1);
 
         // Test patched/+build.n versions
         // Newer latest version
-        assert!(web_vault_compare("2025.12.0+build.1", "2025.12.1") == -1);
-        assert!(web_vault_compare("2025.12.1", "2025.12.1+build.1") == -1);
-        assert!(web_vault_compare("2025.12.0+build.1", "2025.12.1+build.1") == -1);
-        assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.2") == -1);
+        assert_eq!(web_vault_compare("2025.12.0+build.1", "2025.12.1"), -1);
+        assert_eq!(web_vault_compare("2025.12.1", "2025.12.1+build.1"), -1);
+        assert_eq!(web_vault_compare("2025.12.0+build.1", "2025.12.1+build.1"), -1);
+        assert_eq!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.2"), -1);
         // Equal versions
-        assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.1") == 0);
-        assert!(web_vault_compare("2025.12.2+build.2", "2025.12.2+build.2") == 0);
+        assert_eq!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.1"), 0);
+        assert_eq!(web_vault_compare("2025.12.2+build.2", "2025.12.2+build.2"), 0);
         // Newer active version
-        assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1") == 1);
-        assert!(web_vault_compare("2025.12.2", "2025.12.1+build.1") == 1);
-        assert!(web_vault_compare("2025.12.2+build.1", "2025.12.1+build.1") == 1);
-        assert!(web_vault_compare("2025.12.1+build.3", "2025.12.1+build.2") == 1);
+        assert_eq!(web_vault_compare("2025.12.1+build.1", "2025.12.1"), 1);
+        assert_eq!(web_vault_compare("2025.12.2", "2025.12.1+build.1"), 1);
+        assert_eq!(web_vault_compare("2025.12.2+build.1", "2025.12.1+build.1"), 1);
+        assert_eq!(web_vault_compare("2025.12.1+build.3", "2025.12.1+build.2"), 1);
     }
 }
