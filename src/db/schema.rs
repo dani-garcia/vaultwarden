@@ -409,4 +409,28 @@ allow_tables_to_appear_in_same_query!(
     collections_groups,
     event,
     auth_requests,
+    web_authn_credentials,
+    web_authn_login_challenges,
 );
+
+table! {
+    web_authn_credentials (uuid) {
+        uuid -> Text,
+        user_uuid -> Text,
+        name -> Text,
+        credential -> Text,
+        credential_id_hash -> Text,
+        supports_prf -> Bool,
+        encrypted_user_key -> Nullable<Text>,
+        encrypted_public_key -> Nullable<Text>,
+        encrypted_private_key -> Nullable<Text>,
+    }
+}
+
+table! {
+    web_authn_login_challenges (token_hash) {
+        token_hash -> Text,
+        state -> Text,
+        created_at -> BigInt,
+    }
+}

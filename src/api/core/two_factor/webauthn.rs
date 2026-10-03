@@ -30,7 +30,7 @@ use crate::{
     util::NumberOrString,
 };
 
-static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
+pub(crate) static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
     let domain = CONFIG.domain();
     let domain_origin = CONFIG.domain_origin();
     let rp_id = Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
