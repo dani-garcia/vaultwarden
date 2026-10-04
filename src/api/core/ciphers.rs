@@ -29,7 +29,7 @@ use crate::{
     util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
 };
 
-use super::folders::FolderData;
+use super::{folders::FolderData, sends::SIZE_525_MB};
 
 pub fn routes() -> Vec<Route> {
     // Note that many routes have an `admin` variant; this seems to be
@@ -441,10 +441,10 @@ pub async fn update_cipher_from_data(
     // We do not mind which data is in it, the keep our model more flexible when there are upstream changes.
     // But, we at least know we do not need to store and return this specific key.
     fn clean_cipher_data(mut json_data: Value) -> Value {
-        if json_data.is_array() {
-            json_data.as_array_mut().unwrap().iter_mut().for_each(|ref mut f| {
-                f.as_object_mut().unwrap().remove("response");
-            });
+        if let Some(items) = json_data.as_array_mut() {
+            for item in items.iter_mut().filter_map(Value::as_object_mut) {
+                item.remove("response");
+            }
         }
         json_data
     }
@@ -486,9 +486,10 @@ pub async fn update_cipher_from_data(
             Some(member) => {
                 // A non-empty list of collections implies the caller already validated the user's write
                 // access to them, so we can move the cipher into the organization on that basis.
+                // Write access to the cipher itself only counts when it already belongs to this organization.
                 if shared_to_collections.as_ref().is_some_and(|cols| !cols.is_empty())
                     || member.has_full_access()
-                    || cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await
+                    || (!transfer_cipher && cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await)
                 {
                     cipher.organization_uuid = Some(org_id);
                     // After some discussion in PR #1329 re-added the user_uuid = None again.
@@ -552,7 +553,9 @@ pub async fn update_cipher_from_data(
 
     let type_data = if let Some(mut data) = type_data_opt {
         // Remove the 'Response' key from the base object.
-        data.as_object_mut().unwrap().remove("response");
+        if let Some(data_obj) = data.as_object_mut() {
+            data_obj.remove("response");
+        }
         // Remove the 'Response' key from every Uri.
         if data["uris"].is_array() {
             data["uris"] = clean_cipher_data(data["uris"].clone());
@@ -1181,6 +1184,10 @@ async fn post_attachment_v2(
 
     if file_size < 0 {
         err!("Attachment size can't be negative")
+    }
+    // Matches the "file" upload limit in main.rs, nothing larger can be uploaded
+    if file_size > SIZE_525_MB {
+        err!("Max file size is 525 MB.")
     }
     let attachment_id = crypto::generate_attachment_id();
     let attachment =

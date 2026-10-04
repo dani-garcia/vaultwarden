@@ -23,7 +23,7 @@ use crate::{
 
 const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer available";
 static ANON_PUSH_DEVICE: LazyLock<Device> = LazyLock::new(|| {
-    let dt = crate::util::parse_date("1970-01-01T00:00:00.000000Z");
+    let dt = DateTime::UNIX_EPOCH.naive_utc();
     Device {
         uuid: String::from("00000000-0000-0000-0000-000000000000").into(),
         created_at: dt,
@@ -39,7 +39,7 @@ static ANON_PUSH_DEVICE: LazyLock<Device> = LazyLock::new(|| {
 });
 
 // The max file size allowed by Bitwarden clients and add an extra 5% to avoid issues
-const SIZE_525_MB: i64 = 550_502_400;
+pub(crate) const SIZE_525_MB: i64 = 550_502_400;
 
 pub fn routes() -> Vec<rocket::Route> {
     routes![
@@ -328,8 +328,8 @@ async fn post_send_file_v2_data(
             "Send file name does not match.",
             format!(
                 "Expected file name '{}' got '{}'",
-                send_data.fileName,
-                raw_file_name.dangerous_unsafe_unsanitized_raw()
+                send_data.fileName.escape_debug(),
+                raw_file_name.dangerous_unsafe_unsanitized_raw().as_str().escape_debug()
             )
         ),
         _ => err!("Send file name does not match or is not provided."),

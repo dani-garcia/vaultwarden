@@ -380,7 +380,7 @@ pub fn get_display_size(size: i64) -> String {
     let mut unit_counter = 0;
 
     loop {
-        if size > 1024. {
+        if size > 1024. && unit_counter < UNITS.len() - 1 {
             size /= 1024.;
             unit_counter += 1;
         } else {
@@ -522,8 +522,8 @@ pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
     expiry_time.to_rfc2822().replace("+0000", "GMT")
 }
 
-pub fn parse_date(date: &str) -> NaiveDateTime {
-    DateTime::parse_from_rfc3339(date).unwrap().naive_utc()
+pub fn parse_date(date: &str) -> Option<NaiveDateTime> {
+    DateTime::parse_from_rfc3339(date).ok().map(|dt| dt.naive_utc())
 }
 
 /// Returns true or false if an email address is valid or not

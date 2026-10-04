@@ -1028,7 +1028,7 @@ async fn send_invite(
         let user = match User::find_by_mail(email, &conn).await {
             None => {
                 if !CONFIG.invitations_allowed() {
-                    err!(format!("User does not exist: {email}"))
+                    err!(format!("User does not exist: {}", email.escape_debug()))
                 }
 
                 if !CONFIG.is_email_domain_allowed(email) {
@@ -1046,7 +1046,7 @@ async fn send_invite(
             }
             Some(user) => {
                 if Membership::find_by_user_and_org(&user.uuid, &org_id, &conn).await.is_some() {
-                    err!(format!("User already in organization: {email}"))
+                    err!(format!("User already in organization: {}", email.escape_debug()))
                 }
 
                 if !CONFIG.mail_enabled() {
@@ -1321,7 +1321,9 @@ async fn bulk_confirm_invite(
     match data.keys {
         Some(keys) => {
             for invite in keys {
-                let member_id = invite.id.unwrap();
+                let Some(member_id) = invite.id else {
+                    err!("Member id is required")
+                };
                 let user_key = invite.key.unwrap_or_default();
                 let err_msg = match confirm_invite_impl(&org_id, &member_id, &user_key, &headers, &conn, &nt).await {
                     Ok(()) => String::new(),
