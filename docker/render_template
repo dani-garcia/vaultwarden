@@ -3,17 +3,23 @@
 import os
 import argparse
 import json
+import tomllib
 import yaml
 import jinja2
 
 # Load settings file
-with open("DockerSettings.yaml", 'r') as yaml_file:
+with open('DockerSettings.yaml', 'r', encoding='utf-8') as yaml_file:
 	yaml_data = yaml.safe_load(yaml_file)
+
+# Extract the rust_version from the rust-toolchain.toml file
+script_dir = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(script_dir, '..', 'rust-toolchain.toml'), 'rb') as toolchain_file:
+    yaml_data["rust_version"] = tomllib.load(toolchain_file)["toolchain"]["channel"]
 
 settings_env = jinja2.Environment(
 	loader=jinja2.FileSystemLoader(os.getcwd()),
 )
-settings_yaml = yaml.safe_load(settings_env.get_template("DockerSettings.yaml").render(yaml_data))
+settings_yaml = yaml.safe_load(settings_env.get_template('DockerSettings.yaml').render(yaml_data))
 
 args_parser = argparse.ArgumentParser()
 args_parser.add_argument('template_file', help='Jinja2 template file to render.')

@@ -595,29 +595,52 @@ async fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> Json
 #[serde(rename_all = "camelCase")]
 struct ChangePassData {
     master_password_hash: String,
-    new_master_password_hash: String,
     master_password_hint: Option<String>,
-    key: String,
+    authentication_data: Option<AuthenticationData>,
+    unlock_data: Option<UnlockData>,
+
+    // Outdated values, might still be used by older clients
+    new_master_password_hash: Option<String>,
+    key: Option<String>,
 }
 
 #[post("/accounts/password", data = "<data>")]
 async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let data: ChangePassData = data.into_inner();
-    let mut user = headers.user;
+    let user = headers.user;
 
     if !user.check_valid_password(&data.master_password_hash) {
         err!("Invalid password")
     }
 
-    user.password_hint = clean_password_hint(data.master_password_hint.as_ref());
-    enforce_password_hint_setting(user.password_hint.as_ref())?;
-
     log_user_event(EventType::UserChangedPassword as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)
         .await;
 
+    let (new_master_password_hash, new_key) =
+        if let (Some(unlock_data), Some(authentication_data)) = (data.unlock_data, data.authentication_data) {
+            if authentication_data.kdf != unlock_data.kdf {
+                err!("KDF settings must be equal for authentication and unlock")
+            }
+
+            if user.email != authentication_data.salt || user.email != unlock_data.salt {
+                err!("Invalid master password salt")
+            }
+
+            (authentication_data.master_password_authentication_hash, unlock_data.master_key_wrapped_user_key)
+        } else if let (Some(new_master_password_hash), Some(new_key)) = (data.new_master_password_hash, data.key) {
+            (new_master_password_hash, new_key)
+        } else {
+            err!("Invalid request!")
+        };
+
+    let mut user = user;
+
+    user.password_hint = clean_password_hint(data.master_password_hint.as_ref());
+    enforce_password_hint_setting(user.password_hint.as_ref())?;
+
     user.set_password(
-        &data.new_master_password_hash,
-        Some(data.key),
+        &new_master_password_hash,
+        Some(new_key),
         true,
         Some(vec![
             String::from("post_rotatekey"),
@@ -1317,11 +1340,13 @@ pub struct PreloginData {
 }
 
 #[post("/accounts/prelogin", data = "<data>")]
-async fn post_prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
-    prelogin(data, conn).await
+async fn post_prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+    prelogin(data, ip, conn).await
 }
 
-pub async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
+pub async fn prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+    crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
+
     let data: PreloginData = data.into_inner();
 
     let (kdf_type, kdf_iter, kdf_mem, kdf_para) = match User::find_by_mail(&data.email, &conn).await {
@@ -1329,7 +1354,7 @@ pub async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
         None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
     };
 
-    Json(json!({
+    Ok(Json(json!({
         "kdf": kdf_type,
         "kdfIterations": kdf_iter,
         "kdfMemory": kdf_mem,
@@ -1341,7 +1366,7 @@ pub async fn prelogin(data: Json<PreloginData>, conn: DbConn) -> Json<Value> {
             "parallelism": kdf_para
         },
         "salt": null,
-    }))
+    })))
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Auth/Models/Request/Accounts/SecretVerificationRequestModel.cs
@@ -1572,6 +1597,8 @@ async fn post_auth_request(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    crate::ratelimit::check_limit_unauthenticated(&client_headers.ip.ip)?;
+
     let data = data.into_inner();
 
     let Some(user) = User::find_by_mail(&data.email, &conn).await else {
@@ -1584,7 +1611,7 @@ async fn post_auth_request(
         _ => err!("AuthRequest doesn't exist", "Device verification failed"),
     };
 
-    let mut auth_request = AuthRequest::new(
+    let auth_request = AuthRequest::new(
         user.uuid.clone(),
         data.device_identifier.clone(),
         client_headers.device_type,
@@ -1733,6 +1760,8 @@ async fn get_auth_request_response(
     client_headers: ClientHeaders,
     conn: DbConn,
 ) -> JsonResult {
+    crate::ratelimit::check_limit_unauthenticated(&client_headers.ip.ip)?;
+
     let Some(auth_request) = AuthRequest::find_by_uuid(&auth_request_id, &conn).await else {
         err!("AuthRequest doesn't exist", "User not found")
     };
