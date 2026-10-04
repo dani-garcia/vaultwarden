@@ -561,7 +561,7 @@ make_config! {
         /// Auth Request cleanup schedule |> Cron schedule of the job that cleans old auth requests from the auth request.
         /// Defaults to every minute. Set blank to disable this job.
         auth_request_purge_schedule:   String, false,  def,    "30 * * * * *".to_owned();
-        /// Duo Auth context cleanup schedule |> Cron schedule of the job that cleans expired Duo contexts from the database. Does nothing if Duo MFA is disabled or set to use the legacy iframe prompt.
+        /// Duo Auth context cleanup schedule |> Cron schedule of the job that cleans expired Duo contexts from the database. Does nothing if Duo MFA is disabled.
         /// Defaults to once every minute. Set blank to disable this job.
         duo_context_purge_schedule:   String, false,  def,    "30 * * * * *".to_owned();
         /// Purge incomplete SSO auth. |> Cron schedule of the job that cleans leftover auth in db due to incomplete SSO login.
@@ -865,16 +865,12 @@ make_config! {
     duo: _enable_duo {
         /// Enabled
         _enable_duo:            bool,   true,   def,     true;
-        /// Attempt to use deprecated iframe-based Traditional Prompt (Duo WebSDK 2)
-        duo_use_iframe:         bool,   false,  def,     false;
         /// Client Id
         duo_ikey:               String, true,   option;
         /// Client Secret
         duo_skey:               Pass,   true,   option;
         /// Host
         duo_host:               String, true,   option;
-        /// Application Key (generated automatically)
-        _duo_akey:              Pass,   false,  option;
     },
 
     /// SMTP Email Settings
@@ -1418,30 +1414,16 @@ pub enum PathType {
 // Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
 // iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
 pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
-    // Architecture
-    "desktop-ui-migration-milestone-1",
-    "desktop-ui-migration-milestone-2",
-    "desktop-ui-migration-milestone-3",
-    "desktop-ui-migration-milestone-4",
     // Auth Team
     "pm-5594-safari-account-switching",
     "pm-32413-multi-client-password-management",
     // Autofill Team
     "undetermined-cipher-scenario-logic",
     "enable-basic-auth-response",
-    "ssh-agent",
     "ssh-agent-v2",
     // Key Management Team
-    "ssh-key-vault-item",
-    "pm-25373-windows-biometrics-v2",
-    "pm-26340-linux-biometrics-v2",
     "windows-native-credential-sync",
     // Mobile Team
-    "anon-addy-self-host-alias",
-    "simple-login-self-host-alias",
-    "mutual-tls",
-    "cxp-import-mobile",
-    "cxp-export-mobile",
     "pm-34171-card-scanner",
     // Platform Team
     "pm-30529-webauthn-related-origins",
@@ -1516,15 +1498,6 @@ impl Config {
         crate::api::invalidate_css_cache();
 
         Ok(())
-    }
-
-    async fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
-        let builder = {
-            let usr = &self.inner.read().unwrap()._usr;
-            let mut overrides = Vec::new();
-            usr.merge(&other, false, &mut overrides)
-        };
-        self.update_config(builder, false).await
     }
 
     /// Tests whether an email's domain is allowed. A domain is allowed if it
@@ -1620,23 +1593,6 @@ impl Config {
     pub fn mail_enabled(&self) -> bool {
         let inner = &self.inner.read().unwrap().config;
         inner._enable_smtp && (inner.smtp_host.is_some() || inner.use_sendmail)
-    }
-
-    pub async fn get_duo_akey(&self) -> String {
-        if let Some(akey) = self._duo_akey() {
-            akey
-        } else {
-            let akey_s = crate::crypto::encode_random_bytes::<64>(&data_encoding::BASE64);
-
-            // Save the new value
-            let builder = ConfigBuilder {
-                _duo_akey: Some(akey_s.clone()),
-                ..Default::default()
-            };
-            self.update_config_partial(builder).await.ok();
-
-            akey_s
-        }
     }
 
     pub fn is_webauthn_2fa_supported(&self) -> bool {
