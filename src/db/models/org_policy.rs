@@ -46,7 +46,7 @@ pub enum OrgPolicyType {
     RemoveUnlockWithPin = 14,
     RestrictedItemTypes = 15,
     UriMatchDefaults = 16,
-    // AutotypeDefaultSetting = 17, // Not supported yet
+    AutotypeDefaultSetting = 17,
     // AutoConfirm = 18, // Not supported (not implemented yet)
     // BlockClaimedDomainAccountCreation = 19, // Not supported (Not AGPLv3 Licensed)
     OrganizationUserNotification = 20,

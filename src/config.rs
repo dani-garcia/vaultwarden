@@ -1431,6 +1431,8 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "enable-basic-auth-response",
     "ssh-agent",
     "ssh-agent-v2",
+    "windows-desktop-autotype",
+    "windows-desktop-autotype-ga",
     // Key Management Team
     "ssh-key-vault-item",
     "pm-25373-windows-biometrics-v2",
