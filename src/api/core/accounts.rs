@@ -59,7 +59,6 @@ pub fn routes() -> Vec<rocket::Route> {
         delete_account,
         revision_date,
         password_hint,
-        post_prelogin,
         verify_password,
         post_api_key,
         rotate_api_key,
@@ -106,11 +105,8 @@ pub struct RegisterData {
 
     master_password_hint: Option<String>,
 
-    name: Option<String>,
-
     organization_user_id: Option<MembershipId>,
 
-    // Used only from the register/finish endpoint
     email_verification_token: Option<String>,
     accept_emergency_access_id: Option<EmergencyAccessId>,
     accept_emergency_access_invite_token: Option<String>,
@@ -163,7 +159,9 @@ struct RegisterDataOld {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RegisterDataCur {
+    #[serde(alias = "MasterPasswordAuthentication")]
     master_password_authentication: MasterPasswordAuthentication,
+    #[serde(alias = "MasterPasswordUnlock")]
     master_password_unlock: MasterPasswordUnlock,
 }
 
@@ -197,10 +195,12 @@ struct KeysData {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MasterPasswordAuthentication {
+    #[serde(alias = "Kdf")]
     kdf: KDFData,
+    #[serde(alias = "Salt")]
     salt: String,
 
-    #[serde(alias = "masterPasswordAuthenticationHash")]
+    #[serde(alias = "masterPasswordAuthenticationHash", alias = "MasterPasswordAuthenticationHash")]
     hash: String,
 }
 
@@ -257,12 +257,11 @@ async fn is_email_2fa_required(member_id: Option<MembershipId>, conn: &DbConn) -
     false
 }
 
-pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: DbConn) -> JsonResult {
-    let mut data: RegisterData = data.into_inner();
+pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
+    let data: RegisterData = data.into_inner();
     let email = data.email.to_lowercase();
 
-    let mut email_verified = false;
-
+    let mut name = None;
     let mut pending_emergency_access = None;
 
     if data.unprocessable() {
@@ -270,69 +269,65 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
     }
 
     // First, validate the provided verification tokens
-    if email_verification {
-        match (
-            &data.email_verification_token,
-            &data.accept_emergency_access_id,
-            &data.accept_emergency_access_invite_token,
-            &data.organization_user_id,
-            &data.org_invite_token,
-        ) {
-            // Normal user registration, when email verification is required
-            (Some(email_verification_token), None, None, None, None) => {
-                let claims = crate::auth::decode_register_verify(email_verification_token)?;
-                if claims.sub != data.email {
-                    err!("Email verification token does not match email");
-                }
-
-                // During this call we don't get the name, so extract it from the claims
-                if claims.name.is_some() {
-                    data.name = claims.name;
-                }
-                email_verified = claims.verified;
-            }
-            // Emergency access registration
-            (None, Some(accept_emergency_access_id), Some(accept_emergency_access_invite_token), None, None) => {
-                if !CONFIG.emergency_access_allowed() {
-                    err!("Emergency access is not enabled.")
-                }
-
-                let claims = crate::auth::decode_emergency_access_invite(accept_emergency_access_invite_token)?;
-
-                if claims.email != data.email {
-                    err!("Claim email does not match email")
-                }
-                if &claims.emer_id != accept_emergency_access_id {
-                    err!("Claim emer_id does not match accept_emergency_access_id")
-                }
-
-                pending_emergency_access = Some((accept_emergency_access_id, claims));
-                email_verified = true;
-            }
-            // Org invite
-            (None, None, None, Some(organization_user_id), Some(org_invite_token)) => {
-                let claims = decode_invite(org_invite_token)?;
-
-                if claims.email != data.email {
-                    err!("Claim email does not match email")
-                }
-
-                if &claims.member_id != organization_user_id {
-                    err!("Claim org_user_id does not match organization_user_id")
-                }
-
-                email_verified = true;
+    let mut email_verified = match (
+        &data.email_verification_token,
+        &data.accept_emergency_access_id,
+        &data.accept_emergency_access_invite_token,
+        &data.organization_user_id,
+        &data.org_invite_token,
+    ) {
+        // Normal user registration, when email verification is required
+        (Some(email_verification_token), None, None, None, None) => {
+            let claims = crate::auth::decode_register_verify(email_verification_token)?;
+            if claims.sub != data.email {
+                err!("Email verification token does not match email");
             }
 
-            _ => {
-                err!("Registration is missing required parameters")
-            }
+            // During this call we don't get the name, so extract it from the claims
+            name = claims.name;
+            claims.verified
         }
-    }
+        // Emergency access registration
+        (None, Some(accept_emergency_access_id), Some(accept_emergency_access_invite_token), None, None) => {
+            if !CONFIG.emergency_access_allowed() {
+                err!("Emergency access is not enabled.")
+            }
+
+            let claims = crate::auth::decode_emergency_access_invite(accept_emergency_access_invite_token)?;
+
+            if claims.email != data.email {
+                err!("Claim email does not match email")
+            }
+            if &claims.emer_id != accept_emergency_access_id {
+                err!("Claim emer_id does not match accept_emergency_access_id")
+            }
+
+            pending_emergency_access = Some((accept_emergency_access_id, claims));
+            true
+        }
+        // Org invite
+        (None, None, None, Some(organization_user_id), Some(org_invite_token)) => {
+            let claims = decode_invite(org_invite_token)?;
+
+            if claims.email != data.email {
+                err!("Claim email does not match email")
+            }
+
+            if &claims.member_id != organization_user_id {
+                err!("Claim org_user_id does not match organization_user_id")
+            }
+
+            true
+        }
+
+        _ => {
+            err!("Registration is missing required parameters")
+        }
+    };
 
     // Check if the length of the username exceeds 50 characters (Same is Upstream Bitwarden)
     // This also prevents issues with very long usernames causing to large JWT's. See #2419
-    if let Some(ref name) = data.name
+    if let Some(ref name) = name
         && name.len() > 50
     {
         err!("The field Name must be a string with a maximum length of 50.");
@@ -394,7 +389,7 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
     user.password_hint = password_hint;
 
     // Add extra fields if present
-    if let Some(name) = data.name {
+    if let Some(name) = name {
         user.name = name;
     }
 
@@ -432,8 +427,7 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
     }
 
     Ok(Json(json!({
-      "object": "register",
-      "captchaBypassToken": "",
+      "object": "registerFinish",
     })))
 }
 
@@ -442,7 +436,7 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     let data: SetPasswordData = data.into_inner();
     let mut user = headers.user;
 
-    if user.private_key.is_some() {
+    if user.private_key.is_some() || !user.password_hash.is_empty() {
         err!("Account already initialized, cannot set password")
     }
 
@@ -496,7 +490,6 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
 
     Ok(Json(json!({
       "object": "set-password",
-      "captchaBypassToken": "",
     })))
 }
 
@@ -580,6 +573,10 @@ async fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> Json
     let data: KeysData = data.into_inner();
 
     let mut user = headers.user;
+
+    if user.private_key.is_some() || user.public_key.is_some() {
+        err!("User has existing keypair")
+    }
 
     user.private_key = Some(data.encrypted_private_key);
     user.public_key = Some(data.public_key);
@@ -702,8 +699,11 @@ fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AuthenticationData {
+    #[serde(alias = "Salt")]
     salt: String,
+    #[serde(alias = "Kdf")]
     kdf: KDFData,
+    #[serde(alias = "MasterPasswordAuthenticationHash")]
     master_password_authentication_hash: String,
 }
 
@@ -1360,11 +1360,6 @@ pub struct PreloginData {
     email: String,
 }
 
-#[post("/accounts/prelogin", data = "<data>")]
-async fn post_prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
-    prelogin(data, ip, conn).await
-}
-
 pub async fn prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
     crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
 
@@ -1854,5 +1849,64 @@ pub async fn purge_auth_requests(pool: DbPool) {
         AuthRequest::purge_expired_auth_requests(&conn).await;
     } else {
         error!("Failed to get DB connection while purging auth requests");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_register_data_current_format() {
+        // Web and iOS since the master password authentication/unlock split
+        let data: RegisterData = serde_json::from_str(
+            r#"{
+                "email": "user@example.com",
+                "emailVerificationToken": "token",
+                "userAsymmetricKeys": {"publicKey": "pub", "encryptedPrivateKey": "priv"},
+                "masterPasswordAuthentication": {
+                    "kdf": {"kdfType": 0, "iterations": 600000},
+                    "salt": "user@example.com",
+                    "masterPasswordAuthenticationHash": "hash"
+                },
+                "masterPasswordUnlock": {
+                    "kdf": {"kdfType": 0, "iterations": 600000},
+                    "salt": "user@example.com",
+                    "masterKeyWrappedUserKey": "key"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert!(!data.unprocessable());
+        assert_eq!(data.hash(), "hash");
+        assert_eq!(data.key(), "key");
+        assert_eq!(data.kdf().kdf_iterations, 600_000);
+        assert!(data.keys.is_some());
+        assert_eq!(data.email_verification_token.as_deref(), Some("token"));
+    }
+
+    #[test]
+    fn test_register_data_flat_format() {
+        // Android before 2026.9.0
+        let data: RegisterData = serde_json::from_str(
+            r#"{
+                "email": "user@example.com",
+                "emailVerificationToken": "token",
+                "masterPasswordHash": "hash",
+                "masterPasswordHint": null,
+                "userSymmetricKey": "key",
+                "userAsymmetricKeys": {"publicKey": "pub", "encryptedPrivateKey": "priv"},
+                "kdf": 0,
+                "kdfIterations": 600000
+            }"#,
+        )
+        .unwrap();
+
+        assert!(!data.unprocessable());
+        assert_eq!(data.hash(), "hash");
+        assert_eq!(data.key(), "key");
+        assert_eq!(data.kdf().kdf_iterations, 600_000);
+        assert!(data.keys.is_some());
     }
 }
