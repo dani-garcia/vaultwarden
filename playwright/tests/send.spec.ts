@@ -21,11 +21,11 @@ test('Send', async ({ browser, page }) => {
         await page.getByRole('link', { name: 'Send' }).click();
         await expect(page.locator('#main-content').getByText('Send', { exact: true })).toBeVisible();
 
-        await page.getByRole('button', { name: 'New', exact: true }).click();
+        await page.getByRole('button', { name: 'New Send', exact: true }).click();
         await page.getByRole('menuitem', { name: 'Text' }).click();
 
-        await page.getByRole('textbox', { name: 'Send name (required)' }).fill('Test');
-        await page.getByRole('textbox', { name: 'Text to share (required)' }).fill('test');
+        await page.getByRole('textbox', { name: 'Send name * (required)' }).fill('Test');
+        await page.getByRole('textbox', { name: 'Text to share * (required)' }).fill('test');
         await page.getByRole('button', { name: 'Save' }).click();
 
         await page.locator('footer').getByRole('button', { name: 'Copy link' }).click();
@@ -46,14 +46,14 @@ test('Send', async ({ browser, page }) => {
         await page.getByRole('link', { name: 'Send' }).click();
         await expect(page.locator('#main-content').getByText('Send', { exact: true })).toBeVisible();
 
-        await page.getByRole('button', { name: 'New', exact: true }).click();
+        await page.getByRole('button', { name: 'New' }).click();
         await page.getByRole('menuitem', { name: 'Text' }).click();
 
-        await page.getByRole('textbox', { name: 'Send name (required)' }).fill('Password');
-        await page.getByRole('textbox', { name: 'Text to share (required)' }).fill('password');
+        await page.getByRole('textbox', { name: 'Send name * (required)' }).fill('Password');
+        await page.getByRole('textbox', { name: 'Text to share * (required)' }).fill('password');
         await page.getByRole('combobox', { name: 'Who can view' }).click();
         await page.getByText('Anyone with a password set by you').click();
-        await page.getByRole('textbox', { name: 'Password (required)' }).fill('password');
+        await page.getByRole('textbox', { name: 'Password * (required)', exact: true }).fill('password');
 
         await page.getByRole('button', { name: 'Save' }).click();
         await page.locator('footer').getByRole('button', { name: 'Copy link' }).click();
@@ -64,7 +64,7 @@ test('Send', async ({ browser, page }) => {
     await test.step('View with password', async () => {
         await page2.goto(pwd_url, { waitUntil: 'domcontentloaded' });
         await expect(page2.getByRole('heading', { name: 'Enter the password to view' })).toBeVisible();
-        await page2.getByRole('textbox', { name: 'Password (required)' }).fill('password');
+        await page2.getByRole('textbox', { name: 'Password * (required)' }).fill('password');
         await page2.getByRole('button', { name: 'Continue' }).click();
         await expect(page2.getByRole('heading', { name: 'View Send' })).toBeVisible();
         await expect(await page2.getByRole('paragraph').filter({ hasText: 'Password' })).toBeVisible();
