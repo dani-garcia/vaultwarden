@@ -1445,6 +1445,8 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "pm-34171-card-scanner",
     // Platform Team
     "pm-30529-webauthn-related-origins",
+    // Tools Team
+    "pm-31885-send-controls",
     // Vault Team
     "pm-32009-new-item-types",
 ];
