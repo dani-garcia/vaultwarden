@@ -515,8 +515,7 @@ impl Membership {
             "limitCollectionDeletion": true,
             "limitItemDeletion": false,
             "allowAdminAccessToAllCollectionItems": true,
-            "userIsManagedByOrganization": false, // Means not managed via the Members UI, like SSO
-            "userIsClaimedByOrganization": false, // The new key instead of the obsolete userIsManagedByOrganization
+            "userIsClaimedByOrganization": false, // Means not managed via the Members UI, like SSO
 
             "permissions": permissions,
 
@@ -626,7 +625,6 @@ impl Membership {
 
             "status": status,
             "type": membership_type,
-            "accessAll": self.access_all,
             "twoFactorEnabled": twofactor_enabled,
             "resetPasswordEnrolled": self.reset_password_key.is_some(),
             "hasMasterPassword": !user.password_hash.is_empty(),
@@ -634,7 +632,6 @@ impl Membership {
             "permissions": permissions,
 
             "ssoBound": false, // Not supported
-            "managedByOrganization": false, // This key is obsolete replaced by claimedByOrganization
             "claimedByOrganization": false, // Means not managed via the Members UI, like SSO
             "usesKeyConnector": false, // Not supported
             "accessSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
@@ -685,7 +682,6 @@ impl Membership {
 
             "status": status,
             "type": self.atype,
-            "accessAll": self.access_all,
             "collections": coll_uuids,
 
             "object": "organizationUserDetails",
@@ -1028,6 +1024,7 @@ impl Membership {
         conn.run(move |conn| {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .left_join(users_collections::table.on(users_collections::user_uuid.eq(users_organizations::user_uuid)))
                 .left_join(
                     ciphers_collections::table.on(ciphers_collections::collection_uuid
@@ -1054,6 +1051,7 @@ impl Membership {
         conn.run(move |conn| {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .inner_join(
                     groups_users::table.on(groups_users::users_organizations_uuid.eq(users_organizations::uuid)),
                 )

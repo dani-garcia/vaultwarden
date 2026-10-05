@@ -1,5 +1,4 @@
 use chrono::Utc;
-use data_encoding::BASE64;
 use rocket::{Route, serde::json::Json};
 
 use crate::{
@@ -222,13 +221,6 @@ async fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData)
     Ok(())
 }
 
-const DUO_EXPIRE: i64 = 300;
-const APP_EXPIRE: i64 = 3600;
-
-const AUTH_PREFIX: &str = "AUTH";
-const DUO_PREFIX: &str = "TX";
-const APP_PREFIX: &str = "APP";
-
 async fn get_user_duo_data(user_id: &UserId, conn: &DbConn) -> DuoStatus {
     let type_ = TwoFactorType::Duo as i32;
 
@@ -251,118 +243,13 @@ async fn get_user_duo_data(user_id: &UserId, conn: &DbConn) -> DuoStatus {
     DuoStatus::Disabled(false)
 }
 
-// let (ik, sk, ak, host) = get_duo_keys();
-pub(crate) async fn get_duo_keys_email(email: &str, conn: &DbConn) -> ApiResult<(String, String, String, String)> {
+// let (ik, sk, host) = get_duo_keys_email();
+pub(crate) async fn get_duo_keys_email(email: &str, conn: &DbConn) -> ApiResult<(String, String, String)> {
     let data = match User::find_by_mail(email, conn).await {
         Some(u) => get_user_duo_data(&u.uuid, conn).await.data(),
         _ => DuoData::global(),
     }
     .map_res("Can't fetch Duo Keys")?;
 
-    Ok((data.ik, data.sk, CONFIG.get_duo_akey().await, data.host))
-}
-
-pub async fn generate_duo_signature(email: &str, conn: &DbConn) -> ApiResult<(String, String)> {
-    let now = Utc::now().timestamp();
-
-    let (ik, sk, ak, host) = get_duo_keys_email(email, conn).await?;
-
-    let duo_sign = sign_duo_values(&sk, email, &ik, DUO_PREFIX, now + DUO_EXPIRE);
-    let app_sign = sign_duo_values(&ak, email, &ik, APP_PREFIX, now + APP_EXPIRE);
-
-    Ok((format!("{duo_sign}:{app_sign}"), host))
-}
-
-fn sign_duo_values(key: &str, email: &str, ikey: &str, prefix: &str, expire: i64) -> String {
-    let val = format!("{email}|{ikey}|{expire}");
-    let cookie = format!("{prefix}|{}", BASE64.encode(val.as_bytes()));
-
-    format!("{cookie}|{}", crypto::hmac_sign(key, &cookie))
-}
-
-pub async fn validate_duo_login(email: &str, response: &str, conn: &DbConn) -> EmptyResult {
-    let split: Vec<&str> = response.split(':').collect();
-    if split.len() != 2 {
-        err!(
-            "Invalid response length",
-            ErrorEvent {
-                event: EventType::UserFailedLogIn2fa
-            }
-        );
-    }
-
-    let auth_sig = split[0];
-    let app_sig = split[1];
-
-    let now = Utc::now().timestamp();
-
-    let (ik, sk, ak, _host) = get_duo_keys_email(email, conn).await?;
-
-    let auth_user = parse_duo_values(&sk, auth_sig, &ik, AUTH_PREFIX, now)?;
-    let app_user = parse_duo_values(&ak, app_sig, &ik, APP_PREFIX, now)?;
-
-    if !crypto::ct_eq(&auth_user, app_user) || !crypto::ct_eq(&auth_user, email) {
-        err!(
-            "Error validating duo authentication",
-            ErrorEvent {
-                event: EventType::UserFailedLogIn2fa
-            }
-        )
-    }
-
-    Ok(())
-}
-
-fn parse_duo_values(key: &str, val: &str, ikey: &str, prefix: &str, time: i64) -> ApiResult<String> {
-    let split: Vec<&str> = val.split('|').collect();
-    if split.len() != 3 {
-        err!("Invalid value length")
-    }
-
-    let u_prefix = split[0];
-    let u_b64 = split[1];
-    let u_sig = split[2];
-
-    let sig = crypto::hmac_sign(key, &format!("{u_prefix}|{u_b64}"));
-
-    if !crypto::ct_eq(crypto::hmac_sign(key, &sig), crypto::hmac_sign(key, u_sig)) {
-        err!("Duo signatures don't match")
-    }
-
-    if u_prefix != prefix {
-        err!("Prefixes don't match")
-    }
-
-    let Ok(cookie_vec) = BASE64.decode(u_b64.as_bytes()) else {
-        err!("Invalid Duo cookie encoding")
-    };
-
-    let Ok(cookie) = String::from_utf8(cookie_vec) else {
-        err!("Invalid Duo cookie encoding")
-    };
-
-    let cookie_split: Vec<&str> = cookie.split('|').collect();
-    if cookie_split.len() != 3 {
-        err!("Invalid cookie length")
-    }
-
-    let username = cookie_split[0];
-    let u_ikey = cookie_split[1];
-    let expire = cookie_split[2];
-
-    if !crypto::ct_eq(ikey, u_ikey) {
-        err!("Invalid ikey")
-    }
-
-    let expire: i64 = if let Ok(e) = expire.parse() {
-        e
-    } else {
-        err!("Invalid expire time")
-    };
-
-    if time >= expire {
-        err!("Expired authorization")
-    }
-
-    Ok(username.into())
+    Ok((data.ik, data.sk, data.host))
 }
