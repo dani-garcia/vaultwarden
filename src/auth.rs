@@ -737,7 +737,10 @@ impl OrgHeaders {
     fn is_member(&self) -> bool {
         // Only allow not revoked members, we can not use the Confirmed status here
         // as some endpoints can be triggered by invited users during joining
-        self.membership_status != MembershipStatus::Revoked && self.membership_type >= MembershipType::User
+        matches!(
+            self.membership_status,
+            MembershipStatus::Invited | MembershipStatus::Accepted | MembershipStatus::Confirmed
+        ) && self.membership_type >= MembershipType::User
     }
     fn is_confirmed_and_admin(&self) -> bool {
         self.membership_status == MembershipStatus::Confirmed && self.membership_type >= MembershipType::Admin
@@ -814,7 +817,9 @@ impl<'r> FromRequest<'r> for OrgHeaders {
                         }
                     },
                     membership_status: {
-                        if let Some(member_status) = MembershipStatus::from_i32(membership.status) {
+                        if let Some(member_status) = MembershipStatus::from_i32(membership.status)
+                            && member_status != MembershipStatus::Staged
+                        {
                             // NOTE: add additional check for revoked if from_i32 is ever changed
                             // to return Revoked status.
                             member_status

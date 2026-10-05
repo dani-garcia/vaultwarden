@@ -74,6 +74,7 @@ pub enum MembershipStatus {
     Invited = 0,
     Accepted = 1,
     Confirmed = 2,
+    Staged = 3,
 }
 
 impl MembershipStatus {
@@ -82,6 +83,7 @@ impl MembershipStatus {
             0 => Some(Self::Invited),
             1 => Some(Self::Accepted),
             2 => Some(Self::Confirmed),
+            3 => Some(Self::Staged),
             // NOTE: we don't care about revoked members where this is used
             // if this ever changes also adapt the OrgHeaders check.
             _ => None,
@@ -407,7 +409,11 @@ impl Organization {
                 .inner_join(users_organizations::table.on(users_organizations::org_uuid.eq(organizations::uuid)))
                 .inner_join(users::table.on(users::uuid.eq(users_organizations::user_uuid)))
                 .filter(users::email.eq(lower_mail))
-                .filter(users_organizations::status.ne(MembershipStatus::Revoked as i32))
+                .filter(users_organizations::status.eq_any([
+                    MembershipStatus::Invited as i32,
+                    MembershipStatus::Accepted as i32,
+                    MembershipStatus::Confirmed as i32,
+                ]))
                 .order(users_organizations::atype.asc())
                 .select(organizations::all_columns)
                 .first::<Self>(conn)
@@ -424,7 +430,11 @@ impl Organization {
                 .inner_join(users_organizations::table.on(users_organizations::org_uuid.eq(organizations::uuid)))
                 .inner_join(users::table.on(users::uuid.eq(users_organizations::user_uuid)))
                 .filter(users::email.eq(lower_mail))
-                .filter(users_organizations::status.ne(MembershipStatus::Revoked as i32))
+                .filter(users_organizations::status.eq_any([
+                    MembershipStatus::Invited as i32,
+                    MembershipStatus::Accepted as i32,
+                    MembershipStatus::Confirmed as i32,
+                ]))
                 .order(users_organizations::atype.asc())
                 .select(organizations::all_columns)
                 .load::<Self>(conn)
@@ -549,7 +559,8 @@ impl Membership {
             self.status
         };
 
-        let twofactor_enabled = !TwoFactor::find_by_user(&user.uuid, conn).await.is_empty();
+        let staged = self.get_unrevoked_status() == MembershipStatus::Staged as i32;
+        let twofactor_enabled = !staged && !TwoFactor::find_by_user(&user.uuid, conn).await.is_empty();
 
         let groups: Vec<GroupId> = if include_groups && CONFIG.org_groups_enabled() {
             GroupUser::find_by_member(&self.uuid, conn).await.iter().map(|gu| gu.groups_uuid.clone()).collect()
@@ -615,19 +626,20 @@ impl Membership {
 
         json!({
             "id": self.uuid,
-            "userId": self.user_uuid,
-            "name": if self.get_unrevoked_status() >= MembershipStatus::Accepted as i32 { Some(user.name) } else { None },
+            // Vaultwarden keeps a User row for staging; Bitwarden exposes no linked user until invitation.
+            "userId": if staged { None } else { Some(&self.user_uuid) },
+            "name": if [MembershipStatus::Accepted as i32, MembershipStatus::Confirmed as i32].contains(&self.get_unrevoked_status()) { Some(user.name) } else { None },
             "email": user.email,
             "externalId": self.external_id,
-            "avatarColor": user.avatar_color,
+            "avatarColor": if staged { None } else { Some(user.avatar_color) },
             "groups": groups,
             "collections": collections,
 
             "status": status,
             "type": membership_type,
             "twoFactorEnabled": twofactor_enabled,
-            "resetPasswordEnrolled": self.reset_password_key.is_some(),
-            "hasMasterPassword": !user.password_hash.is_empty(),
+            "resetPasswordEnrolled": !staged && self.reset_password_key.is_some(),
+            "hasMasterPassword": !staged && !user.password_hash.is_empty(),
 
             "permissions": permissions,
 
@@ -678,7 +690,7 @@ impl Membership {
 
         json!({
             "id": self.uuid,
-            "userId": self.user_uuid,
+            "userId": if self.get_unrevoked_status() == MembershipStatus::Staged as i32 { None } else { Some(&self.user_uuid) },
 
             "status": status,
             "type": self.atype,
@@ -690,6 +702,7 @@ impl Membership {
 
     pub async fn to_json_mini_details(&self, conn: &DbConn) -> Value {
         let user = User::find_by_uuid(&self.user_uuid, conn).await.unwrap();
+        let staged = self.get_unrevoked_status() == MembershipStatus::Staged as i32;
 
         // Because Bitwarden wants the status to be -1 for revoked users we need to catch that here.
         // We subtract/add a number so we can restore/activate the user to it's previous state again.
@@ -701,10 +714,10 @@ impl Membership {
 
         json!({
             "id": self.uuid,
-            "userId": self.user_uuid,
+            "userId": if staged { None } else { Some(&self.user_uuid) },
             "type": self.type_manager_as_custom(), // HACK: Convert the manager type to a custom type
             "status": status,
-            "name": user.name,
+            "name": if staged { None } else { Some(user.name) },
             "email": user.email,
             "object": "organizationUserUserMiniDetails",
         })
@@ -749,9 +762,33 @@ impl Membership {
         .await
     }
 
+    pub async fn delete_with_staged_user_cleanup(self, conn: &DbConn) -> EmptyResult {
+        let placeholder = if self.get_unrevoked_status() == MembershipStatus::Staged as i32 {
+            if let Some(user) = User::find_by_uuid(&self.user_uuid, conn).await
+                && user.has_staged_placeholder_marker()
+                && user.is_stage_only_placeholder(conn).await
+            {
+                Some(user)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // This also removes collection and group assignments belonging to the membership.
+        self.delete(conn).await?;
+
+        if let Some(user) = placeholder {
+            user.delete_staged_placeholder_if_orphaned(conn).await?;
+        }
+
+        Ok(())
+    }
+
     pub async fn delete_all_by_organization(org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
         for member in Self::find_by_org(org_uuid, conn).await {
-            member.delete(conn).await?;
+            member.delete_with_staged_user_cleanup(conn).await?;
         }
         Ok(())
     }
@@ -1134,7 +1171,11 @@ impl Membership {
         conn.run(move |conn| {
             users_organizations::table
                 .filter(users_organizations::user_uuid.eq(user_uuid))
-                .filter(users_organizations::status.ne(MembershipStatus::Revoked as i32))
+                .filter(users_organizations::status.eq_any([
+                    MembershipStatus::Invited as i32,
+                    MembershipStatus::Accepted as i32,
+                    MembershipStatus::Confirmed as i32,
+                ]))
                 .order(users_organizations::atype.asc())
                 .first::<Self>(conn)
                 .ok()
