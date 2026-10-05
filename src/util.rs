@@ -943,15 +943,15 @@ mod tests {
     use std::net::IpAddr;
 
     #[test]
-    #[ignore]
+    #[ignore = "exhaustive IPv4 check is too slow for the regular test suite"]
     fn test_ipv4_global() {
         for a in 0..u8::MAX {
-            println!("Iter: {}/255", a);
+            println!("Iter: {a}/255");
             for b in 0..u8::MAX {
                 for c in 0..u8::MAX {
                     for d in 0..u8::MAX {
                         let ip = IpAddr::V4(std::net::Ipv4Addr::new(a, b, c, d));
-                        assert_eq!(ip.is_global(), is_global_hardcoded(ip), "IP mismatch: {}", ip)
+                        assert_eq!(ip.is_global(), is_global_hardcoded(ip), "IP mismatch: {ip}");
                     }
                 }
             }
@@ -959,15 +959,15 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "random IPv6 check is too slow for the regular test suite"]
     fn test_ipv6_global() {
-        use rand::Rng;
+        use rand::RngExt;
 
         std::thread::scope(|s| {
             for t in 0..16 {
-                let handle = s.spawn(move || {
+                let _handle = s.spawn(move || {
                     let mut v = [0u8; 16];
-                    let mut rng = rand::thread_rng();
+                    let mut rng = rand::rng();
 
                     for i in 0..20 {
                         println!("Thread {t} Iter: {i}/50");
