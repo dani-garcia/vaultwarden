@@ -42,14 +42,8 @@ a[href$="/settings/sponsored-families"] {
 {{/if}}
 
 /* Hide the `Enterprise Single Sign-On` button on the login page */
-{{#if (webver ">=2025.5.1")}}
 {{#if (not sso_enabled)}}
 .vw-sso-login {
-  @extend %vw-hide;
-}
-{{/if}}
-{{else}}
-app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secondary"].\!tw-text-primary-600:nth-child(4) {
   @extend %vw-hide;
 }
 {{/if}}
@@ -59,25 +53,13 @@ app-user-layout app-password-settings app-webauthn-login-settings {
   @extend %vw-hide;
 }
 /* Hide Log in with passkey on the login page */
-{{#if (webver ">=2025.5.1")}}
 .vw-passkey-login {
   @extend %vw-hide;
 }
-{{else}}
-app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secondary"].\!tw-text-primary-600:nth-child(3) {
-  @extend %vw-hide;
-}
-{{/if}}
 
 /* Hide the or text followed by the two buttons hidden above */
-{{#if (webver ">=2025.5.1")}}
 {{#if (or (not sso_enabled) sso_only)}}
 .vw-or-text {
-  @extend %vw-hide;
-}
-{{/if}}
-{{else}}
-app-root ng-component > form > div:nth-child(1) > div:nth-child(3) > div:nth-child(2) {
   @extend %vw-hide;
 }
 {{/if}}
@@ -154,16 +136,9 @@ ng-dropdown-panel div.ng-dropdown-panel-items div:has(> [title="DuckDuckGo"]) {
   take a while for the change to take effect. To avoid the button appearing
   when it shouldn't, we'll keep this style in place for a couple of versions */
 /* Hide the register link on the login screen */
-{{#if (webver "<2025.3.0")}}
-app-login form div + div + div + div + hr,
-app-login form div + div + div + div + hr + p {
-  @extend %vw-hide;
-}
-{{else}}
 app-root a[routerlink="/signup"] {
   @extend %vw-hide;
 }
-{{/if}}
 {{/if}}
 
 {{#if remember_2fa_disabled}}
