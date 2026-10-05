@@ -508,6 +508,7 @@ async fn enable_user(user_id: UserId, _token: AdminToken, conn: DbConn) -> Empty
 async fn remove_2fa(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &conn).await?;
     TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
+    Device::clear_twofactor_remember_by_user(&user.uuid, &conn).await?;
     two_factor::enforce_2fa_policy(&user, &ACTING_ADMIN_USER.into(), 14, &token.ip.ip, &conn).await?;
     user.totp_recover = None;
     user.save(&conn).await
@@ -905,23 +906,23 @@ mod tests {
     fn validate_web_vault_compare() {
         // web_vault_compare(active, latest)
         // Test normal versions
-        assert!(web_vault_compare("2025.12.0", "2025.12.1") == -1);
-        assert!(web_vault_compare("2025.12.1", "2025.12.1") == 0);
-        assert!(web_vault_compare("2025.12.2", "2025.12.1") == 1);
+        assert_eq!(web_vault_compare("2025.12.0", "2025.12.1"), -1);
+        assert_eq!(web_vault_compare("2025.12.1", "2025.12.1"), 0);
+        assert_eq!(web_vault_compare("2025.12.2", "2025.12.1"), 1);
 
         // Test patched/+build.n versions
         // Newer latest version
-        assert!(web_vault_compare("2025.12.0+build.1", "2025.12.1") == -1);
-        assert!(web_vault_compare("2025.12.1", "2025.12.1+build.1") == -1);
-        assert!(web_vault_compare("2025.12.0+build.1", "2025.12.1+build.1") == -1);
-        assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.2") == -1);
+        assert_eq!(web_vault_compare("2025.12.0+build.1", "2025.12.1"), -1);
+        assert_eq!(web_vault_compare("2025.12.1", "2025.12.1+build.1"), -1);
+        assert_eq!(web_vault_compare("2025.12.0+build.1", "2025.12.1+build.1"), -1);
+        assert_eq!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.2"), -1);
         // Equal versions
-        assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.1") == 0);
-        assert!(web_vault_compare("2025.12.2+build.2", "2025.12.2+build.2") == 0);
+        assert_eq!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.1"), 0);
+        assert_eq!(web_vault_compare("2025.12.2+build.2", "2025.12.2+build.2"), 0);
         // Newer active version
-        assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1") == 1);
-        assert!(web_vault_compare("2025.12.2", "2025.12.1+build.1") == 1);
-        assert!(web_vault_compare("2025.12.2+build.1", "2025.12.1+build.1") == 1);
-        assert!(web_vault_compare("2025.12.1+build.3", "2025.12.1+build.2") == 1);
+        assert_eq!(web_vault_compare("2025.12.1+build.1", "2025.12.1"), 1);
+        assert_eq!(web_vault_compare("2025.12.2", "2025.12.1+build.1"), 1);
+        assert_eq!(web_vault_compare("2025.12.2+build.1", "2025.12.1+build.1"), 1);
+        assert_eq!(web_vault_compare("2025.12.1+build.3", "2025.12.1+build.2"), 1);
     }
 }
