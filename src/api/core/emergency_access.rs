@@ -666,7 +666,7 @@ async fn password_emergency_access(
     // Remove grantor from all organisations unless Owner
     for member in Membership::find_any_state_by_user(&grantor_user.uuid, &conn).await {
         if member.atype != MembershipType::Owner as i32 {
-            member.delete(&conn).await?;
+            member.delete_with_staged_user_cleanup(&conn).await?;
         }
     }
     Ok(())

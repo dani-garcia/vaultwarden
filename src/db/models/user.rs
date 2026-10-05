@@ -10,7 +10,10 @@ use crate::{
     db::{
         DbConn,
         models::DeviceId,
-        schema::{invitations, sso_users, twofactor_incomplete, users},
+        schema::{
+            archives, auth_requests, ciphers, devices, emergency_access, favorites, folders, invitations, sends,
+            sso_users, twofactor, twofactor_incomplete, users, users_collections, users_organizations,
+        },
     },
     error::MapResult,
     sso::OIDCIdentifier,
@@ -19,8 +22,68 @@ use crate::{
 use macros::UuidFromParam;
 
 use super::{
-    Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
+    Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipStatus, MembershipType, TwoFactor,
+    TwoFactorIncomplete,
 };
+
+// Keep the placeholder checks in one database statement, including the delete's final guard.
+macro_rules! uninitialized_staged_user {
+    ($user_uuid:expr, $email:expr) => {
+        users::table
+            .filter(users::uuid.eq($user_uuid))
+            .filter(users::email.eq($email))
+            .filter(users::enabled.eq(true))
+            .filter(users::name.eq(users::email))
+            .filter(users::password_hash.eq(Vec::<u8>::new()))
+            .filter(users::akey.eq(""))
+            .filter(users::private_key.is_null())
+            .filter(users::public_key.is_null())
+            .filter(users::api_key.is_null())
+            .filter(users::key_id.is_null())
+            .filter(users::verified_at.is_null())
+            .filter(users::last_verifying_at.is_null())
+            .filter(users::login_verify_count.eq(0))
+            .filter(users::email_new.is_null())
+            .filter(users::email_new_token.is_null())
+            .filter(users::password_hint.is_null())
+            .filter(users::totp_secret.is_null())
+            .filter(users::totp_recover.is_null())
+            .filter(users::stamp_exception.is_null())
+            .filter(users::equivalent_domains.eq("[]"))
+            .filter(users::excluded_globals.eq("[]"))
+            .filter(users::client_kdf_type.eq(User::CLIENT_KDF_TYPE_DEFAULT))
+            .filter(users::client_kdf_iter.eq(User::CLIENT_KDF_ITER_DEFAULT))
+            .filter(users::client_kdf_memory.is_null())
+            .filter(users::client_kdf_parallelism.is_null())
+            .filter(users::avatar_color.is_null())
+            .filter(diesel::dsl::not(diesel::dsl::exists(invitations::table.filter(invitations::email.eq($email)))))
+            .filter(diesel::dsl::not(diesel::dsl::exists(sso_users::table.filter(sso_users::user_uuid.eq($user_uuid)))))
+            .filter(diesel::dsl::not(diesel::dsl::exists(ciphers::table.filter(ciphers::user_uuid.eq($user_uuid)))))
+            .filter(diesel::dsl::not(diesel::dsl::exists(devices::table.filter(devices::user_uuid.eq($user_uuid)))))
+            .filter(diesel::dsl::not(diesel::dsl::exists(folders::table.filter(folders::user_uuid.eq($user_uuid)))))
+            .filter(diesel::dsl::not(diesel::dsl::exists(sends::table.filter(sends::user_uuid.eq($user_uuid)))))
+            .filter(diesel::dsl::not(diesel::dsl::exists(twofactor::table.filter(twofactor::user_uuid.eq($user_uuid)))))
+            .filter(diesel::dsl::not(diesel::dsl::exists(
+                twofactor_incomplete::table.filter(twofactor_incomplete::user_uuid.eq($user_uuid)),
+            )))
+            .filter(diesel::dsl::not(diesel::dsl::exists(
+                auth_requests::table.filter(auth_requests::user_uuid.eq($user_uuid)),
+            )))
+            .filter(diesel::dsl::not(diesel::dsl::exists(favorites::table.filter(favorites::user_uuid.eq($user_uuid)))))
+            .filter(diesel::dsl::not(diesel::dsl::exists(archives::table.filter(archives::user_uuid.eq($user_uuid)))))
+            .filter(diesel::dsl::not(diesel::dsl::exists(
+                users_collections::table.filter(users_collections::user_uuid.eq($user_uuid)),
+            )))
+            .filter(diesel::dsl::not(diesel::dsl::exists(
+                emergency_access::table.filter(
+                    emergency_access::grantor_uuid
+                        .eq($user_uuid)
+                        .or(emergency_access::grantee_uuid.eq($user_uuid))
+                        .or(emergency_access::email.eq($email)),
+                ),
+            )))
+    };
+}
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
 #[diesel(table_name = users)]
@@ -49,8 +112,8 @@ pub struct User {
     pub private_key: Option<String>,
     pub public_key: Option<String>,
 
-    #[diesel(column_name = "totp_secret")] // Note, this is only added to the UserDb structs, not to User
-    _totp_secret: Option<String>,
+    #[diesel(column_name = "totp_secret")]
+    totp_secret: Option<String>,
     pub totp_recover: Option<String>,
 
     pub security_stamp: String,
@@ -111,6 +174,19 @@ impl User {
     pub const CLIENT_KDF_TYPE_DEFAULT: i32 = UserKdfType::Pbkdf2 as i32;
     pub const CLIENT_KDF_ITER_DEFAULT: i32 = 600_000;
 
+    fn staged_placeholder_marker(&self) -> String {
+        format!("vaultwarden:staged-placeholder:{}", self.uuid)
+    }
+
+    pub fn mark_staged_placeholder(&mut self) {
+        // This otherwise unused User field records provenance without changing the database schema.
+        self.external_id = Some(self.staged_placeholder_marker());
+    }
+
+    pub fn has_staged_placeholder_marker(&self) -> bool {
+        self.external_id.as_ref().is_some_and(|marker| marker == &self.staged_placeholder_marker())
+    }
+
     pub fn new(email: &str, name: Option<String>) -> Self {
         let now = Utc::now().naive_utc();
         let email = email.to_lowercase();
@@ -140,7 +216,7 @@ impl User {
             private_key: None,
             public_key: None,
 
-            _totp_secret: None,
+            totp_secret: None,
             totp_recover: None,
 
             equivalent_domains: "[]".to_owned(),
@@ -257,6 +333,54 @@ impl User {
 
 /// Database methods
 impl User {
+    /// Staged provisioning creates a bare User row because memberships require a user UUID.
+    /// Other invited or initialized accounts must remain visible and must never be cleaned up as placeholders.
+    pub async fn is_stage_only_placeholder(&self, conn: &DbConn) -> bool {
+        let memberships = Membership::find_any_state_by_user(&self.uuid, conn).await;
+        !memberships.is_empty()
+            && memberships.iter().all(|member| member.get_unrevoked_status() == MembershipStatus::Staged as i32)
+            && self.is_uninitialized_stage_placeholder(conn).await
+    }
+
+    pub async fn is_uninitialized_stage_placeholder(&self, conn: &DbConn) -> bool {
+        let user_uuid = self.uuid.clone();
+        let email = self.email.clone();
+        let marker = self.staged_placeholder_marker();
+        conn.run(move |conn| {
+            let query = uninitialized_staged_user!(&user_uuid, &email)
+                .filter(users::external_id.is_null().or(users::external_id.eq(&marker)));
+            diesel::select(diesel::dsl::exists(query)).get_result::<bool>(conn).unwrap_or(false)
+        })
+        .await
+    }
+
+    /// Only delete the bare User row when it is still an orphaned staged placeholder.
+    /// Concurrent changes leave the User intact, even if a new foreign key blocks the delete.
+    pub async fn delete_staged_placeholder_if_orphaned(&self, conn: &DbConn) -> EmptyResult {
+        let user_uuid = self.uuid.clone();
+        let email = self.email.clone();
+        let marker = self.staged_placeholder_marker();
+        conn.run(move |conn| {
+            let result = diesel::delete(
+                uninitialized_staged_user!(&user_uuid, &email).filter(users::external_id.eq(&marker)).filter(
+                    diesel::dsl::not(diesel::dsl::exists(
+                        users_organizations::table.filter(users_organizations::user_uuid.eq(&user_uuid)),
+                    )),
+                ),
+            )
+            .execute(conn);
+            match result {
+                Ok(_)
+                | Err(diesel::result::Error::DatabaseError(
+                    diesel::result::DatabaseErrorKind::ForeignKeyViolation,
+                    _,
+                )) => Ok(()),
+                Err(e) => Err::<(), _>(e).map_res("Error deleting orphaned staged placeholder"),
+            }
+        })
+        .await
+    }
+
     pub fn verified(&self) -> bool {
         !CONFIG.mail_enabled() || self.verified_at.is_some()
     }
@@ -331,6 +455,18 @@ impl User {
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         if !crate::util::is_valid_email(&self.email) {
             err!(format!("User email {} is not a valid email address", self.email.escape_debug()))
+        }
+
+        if self.has_staged_placeholder_marker()
+            && (!self.password_hash.is_empty()
+                || !self.akey.is_empty()
+                || self.verified_at.is_some()
+                || self.private_key.is_some()
+                || self.public_key.is_some()
+                || self.api_key.is_some()
+                || self.key_id.is_some())
+        {
+            self.external_id = None;
         }
 
         self.updated_at = Utc::now().naive_utc();

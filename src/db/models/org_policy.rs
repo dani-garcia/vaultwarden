@@ -303,7 +303,9 @@ impl OrgPolicy {
     }
 
     pub async fn check_user_allowed(m: &Membership, action: &str, conn: &DbConn) -> EmptyResult {
-        if m.atype < MembershipType::Admin && m.status > (MembershipStatus::Invited as i32) {
+        if m.atype < MembershipType::Admin
+            && [MembershipStatus::Accepted as i32, MembershipStatus::Confirmed as i32].contains(&m.status)
+        {
             // Enforce TwoFactor/TwoStep login
             if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::TwoFactorAuthentication, conn).await
                 && p.enabled

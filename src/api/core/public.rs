@@ -14,8 +14,8 @@ use crate::{
     db::{
         DbConn,
         models::{
-            Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, OrgPolicy, Organization,
-            OrganizationApiKey, OrganizationId, User,
+            Event, EventType, Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, OrgPolicy,
+            Organization, OrganizationApiKey, OrganizationId, User,
         },
     },
     mail,
@@ -47,7 +47,31 @@ struct OrgImportData {
     groups: Vec<OrgImportGroupData>,
     members: Vec<OrgImportUserData>,
     overwrite_existing: bool,
+    #[serde(default = "default_invite_users_after_provisioning")]
+    invite_users_after_provisioning: bool,
     // largeImport: bool, // For now this will not be used, upstream uses this to prevent syncs of more then 2000 users or groups without the flag set.
+}
+
+fn default_invite_users_after_provisioning() -> bool {
+    true
+}
+
+async fn log_directory_member_event(
+    event_type: EventType,
+    member: &Membership,
+    org_id: &OrganizationId,
+    conn: &DbConn,
+) {
+    if !CONFIG.org_events_enabled() {
+        return;
+    }
+
+    let mut event = Event::new(event_type as i32, None);
+    event.org_uuid = Some(org_id.clone());
+    event.org_user_uuid = Some(member.uuid.clone());
+    if let Err(e) = event.save(conn).await {
+        warn!("Could not log directory member event: {e:?}");
+    }
 }
 
 #[post("/public/organization/import", data = "<data>")]
@@ -58,20 +82,38 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
     let org_id = token.0;
     let data = data.into_inner();
 
+    let mut imported_emails = HashSet::new();
+    let mut imported_external_ids = HashSet::new();
+    for member in &data.members {
+        if (!member.email.is_empty() && !imported_emails.insert(member.email.to_lowercase()))
+            || !imported_external_ids.insert(member.external_id.as_str())
+        {
+            err!("Duplicate member email or external ID in directory import")
+        }
+    }
+
     // Like upstream, the import never removes Owners, so it doesn't revoke or restore them either.
     for user_data in &data.members {
         let mut user_created: bool = false;
         if user_data.deleted {
-            // If user is marked for deletion and it exists, revoke it
-            if let Some(mut member) = Membership::find_by_email_and_org(&user_data.email, &org_id, &conn).await {
-                let revoked = member.atype != MembershipType::Owner && member.revoke();
-                let ext_modified = member.set_external_id(Some(user_data.external_id.clone()));
-                if revoked || ext_modified {
-                    member.save(&conn).await?;
-                }
+            if let Some(member) = Membership::find_by_external_id_and_org(&user_data.external_id, &org_id, &conn)
+                .await
+                .or(Membership::find_by_email_and_org(&user_data.email, &org_id, &conn).await)
+                && member.atype != MembershipType::Owner
+            {
+                log_directory_member_event(EventType::OrganizationUserRemoved, &member, &org_id, &conn).await;
+                member.delete_with_staged_user_cleanup(&conn).await?;
             }
         // If user is part of the organization, restore it
-        } else if let Some(mut member) = Membership::find_by_email_and_org(&user_data.email, &org_id, &conn).await {
+        } else if let Some(mut member) = Membership::find_by_email_and_org(&user_data.email, &org_id, &conn)
+            .await
+            .or(Membership::find_by_external_id_and_org(&user_data.external_id, &org_id, &conn).await)
+        {
+            if let Some(other) = Membership::find_by_external_id_and_org(&user_data.external_id, &org_id, &conn).await
+                && other.uuid != member.uuid
+            {
+                err!("Directory external ID belongs to another member")
+            }
             let mut restored = member.atype != MembershipType::Owner && member.restore();
             let ext_modified = member.set_external_id(Some(user_data.external_id.clone()));
             // Enforce org policies as every other restore path does.
@@ -91,15 +133,20 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
             } else {
                 // User does not exist yet
                 let mut new_user = User::new(&user_data.email, None);
+                if !data.invite_users_after_provisioning {
+                    new_user.mark_staged_placeholder();
+                }
                 new_user.save(&conn).await?;
 
-                if !CONFIG.mail_enabled() {
+                if data.invite_users_after_provisioning && !CONFIG.mail_enabled() {
                     Invitation::new(&new_user.email).save(&conn).await?;
                 }
                 user_created = true;
                 new_user
             };
-            let member_status = if CONFIG.mail_enabled() || user.password_hash.is_empty() {
+            let member_status = if !data.invite_users_after_provisioning {
+                MembershipStatus::Staged as i32
+            } else if CONFIG.mail_enabled() || user.password_hash.is_empty() {
                 MembershipStatus::Invited as i32
             } else {
                 MembershipStatus::Accepted as i32 // Automatically mark user as accepted if no email invites
@@ -111,7 +158,8 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
                 err!("Error looking up organization")
             };
 
-            let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), Some(org_email.clone()));
+            let inviter = (member_status != MembershipStatus::Staged as i32).then(|| org_email.clone());
+            let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), inviter);
             new_member.set_external_id(Some(user_data.external_id.clone()));
             new_member.access_all = false;
             new_member.atype = MembershipType::User as i32;
@@ -119,7 +167,8 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
 
             new_member.save(&conn).await?;
 
-            if CONFIG.mail_enabled()
+            if data.invite_users_after_provisioning
+                && CONFIG.mail_enabled()
                 && let Err(e) =
                     mail::send_invite(&user, org_id.clone(), new_member.uuid.clone(), &org_name, Some(org_email)).await
             {
@@ -132,6 +181,13 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
 
                 err!(format!("Error sending invite: {e:?} "));
             }
+
+            let event_type = if member_status == MembershipStatus::Staged as i32 {
+                EventType::OrganizationUserStaged
+            } else {
+                EventType::OrganizationUserInvited
+            };
+            log_directory_member_event(event_type, &new_member, &org_id, &conn).await;
         }
     }
 
@@ -170,7 +226,8 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
                 && !sync_members.contains(user_external_id)
                 && member.atype != MembershipType::Owner
             {
-                member.delete(&conn).await?;
+                log_directory_member_event(EventType::OrganizationUserRemoved, &member, &org_id, &conn).await;
+                member.delete_with_staged_user_cleanup(&conn).await?;
             }
         }
     }

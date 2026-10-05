@@ -356,6 +356,9 @@ async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
     let users = User::get_all(&conn).await;
     let mut users_json = Vec::with_capacity(users.len());
     for (u, _) in users {
+        if u.is_stage_only_placeholder(&conn).await {
+            continue;
+        }
         let mut usr = u.to_json(&conn).await;
         usr["userEnabled"] = json!(u.enabled);
         usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
@@ -374,6 +377,9 @@ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<Stri
     let users = User::get_all(&conn).await;
     let mut users_json = Vec::with_capacity(users.len());
     for (u, sso_u) in users {
+        if u.is_stage_only_placeholder(&conn).await {
+            continue;
+        }
         let mut usr = u.to_json(&conn).await;
         usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, &conn).await);
         usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &conn).await);
@@ -397,6 +403,9 @@ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<Stri
 #[get("/users/by-mail/<mail>")]
 async fn get_user_by_mail_json(mail: &str, _token: AdminToken, conn: DbConn) -> JsonResult {
     if let Some(u) = User::find_by_mail(mail, &conn).await {
+        if u.is_stage_only_placeholder(&conn).await {
+            err_code!("User doesn't exist", Status::NotFound.code);
+        }
         let mut usr = u.to_json(&conn).await;
         usr["userEnabled"] = json!(u.enabled);
         usr["createdAt"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
