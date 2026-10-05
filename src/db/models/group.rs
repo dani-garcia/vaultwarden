@@ -13,7 +13,7 @@ use crate::{
 };
 use macros::UuidFromParam;
 
-use super::{CollectionId, Membership, MembershipId, OrganizationId, User, UserId};
+use super::{CollectionId, Membership, MembershipId, MembershipStatus, OrganizationId, User, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = groups)]
@@ -104,7 +104,6 @@ impl Group {
             "id": self.uuid,
             "organizationId": self.organizations_uuid,
             "name": self.name,
-            "accessAll": self.access_all,
             "externalId": self.external_id,
             "collections": collections_groups,
             "object": "groupDetails"
@@ -249,6 +248,7 @@ impl Group {
                         .and(groups::organizations_uuid.eq(users_organizations::org_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(groups::access_all.eq(true))
                 .select(groups::organizations_uuid)
                 .distinct()
@@ -268,6 +268,9 @@ impl Group {
                         .and(users_organizations::org_uuid.eq(groups::organizations_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                // Only allow full access via a confirmed membership, since
+                // groups_users rows are kept when a membership is revoked.
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(groups::organizations_uuid.eq(org_uuid))
                 .filter(groups::access_all.eq(true))
                 .select(groups::access_all)
@@ -384,6 +387,7 @@ impl CollectionGroup {
                         .and(collections::org_uuid.eq(groups::organizations_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .select(collections_groups::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading user collection groups")
@@ -567,26 +571,6 @@ impl GroupUser {
             Some(member) => User::update_uuid_revision(&member.user_uuid, conn).await,
             None => warn!("Member could not be found!"),
         }
-    }
-
-    pub async fn delete_by_group_and_member(
-        group_uuid: &GroupId,
-        member_uuid: &MembershipId,
-        conn: &DbConn,
-    ) -> EmptyResult {
-        match Membership::find_by_uuid(member_uuid, conn).await {
-            Some(member) => User::update_uuid_revision(&member.user_uuid, conn).await,
-            None => warn!("Member could not be found!"),
-        }
-
-        conn.run(move |conn| {
-            diesel::delete(groups_users::table)
-                .filter(groups_users::groups_uuid.eq(group_uuid))
-                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
-                .execute(conn)
-                .map_res("Error deleting group users")
-        })
-        .await
     }
 
     pub async fn delete_all_by_group(group_uuid: &GroupId, org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
