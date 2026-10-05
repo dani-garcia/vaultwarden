@@ -17,8 +17,8 @@ use crate::{
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, Device,
             EventType, Group, GroupId, GroupUser, Invitation, MaximumVaultTimeoutPolicyData, Membership, MembershipId,
-            MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId,
-            TwoFactor, TwoFactorType, User, UserId,
+            MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
+            OrganizationId, TwoFactor, TwoFactorType, User, UserId,
         },
     },
     mail,
