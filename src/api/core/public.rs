@@ -6,23 +6,27 @@ use rocket::{
     request::{FromRequest, Outcome},
     serde::json::Json,
 };
+use serde_json::Value;
 
 use crate::{
     CONFIG,
-    api::EmptyResult,
+    api::{EmptyResult, JsonResult},
     auth,
     db::{
         DbConn,
         models::{
-            Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, OrgPolicy, Organization,
+            Event, Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, OrgPolicy, Organization,
             OrganizationApiKey, OrganizationId, User,
         },
     },
     mail,
+    util::parse_date_checked,
 };
 
+use super::events::{EventRange, get_continuation_token};
+
 pub fn routes() -> Vec<Route> {
-    routes![ldap_import]
+    routes![ldap_import, get_events]
 }
 
 #[derive(Deserialize)]
@@ -194,6 +198,43 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
     }
 
     Ok(())
+}
+
+// Upstream: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Public/Controllers/EventsController.cs
+// Exposes the organization event log to an organization-scoped API client. The
+// same data is otherwise only reachable through the internal API, which requires
+// an admin user session instead of an organization API key.
+#[get("/public/events?<data..>")]
+async fn get_events(data: EventRange, token: PublicToken, conn: DbConn) -> JsonResult {
+    let org_id = token.0;
+
+    // Return an empty vec when the org events are disabled.
+    // This prevents client errors
+    let events_json: Vec<Value> = if CONFIG.org_events_enabled() {
+        // These come straight from the query string, so they must not be parsed with
+        // parse_date(), which panics on anything that is not a valid RFC 3339 date.
+        let Some(start_date) = parse_date_checked(&data.start) else {
+            err!("Invalid start date")
+        };
+        let end = data.continuation_token.as_deref().unwrap_or(&data.end);
+        let Some(end_date) = parse_date_checked(end) else {
+            err!("Invalid end date")
+        };
+
+        Event::find_by_organization_uuid(&org_id, &start_date, &end_date, &conn)
+            .await
+            .iter()
+            .map(Event::to_json)
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    Ok(Json(json!({
+        "object": "list",
+        "data": events_json,
+        "continuationToken": get_continuation_token(&events_json),
+    })))
 }
 
 pub struct PublicToken(OrganizationId);

@@ -22,11 +22,11 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[derive(FromForm)]
-struct EventRange {
-    start: String,
-    end: String,
+pub struct EventRange {
+    pub start: String,
+    pub end: String,
     #[field(name = "continuationToken")]
-    continuation_token: Option<String>,
+    pub continuation_token: Option<String>,
 }
 
 // Upstream: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Controllers/EventsController.cs#L87
@@ -125,7 +125,7 @@ async fn get_user_events(
     })))
 }
 
-fn get_continuation_token(events_json: &[Value]) -> Option<&str> {
+pub fn get_continuation_token(events_json: &[Value]) -> Option<&str> {
     // When the length of the vec equals the max page_size there probably is more data
     // When it is less, then all events are loaded.
     #[expect(clippy::cast_possible_truncation, reason = "PAGE_SIZE fits within usize")]
