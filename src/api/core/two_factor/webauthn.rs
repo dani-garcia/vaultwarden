@@ -24,7 +24,7 @@ use crate::{
     crypto::ct_eq,
     db::{
         DbConn,
-        models::{EventType, TwoFactor, TwoFactorType, UserId},
+        models::{Device, EventType, TwoFactor, TwoFactorType, UserId},
     },
     error::Error,
     util::NumberOrString,
@@ -338,6 +338,7 @@ async fn delete_webauthn(data: Json<DeleteU2FData>, headers: Headers, conn: DbCo
     tf.data = serde_json::to_string(&data)?;
     tf.save(&conn).await?;
     drop(tf);
+    Device::clear_twofactor_remember_by_user(&headers.user.uuid, &conn).await?;
 
     // If entry is migrated from u2f, delete the u2f entry as well
     if let Some(mut u2f) = TwoFactor::find_by_user_and_type(&headers.user.uuid, TwoFactorType::U2f as i32, &conn).await

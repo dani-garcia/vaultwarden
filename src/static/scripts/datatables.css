@@ -4,10 +4,10 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-3.0.3
+ *   https://datatables.net/download/#bs5/dt-3.0.4
  *
  * Included libraries:
- *   DataTables 3.0.3
+ *   DataTables 3.0.4
  */
 
 /*! DataTables Bootstrap 5 integration
@@ -635,6 +635,18 @@ table.dataTable.table-sm > thead > tr th.dt-type-date .dt-column-order, table.da
 table.dataTable.table-sm > thead > tr td.dt-type-date .dt-column-order,
 table.dataTable.table-sm > thead > tr td.dt-type-numeric .dt-column-order {
   left: 0.25rem;
+}
+table.dataTable.table-sm > thead > tr th.dt-left .dt-column-order, table.dataTable.table-sm > thead > tr th.dt-head-left .dt-column-order,
+table.dataTable.table-sm > thead > tr td.dt-left .dt-column-order,
+table.dataTable.table-sm > thead > tr td.dt-head-left .dt-column-order {
+  left: auto;
+  right: 0.25rem;
+}
+table.dataTable.table-sm > thead > tr th.dt-right .dt-column-order, table.dataTable.table-sm > thead > tr th.dt-head-right .dt-column-order,
+table.dataTable.table-sm > thead > tr td.dt-right .dt-column-order,
+table.dataTable.table-sm > thead > tr td.dt-head-right .dt-column-order {
+  left: 0.25rem;
+  right: auto;
 }
 
 div.dt-scroll-head table.table-bordered {

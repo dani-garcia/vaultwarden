@@ -4,13 +4,13 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-3.0.3
+ *   https://datatables.net/download/#bs5/dt-3.0.4
  *
  * Included libraries:
- *   DataTables 3.0.3
+ *   DataTables 3.0.4
  */
 
-/*! DataTables 3.0.3
+/*! DataTables 3.0.4
  * Copyright (c) SpryMedia Ltd - datatables.net/license
  */
 
@@ -476,7 +476,7 @@ function assignDeep(out, ...inputs) {
  * Deep merge objects, but shallow copy arrays. The reason we need to do this,
  * is that we don't want to deep copy array init values (such as aaSorting)
  * since the dev wouldn't be able to override them, but we do want to deep copy
- * arrays.
+ * objects.
  *
  * @param out Object to extend
  * @param extender Object from which the properties will be applied to out
@@ -485,7 +485,6 @@ function assignDeep(out, ...inputs) {
  *   present. This is so you can pass in a collection to DataTables and have
  *   that used as your data source without breaking the references
  * @returns out Reference, just for convenience - out === the return.
- * @todo This doesn't take account of arrays inside the deep copied objects.
  */
 function assignDeepObjects(out, extender, breakRefs = false) {
     let val;
@@ -496,7 +495,7 @@ function assignDeepObjects(out, extender, breakRefs = false) {
                 if (!plainObject(out[prop])) {
                     out[prop] = {};
                 }
-                assignDeep(out[prop], val);
+                assignDeepObjects(out[prop], val, breakRefs);
             }
             else if (breakRefs &&
                 prop !== 'data' &&
@@ -3241,1581 +3240,7 @@ var pager = {
     numbers_length: 7
 };
 
-const footer = (settings, cell, classes) => {
-    cell.classAdd(classes.tfoot.cell);
-};
-const header = (settings, cell, classes) => {
-    cell.classAdd(classes.thead.cell);
-    if (!settings.features.ordering) {
-        cell.classAdd(classes.order.none);
-    }
-    var titleRow = settings.titleRow;
-    var headerRows = cell.closest('thead').find('tr');
-    var rowIdx = cell.parent().index();
-    // Conditions to not apply the ordering icons
-    if (
-    // Cells and rows which have the attribute to disable the icons
-    cell.attr('data-dt-order') === 'disable' ||
-        cell.parent().attr('data-dt-order') === 'disable' ||
-        // titleRow support, for defining a specific row in the header
-        (titleRow === true && rowIdx !== 0) ||
-        (titleRow === false && rowIdx !== headerRows.count() - 1) ||
-        (typeof titleRow === 'number' && rowIdx !== titleRow)) {
-        return;
-    }
-    // No additional mark-up required. Attach a sort listener to update on sort
-    // - note that using the `DT` namespace will allow the event to be removed
-    // automatically on destroy, while the `dt` namespaced event is the one we
-    // are listening for
-    Dom.s(settings.table).on('order.dt.DT column-visibility.dt.DT', function (e, ctx, column) {
-        if (settings !== ctx) {
-            // need to check if this is the host
-            return; // table, not a nested one
-        }
-        var sorting = ctx.sortDetails;
-        if (!sorting) {
-            return;
-        }
-        var orderedColumns = pluck(sorting, 'col');
-        // This handler is only needed on column visibility if the column is
-        // part of the ordering. If it isn't, then we can bail out to save
-        // performance. It could be a separate event handler, but this is a
-        // balance between code reuse / size and performance console.log(e,
-        // e.name, column, orderedColumns, orderedColumns.includes(column))
-        if (e.type === 'column-visibility' &&
-            !orderedColumns.includes(column)) {
-            return;
-        }
-        var i;
-        var orderClasses = classes.order;
-        var columns = ctx.api.columns(cell);
-        var col = settings.columns[columns.flatten()[0]];
-        var orderable = columns.orderable().includes(true);
-        var ariaType = '';
-        var indexes = columns.indexes();
-        var sortDirs = columns.orderable(true).flatten();
-        var tabIndex = settings.tabIndex;
-        var canOrder = ctx.orderHandler && orderable;
-        cell.classRemove(orderClasses.isAsc + ' ' + orderClasses.isDesc)
-            .classToggle(orderClasses.none, !orderable)
-            .classToggle(orderClasses.canAsc, canOrder && sortDirs.includes('asc'))
-            .classToggle(orderClasses.canDesc, canOrder && sortDirs.includes('desc'));
-        // Determine if all of the columns that this cell covers are
-        // included in the current ordering
-        var isOrdering = true;
-        for (i = 0; i < indexes.length; i++) {
-            if (!orderedColumns.includes(indexes[i])) {
-                isOrdering = false;
-            }
-        }
-        if (isOrdering) {
-            // Get the ordering direction for the columns under this cell
-            // Note that it is possible for a cell to be asc and desc
-            // sorting (column spanning cells)
-            var orderDirs = columns.order();
-            cell.classAdd((orderDirs.includes('asc') ? orderClasses.isAsc : '') +
-                (orderDirs.includes('desc') ? orderClasses.isDesc : ''));
-        }
-        // Find the first visible column that has ordering applied to it -
-        // it get's the aria information, as the ARIA spec says that only
-        // one column should be marked with aria-sort
-        var firstVis = -1; // column index
-        for (i = 0; i < orderedColumns.length; i++) {
-            if (settings.columns[orderedColumns[i]].visible) {
-                firstVis = orderedColumns[i];
-                break;
-            }
-        }
-        if (indexes[0] == firstVis) {
-            var firstSort = sorting[0];
-            var sortOrder = col.orderSequence;
-            cell.attr('aria-sort', firstSort.dir === 'asc' ? 'ascending' : 'descending');
-            // Determine if the next click will remove sorting or change the
-            // sort
-            ariaType =
-                sortOrder && !sortOrder[firstSort.index + 1]
-                    ? 'Remove'
-                    : 'Reverse';
-        }
-        else {
-            cell.attrRemove('aria-sort');
-        }
-        // Make the headers tab-able for keyboard navigation
-        if (orderable) {
-            var orderSpan = cell.find('.dt-column-order');
-            orderSpan
-                .attr('role', 'button')
-                .attr('aria-label', orderable
-                ? col.ariaTitle +
-                    ctx.api.i18n('aria.orderable' + ariaType)
-                : col.ariaTitle);
-            if (tabIndex !== -1) {
-                orderSpan.attr('tabindex', tabIndex);
-            }
-        }
-    });
-};
-const layout = (settings, container, items) => {
-    let classes = settings.classes.layout;
-    let row = Dom
-        .c('div')
-        .attr('id', items.id || null)
-        .classAdd(items.className || classes.row)
-        .appendTo(container);
-    displayRowCells(items, function (key, val) {
-        var klass = '';
-        if (val.table) {
-            row.classAdd(classes.tableRow);
-            klass += classes.tableCell + ' ';
-        }
-        if (key === 'start') {
-            klass += classes.start;
-        }
-        else if (key === 'end') {
-            klass += classes.end;
-        }
-        else {
-            klass += classes.full;
-        }
-        Dom.c('div')
-            .attr({
-            id: val.id || null,
-            class: val.className
-                ? val.className
-                : classes.cell + ' ' + klass
-        })
-            .append(val.contents)
-            .appendTo(row);
-    });
-};
-const pagingButton = (settings, buttonType, content, active, disabled) => {
-    var classes = settings.classes.paging;
-    var btnClasses = [classes.button];
-    var btn;
-    if (active) {
-        btnClasses.push(classes.active);
-    }
-    if (disabled) {
-        btnClasses.push(classes.disabled);
-    }
-    if (buttonType === 'ellipsis') {
-        btn = Dom.c('span').classAdd('ellipsis').html(content).get(0);
-    }
-    else {
-        btn = Dom
-            .c('button')
-            .classAdd(btnClasses.join(' '))
-            .attr('role', 'link')
-            .attr('type', 'button')
-            .html(content)
-            .get(0);
-    }
-    return {
-        display: btn,
-        clicker: btn
-    };
-};
-const pagingContainer = (settings, buttons) => {
-    // No wrapping element - just append directly to the host
-    return buttons;
-};
-function displayRowCells(items, fn) {
-    if (items.start) {
-        fn('start', items.start);
-    }
-    if (items.end) {
-        fn('end', items.end);
-    }
-    if (items.full) {
-        fn('full', items.full);
-    }
-}
-
-const store = {
-    className: {},
-    detect: [],
-    render: {},
-    search: {},
-    order: {}
-};
-// Common function to remove new lines, strip HTML and diacritic control
-function _filterString(stripHtml, normalize) {
-    return function (str) {
-        if (util.is.empty(str) || typeof str !== 'string') {
-            return str;
-        }
-        str = str.replace(util.regex.reNewLines, ' ');
-        if (stripHtml) {
-            str = util.stripHtml(str);
-        }
-        {
-            str = util.diacritics(str, false);
-        }
-        return str;
-    };
-}
-function __numericReplace(d, decimalPlace, re1, re2) {
-    if (d !== 0 && (!d || d === '-')) {
-        return -Infinity;
-    }
-    if (typeof d === 'number' || typeof d === 'bigint') {
-        return d;
-    }
-    // If a decimal place other than `.` is used, it needs to be given to the
-    // function so we can detect it and replace with a `.` which is the only
-    // decimal place JavaScript recognises - it is not locale aware.
-    if (decimalPlace) {
-        d = util.conv.numToDecimal(d, decimalPlace);
-    }
-    if (typeof d === 'string') {
-        if (re1) {
-            d = d.replace(re1, '');
-        }
-        if (re2) {
-            d = d.replace(re2, '');
-        }
-    }
-    return d * 1;
-}
-function register$1(name, prop, val) {
-    if (!prop) {
-        return {
-            className: store.className[name],
-            detect: store.detect.find(function (fn) {
-                return fn._name === name;
-            }),
-            order: {
-                pre: store.order[name + '-pre'],
-                asc: store.order[name + '-asc'],
-                desc: store.order[name + '-desc']
-            },
-            render: store.render[name],
-            search: store.search[name]
-        };
-    }
-    var setProp = function (prop2, propVal) {
-        store[prop2][name] = propVal;
-    };
-    var setDetect = function (detect) {
-        // `detect` can be a function or an object - we set a name
-        // property for either - that is used for the detection
-        Object.defineProperty(detect, '_name', { value: name });
-        var idx = store.detect.findIndex(function (item) {
-            return item._name === name;
-        });
-        if (idx === -1) {
-            store.detect.unshift(detect);
-        }
-        else {
-            store.detect.splice(idx, 1, detect);
-        }
-    };
-    var setOrder = function (obj) {
-        store.order[name + '-pre'] = obj.pre; // can be undefined
-        store.order[name + '-asc'] = obj.asc; // can be undefined
-        store.order[name + '-desc'] = obj.desc; // can be undefined
-    };
-    // prop is optional
-    if (val === undefined) {
-        val = prop;
-        prop = undefined;
-    }
-    if (prop === 'className') {
-        setProp('className', val);
-    }
-    else if (prop === 'detect') {
-        setDetect(val);
-    }
-    else if (prop === 'order') {
-        setOrder(val);
-    }
-    else if (prop === 'render') {
-        setProp('render', val);
-    }
-    else if (prop === 'search') {
-        setProp('search', val);
-    }
-    else if (!prop) {
-        if (val.className) {
-            setProp('className', val.className);
-        }
-        if (val.detect !== undefined) {
-            setDetect(val.detect);
-        }
-        if (val.order) {
-            setOrder(val.order);
-        }
-        if (val.render !== undefined) {
-            setProp('render', val.render);
-        }
-        if (val.search !== undefined) {
-            setProp('search', val.search);
-        }
-    }
-}
-// Get a list of types
-function types() {
-    return store.detect.map(function (detect) {
-        return detect._name;
-    });
-}
-var __diacriticSort = function (a, b) {
-    a = a !== null && a !== undefined ? a.toString().toLowerCase() : '';
-    b = b !== null && b !== undefined ? b.toString().toLowerCase() : '';
-    // Checked for `navigator.languages` support in `oneOf` so this code can't execute in old
-    // Safari and thus can disable this check
-    // eslint-disable-next-line compat/compat
-    return a.localeCompare(b, navigator.languages[0] || navigator.language, {
-        numeric: true,
-        ignorePunctuation: true
-    });
-};
-var __diacriticHtmlSort = function (a, b) {
-    a = util.stripHtml(a);
-    b = util.stripHtml(b);
-    return __diacriticSort(a, b);
-};
-//
-// Built in data types
-//
-register$1('string', {
-    detect: function () {
-        return 'string';
-    },
-    order: {
-        pre: function (a) {
-            // This is a little complex, but faster than always calling toString,
-            // http://jsperf.com/tostring-v-check
-            return util.is.empty(a) && typeof a !== 'boolean'
-                ? ''
-                : typeof a === 'string'
-                    ? a.toLowerCase()
-                    : !a.toString
-                        ? ''
-                        : a.toString();
-        }
-    },
-    search: _filterString(false)
-});
-register$1('string-utf8', {
-    detect: {
-        allOf: function () {
-            return true;
-        },
-        oneOf: function (d) {
-            // At least one data point must contain a non-ASCII character
-            // This line will also check if navigator.languages is supported or not. If not (Safari 10.0-)
-            // this data type won't be supported.
-            // eslint-disable-next-line compat/compat
-            return (!util.is.empty(d) &&
-                navigator.languages &&
-                typeof d === 'string' &&
-                !!d.match(/[^\x00-\x7F]/));
-        }
-    },
-    order: {
-        asc: __diacriticSort,
-        desc: function (a, b) {
-            return __diacriticSort(a, b) * -1;
-        }
-    },
-    search: _filterString(false)
-});
-register$1('html', {
-    detect: {
-        allOf: function (d) {
-            return (util.is.empty(d) ||
-                (typeof d === 'string' && d.indexOf('<') !== -1));
-        },
-        oneOf: function (d) {
-            // At least one data point must contain a `<`
-            return (!util.is.empty(d) &&
-                typeof d === 'string' &&
-                d.indexOf('<') !== -1);
-        }
-    },
-    order: {
-        pre: function (a) {
-            return util.is.empty(a)
-                ? ''
-                : a.replace
-                    ? util.stripHtml(a).trim().toLowerCase()
-                    : a + '';
-        }
-    },
-    search: _filterString(true)
-});
-register$1('html-utf8', {
-    detect: {
-        allOf: function (d) {
-            return (util.is.empty(d) ||
-                (typeof d === 'string' && d.indexOf('<') !== -1));
-        },
-        oneOf: function (d) {
-            // At least one data point must contain a `<` and a non-ASCII character
-            // eslint-disable-next-line compat/compat
-            return (navigator.languages &&
-                !util.is.empty(d) &&
-                typeof d === 'string' &&
-                d.indexOf('<') !== -1 &&
-                typeof d === 'string' &&
-                !!d.match(/[^\x00-\x7F]/));
-        }
-    },
-    order: {
-        asc: __diacriticHtmlSort,
-        desc: function (a, b) {
-            return __diacriticHtmlSort(a, b) * -1;
-        }
-    },
-    search: _filterString(true)
-});
-register$1('date', {
-    className: 'dt-type-date',
-    detect: {
-        allOf: function (d) {
-            // V8 tries _very_ hard to make a string passed into `Date.parse()`
-            // valid, so we need to use a regex to restrict date formats. Use a
-            // plug-in for anything other than ISO8601 style strings
-            if (d && !(d instanceof Date) && !util.regex.reDate.test(d)) {
-                return null;
-            }
-            var parsed = Date.parse(d);
-            return (parsed !== null && !isNaN(parsed)) || util.is.empty(d);
-        },
-        oneOf: function (d) {
-            // At least one entry must be a date or a string with a date
-            return (d instanceof Date ||
-                (typeof d === 'string' && util.regex.reDate.test(d)));
-        }
-    },
-    order: {
-        pre: function (d) {
-            var ts = Date.parse(d);
-            return isNaN(ts) ? -Infinity : ts;
-        }
-    }
-});
-register$1('html-num-fmt', {
-    className: 'dt-type-numeric',
-    detect: {
-        allOf: function (d, settings) {
-            var decimal = settings.language.decimal;
-            return util.is.htmlNum(d, decimal, true, false);
-        },
-        oneOf: function (d, settings) {
-            // At least one data point must contain a numeric value
-            var decimal = settings.language.decimal;
-            return util.is.htmlNum(d, decimal, true, false);
-        }
-    },
-    order: {
-        pre: function (d, s) {
-            var dp = s.language.decimal;
-            return __numericReplace(d, dp, util.regex.reHtml, util.regex.reFormattedNumeric);
-        }
-    },
-    search: _filterString(true)
-});
-register$1('html-num', {
-    className: 'dt-type-numeric',
-    detect: {
-        allOf: function (d, settings) {
-            var decimal = settings.language.decimal;
-            return util.is.htmlNum(d, decimal, false, true);
-        },
-        oneOf: function (d, settings) {
-            // At least one data point must contain a numeric value
-            var decimal = settings.language.decimal;
-            return util.is.htmlNum(d, decimal, false, false);
-        }
-    },
-    order: {
-        pre: function (d, s) {
-            var dp = s.language.decimal;
-            return __numericReplace(d, dp, util.regex.reHtml);
-        }
-    },
-    search: _filterString(true)
-});
-register$1('num-fmt', {
-    className: 'dt-type-numeric',
-    detect: {
-        allOf: function (d, settings) {
-            var decimal = settings.language.decimal;
-            return util.is.num(d, decimal, true, true);
-        },
-        oneOf: function (d, settings) {
-            // At least one data point must contain a numeric value
-            var decimal = settings.language.decimal;
-            return util.is.num(d, decimal, true, false);
-        }
-    },
-    order: {
-        pre: function (d, s) {
-            var dp = s.language.decimal;
-            return __numericReplace(d, dp, util.regex.reFormattedNumeric);
-        }
-    }
-});
-register$1('num', {
-    className: 'dt-type-numeric',
-    detect: {
-        allOf: function (d, settings) {
-            var decimal = settings.language.decimal;
-            return util.is.num(d, decimal, false, true);
-        },
-        oneOf: function (d, settings) {
-            // At least one data point must contain a numeric value
-            var decimal = settings.language.decimal;
-            return util.is.num(d, decimal, false, false);
-        }
-    },
-    order: {
-        pre: function (d, s) {
-            var dp = s.language.decimal;
-            return __numericReplace(d, dp);
-        }
-    }
-});
-
-/**
- * DataTables extensions
- *
- * This namespace acts as a collection area for plug-ins that can be used to
- * extend DataTables capabilities. Indeed many of the build in methods
- * use this method to provide their own capabilities (sorting methods for
- * example).
- *
- * Note that this namespace is aliased to `jQuery.fn.dataTableExt` for legacy
- * reasons
- */
-const ext = {
-    /**
-     * DataTables build type (expanded by the download builder)
-     */
-    builder: 'bs5/dt-3.0.3',
-    /**
-     * Buttons. For use with the Buttons extension for DataTables. This is
-     * defined here so other extensions can define buttons regardless of load
-     * order. It is _not_ used by DataTables core.
-     */
-    buttons: {},
-    /**
-     * ColumnControl buttons and content
-     */
-    ccContent: {},
-    /**
-     * Element class names
-     */
-    classes: classes$1,
-    /**
-     * Error reporting.
-     *
-     * How should DataTables report an error. Can take the value 'alert',
-     * 'throw', 'none' or a function.
-     */
-    errMode: 'alert',
-    /** HTML entity escaping */
-    escape: {
-        /** When reading data-* attributes for initialisation options */
-        attributes: false
-    },
-    /**
-     * Legacy so v1 plug-ins don't throw js errors on load
-     */
-    feature: legacy,
-    /**
-     * Feature plug-ins.
-     *
-     * This is an object of callbacks which provide the features for DataTables
-     * to be initialised via the `layout` option.
-     */
-    features: features,
-    /**
-     * Row searching.
-     *
-     * This method of searching is complimentary to the default type based
-     * searching, and a lot more comprehensive as it allows you complete control
-     * over the searching logic. Each element in this array is a function
-     * (parameters described below) that is called for every row in the table,
-     * and your logic decides if it should be included in the searching data set
-     * or not.
-     */
-    search: [],
-    /**
-     * Selector extensions
-     *
-     * The `selector` option can be used to extend the options available for the
-     * selector modifier options (`selector-modifier` object data type) that
-     * each of the three built in selector types offer (row, column and cell +
-     * their plural counterparts). For example the Select extension uses this
-     * mechanism to provide an option to select only rows, columns and cells
-     * that have been marked as selected by the end user (`{selected: true}`),
-     * which can be used in conjunction with the existing built in selector
-     * options.
-     */
-    selector: {
-        cell: [],
-        column: [],
-        row: []
-    },
-    settings: [],
-    /**
-     * Legacy configuration options. Enable and disable legacy options that
-     * are available in DataTables.
-     *
-     *  @type object
-     */
-    legacy: {
-        /**
-         * Enable / disable DataTables 1.9 compatible server-side processing
-         * requests
-         */
-        ajax: null
-    },
-    /**
-     * Pagination plug-in methods.
-     *
-     * Each entry in this object is a function and defines which buttons should
-     * be shown by the pagination rendering method that is used for the table.
-     * The renderer addresses how the buttons are displayed in the document,
-     * while the functions here tell it what buttons to display. This is done by
-     * returning an array of button descriptions (what each button will do).
-     */
-    pager: pager,
-    renderer: {
-        footer: {
-            _: footer
-        },
-        header: {
-            _: header
-        },
-        layout: {
-            _: layout
-        },
-        pagingButton: {
-            _: pagingButton
-        },
-        pagingContainer: {
-            _: pagingContainer
-        }
-    },
-    /**
-     * Rendering helper function exposed for use by the styling integrations.
-     */
-    rendererDisplayRowCells: displayRowCells,
-    /**
-     * Ordering plug-ins - custom data source
-     *
-     * The extension options for ordering of data available here is
-     * complimentary to the default type based ordering that DataTables
-     * typically uses. It allows much greater control over the data that is
-     * being used to order a column, but is necessarily therefore more complex.
-     */
-    order: {},
-    /**
-     * Type based plug-ins.
-     *
-     * Each column in DataTables has a type assigned to it, either by automatic
-     * detection or by direct assignment using the `type` option for the column.
-     * The type of a column will effect how it is ordering and search (plug-ins
-     * can also make use of the column type if required).
-     */
-    type: store,
-    /**
-     * Unique DataTables instance counter
-     *
-     * @type int
-     * @private
-     */
-    _unique: 0,
-    //
-    // Depreciated
-    // The following properties are retained for backwards compatibility only.
-    // The should not be used in new projects and will be removed in a future
-    // version
-    //
-    /**
-     * Software version
-     *  @type string
-     */
-    version: '3.0.3'
-};
-//
-// Backwards compatibility. Alias to pre 1.10 Hungarian notation counter parts
-//
-Object.assign(ext, {
-    afnFiltering: ext.search,
-    aTypes: ext.type.detect,
-    ofnSearch: ext.type.search,
-    oSort: ext.type.order,
-    afnSortData: ext.order,
-    aoFeatures: ext.feature,
-    oStdClasses: ext.classes,
-    oPagination: ext.pager,
-    sVersion: ext.version,
-    fnVersionCheck: check$1
-});
-
-/**
- * Log an error message
- *
- * @param ctx DataTables settings object
- * @param level log error messages, or display them to the user
- * @param msg error message
- * @param tn Technical note id to get more information about the error.
- */
-function log(ctx, level, msg, tn) {
-    msg =
-        'DataTables warning: ' +
-            (ctx ? 'table id=' + ctx.tableId + ' - ' : '') +
-            msg;
-    if (tn) {
-        msg +=
-            '. For more information about this error, please see ' +
-                'https://datatables.net/tn/' +
-                tn;
-    }
-    {
-        // Backwards compatibility pre 1.10
-        var type = ext.sErrMode || ext.errMode;
-        if (ctx) {
-            callbackFire(ctx, null, 'dt-error', [ctx, tn, msg], true);
-        }
-        if (type == 'alert') {
-            alert(msg);
-        }
-        else if (type == 'throw') {
-            throw new Error(msg);
-        }
-        else if (typeof type == 'function') {
-            type(ctx, tn, msg);
-        }
-    }
-}
-/**
- * See if a property is defined on one object, if so assign it to the other
- * object
- *
- * @param ret target object
- * @param src source object
- * @param name property
- * @param mappedName name to map too - optional, name used if not given
- */
-function map(ret, src, name, mappedName) {
-    if (Array.isArray(name)) {
-        for (let i = 0; i < name.length; i++) {
-            let val = name[i];
-            if (Array.isArray(val)) {
-                map(ret, src, val[0], val[1]);
-            }
-            else {
-                map(ret, src, val);
-            }
-        }
-        return;
-    }
-    if (mappedName === undefined) {
-        mappedName = name;
-    }
-    if (src[name] !== undefined) {
-        ret[mappedName] = src[name];
-    }
-}
-/**
- * Bind an event handler to allow a click or return key to activate the callback.
- * This is good for accessibility since a return on the keyboard will have the
- * same effect as a click, if the element has focus.
- *
- * @param n Element to bind the action to
- * @param selector Selector (for delegated events)
- * @param fn Callback function for when the event is triggered
- */
-function bindAction(n, selector, fn) {
-    Dom.s(n)
-        .on('click.DT', selector, function (e) {
-        fn(e);
-    })
-        .on('keypress.DT', selector, function (e) {
-        if (e.which === 13) {
-            e.preventDefault();
-            fn(e);
-        }
-    })
-        .on('selectstart.DT', selector, function () {
-        // Don't want a double click resulting in text selection
-        return false;
-    });
-}
-/**
- * Register a callback function. Easily allows a callback function to be added
- * to an array store of callback functions that can then all be called together.
- *
- * @param settings dataTables settings object
- * @param store Name of the array storage for the callbacks in settings
- * @param fn Function to be called back
- */
-function callbackReg(ctx, store, fn) {
-    if (fn) {
-        ctx.callbacks[store].push(fn);
-    }
-}
-/**
- * Fire callback functions and trigger events. Note that the loop over the
- * callback array store is done backwards! Further note that you do not want to
- * fire off triggers in time sensitive applications (for example cell creation)
- * as its slow.
- *
- * @param ctx DataTables settings object
- * @param callbackArr Name of the array storage for the callbacks in the context
- * @param eventName Name of the custom event to trigger. If null no trigger is
- *   fired
- * @param args Array of arguments to pass to the callback function / trigger
- * @param bubbles True if the event should bubble
- */
-function callbackFire(ctx, callbackArr, eventName, args, bubbles = false) {
-    var ret = [];
-    if (callbackArr) {
-        ret = ctx.callbacks[callbackArr]
-            .slice()
-            .reverse()
-            .map(function (val) {
-            return val.apply(ctx.instance, args);
-        });
-    }
-    if (eventName !== null) {
-        let table = Dom.s(ctx.table);
-        let result = table.trigger(eventName + '.dt', bubbles, args, {
-            dt: ctx.api
-        });
-        // If not yet attached to the document, trigger the event
-        // on the body directly to sort of simulate the bubble
-        if (bubbles && table.closest('body').count() === 0) {
-            Dom.s('body').trigger(eventName + '.dt', bubbles, args, {
-                dt: ctx.api
-            });
-        }
-        ret.push(result[0]);
-    }
-    return ret;
-}
-function lengthOverflow(ctx) {
-    var start = ctx.displayStart, end = displayEnd(ctx), len = ctx.pageLength;
-    // If we have space to show extra rows (backing up from the end point - then
-    // do so
-    if (start >= end) {
-        start = end - len;
-    }
-    // Keep the start record on the current page
-    start -= start % len;
-    if (len === -1 || start < 0) {
-        start = 0;
-    }
-    ctx.displayStart = start;
-}
-/**
- * Detect the data source being used for the table. Used to simplify the code a
- * little (ajax) and to make it compress a little smaller.
- *
- * @param ctx DataTables settings object
- * @returns Data source
- */
-function dataSource(ctx) {
-    if (ctx.features.serverSide) {
-        return 'ssp';
-    }
-    else if (ctx.ajax) {
-        return 'ajax';
-    }
-    return 'dom';
-}
-/**
- * Common replacement for language strings
- *
- * @param ctx DataTables settings object
- * @param str String with values to replace
- * @param entries Plural number for _ENTRIES_ - can be undefined
- * @returns String
- */
-function macros(ctx, str, entries) {
-    // When infinite scrolling, we are always starting at 1. _iDisplayStart is
-    // used only internally
-    var formatter = ctx.formatNumber, start = ctx.displayStart + 1, len = ctx.pageLength, vis = recordsDisplay(ctx), max = recordsTotal(ctx), all = len === -1;
-    return str
-        .replace(/_START_/g, formatter(start, ctx))
-        .replace(/_END_/g, formatter(displayEnd(ctx), ctx))
-        .replace(/_MAX_/g, formatter(max, ctx))
-        .replace(/_TOTAL_/g, formatter(vis, ctx))
-        .replace(/_PAGE_/g, formatter(all ? 1 : Math.ceil(start / len), ctx))
-        .replace(/_PAGES_/g, formatter(all ? 1 : Math.ceil(vis / len), ctx))
-        .replace(/_ENTRIES_/g, ctx.api.i18n('entries', '', entries))
-        .replace(/_ENTRIES-MAX_/g, ctx.api.i18n('entries', '', max))
-        .replace(/_ENTRIES-TOTAL_/g, ctx.api.i18n('entries', '', vis));
-}
-/**
- * Add elements to an array as quickly as possible, but stack safe.
- *
- * @param arr Array to add the data to
- * @param data Data array that is to be added
- */
-function arrayApply(arr, data) {
-    if (!data) {
-        return;
-    }
-    // Chrome can throw a max stack error if apply is called with
-    // too large an array, but apply is faster.
-    if (data.length < 10000) {
-        arr.push.apply(arr, data);
-    }
-    else {
-        for (var i = 0; i < data.length; i++) {
-            arr.push(data[i]);
-        }
-    }
-}
-/**
- * Add one or more listeners to the table
- *
- * @param that JQ for the table
- * @param name Event name
- * @param src Listener(s)
- */
-function listener(that, name, src) {
-    let srcArr = Array.isArray(src) ? src : [src];
-    for (var i = 0; i < srcArr.length; i++) {
-        that.on(name + '.dt.DT', srcArr[i]);
-    }
-}
-/**
- * Escape HTML entities in strings, in an object
- */
-function escapeObject(obj) {
-    if (ext.escape.attributes) {
-        each(obj, function (key, val) {
-            obj[key] = escapeHtml(val);
-        });
-    }
-    return obj;
-}
-
-/*
- * Public helper functions. These aren't used internally by DataTables, or
- * called by any of the options passed into DataTables, but they can be used
- * externally by developers working with DataTables. They are helper functions
- * to make working with DataTables a little bit easier.
- */
-/**
- * Common logic for moment, luxon or a date action.
- *
- * Happens after __mldObj, so don't need to call `resolveWindowsLibs` again
- */
-function __mld(dtLib, momentFn, luxonFn, dateFn, arg1) {
-    if (__moment) {
-        return dtLib[momentFn](arg1);
-    }
-    else if (__luxon) {
-        return dtLib[luxonFn](arg1);
-    }
-    return dateFn ? dtLib[dateFn](arg1) : dtLib;
-}
-var __mlWarning = false;
-var __luxon;
-var __moment;
-/**
- *
- */
-function resolveWindowLibs() {
-    __luxon = util.external('luxon');
-    __moment = util.external('moment');
-}
-function __mldObj(d, format, locale) {
-    var dt;
-    resolveWindowLibs();
-    if (__moment) {
-        dt = __moment(d, format, locale, true);
-        if (!dt.isValid()) {
-            return null;
-        }
-    }
-    else if (__luxon) {
-        dt =
-            format && typeof d === 'string'
-                ? __luxon.DateTime.fromFormat(d, format)
-                : __luxon.DateTime.fromISO(d);
-        if (!dt.isValid) {
-            return null;
-        }
-        dt = dt.setLocale(locale);
-    }
-    else if (!format) {
-        // No format given, must be ISO
-        dt = new Date(d);
-    }
-    else {
-        if (!__mlWarning) {
-            alert('DataTables warning: Formatted date without Moment.js or Luxon - https://datatables.net/tn/17');
-        }
-        __mlWarning = true;
-    }
-    return dt;
-}
-// Wrapper for date, datetime and time which all operate the same way with the
-// exception of the output string for auto locale support
-function __mlHelper(localeString) {
-    return function (from, to, locale, def) {
-        // Luxon and Moment support
-        // Argument shifting
-        if (arguments.length === 0) {
-            locale = 'en';
-            to = null; // means toLocaleString
-            from = null; // means iso8601
-        }
-        else if (arguments.length === 1) {
-            locale = 'en';
-            to = from;
-            from = null;
-        }
-        else if (arguments.length === 2) {
-            locale = to;
-            to = from;
-            from = null;
-        }
-        var typeName = 'datetime' + (to ? '-' + to : '');
-        // Add type detection and sorting specific to this date format - we need
-        // to be able to identify date type columns as such, rather than as
-        // numbers in extensions. Hence the need for this.
-        if (!store.order[typeName + '-pre']) {
-            register$1(typeName, {
-                detect: function (d) {
-                    // The renderer will give the value to type detect as the
-                    // type!
-                    return d === typeName ? typeName : false;
-                },
-                order: {
-                    pre: function (d) {
-                        // The renderer gives us Moment, Luxon or Date objects
-                        // for the sorting, all of which have a `valueOf` which
-                        // gives milliseconds epoch
-                        return d.valueOf();
-                    }
-                }
-            });
-        }
-        if (!store.className[typeName]) {
-            store.className[typeName] = 'dt-right';
-        }
-        return function (d, type) {
-            // Allow for a default value
-            if (d === null || d === undefined) {
-                if (def === '--now') {
-                    // We treat everything as UTC further down, so no changes
-                    // are made, as such need to get the local date / time as if
-                    // it were UTC
-                    var local = new Date();
-                    d = new Date(Date.UTC(local.getFullYear(), local.getMonth(), local.getDate(), local.getHours(), local.getMinutes(), local.getSeconds()));
-                }
-                else {
-                    d = '';
-                }
-            }
-            if (type === 'type') {
-                // Typing uses the type name for fast matching
-                return typeName;
-            }
-            if (d === '') {
-                return type !== 'sort'
-                    ? ''
-                    : __mldObj('0000-01-01 00:00:00', null, locale);
-            }
-            // Shortcut. If `from` and `to` are the same, we are using the
-            // renderer to format for ordering, not display - its already in the
-            // display format.
-            if (to !== null &&
-                from === to &&
-                type !== 'sort' &&
-                type !== 'type' &&
-                !(d instanceof Date)) {
-                return d;
-            }
-            // Determine if there is a timezone. If there is, we want to reuse
-            // it for the output, so the timezone doesn't change between the
-            // input and output.
-            let options = {};
-            let tzMatch = typeof d === 'string' ? d.match(util.regex.isoTimezone) : null;
-            if (tzMatch) {
-                options.timeZone = tzMatch[1] === 'Z' ? 'UTC' : tzMatch[1];
-            }
-            // Get a Date object (Luxon, moment or Date)
-            var dt = __mldObj(d, from, locale);
-            if (dt === null) {
-                return d;
-            }
-            if (type === 'sort') {
-                return dt;
-            }
-            var formatted = to === null
-                ? __mld(dt, 'toDate', 'toJSDate', '')[localeString](navigator.language, options)
-                : __mld(dt, 'format', 'toFormat', 'toISOString', to);
-            // XSS protection
-            return type === 'display' ? util.escapeHtml(formatted) : formatted;
-        };
-    };
-}
-// Based on locale, determine standard number formatting
-// Fallback for legacy browsers is US English
-var __thousands = ',';
-var __decimal = '.';
-if (window.Intl !== undefined) {
-    try {
-        var num = new Intl.NumberFormat().formatToParts(100000.1);
-        for (var i = 0; i < num.length; i++) {
-            if (num[i].type === 'group') {
-                __thousands = num[i].value;
-            }
-            else if (num[i].type === 'decimal') {
-                __decimal = num[i].value;
-            }
-        }
-    }
-    catch (e) {
-        // noop
-    }
-}
-/**
- * Register a date / time format for DataTables to use.
- *
- * @param format The date / time format to detect data in. Please refer to the
- *   Moment.js or Luxon document for the full list of tokens, depending on which
- *   of the two libraries you are using.
- * @param locale The locale to pass to Moment.js / Luxon.
- */
-function datetime(format, locale) {
-    var typeName = 'datetime-' + format;
-    if (!locale) {
-        locale = 'en';
-    }
-    if (!store.order[typeName]) {
-        register$1(typeName, {
-            detect: function (d) {
-                var dt = __mldObj(d, format, locale);
-                return d === '' || dt ? typeName : false;
-            },
-            order: {
-                pre: function (d) {
-                    return __mldObj(d, format, locale) || 0;
-                }
-            }
-        });
-    }
-    if (!store.className[typeName]) {
-        store.className[typeName] = 'dt-right';
-    }
-}
-/**
- * Helpers for `columns.render`.
- */
-var helpers = {
-    date: __mlHelper('toLocaleDateString'),
-    datetime: __mlHelper('toLocaleString'),
-    time: __mlHelper('toLocaleTimeString'),
-    number: function (thousands, decimal, precision, prefix, postfix) {
-        // Auto locale detection
-        if (thousands === null || thousands === undefined) {
-            thousands = __thousands;
-        }
-        if (decimal === null || decimal === undefined) {
-            decimal = __decimal;
-        }
-        return {
-            display: function (d) {
-                if (typeof d !== 'number' && typeof d !== 'string') {
-                    return d;
-                }
-                if (d === '' || d === null) {
-                    return d;
-                }
-                var flo = typeof d === 'number' ? d : parseFloat(d);
-                var negative = flo < 0 ? '-' : '';
-                var abs = Math.abs(flo);
-                // Scientific notation for large and small numbers
-                if (abs >= 100000000000 || (abs < 0.0001 && abs !== 0)) {
-                    var exp = flo.toExponential(precision).split(/e\+?/);
-                    return exp[0] + ' x 10<sup>' + exp[1] + '</sup>';
-                }
-                // If NaN then there isn't much formatting that we can do - just
-                // return immediately, escaping any HTML (this was supposed to
-                // be a number after all)
-                if (isNaN(flo)) {
-                    return util.escapeHtml(d);
-                }
-                flo = flo.toFixed(precision);
-                var absPart = Math.abs(flo);
-                var intPart = Math.abs(parseInt(flo, 10));
-                var floatPart = precision
-                    ? decimal +
-                        (absPart - intPart).toFixed(precision).substring(2)
-                    : '';
-                // If zero, then can't have a negative prefix
-                if (intPart === 0 && parseFloat(floatPart) === 0) {
-                    negative = '';
-                }
-                return (negative +
-                    (prefix || '') +
-                    intPart
-                        .toString()
-                        .replace(/\B(?=(\d{3})+(?!\d))/g, thousands) +
-                    floatPart +
-                    (postfix || ''));
-            }
-        };
-    },
-    text: function () {
-        return {
-            display: util.escapeHtml,
-            filter: util.escapeHtml
-        };
-    }
-};
-
-/**
- * Column options that can be given to DataTables at initialisation time.
- */
 const defaults$4 = {
-    ariaTitle: '',
-    cellType: 'td',
-    className: '',
-    contentPadding: '',
-    createdCell: null,
-    data: null,
-    defaultContent: null,
-    footer: null,
-    name: '',
-    orderable: true,
-    orderData: null,
-    orderDataType: 'std',
-    orderSequence: ['asc', 'desc', ''],
-    render: null,
-    search: null,
-    searchable: true,
-    title: null,
-    type: null,
-    visible: true,
-    width: null
-};
-
-/**
- * Internal settings object used for individual columns. Instances are held in
- * the setting object's `columns` array and contains all the information that
- * DataTables needs about each individual column.
- *
- * Note that this object is related to the column defaults but this one is the
- * internal data store for DataTables's cache of columns. It should NOT be
- * manipulated outside of DataTables. Any configuration should be done through
- * the initialisation options.
- */
-class Settings {
-    constructor() {
-        /**
-         * Flag to indicate if HTML5 data attributes should be used as the data
-         * source for filtering or sorting. True is either are.
-         */
-        this.attrSrc = false;
-        this.ariaTitle = '';
-        /**
-         * The class to apply to all cells in the table's `tbody`` for the column
-         */
-        this.className = null;
-        /**
-         * When DataTables calculates the column widths to assign to each column, it
-         * finds the longest string in each column and then constructs a temporary
-         * table and reads the widths from that. The problem with this is that "mmm"
-         * is much wider then "iiii", but the latter is a longer string - thus the
-         * calculation can go wrong (doing it properly and putting it into an DOM
-         * object and measuring that is horribly(!) slow). Thus as a "work around"
-         * we provide this option. It will append its value to the text that is
-         * found to be the longest string for the column - i.e. padding.
-         */
-        this.contentPadding = null;
-        /**
-         * Property to read the value for the cells in the column from the data
-         * source array / object. If null, then the default content is used, if a
-         * function is given then the return from the function is used.
-         */
-        this.data = null;
-        /**
-         * Allows a default value to be given for a column's data, and will be used
-         * whenever a null data source is encountered (this can be because mData is
-         * set to null, or because the data source itself is null).
-         */
-        this.defaultContent = null;
-        /**
-         * Name for the column, allowing reference to the column by name as well as
-         * by index (needs a lookup to work by name).
-         */
-        this.name = null;
-        /**
-         * A list of the columns that sorting should occur on when this column is
-         * sorted. That this property is an array allows multi-column sorting to be
-         * defined for a column (for example first name / last name columns would
-         * benefit from this). The values are integers pointing to the columns to be
-         * sorted on (typically it will be a single integer pointing at itself, but
-         * that doesn't need to be the case).
-         */
-        this.orderData = [];
-        /**
-         * Custom sorting data type - defines which of the available plug-ins in
-         * afnSortData the custom sorting will use - if any is defined.
-         */
-        this.orderDataType = 'std';
-        /**
-         * Class to be applied to the header element when sorting on this column
-         */
-        this.orderingClass = null;
-        /**
-         * Define the sorting directions that are applied to the column, in sequence
-         * as the column is repeatedly sorted upon - i.e. the first value is used as
-         * the sorting direction when the column if first sorted (clicked on). Sort
-         * it again (click again) and it will move on to the next index. Repeat
-         * until loop.
-         */
-        this.orderSequence = [];
-        /**
-         * Partner property to mData which is used (only when defined) to get the
-         * data - i.e. it is basically the same as mData, but without the 'set'
-         * option, and also the data fed to it is the result from mData. This is the
-         * rendering method to match the data method of mData.
-         */
-        this.render = null;
-        /**
-         * Title of the column - what is seen in the TH element (nTh).
-         */
-        this.title = null;
-        /**
-         * Store for manual type assignment using the `column.type` option. This
-         * is held in store so we can manipulate the column's `type` property.
-         */
-        this.typeManual = null;
-        /** Cached longest strings from a column */
-        this.wideStrings = null;
-        /**
-         * Width of the column
-         */
-        this.width = null;
-        /**
-         * Width of the column when it was first "encountered"
-         */
-        this.widthOrig = null;
-    }
-}
-
-const defaults$3 = {
-    boundary: false,
-    caseInsensitive: true,
-    columns: null,
-    exact: false,
-    regex: false,
-    return: false,
-    search: '',
-    smart: true
-};
-/**
- * Create a new search options object
- *
- * @param parts Values to assign, otherwise the defaults will be used
- * @returns New object
- */
-function create$2(parts = {}) {
-    return util.object.assignDeep({}, defaults$3, parts);
-}
-
-const browser = {
-    barWidth: -1,
-    scrollbarLeft: false
-};
-const hungarianToCamelRe = /^(a|aa|ai|ao|as|b|fn|i|m|o|s)([A-Z])([a-z].*$)/;
-/**
- * Take an object which has hungarian notation parameters and convert them to
- * camelCase style. This is to allow compatibility with DataTables 1.9 and
- * earlier which only used hungarian notation, and also with DataTables 1.10 - 2
- * which allowed it to be used.
- */
-function hungarianToCamel(user) {
-    if (!user) {
-        return user;
-    }
-    let userKeys = Object.keys(user);
-    let userAny = user;
-    for (let i = 0; i < userKeys.length; i++) {
-        let userKey = userKeys[i];
-        let match = userKey.match(hungarianToCamelRe);
-        // Is the key in hungarian notation?
-        if (match) {
-            // If so map it down
-            user[match[2].toLowerCase() + match[3]] = userAny[userKey];
-        }
-        // Recurse down through the object
-        if (util.is.plainObject(userAny[userKey])) {
-            hungarianToCamel(userAny[userKey]);
-        }
-    }
-    return user;
-}
-/**
- * Map one parameter onto another
- *
- * @param o Object to map
- * @param newKey The new parameter name
- * @param oldKey The old parameter name
- */
-function compatMap(o, newKey, oldKey) {
-    if (o[oldKey] !== undefined) {
-        o[newKey] = o[oldKey];
-    }
-}
-/**
- * Provide backwards compatibility for the main DT options. Note that the new
- * options are mapped onto the old parameters, so this is an external interface
- * change only.
- *
- * @param init Object to map
- */
-function compatOpts(init) {
-    // Convert any old style parameters to camelCase
-    hungarianToCamel(init);
-    // Map old parameter names to new
-    compatMap(init, 'ordering', 'sort');
-    compatMap(init, 'orderMulti', 'sortMulti');
-    compatMap(init, 'orderClasses', 'sortClasses');
-    compatMap(init, 'orderCellsTop', 'sortCellsTop');
-    compatMap(init, 'order', 'sorting');
-    compatMap(init, 'orderFixed', 'sortingFixed');
-    compatMap(init, 'paging', 'paginate');
-    compatMap(init, 'pagingType', 'paginationType');
-    compatMap(init, 'pageLength', 'displayLength');
-    compatMap(init, 'searching', 'filter');
-    compatMap(init, 'stateDuration', 'cookieDuration');
-    // Boolean initialisation of x-scrolling
-    if (typeof init.scrollX === 'boolean') {
-        init.scrollX = init.scrollX ? '100%' : '';
-    }
-    // Objects for ordering
-    if (typeof init.ordering === 'object') {
-        init.orderIndicators =
-            init.ordering.indicators !== undefined
-                ? init.ordering.indicators
-                : true;
-        init.orderHandler =
-            init.ordering.handler !== undefined ? init.ordering.handler : true;
-        init.ordering = true;
-    }
-    else if (init.ordering === false) {
-        init.orderIndicators = false;
-        init.orderHandler = false;
-    }
-    else if (init.ordering === true) {
-        init.orderIndicators = true;
-        init.orderHandler = true;
-    }
-    // Which cells are the title cells?
-    if (typeof init.orderCellsTop === 'boolean') {
-        init.titleRow = init.orderCellsTop;
-    }
-    // Column search objects are in an array, so it needs to be converted
-    // element by element
-    var searchCols = init.searchCols;
-    if (searchCols) {
-        for (var i = 0, iLen = searchCols.length; i < iLen; i++) {
-            if (searchCols[i]) {
-                hungarianToCamel(searchCols[i]);
-            }
-        }
-    }
-    // Enable search delay if server-side processing is enabled
-    if (init.serverSide && !init.searchDelay) {
-        init.searchDelay = 400;
-    }
-    // Language
-    if (init.language && init.language.url && !init.language.ajax) {
-        init.language.ajax = init.language.url;
-    }
-}
-/**
- * Provide backwards compatibility for column options. Note that the new options
- * are mapped onto the old parameters, so this is an external interface change
- * only.
- *
- * @param init Object to map
- */
-function compatCols(init) {
-    // Convert any old style parameters to camelCase
-    hungarianToCamel(init);
-    // typeof columnDefaults
-    compatMap(init, 'orderable', 'sortable');
-    compatMap(init, 'orderData', 'dataSort');
-    compatMap(init, 'orderSequence', 'sorting');
-    compatMap(init, 'orderDataType', 'sortDataType');
-    compatMap(init, 'className', 'class');
-    // orderData can be given as an integer
-    var dataSort = init.aDataSort;
-    var orderData = init.orderData;
-    if (typeof dataSort === 'number') {
-        init.orderData = [dataSort];
-    }
-    if (typeof orderData === 'number') {
-        init.orderData = [orderData];
-    }
-    // Backwards compatibility for mDataProp from 1.9-
-    if (init.dataProp !== undefined && !init.data) {
-        init.data = init.dataProp;
-    }
-}
-/**
- * Browser feature detection for capabilities, quirks
- *
- * @param ctx DataTables settings object
- */
-function browserDetect(ctx) {
-    // We don't need to do this every time DataTables is constructed, the values
-    // calculated are specific to the browser and OS configuration which we
-    // don't expect to change between initialisations
-    if (browser.barWidth === -1) {
-        // Scrolling feature / quirks detection
-        var n = Dom
-            .c('div')
-            .css({
-            position: 'fixed',
-            top: '0',
-            left: -1 * window.pageXOffset + 'px', // allow for scrolling
-            height: '1px',
-            width: '1px',
-            overflow: 'hidden'
-        })
-            .append(Dom
-            .c('div')
-            .css({
-            position: 'absolute',
-            top: '1px',
-            left: '1px',
-            width: '100px',
-            overflow: 'scroll'
-        })
-            .append(Dom.c('div').css({
-            width: '100%',
-            height: '10px'
-        })))
-            .appendTo('body');
-        var outer = n.children();
-        var inner = outer.children();
-        browser.barWidth = outer.get(0).offsetWidth - outer.get(0).clientWidth;
-        browser.scrollbarLeft = Math.round(inner.offset().left) !== 1;
-        n.remove();
-    }
-    Object.assign(ctx.browser, browser);
-    ctx.scroll.barWidth = browser.barWidth;
-}
-
-const defaults$2 = {
     addedClasses: [],
     cells: [],
     data: [],
@@ -4835,8 +3260,8 @@ const defaults$2 = {
  * @param parts Values to assign, otherwise the defaults will be used
  * @returns New object
  */
-function create$1(parts = {}) {
-    return util.object.assignDeep({}, defaults$2, parts);
+function create$2(parts = {}) {
+    return util.object.assignDeep({}, defaults$4, parts);
 }
 
 /**
@@ -4854,7 +3279,7 @@ function create$1(parts = {}) {
 function addData(settings, dataIn, tr, tds) {
     /* Create the object for storing information about this new row */
     var rowIdx = settings.data.length;
-    var row = create$1({
+    var row = create$2({
         src: tr ? 'dom' : 'data',
         idx: rowIdx
     });
@@ -5176,6 +3601,91 @@ function readCellData(settings, cell, data, colIdx) {
         }
         column.setter(data, contents);
     }
+}
+
+/**
+ * Generate the node required for the processing node
+ *
+ * @param ctx DataTables settings object
+ */
+function processingHtml(ctx) {
+    var table = ctx.table;
+    var scrolling = ctx.scroll.x !== '' || ctx.scroll.y !== '';
+    if (ctx.features.processing) {
+        var n = Dom
+            .c('div')
+            .attr('id', ctx.tableId + '_processing')
+            .attr('role', 'status')
+            .classAdd(ctx.classes.processing.container)
+            .html(ctx.language.processing)
+            .append(Dom
+            .c('div')
+            .append(Dom.c('div'))
+            .append(Dom.c('div'))
+            .append(Dom.c('div'))
+            .append(Dom.c('div')));
+        // Different positioning depending on if scrolling is enabled or not
+        if (scrolling) {
+            n.prependTo(Dom.s(ctx.tableWrapper).find('div.dt-scroll').get(0));
+        }
+        else {
+            n.insertBefore(table);
+        }
+        Dom.s(table).on('processing.dt.DT', (e, s, show) => {
+            n.css('display', show ? 'block' : 'none');
+        });
+    }
+}
+/**
+ * Display or hide the processing indicator
+ *
+ * @param ctx DataTables settings object
+ * @param show Show the processing indicator (true) or not (false)
+ */
+function processingDisplay(ctx, show) {
+    // Ignore cases when we are still redrawing
+    if (ctx.doingDraw && show === false) {
+        return;
+    }
+    callbackFire(ctx, null, 'processing', [ctx, show]);
+}
+/**
+ * Show the processing element if an action takes longer than a given time
+ *
+ * @param ctx DataTables settings object
+ * @param enable Do (true) or not (false) async processing (local feature enablement)
+ * @param run Function to run
+ */
+function processingRun(ctx, enable, run) {
+    if (!enable) {
+        // Immediate execution, synchronous
+        run();
+    }
+    else {
+        processingDisplay(ctx, true);
+        // Allow the processing display to show if needed
+        setTimeout(function () {
+            run();
+            processingDisplay(ctx, false);
+        }, 0);
+    }
+}
+
+function renderer(ctx, type) {
+    var render = ctx.renderer;
+    var host = ext.renderer[type];
+    if (plainObject(render) && render[type]) {
+        // Specific renderer for this type. If available use it, otherwise use
+        // the default.
+        return host[render[type]] || host._;
+    }
+    else if (typeof render === 'string') {
+        // Common renderer - if there is one available for this type use it,
+        // otherwise use the default
+        return host[render] || host._;
+    }
+    // Use the default
+    return host._;
 }
 
 /**
@@ -5825,599 +4335,6 @@ function scrollAria(element) {
 }
 
 /**
- * Add a column to the list used for the table with default values
- *
- * @param settings DataTables settings object
- */
-function addColumn(settings) {
-    // Add column to aoColumns array
-    let columnIdx = settings.columns.length;
-    let column = util.object.assign({}, new Settings(), defaults$4, {
-        orderData: defaults$4.orderData
-            ? defaults$4.orderData
-            : [columnIdx],
-        data: defaults$4.data ? defaults$4.data : columnIdx,
-        idx: columnIdx,
-        searchFixed: {},
-        colEl: Dom
-            .c('col')
-            .attr('data-dt-column', columnIdx)
-    });
-    settings.columns.push(column);
-    // Legacy support for `searchCols` property. If set, and there is a value
-    // for this column, then it should be applied to the search. The new, column
-    // specific `search` option is applied in `columnOptions`, but we always
-    // want the search object for the column to exist.
-    let searchCols = settings.searchCols;
-    settings.searches[columnIdx] = create$2(searchCols[columnIdx]
-        ? hungarianToCamel(searchCols[columnIdx])
-        : {});
-    settings.searches[columnIdx].columns = [columnIdx];
-}
-/**
- * Apply options for a column
- *
- * @param settings DataTables settings object
- * @param colIdx column index to consider
- * @param options Column configuration options
- */
-function columnOptions(settings, colIdx, options) {
-    var column = settings.columns[colIdx];
-    /* User specified column options */
-    if (options !== undefined && options !== null) {
-        // Backwards compatibility
-        compatCols(options);
-        if (options.type) {
-            column.typeManual = options.type;
-        }
-        // `class` is a reserved word in JavaScript, so we need to provide
-        // the ability to use a valid name for the camel case input
-        if (options.className && !options.className) {
-            options.className = options.className;
-        }
-        var origClass = column.className;
-        util.object.assign(column, options);
-        map(column, options, 'width', 'widthOrig');
-        // Merge class from previously defined classes with this one, rather
-        // than just overwriting it in the extend above
-        if (origClass !== column.className) {
-            column.className = origClass + ' ' + column.className;
-        }
-        map(column, options, 'orderData');
-        // Search term specifically for this column
-        if (options.search) {
-            util.object.assign(settings.searches[colIdx], options.search);
-        }
-    }
-    /* Cache the data get and set functions for speed */
-    var dataSrc = column.data;
-    var dataFn = util.get(dataSrc);
-    // The `render` option can be given as an array to access the helper
-    // rendering methods. The first element is the rendering method to use, the
-    // rest are the parameters to pass
-    if (column.render && Array.isArray(column.render)) {
-        var copy = column.render.slice();
-        var name = copy.shift();
-        column.render = helpers[name].apply(window, copy);
-    }
-    column.renderer = column.render ? util.get(column.render) : null;
-    var attrTest = function (src) {
-        return typeof src === 'string' && src.indexOf('@') !== -1;
-    };
-    column.attrSrc =
-        !!dataSrc &&
-            util.is.plainObject(dataSrc) &&
-            (attrTest(dataSrc.sort) ||
-                attrTest(dataSrc.type) ||
-                attrTest(dataSrc.filter));
-    column.setter = null;
-    column.dataGet = function (rowData, type, meta) {
-        var innerData = dataFn(rowData, type, undefined, meta);
-        return column.renderer && type
-            ? column.renderer(innerData, type, rowData, meta)
-            : innerData;
-    };
-    column.dataSet = function (rowData, val, meta) {
-        return util.set(dataSrc)(rowData, val, meta);
-    };
-    // Indicate if DataTables should read DOM data as an object or array
-    // Used in _fnGetRowElements
-    if (typeof dataSrc !== 'number' && !column._isArrayHost) {
-        settings.rowReadObject = true;
-    }
-    // Feature sorting overrides column specific when off
-    if (!settings.features.ordering) {
-        column.orderable = false;
-    }
-}
-/**
- * Adjust the table column widths for new data. Note: you would probably want to
- * do a redraw after calling this function!
- *
- * @param settings DataTables settings object
- */
-function adjustColumnSizing(settings) {
-    calculateColumnWidths(settings);
-    columnSizes(settings);
-    let scroll = settings.scroll;
-    if (scroll.y !== '' || scroll.x !== '') {
-        scrollDraw(settings);
-    }
-    callbackFire(settings, null, 'column-sizing', [settings]);
-}
-/**
- * Apply column sizes
- *
- * @param settings DataTables settings object
- */
-function columnSizes(settings) {
-    let cols = settings.columns;
-    for (let i = 0; i < cols.length; i++) {
-        let width = columnsSumWidth(settings, [i], false);
-        if (width) {
-            cols[i].colEl.css('width', width);
-            if (settings.scroll.x) {
-                cols[i].colEl.css('min-width', width);
-            }
-        }
-    }
-}
-/**
- * Convert the index of a visible column to the index in the data array (take
- * account of hidden columns)
- *
- * @param settings DataTables settings object
- * @param visIdx Visible column index to lookup
- * @returns i the data index
- */
-function visibleToColumnIndex(settings, visIdx) {
-    let aiVis = getColumns(settings, 'visible');
-    return typeof aiVis[visIdx] === 'number' ? aiVis[visIdx] : null;
-}
-/**
- * Convert the index of an index in the data array and convert it to the visible
- * column index (take account of hidden columns)
- *
- * @param settings DataTables settings object
- * @param match Column index to lookup
- * @returns The data index
- */
-function columnIndexToVisible(settings, match) {
-    let aiVis = getColumns(settings, 'visible');
-    let iPos = aiVis.indexOf(match);
-    return iPos !== -1 ? iPos : null;
-}
-/**
- * Get the number of visible columns
- *
- * @param settings DataTables settings object
- * @returns i the number of visible columns
- */
-function visibleColumns(settings) {
-    let layout = settings.header;
-    let columns = settings.columns;
-    let vis = 0;
-    if (layout.length) {
-        for (let i = 0, iLen = layout[0].length; i < iLen; i++) {
-            if (columns[i].visible &&
-                Dom.s(layout[0][i].cell).css('display') !== 'none') {
-                vis++;
-            }
-        }
-    }
-    return vis;
-}
-/**
- * Get an array of column indexes that match a given property
- *
- * @param settings DataTables settings object
- * @param param Parameter in the columns array to look for
- *  @returns Array of indexes with matched properties
- */
-function getColumns(settings, param) {
-    let a = [];
-    settings.columns.map(function (val, i) {
-        if (val[param]) {
-            a.push(i);
-        }
-    });
-    return a;
-}
-/**
- * Allow the result from a type detection function to be `true` while
- * translating that into a string. Old type detection functions will return the
- * type name if it passes. An object store would be better, but not backwards
- * compatible.
- *
- * @param typeDetect Object or function for type detection
- * @param res Result from the type detection function
- * @returns Type name or false
- */
-function _typeResult(typeDetect, res) {
-    return res === true ? typeDetect._name : res;
-}
-/**
- * Calculate the 'type' of a column
- * @param settings DataTables settings object
- */
-function columnTypes(settings, originalTypes = '') {
-    var columns = settings.columns;
-    var data = settings.data;
-    var types = ext.type.detect;
-    var i, iLen, j, jen, k, ken;
-    var col, detectedType, cache;
-    if (!originalTypes) {
-        originalTypes = columns.map(c => c.type).join(',');
-    }
-    // For each column, spin over the data type detection functions, seeing if
-    // one matches
-    for (i = 0, iLen = columns.length; i < iLen; i++) {
-        col = columns[i];
-        cache = [];
-        if (!col.type && col.typeManual) {
-            col.type = col.typeManual;
-        }
-        else if (!col.type) {
-            // With SSP type detection can be unreliable and error prone, so we
-            // provide a way to turn it off.
-            if (!settings.typeDetect) {
-                return;
-            }
-            for (j = 0, jen = types.length; j < jen; j++) {
-                let typeDetect = types[j];
-                let oneOf;
-                let allOf;
-                let init;
-                let one = false;
-                // There can be either one, or three type detection functions
-                if (typeof typeDetect === 'function') {
-                    allOf = typeDetect;
-                }
-                else {
-                    oneOf = typeDetect.oneOf;
-                    allOf = typeDetect.allOf;
-                    init = typeDetect.init;
-                }
-                detectedType = null;
-                // Fast detect based on column assignment
-                if (init) {
-                    detectedType = _typeResult(typeDetect, init(settings, col, i));
-                    if (detectedType) {
-                        col.type = detectedType;
-                        break;
-                    }
-                }
-                for (k = 0, ken = data.length; k < ken; k++) {
-                    if (!data[k]) {
-                        continue;
-                    }
-                    // Use a cache array so we only need to get the type data
-                    // from the formatter once (when using multiple detectors)
-                    if (cache[k] === undefined) {
-                        cache[k] = getCellData(settings, k, i, 'type');
-                    }
-                    // Only one data point in the column needs to match this
-                    // function
-                    if (oneOf && !one) {
-                        one = _typeResult(typeDetect, oneOf(cache[k], settings));
-                    }
-                    // All data points need to match this function
-                    detectedType = _typeResult(typeDetect, allOf(cache[k], settings));
-                    // If null, then this type can't apply to this column, so
-                    // rather than testing all cells, break out. There is an
-                    // exception for the last type which is `html`. We need to
-                    // scan all rows since it is possible to mix string and HTML
-                    // types
-                    if (!detectedType && j !== types.length - 3) {
-                        break;
-                    }
-                    // Only a single match is needed for html type since it is
-                    // bottom of the pile and very similar to string - but it
-                    // must not be empty
-                    if (detectedType === 'html' && !util.is.empty(cache[k])) {
-                        break;
-                    }
-                }
-                // Type is valid for all data points in the column - use this
-                // type
-                if ((oneOf && one && detectedType) ||
-                    (!oneOf && detectedType)) {
-                    col.type = detectedType;
-                    break;
-                }
-            }
-            // Fall back - if no type was detected, always use string
-            if (!col.type) {
-                col.type = 'string';
-            }
-        }
-        // Set class names for header / footer for auto type classes
-        var autoClass = ext.type.className[col.type];
-        if (autoClass) {
-            _columnAutoClass(settings.header, i, autoClass);
-            _columnAutoClass(settings.footer, i, autoClass);
-        }
-        var renderer = ext.type.render[col.type];
-        // This can only happen once! There is no way to remove
-        // a renderer. After the first time the renderer has
-        // already been set so createTr will run the renderer itself.
-        if (renderer && !col.renderer) {
-            col.renderer = util.get(renderer);
-            _columnAutoRender(settings, i);
-        }
-    }
-    var newTypes = columns.map(c => c.type).join(',');
-    if (newTypes !== originalTypes) {
-        callbackFire(settings, null, 'columnTypes', [settings], false);
-    }
-}
-/**
- * Apply an auto detected renderer to data which doesn't yet have a renderer
- */
-function _columnAutoRender(settings, colIdx) {
-    let data = settings.data;
-    for (let i = 0; i < data.length; i++) {
-        let d = data[i];
-        if (d && d.tr) {
-            // We have to update the display here since there is no invalidation
-            // check for the data
-            let display = getCellData(settings, i, colIdx, 'display');
-            d.displayData[colIdx] = display;
-            writeCell(d.cells[colIdx], display);
-            // No need to update sort / filter data since it has been
-            // invalidated and will be re-read with the renderer now applied
-        }
-    }
-}
-/**
- * Apply a class name to a column's header cells
- *
- * @param container The header / footer structure array
- * @param colIdx Column index
- * @param className Class name to apply
- */
-function _columnAutoClass(container, colIdx, className) {
-    container.forEach(function (row) {
-        if (row[colIdx] && row[colIdx].unique) {
-            Dom.s(row[colIdx].cell).classAdd(className);
-        }
-    });
-}
-/**
- * Take the column definitions and static columns arrays and calculate how they
- * relate to column indexes. The callback function will then apply the
- * definition found for a column to a suitable configuration object.
- *
- * @param settings DataTables settings object
- * @param aoColDefs The aoColumnDefs array that is to be applied
- * @param aoCols The aoColumns array that defines columns individually
- * @param headerLayout Layout for header as it was loaded
- * @param fn Callback function - takes two parameters, the calculated column
- *    index and the definition for that column.
- */
-function applyColumnDefs(settings, aoColDefs, aoCols, headerLayout, fn) {
-    var i, iLen, j, jLen, k, kLen;
-    var columns = settings.columns;
-    if (aoCols) {
-        for (i = 0, iLen = aoCols.length; i < iLen; i++) {
-            // Compat
-            if (aoCols[i] && aoCols[i].name) {
-                columns[i].name = aoCols[i].name;
-            }
-        }
-    }
-    // Column definitions with aTargets
-    if (aoColDefs) {
-        // Loop over the definitions array - loop in reverse so first instance
-        // has priority
-        for (i = aoColDefs.length - 1; i >= 0; i--) {
-            let def = aoColDefs[i];
-            /* Each definition can target multiple columns, as it is an array */
-            let aTargets = def.target !== undefined
-                ? def.target
-                : def.targets !== undefined
-                    ? def.targets
-                    : def.aTargets; // legacy
-            if (!Array.isArray(aTargets)) {
-                aTargets = [aTargets];
-            }
-            for (j = 0, jLen = aTargets.length; j < jLen; j++) {
-                var target = aTargets[j];
-                if (typeof target === 'number' && target >= 0) {
-                    /* Add columns that we don't yet know about */
-                    while (columns.length <= target) {
-                        addColumn(settings);
-                    }
-                    /* Integer, basic index */
-                    fn(target, def);
-                }
-                else if (typeof target === 'number' && target < 0) {
-                    /* Negative integer, right to left column counting */
-                    fn(columns.length + target, def);
-                }
-                else if (typeof target === 'string') {
-                    for (k = 0, kLen = columns.length; k < kLen; k++) {
-                        if (target === '_all') {
-                            // Apply to all columns
-                            fn(k, def);
-                        }
-                        else if (target.indexOf(':name') !== -1) {
-                            // Column selector
-                            if (columns[k].name === target.replace(':name', '')) {
-                                fn(k, def);
-                            }
-                        }
-                        else {
-                            // Cell selector
-                            headerLayout.forEach(function (row) {
-                                if (row[k]) {
-                                    var cell = row[k].cell;
-                                    // Legacy support. Note that it means that
-                                    // we don't support an element name selector
-                                    // only, since they are treated as class
-                                    // names for 1.x compat.
-                                    if (target.match(/^[a-z][\w-]*$/i)) {
-                                        target = '.' + target;
-                                    }
-                                    if (cell.matches(target)) {
-                                        fn(k, def);
-                                    }
-                                }
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // Statically defined columns array
-    if (aoCols) {
-        for (i = 0, iLen = aoCols.length; i < iLen; i++) {
-            fn(i, aoCols[i]);
-        }
-    }
-}
-/**
- * Get the width for a given set of columns
- *
- * @param settings DataTables settings object
- * @param targets Columns - comma separated string or array of numbers
- * @param original Use the original width (true) or calculated (false)
- * @param incVisible Include visible columns (true) or not (false)
- * @returns Combined CSS value
- */
-function columnsSumWidth(settings, targets, original, incVisible) {
-    if (!Array.isArray(targets)) {
-        targets = columnsFromHeader(targets);
-    }
-    let sum = 0;
-    let unit = 'px';
-    let columns = settings.columns;
-    for (let i = 0, iLen = targets.length; i < iLen; i++) {
-        let column = columns[targets[i]];
-        let definedWidth = original ? column.widthOrig : column.width;
-        if (column.visible === false) {
-            continue;
-        }
-        if (definedWidth === null || definedWidth === undefined) {
-            return null; // can't determine a defined width - browser defined
-        }
-        else if (typeof definedWidth === 'number') {
-            sum += definedWidth;
-        }
-        else {
-            let matched = definedWidth.match(/([\d\.]+)([^\d]*)/);
-            if (matched) {
-                sum += parseFloat(matched[1]);
-                unit = matched.length === 3 ? matched[2] : 'px';
-            }
-        }
-    }
-    return sum + unit;
-}
-/**
- * Determine what columns a header cell covers (can be multiple for colspan
- * cases).
- *
- * @param cell The header cell in question
- * @returns An array of column indexes
- */
-function columnsFromHeader(cell) {
-    let attr = Dom.s(cell).closest('[data-dt-column]').attr('data-dt-column');
-    if (!attr) {
-        return [];
-    }
-    return attr.split(',').map(function (val) {
-        return parseInt(val);
-    });
-}
-
-/**
- * Generate the node required for the processing node
- *
- * @param ctx DataTables settings object
- */
-function processingHtml(ctx) {
-    var table = ctx.table;
-    var scrolling = ctx.scroll.x !== '' || ctx.scroll.y !== '';
-    if (ctx.features.processing) {
-        var n = Dom
-            .c('div')
-            .attr('id', ctx.tableId + '_processing')
-            .attr('role', 'status')
-            .classAdd(ctx.classes.processing.container)
-            .html(ctx.language.processing)
-            .append(Dom
-            .c('div')
-            .append(Dom.c('div'))
-            .append(Dom.c('div'))
-            .append(Dom.c('div'))
-            .append(Dom.c('div')));
-        // Different positioning depending on if scrolling is enabled or not
-        if (scrolling) {
-            n.prependTo(Dom.s(ctx.tableWrapper).find('div.dt-scroll').get(0));
-        }
-        else {
-            n.insertBefore(table);
-        }
-        Dom.s(table).on('processing.dt.DT', (e, s, show) => {
-            n.css('display', show ? 'block' : 'none');
-        });
-    }
-}
-/**
- * Display or hide the processing indicator
- *
- * @param ctx DataTables settings object
- * @param show Show the processing indicator (true) or not (false)
- */
-function processingDisplay(ctx, show) {
-    // Ignore cases when we are still redrawing
-    if (ctx.doingDraw && show === false) {
-        return;
-    }
-    callbackFire(ctx, null, 'processing', [ctx, show]);
-}
-/**
- * Show the processing element if an action takes longer than a given time
- *
- * @param ctx DataTables settings object
- * @param enable Do (true) or not (false) async processing (local feature enablement)
- * @param run Function to run
- */
-function processingRun(ctx, enable, run) {
-    if (!enable) {
-        // Immediate execution, synchronous
-        run();
-    }
-    else {
-        processingDisplay(ctx, true);
-        // Allow the processing display to show if needed
-        setTimeout(function () {
-            run();
-            processingDisplay(ctx, false);
-        }, 0);
-    }
-}
-
-function renderer(ctx, type) {
-    var render = ctx.renderer;
-    var host = ext.renderer[type];
-    if (plainObject(render) && render[type]) {
-        // Specific renderer for this type. If available use it, otherwise use
-        // the default.
-        return host[render[type]] || host._;
-    }
-    else if (typeof render === 'string') {
-        // Common renderer - if there is one available for this type use it,
-        // otherwise use the default
-        return host[render] || host._;
-    }
-    // Use the default
-    return host._;
-}
-
-/**
  * Add the options to the page HTML for the table
  *
  * @param ctx DataTables context
@@ -6716,32 +4633,12 @@ function legacyDom(settings, layout, insert) {
 }
 
 function sortInit(settings) {
-    var target = settings.thead;
-    var headerRows = target.querySelectorAll('tr');
-    var titleRow = settings.titleRow;
     var notSelector = ':not([data-dt-order="disable"]):not([data-dt-order="icon-only"])';
-    // Legacy support for `orderCellsTop`
-    if (titleRow === true) {
-        target = headerRows[0];
-    }
-    else if (titleRow === false) {
-        target = headerRows[headerRows.length - 1];
-    }
-    else if (titleRow !== null) {
-        target = headerRows[titleRow];
-    }
-    // else - all rows
     if (settings.orderHandler) {
-        sortAttachListener(settings, target, target === settings.thead
-            ? 'tr' +
-                notSelector +
-                ' th' +
-                notSelector +
-                ', tr' +
-                notSelector +
-                ' td' +
-                notSelector
-            : 'th' + notSelector + ', td' + notSelector);
+        columnOrderingCells(settings, notSelector)
+            .each(el => {
+            sortAttachListener(settings, el, '');
+        });
     }
     // Need to resolve the user input array into our internal structure
     var order = [];
@@ -7166,6 +5063,26 @@ function sortData(settings, colIdx) {
     }
 }
 
+const defaults$3 = {
+    boundary: false,
+    caseInsensitive: true,
+    columns: null,
+    exact: false,
+    regex: false,
+    return: false,
+    search: '',
+    smart: true
+};
+/**
+ * Create a new search options object
+ *
+ * @param parts Values to assign, otherwise the defaults will be used
+ * @returns New object
+ */
+function create$1(parts = {}) {
+    return util.object.assignDeep({}, defaults$3, parts);
+}
+
 /**
  * Alter the display settings to change the page
  *
@@ -7372,7 +5289,7 @@ function implementState(settings, s, ignoreTime, callback) {
         s.searchGroups.forEach(group => {
             if (group.columns) {
                 let index = group.columns.join(',');
-                settings.searches[index] = create$2(group);
+                settings.searches[index] = create$1(group);
             }
         });
     }
@@ -7584,6 +5501,7 @@ function buildAjax(settings, data, fn) {
             }
         }
         settings.json = json;
+        invalidColumn(settings);
         callbackFire(settings, null, 'xhr', [settings, json, settings.jqXHR], true);
         fn(json);
     };
@@ -8748,6 +6666,2118 @@ function displayEnd(ctx) {
 }
 
 /**
+ * Log an error message
+ *
+ * @param ctx DataTables settings object
+ * @param level log error messages, or display them to the user
+ * @param msg error message
+ * @param tn Technical note id to get more information about the error.
+ */
+function log(ctx, level, msg, tn) {
+    msg =
+        'DataTables warning: ' +
+            (ctx ? 'table id=' + ctx.tableId + ' - ' : '') +
+            msg;
+    if (tn) {
+        msg +=
+            '. For more information about this error, please see ' +
+                'https://datatables.net/tn/' +
+                tn;
+    }
+    {
+        // Backwards compatibility pre 1.10
+        var type = ext.sErrMode || ext.errMode;
+        if (ctx) {
+            callbackFire(ctx, null, 'dt-error', [ctx, tn, msg], true);
+        }
+        if (type == 'alert') {
+            alert(msg);
+        }
+        else if (type == 'throw') {
+            throw new Error(msg);
+        }
+        else if (typeof type == 'function') {
+            type(ctx, tn, msg);
+        }
+    }
+}
+/**
+ * See if a property is defined on one object, if so assign it to the other
+ * object
+ *
+ * @param ret target object
+ * @param src source object
+ * @param name property
+ * @param mappedName name to map too - optional, name used if not given
+ */
+function map(ret, src, name, mappedName) {
+    if (Array.isArray(name)) {
+        for (let i = 0; i < name.length; i++) {
+            let val = name[i];
+            if (Array.isArray(val)) {
+                map(ret, src, val[0], val[1]);
+            }
+            else {
+                map(ret, src, val);
+            }
+        }
+        return;
+    }
+    if (mappedName === undefined) {
+        mappedName = name;
+    }
+    if (src[name] !== undefined) {
+        ret[mappedName] = src[name];
+    }
+}
+/**
+ * Bind an event handler to allow a click or return key to activate the callback.
+ * This is good for accessibility since a return on the keyboard will have the
+ * same effect as a click, if the element has focus.
+ *
+ * @param n Element to bind the action to
+ * @param selector Selector (for delegated events)
+ * @param fn Callback function for when the event is triggered
+ */
+function bindAction(n, selector, fn) {
+    Dom.s(n)
+        .on('click.DT', selector, function (e) {
+        fn(e);
+    })
+        .on('keypress.DT', selector, function (e) {
+        if (e.which === 13) {
+            e.preventDefault();
+            fn(e);
+        }
+    })
+        .on('selectstart.DT', selector, function () {
+        // Don't want a double click resulting in text selection
+        return false;
+    });
+}
+/**
+ * Register a callback function. Easily allows a callback function to be added
+ * to an array store of callback functions that can then all be called together.
+ *
+ * @param settings dataTables settings object
+ * @param store Name of the array storage for the callbacks in settings
+ * @param fn Function to be called back
+ */
+function callbackReg(ctx, store, fn) {
+    if (fn) {
+        ctx.callbacks[store].push(fn);
+    }
+}
+/**
+ * Fire callback functions and trigger events. Note that the loop over the
+ * callback array store is done backwards! Further note that you do not want to
+ * fire off triggers in time sensitive applications (for example cell creation)
+ * as its slow.
+ *
+ * @param ctx DataTables settings object
+ * @param callbackArr Name of the array storage for the callbacks in the context
+ * @param eventName Name of the custom event to trigger. If null no trigger is
+ *   fired
+ * @param args Array of arguments to pass to the callback function / trigger
+ * @param bubbles True if the event should bubble
+ */
+function callbackFire(ctx, callbackArr, eventName, args, bubbles = false) {
+    var ret = [];
+    if (callbackArr) {
+        ret = ctx.callbacks[callbackArr]
+            .slice()
+            .reverse()
+            .map(function (val) {
+            return val.apply(ctx.instance, args);
+        });
+    }
+    if (eventName !== null) {
+        let table = Dom.s(ctx.table);
+        let result = table.trigger(eventName + '.dt', bubbles, args, {
+            dt: ctx.api
+        });
+        // If not yet attached to the document, trigger the event
+        // on the body directly to sort of simulate the bubble
+        if (bubbles && table.closest('body').count() === 0) {
+            Dom.s('body').trigger(eventName + '.dt', bubbles, args, {
+                dt: ctx.api
+            });
+        }
+        ret.push(result[0]);
+    }
+    return ret;
+}
+function lengthOverflow(ctx) {
+    var start = ctx.displayStart, end = displayEnd(ctx), len = ctx.pageLength;
+    // If we have space to show extra rows (backing up from the end point - then
+    // do so
+    if (start >= end) {
+        start = end - len;
+    }
+    // Keep the start record on the current page
+    start -= start % len;
+    if (len === -1 || start < 0) {
+        start = 0;
+    }
+    ctx.displayStart = start;
+}
+/**
+ * Detect the data source being used for the table. Used to simplify the code a
+ * little (ajax) and to make it compress a little smaller.
+ *
+ * @param ctx DataTables settings object
+ * @returns Data source
+ */
+function dataSource(ctx) {
+    if (ctx.features.serverSide) {
+        return 'ssp';
+    }
+    else if (ctx.ajax) {
+        return 'ajax';
+    }
+    return 'dom';
+}
+/**
+ * Common replacement for language strings
+ *
+ * @param ctx DataTables settings object
+ * @param str String with values to replace
+ * @param entries Plural number for _ENTRIES_ - can be undefined
+ * @returns String
+ */
+function macros(ctx, str, entries) {
+    // When infinite scrolling, we are always starting at 1. _iDisplayStart is
+    // used only internally
+    var formatter = ctx.formatNumber, start = ctx.displayStart + 1, len = ctx.pageLength, vis = recordsDisplay(ctx), max = recordsTotal(ctx), all = len === -1;
+    return str
+        .replace(/_START_/g, formatter(start, ctx))
+        .replace(/_END_/g, formatter(displayEnd(ctx), ctx))
+        .replace(/_MAX_/g, formatter(max, ctx))
+        .replace(/_TOTAL_/g, formatter(vis, ctx))
+        .replace(/_PAGE_/g, formatter(all ? 1 : Math.ceil(start / len), ctx))
+        .replace(/_PAGES_/g, formatter(all ? 1 : Math.ceil(vis / len), ctx))
+        .replace(/_ENTRIES_/g, ctx.api.i18n('entries', '', entries))
+        .replace(/_ENTRIES-MAX_/g, ctx.api.i18n('entries', '', max))
+        .replace(/_ENTRIES-TOTAL_/g, ctx.api.i18n('entries', '', vis));
+}
+/**
+ * Add elements to an array as quickly as possible, but stack safe.
+ *
+ * @param arr Array to add the data to
+ * @param data Data array that is to be added
+ */
+function arrayApply(arr, data) {
+    if (!data) {
+        return;
+    }
+    // Chrome can throw a max stack error if apply is called with
+    // too large an array, but apply is faster.
+    if (data.length < 10000) {
+        arr.push.apply(arr, data);
+    }
+    else {
+        for (var i = 0; i < data.length; i++) {
+            arr.push(data[i]);
+        }
+    }
+}
+/**
+ * Add one or more listeners to the table
+ *
+ * @param that JQ for the table
+ * @param name Event name
+ * @param src Listener(s)
+ */
+function listener(that, name, src) {
+    let srcArr = Array.isArray(src) ? src : [src];
+    for (var i = 0; i < srcArr.length; i++) {
+        that.on(name + '.dt.DT', srcArr[i]);
+    }
+}
+/**
+ * Escape HTML entities in strings, in an object
+ */
+function escapeObject(obj) {
+    if (ext.escape.attributes) {
+        each(obj, function (key, val) {
+            obj[key] = escapeHtml(val);
+        });
+    }
+    return obj;
+}
+
+const store = {
+    className: {},
+    detect: [],
+    render: {},
+    search: {},
+    order: {}
+};
+// Common function to remove new lines, strip HTML and diacritic control
+function _filterString(stripHtml, normalize) {
+    return function (str) {
+        if (util.is.empty(str) || typeof str !== 'string') {
+            return str;
+        }
+        str = str.replace(util.regex.reNewLines, ' ');
+        if (stripHtml) {
+            str = util.stripHtml(str);
+        }
+        {
+            str = util.diacritics(str, false);
+        }
+        return str;
+    };
+}
+function __numericReplace(d, decimalPlace, re1, re2) {
+    if (d !== 0 && (!d || d === '-')) {
+        return -Infinity;
+    }
+    if (typeof d === 'number' || typeof d === 'bigint') {
+        return d;
+    }
+    // If a decimal place other than `.` is used, it needs to be given to the
+    // function so we can detect it and replace with a `.` which is the only
+    // decimal place JavaScript recognises - it is not locale aware.
+    if (decimalPlace) {
+        d = util.conv.numToDecimal(d, decimalPlace);
+    }
+    if (typeof d === 'string') {
+        if (re1) {
+            d = d.replace(re1, '');
+        }
+        if (re2) {
+            d = d.replace(re2, '');
+        }
+    }
+    return d * 1;
+}
+function register$1(name, prop, val) {
+    if (!prop) {
+        return {
+            className: store.className[name],
+            detect: store.detect.find(function (fn) {
+                return fn._name === name;
+            }),
+            order: {
+                pre: store.order[name + '-pre'],
+                asc: store.order[name + '-asc'],
+                desc: store.order[name + '-desc']
+            },
+            render: store.render[name],
+            search: store.search[name]
+        };
+    }
+    var setProp = function (prop2, propVal) {
+        store[prop2][name] = propVal;
+    };
+    var setDetect = function (detect) {
+        // `detect` can be a function or an object - we set a name
+        // property for either - that is used for the detection
+        Object.defineProperty(detect, '_name', { value: name });
+        var idx = store.detect.findIndex(function (item) {
+            return item._name === name;
+        });
+        if (idx === -1) {
+            store.detect.unshift(detect);
+        }
+        else {
+            store.detect.splice(idx, 1, detect);
+        }
+    };
+    var setOrder = function (obj) {
+        store.order[name + '-pre'] = obj.pre; // can be undefined
+        store.order[name + '-asc'] = obj.asc; // can be undefined
+        store.order[name + '-desc'] = obj.desc; // can be undefined
+    };
+    // prop is optional
+    if (val === undefined) {
+        val = prop;
+        prop = undefined;
+    }
+    if (prop === 'className') {
+        setProp('className', val);
+    }
+    else if (prop === 'detect') {
+        setDetect(val);
+    }
+    else if (prop === 'order') {
+        setOrder(val);
+    }
+    else if (prop === 'render') {
+        setProp('render', val);
+    }
+    else if (prop === 'search') {
+        setProp('search', val);
+    }
+    else if (!prop) {
+        if (val.className) {
+            setProp('className', val.className);
+        }
+        if (val.detect !== undefined) {
+            setDetect(val.detect);
+        }
+        if (val.order) {
+            setOrder(val.order);
+        }
+        if (val.render !== undefined) {
+            setProp('render', val.render);
+        }
+        if (val.search !== undefined) {
+            setProp('search', val.search);
+        }
+    }
+}
+// Get a list of types
+function types() {
+    return store.detect.map(function (detect) {
+        return detect._name;
+    });
+}
+var __diacriticSort = function (a, b) {
+    a = a !== null && a !== undefined ? a.toString().toLowerCase() : '';
+    b = b !== null && b !== undefined ? b.toString().toLowerCase() : '';
+    // Checked for `navigator.languages` support in `oneOf` so this code can't execute in old
+    // Safari and thus can disable this check
+    // eslint-disable-next-line compat/compat
+    return a.localeCompare(b, navigator.languages[0] || navigator.language, {
+        numeric: true,
+        ignorePunctuation: true
+    });
+};
+var __diacriticHtmlSort = function (a, b) {
+    a = util.stripHtml(a);
+    b = util.stripHtml(b);
+    return __diacriticSort(a, b);
+};
+//
+// Built in data types
+//
+register$1('string', {
+    detect: function () {
+        return 'string';
+    },
+    order: {
+        pre: function (a) {
+            // This is a little complex, but faster than always calling toString,
+            // http://jsperf.com/tostring-v-check
+            return util.is.empty(a) && typeof a !== 'boolean'
+                ? ''
+                : typeof a === 'string'
+                    ? a.toLowerCase()
+                    : !a.toString
+                        ? ''
+                        : a.toString();
+        }
+    },
+    search: _filterString(false)
+});
+register$1('string-utf8', {
+    detect: {
+        allOf: function () {
+            return true;
+        },
+        oneOf: function (d) {
+            // At least one data point must contain a non-ASCII character
+            // This line will also check if navigator.languages is supported or not. If not (Safari 10.0-)
+            // this data type won't be supported.
+            // eslint-disable-next-line compat/compat
+            return (!util.is.empty(d) &&
+                navigator.languages &&
+                typeof d === 'string' &&
+                !!d.match(/[^\x00-\x7F]/));
+        }
+    },
+    order: {
+        asc: __diacriticSort,
+        desc: function (a, b) {
+            return __diacriticSort(a, b) * -1;
+        }
+    },
+    search: _filterString(false)
+});
+register$1('html', {
+    detect: {
+        allOf: function (d) {
+            return (util.is.empty(d) ||
+                (typeof d === 'string' && d.indexOf('<') !== -1));
+        },
+        oneOf: function (d) {
+            // At least one data point must contain a `<`
+            return (!util.is.empty(d) &&
+                typeof d === 'string' &&
+                d.indexOf('<') !== -1);
+        }
+    },
+    order: {
+        pre: function (a) {
+            return util.is.empty(a)
+                ? ''
+                : a.replace
+                    ? util.stripHtml(a).trim().toLowerCase()
+                    : a + '';
+        }
+    },
+    search: _filterString(true)
+});
+register$1('html-utf8', {
+    detect: {
+        allOf: function (d) {
+            return (util.is.empty(d) ||
+                (typeof d === 'string' && d.indexOf('<') !== -1));
+        },
+        oneOf: function (d) {
+            // At least one data point must contain a `<` and a non-ASCII character
+            // eslint-disable-next-line compat/compat
+            return (navigator.languages &&
+                !util.is.empty(d) &&
+                typeof d === 'string' &&
+                d.indexOf('<') !== -1 &&
+                typeof d === 'string' &&
+                !!d.match(/[^\x00-\x7F]/));
+        }
+    },
+    order: {
+        asc: __diacriticHtmlSort,
+        desc: function (a, b) {
+            return __diacriticHtmlSort(a, b) * -1;
+        }
+    },
+    search: _filterString(true)
+});
+register$1('date', {
+    className: 'dt-type-date',
+    detect: {
+        allOf: function (d) {
+            // V8 tries _very_ hard to make a string passed into `Date.parse()`
+            // valid, so we need to use a regex to restrict date formats. Use a
+            // plug-in for anything other than ISO8601 style strings
+            if (d && !(d instanceof Date) && !util.regex.reDate.test(d)) {
+                return null;
+            }
+            var parsed = Date.parse(d);
+            return (parsed !== null && !isNaN(parsed)) || util.is.empty(d);
+        },
+        oneOf: function (d) {
+            // At least one entry must be a date or a string with a date
+            return (d instanceof Date ||
+                (typeof d === 'string' && util.regex.reDate.test(d)));
+        }
+    },
+    order: {
+        pre: function (d) {
+            var ts = Date.parse(d);
+            return isNaN(ts) ? -Infinity : ts;
+        }
+    }
+});
+register$1('html-num-fmt', {
+    className: 'dt-type-numeric',
+    detect: {
+        allOf: function (d, settings) {
+            var decimal = settings.language.decimal;
+            return util.is.htmlNum(d, decimal, true, false);
+        },
+        oneOf: function (d, settings) {
+            // At least one data point must contain a numeric value
+            var decimal = settings.language.decimal;
+            return util.is.htmlNum(d, decimal, true, false);
+        }
+    },
+    order: {
+        pre: function (d, s) {
+            var dp = s.language.decimal;
+            return __numericReplace(d, dp, util.regex.reHtml, util.regex.reFormattedNumeric);
+        }
+    },
+    search: _filterString(true)
+});
+register$1('html-num', {
+    className: 'dt-type-numeric',
+    detect: {
+        allOf: function (d, settings) {
+            var decimal = settings.language.decimal;
+            return util.is.htmlNum(d, decimal, false, true);
+        },
+        oneOf: function (d, settings) {
+            // At least one data point must contain a numeric value
+            var decimal = settings.language.decimal;
+            return util.is.htmlNum(d, decimal, false, false);
+        }
+    },
+    order: {
+        pre: function (d, s) {
+            var dp = s.language.decimal;
+            return __numericReplace(d, dp, util.regex.reHtml);
+        }
+    },
+    search: _filterString(true)
+});
+register$1('num-fmt', {
+    className: 'dt-type-numeric',
+    detect: {
+        allOf: function (d, settings) {
+            var decimal = settings.language.decimal;
+            return util.is.num(d, decimal, true, true);
+        },
+        oneOf: function (d, settings) {
+            // At least one data point must contain a numeric value
+            var decimal = settings.language.decimal;
+            return util.is.num(d, decimal, true, false);
+        }
+    },
+    order: {
+        pre: function (d, s) {
+            var dp = s.language.decimal;
+            return __numericReplace(d, dp, util.regex.reFormattedNumeric);
+        }
+    }
+});
+register$1('num', {
+    className: 'dt-type-numeric',
+    detect: {
+        allOf: function (d, settings) {
+            var decimal = settings.language.decimal;
+            return util.is.num(d, decimal, false, true);
+        },
+        oneOf: function (d, settings) {
+            // At least one data point must contain a numeric value
+            var decimal = settings.language.decimal;
+            return util.is.num(d, decimal, false, false);
+        }
+    },
+    order: {
+        pre: function (d, s) {
+            var dp = s.language.decimal;
+            return __numericReplace(d, dp);
+        }
+    }
+});
+
+/*
+ * Public helper functions. These aren't used internally by DataTables, or
+ * called by any of the options passed into DataTables, but they can be used
+ * externally by developers working with DataTables. They are helper functions
+ * to make working with DataTables a little bit easier.
+ */
+/**
+ * Common logic for moment, luxon or a date action.
+ *
+ * Happens after __mldObj, so don't need to call `resolveWindowsLibs` again
+ */
+function __mld(dtLib, momentFn, luxonFn, dateFn, arg1) {
+    if (__moment) {
+        return dtLib[momentFn](arg1);
+    }
+    else if (__luxon) {
+        return dtLib[luxonFn](arg1);
+    }
+    return dateFn ? dtLib[dateFn](arg1) : dtLib;
+}
+var __mlWarning = false;
+var __luxon;
+var __moment;
+/**
+ *
+ */
+function resolveWindowLibs() {
+    __luxon = util.external('luxon');
+    __moment = util.external('moment');
+}
+function __mldObj(d, format, locale) {
+    var dt;
+    resolveWindowLibs();
+    if (__moment) {
+        dt = __moment(d, format, locale, true);
+        if (!dt.isValid()) {
+            return null;
+        }
+    }
+    else if (__luxon) {
+        dt =
+            format && typeof d === 'string'
+                ? __luxon.DateTime.fromFormat(d, format)
+                : __luxon.DateTime.fromISO(d);
+        if (!dt.isValid) {
+            return null;
+        }
+        dt = dt.setLocale(locale);
+    }
+    else if (!format) {
+        // No format given, must be ISO
+        dt = new Date(d);
+    }
+    else {
+        if (!__mlWarning) {
+            alert('DataTables warning: Formatted date without Moment.js or Luxon - https://datatables.net/tn/17');
+        }
+        __mlWarning = true;
+    }
+    return dt;
+}
+// Wrapper for date, datetime and time which all operate the same way with the
+// exception of the output string for auto locale support
+function __mlHelper(localeString) {
+    return function (from, to, locale, def) {
+        // Luxon and Moment support
+        // Argument shifting
+        if (arguments.length === 0) {
+            locale = 'en';
+            to = null; // means toLocaleString
+            from = null; // means iso8601
+        }
+        else if (arguments.length === 1) {
+            locale = 'en';
+            to = from;
+            from = null;
+        }
+        else if (arguments.length === 2) {
+            locale = to;
+            to = from;
+            from = null;
+        }
+        var typeName = 'datetime' + (to ? '-' + to : '');
+        // Add type detection and sorting specific to this date format - we need
+        // to be able to identify date type columns as such, rather than as
+        // numbers in extensions. Hence the need for this.
+        if (!store.order[typeName + '-pre']) {
+            register$1(typeName, {
+                detect: function (d) {
+                    // The renderer will give the value to type detect as the
+                    // type!
+                    return d === typeName ? typeName : false;
+                },
+                order: {
+                    pre: function (d) {
+                        // The renderer gives us Moment, Luxon or Date objects
+                        // for the sorting, all of which have a `valueOf` which
+                        // gives milliseconds epoch
+                        return d.valueOf();
+                    }
+                }
+            });
+        }
+        if (!store.className[typeName]) {
+            store.className[typeName] = 'dt-right';
+        }
+        return function (d, type) {
+            // Allow for a default value
+            if (d === null || d === undefined) {
+                if (def === '--now') {
+                    // We treat everything as UTC further down, so no changes
+                    // are made, as such need to get the local date / time as if
+                    // it were UTC
+                    var local = new Date();
+                    d = new Date(Date.UTC(local.getFullYear(), local.getMonth(), local.getDate(), local.getHours(), local.getMinutes(), local.getSeconds()));
+                }
+                else {
+                    d = '';
+                }
+            }
+            if (type === 'type') {
+                // Typing uses the type name for fast matching
+                return typeName;
+            }
+            if (d === '') {
+                return type !== 'sort'
+                    ? ''
+                    : __mldObj('0000-01-01 00:00:00', null, locale);
+            }
+            // Shortcut. If `from` and `to` are the same, we are using the
+            // renderer to format for ordering, not display - its already in the
+            // display format.
+            if (to !== null &&
+                from === to &&
+                type !== 'sort' &&
+                type !== 'type' &&
+                !(d instanceof Date)) {
+                return d;
+            }
+            // Determine if there is a timezone. If there is, we want to reuse
+            // it for the output, so the timezone doesn't change between the
+            // input and output.
+            let options = {};
+            let tzMatch = typeof d === 'string' ? d.match(util.regex.isoTimezone) : null;
+            if (tzMatch) {
+                options.timeZone = tzMatch[1] === 'Z' ? 'UTC' : tzMatch[1];
+            }
+            // Get a Date object (Luxon, moment or Date)
+            var dt = __mldObj(d, from, locale);
+            if (dt === null) {
+                return d;
+            }
+            if (type === 'sort') {
+                return dt;
+            }
+            var formatted = to === null
+                ? __mld(dt, 'toDate', 'toJSDate', '')[localeString](navigator.language, options)
+                : __mld(dt, 'format', 'toFormat', 'toISOString', to);
+            // XSS protection
+            return type === 'display' ? util.escapeHtml(formatted) : formatted;
+        };
+    };
+}
+// Based on locale, determine standard number formatting
+// Fallback for legacy browsers is US English
+var __thousands = ',';
+var __decimal = '.';
+if (window.Intl !== undefined) {
+    try {
+        var num = new Intl.NumberFormat().formatToParts(100000.1);
+        for (var i = 0; i < num.length; i++) {
+            if (num[i].type === 'group') {
+                __thousands = num[i].value;
+            }
+            else if (num[i].type === 'decimal') {
+                __decimal = num[i].value;
+            }
+        }
+    }
+    catch (e) {
+        // noop
+    }
+}
+/**
+ * Register a date / time format for DataTables to use.
+ *
+ * @param format The date / time format to detect data in. Please refer to the
+ *   Moment.js or Luxon document for the full list of tokens, depending on which
+ *   of the two libraries you are using.
+ * @param locale The locale to pass to Moment.js / Luxon.
+ */
+function datetime(format, locale) {
+    var typeName = 'datetime-' + format;
+    if (!locale) {
+        locale = 'en';
+    }
+    if (!store.order[typeName]) {
+        register$1(typeName, {
+            detect: function (d) {
+                var dt = __mldObj(d, format, locale);
+                return d === '' || dt ? typeName : false;
+            },
+            order: {
+                pre: function (d) {
+                    return __mldObj(d, format, locale) || 0;
+                }
+            }
+        });
+    }
+    if (!store.className[typeName]) {
+        store.className[typeName] = 'dt-right';
+    }
+}
+/**
+ * Helpers for `columns.render`.
+ */
+var helpers = {
+    date: __mlHelper('toLocaleDateString'),
+    datetime: __mlHelper('toLocaleString'),
+    time: __mlHelper('toLocaleTimeString'),
+    number: function (thousands, decimal, precision, prefix, postfix) {
+        // Auto locale detection
+        if (thousands === null || thousands === undefined) {
+            thousands = __thousands;
+        }
+        if (decimal === null || decimal === undefined) {
+            decimal = __decimal;
+        }
+        return {
+            display: function (d) {
+                if (typeof d !== 'number' && typeof d !== 'string') {
+                    return d;
+                }
+                if (d === '' || d === null) {
+                    return d;
+                }
+                var flo = typeof d === 'number' ? d : parseFloat(d);
+                var negative = flo < 0 ? '-' : '';
+                var abs = Math.abs(flo);
+                // Scientific notation for large and small numbers
+                if (abs >= 100000000000 || (abs < 0.0001 && abs !== 0)) {
+                    var exp = flo.toExponential(precision).split(/e\+?/);
+                    return exp[0] + ' x 10<sup>' + exp[1] + '</sup>';
+                }
+                // If NaN then there isn't much formatting that we can do - just
+                // return immediately, escaping any HTML (this was supposed to
+                // be a number after all)
+                if (isNaN(flo)) {
+                    return util.escapeHtml(d);
+                }
+                flo = flo.toFixed(precision);
+                var absPart = Math.abs(flo);
+                var intPart = Math.abs(parseInt(flo, 10));
+                var floatPart = precision
+                    ? decimal +
+                        (absPart - intPart).toFixed(precision).substring(2)
+                    : '';
+                // If zero, then can't have a negative prefix
+                if (intPart === 0 && parseFloat(floatPart) === 0) {
+                    negative = '';
+                }
+                return (negative +
+                    (prefix || '') +
+                    intPart
+                        .toString()
+                        .replace(/\B(?=(\d{3})+(?!\d))/g, thousands) +
+                    floatPart +
+                    (postfix || ''));
+            }
+        };
+    },
+    text: function () {
+        return {
+            display: util.escapeHtml,
+            filter: util.escapeHtml
+        };
+    }
+};
+
+/**
+ * Column options that can be given to DataTables at initialisation time.
+ */
+const defaults$2 = {
+    ariaTitle: '',
+    cellType: 'td',
+    className: '',
+    contentPadding: '',
+    createdCell: null,
+    data: null,
+    defaultContent: null,
+    footer: null,
+    name: '',
+    orderable: true,
+    orderData: null,
+    orderDataType: 'std',
+    orderSequence: ['asc', 'desc', ''],
+    render: null,
+    search: null,
+    searchable: true,
+    title: null,
+    type: null,
+    visible: true,
+    width: null
+};
+
+/**
+ * Internal settings object used for individual columns. Instances are held in
+ * the setting object's `columns` array and contains all the information that
+ * DataTables needs about each individual column.
+ *
+ * Note that this object is related to the column defaults but this one is the
+ * internal data store for DataTables's cache of columns. It should NOT be
+ * manipulated outside of DataTables. Any configuration should be done through
+ * the initialisation options.
+ */
+class Settings {
+    constructor() {
+        /**
+         * Flag to indicate if HTML5 data attributes should be used as the data
+         * source for filtering or sorting. True is either are.
+         */
+        this.attrSrc = false;
+        this.ariaTitle = '';
+        /**
+         * The class to apply to all cells in the table's `tbody`` for the column
+         */
+        this.className = null;
+        /**
+         * When DataTables calculates the column widths to assign to each column, it
+         * finds the longest string in each column and then constructs a temporary
+         * table and reads the widths from that. The problem with this is that "mmm"
+         * is much wider then "iiii", but the latter is a longer string - thus the
+         * calculation can go wrong (doing it properly and putting it into an DOM
+         * object and measuring that is horribly(!) slow). Thus as a "work around"
+         * we provide this option. It will append its value to the text that is
+         * found to be the longest string for the column - i.e. padding.
+         */
+        this.contentPadding = null;
+        /**
+         * Property to read the value for the cells in the column from the data
+         * source array / object. If null, then the default content is used, if a
+         * function is given then the return from the function is used.
+         */
+        this.data = null;
+        /**
+         * Allows a default value to be given for a column's data, and will be used
+         * whenever a null data source is encountered (this can be because mData is
+         * set to null, or because the data source itself is null).
+         */
+        this.defaultContent = null;
+        /**
+         * Name for the column, allowing reference to the column by name as well as
+         * by index (needs a lookup to work by name).
+         */
+        this.name = null;
+        /**
+         * A list of the columns that sorting should occur on when this column is
+         * sorted. That this property is an array allows multi-column sorting to be
+         * defined for a column (for example first name / last name columns would
+         * benefit from this). The values are integers pointing to the columns to be
+         * sorted on (typically it will be a single integer pointing at itself, but
+         * that doesn't need to be the case).
+         */
+        this.orderData = [];
+        /**
+         * Custom sorting data type - defines which of the available plug-ins in
+         * afnSortData the custom sorting will use - if any is defined.
+         */
+        this.orderDataType = 'std';
+        /**
+         * Class to be applied to the header element when sorting on this column
+         */
+        this.orderingClass = null;
+        /**
+         * Define the sorting directions that are applied to the column, in sequence
+         * as the column is repeatedly sorted upon - i.e. the first value is used as
+         * the sorting direction when the column if first sorted (clicked on). Sort
+         * it again (click again) and it will move on to the next index. Repeat
+         * until loop.
+         */
+        this.orderSequence = [];
+        /**
+         * Partner property to mData which is used (only when defined) to get the
+         * data - i.e. it is basically the same as mData, but without the 'set'
+         * option, and also the data fed to it is the result from mData. This is the
+         * rendering method to match the data method of mData.
+         */
+        this.render = null;
+        /**
+         * Title of the column - what is seen in the TH element (nTh).
+         */
+        this.title = null;
+        /**
+         * Store for manual type assignment using the `column.type` option. This
+         * is held in store so we can manipulate the column's `type` property.
+         */
+        this.typeManual = null;
+        /** Cached longest strings from a column */
+        this.wideStrings = null;
+        /**
+         * Width of the column
+         */
+        this.width = null;
+        /**
+         * Width of the column when it was first "encountered"
+         */
+        this.widthOrig = null;
+    }
+}
+
+const browser = {
+    barWidth: -1,
+    scrollbarLeft: false
+};
+const hungarianToCamelRe = /^(a|aa|ai|ao|as|b|fn|i|m|o|s)([A-Z])([a-z].*$)/;
+/**
+ * Take an object which has hungarian notation parameters and convert them to
+ * camelCase style. This is to allow compatibility with DataTables 1.9 and
+ * earlier which only used hungarian notation, and also with DataTables 1.10 - 2
+ * which allowed it to be used.
+ */
+function hungarianToCamel(user) {
+    if (!user) {
+        return user;
+    }
+    let userKeys = Object.keys(user);
+    let userAny = user;
+    for (let i = 0; i < userKeys.length; i++) {
+        let userKey = userKeys[i];
+        let match = userKey.match(hungarianToCamelRe);
+        // Is the key in hungarian notation?
+        if (match) {
+            // If so map it down
+            user[match[2].toLowerCase() + match[3]] = userAny[userKey];
+        }
+        // Recurse down through the object
+        if (util.is.plainObject(userAny[userKey])) {
+            hungarianToCamel(userAny[userKey]);
+        }
+    }
+    return user;
+}
+/**
+ * Map one parameter onto another
+ *
+ * @param o Object to map
+ * @param newKey The new parameter name
+ * @param oldKey The old parameter name
+ */
+function compatMap(o, newKey, oldKey) {
+    if (o[oldKey] !== undefined) {
+        o[newKey] = o[oldKey];
+    }
+}
+/**
+ * Provide backwards compatibility for the main DT options. Note that the new
+ * options are mapped onto the old parameters, so this is an external interface
+ * change only.
+ *
+ * @param init Object to map
+ * @param defaults Indicate if the object is the defaults object or not
+ */
+function compatOpts(init, defaults = false) {
+    // Convert any old style parameters to camelCase
+    hungarianToCamel(init);
+    // Map old parameter names to new
+    compatMap(init, 'ordering', 'sort');
+    compatMap(init, 'orderMulti', 'sortMulti');
+    compatMap(init, 'orderClasses', 'sortClasses');
+    compatMap(init, 'orderCellsTop', 'sortCellsTop');
+    compatMap(init, 'order', 'sorting');
+    compatMap(init, 'orderFixed', 'sortingFixed');
+    compatMap(init, 'paging', 'paginate');
+    compatMap(init, 'pagingType', 'paginationType');
+    compatMap(init, 'pageLength', 'displayLength');
+    compatMap(init, 'searching', 'filter');
+    compatMap(init, 'stateDuration', 'cookieDuration');
+    // Boolean initialisation of x-scrolling
+    if (typeof init.scrollX === 'boolean') {
+        init.scrollX = init.scrollX ? '100%' : '';
+    }
+    // Objects for ordering
+    if (typeof init.ordering === 'object') {
+        init.orderIndicators =
+            init.ordering.indicators !== undefined
+                ? init.ordering.indicators
+                : true;
+        init.orderHandler =
+            init.ordering.handler !== undefined ? init.ordering.handler : true;
+        if (!defaults) {
+            init.ordering = true;
+        }
+    }
+    else if (init.ordering === false) {
+        init.orderIndicators = false;
+        init.orderHandler = false;
+    }
+    else if (init.ordering === true) {
+        init.orderIndicators = true;
+        init.orderHandler = true;
+    }
+    // Which cells are the title cells?
+    if (typeof init.orderCellsTop === 'boolean') {
+        init.titleRow = init.orderCellsTop;
+    }
+    // Column search objects are in an array, so it needs to be converted
+    // element by element
+    var searchCols = init.searchCols;
+    if (searchCols) {
+        for (var i = 0, iLen = searchCols.length; i < iLen; i++) {
+            if (searchCols[i]) {
+                hungarianToCamel(searchCols[i]);
+            }
+        }
+    }
+    // Enable search delay if server-side processing is enabled
+    if (init.serverSide && !init.searchDelay) {
+        init.searchDelay = 400;
+    }
+    // Language
+    if (init.language && init.language.url && !init.language.ajax) {
+        init.language.ajax = init.language.url;
+    }
+}
+/**
+ * Provide backwards compatibility for column options. Note that the new options
+ * are mapped onto the old parameters, so this is an external interface change
+ * only.
+ *
+ * @param init Object to map
+ */
+function compatCols(init) {
+    // Convert any old style parameters to camelCase
+    hungarianToCamel(init);
+    // typeof columnDefaults
+    compatMap(init, 'orderable', 'sortable');
+    compatMap(init, 'orderData', 'dataSort');
+    compatMap(init, 'orderSequence', 'sorting');
+    compatMap(init, 'orderDataType', 'sortDataType');
+    compatMap(init, 'className', 'class');
+    // orderData can be given as an integer
+    var dataSort = init.aDataSort;
+    var orderData = init.orderData;
+    if (typeof dataSort === 'number') {
+        init.orderData = [dataSort];
+    }
+    if (typeof orderData === 'number') {
+        init.orderData = [orderData];
+    }
+    // Backwards compatibility for mDataProp from 1.9-
+    if (init.dataProp !== undefined && !init.data) {
+        init.data = init.dataProp;
+    }
+}
+/**
+ * Browser feature detection for capabilities, quirks
+ *
+ * @param ctx DataTables settings object
+ */
+function browserDetect(ctx) {
+    // We don't need to do this every time DataTables is constructed, the values
+    // calculated are specific to the browser and OS configuration which we
+    // don't expect to change between initialisations
+    if (browser.barWidth === -1) {
+        // Scrolling feature / quirks detection
+        var n = Dom
+            .c('div')
+            .css({
+            position: 'fixed',
+            top: '0',
+            left: -1 * window.pageXOffset + 'px', // allow for scrolling
+            height: '1px',
+            width: '1px',
+            overflow: 'hidden'
+        })
+            .append(Dom
+            .c('div')
+            .css({
+            position: 'absolute',
+            top: '1px',
+            left: '1px',
+            width: '100px',
+            overflow: 'scroll'
+        })
+            .append(Dom.c('div').css({
+            width: '100%',
+            height: '10px'
+        })))
+            .appendTo('body');
+        var outer = n.children();
+        var inner = outer.children();
+        browser.barWidth = outer.get(0).offsetWidth - outer.get(0).clientWidth;
+        browser.scrollbarLeft = Math.round(inner.offset().left) !== 1;
+        n.remove();
+    }
+    Object.assign(ctx.browser, browser);
+    ctx.scroll.barWidth = browser.barWidth;
+}
+
+/**
+ * Add a column to the list used for the table with default values
+ *
+ * @param settings DataTables settings object
+ */
+function addColumn(settings) {
+    // Add column to aoColumns array
+    let columnIdx = settings.columns.length;
+    let column = util.object.assign({}, new Settings(), defaults$2, {
+        orderData: defaults$2.orderData
+            ? defaults$2.orderData
+            : [columnIdx],
+        data: defaults$2.data ? defaults$2.data : columnIdx,
+        idx: columnIdx,
+        searchFixed: {},
+        colEl: Dom
+            .c('col')
+            .attr('data-dt-column', columnIdx)
+    });
+    settings.columns.push(column);
+    // Legacy support for `searchCols` property. If set, and there is a value
+    // for this column, then it should be applied to the search. The new, column
+    // specific `search` option is applied in `columnOptions`, but we always
+    // want the search object for the column to exist.
+    let searchCols = settings.searchCols;
+    settings.searches[columnIdx] = create$1(searchCols[columnIdx]
+        ? hungarianToCamel(searchCols[columnIdx])
+        : {});
+    settings.searches[columnIdx].columns = [columnIdx];
+}
+/**
+ * Apply options for a column
+ *
+ * @param settings DataTables settings object
+ * @param colIdx column index to consider
+ * @param options Column configuration options
+ */
+function columnOptions(settings, colIdx, options) {
+    var column = settings.columns[colIdx];
+    /* User specified column options */
+    if (options !== undefined && options !== null) {
+        // Backwards compatibility
+        compatCols(options);
+        if (options.type) {
+            column.typeManual = options.type;
+        }
+        // `class` is a reserved word in JavaScript, so we need to provide
+        // the ability to use a valid name for the camel case input
+        if (options.className && !options.className) {
+            options.className = options.className;
+        }
+        var origClass = column.className;
+        util.object.assign(column, options);
+        map(column, options, 'width', 'widthOrig');
+        // Merge class from previously defined classes with this one, rather
+        // than just overwriting it in the extend above
+        if (origClass !== column.className) {
+            column.className = origClass + ' ' + column.className;
+        }
+        map(column, options, 'orderData');
+        // Search term specifically for this column
+        if (options.search) {
+            util.object.assign(settings.searches[colIdx], options.search);
+        }
+    }
+    /* Cache the data get and set functions for speed */
+    var dataSrc = column.data;
+    var dataFn = util.get(dataSrc);
+    // The `render` option can be given as an array to access the helper
+    // rendering methods. The first element is the rendering method to use, the
+    // rest are the parameters to pass
+    if (column.render && Array.isArray(column.render)) {
+        var copy = column.render.slice();
+        var name = copy.shift();
+        column.render = helpers[name].apply(window, copy);
+    }
+    column.renderer = column.render ? util.get(column.render) : null;
+    var attrTest = function (src) {
+        return typeof src === 'string' && src.indexOf('@') !== -1;
+    };
+    column.attrSrc =
+        !!dataSrc &&
+            util.is.plainObject(dataSrc) &&
+            (attrTest(dataSrc.sort) ||
+                attrTest(dataSrc.type) ||
+                attrTest(dataSrc.filter));
+    column.setter = null;
+    column.dataGet = function (rowData, type, meta) {
+        var innerData = dataFn(rowData, type, undefined, meta);
+        return column.renderer && type
+            ? column.renderer(innerData, type, rowData, meta)
+            : innerData;
+    };
+    column.dataSet = function (rowData, val, meta) {
+        return util.set(dataSrc)(rowData, val, meta);
+    };
+    // Indicate if DataTables should read DOM data as an object or array
+    // Used in _fnGetRowElements
+    if (typeof dataSrc !== 'number' && !column._isArrayHost) {
+        settings.rowReadObject = true;
+    }
+    // Feature sorting overrides column specific when off
+    if (!settings.features.ordering) {
+        column.orderable = false;
+    }
+}
+/**
+ * Adjust the table column widths for new data. Note: you would probably want to
+ * do a redraw after calling this function!
+ *
+ * @param settings DataTables settings object
+ */
+function adjustColumnSizing(settings) {
+    calculateColumnWidths(settings);
+    columnSizes(settings);
+    let scroll = settings.scroll;
+    if (scroll.y !== '' || scroll.x !== '') {
+        scrollDraw(settings);
+    }
+    callbackFire(settings, null, 'column-sizing', [settings]);
+}
+/**
+ * Apply column sizes
+ *
+ * @param settings DataTables settings object
+ */
+function columnSizes(settings) {
+    let cols = settings.columns;
+    for (let i = 0; i < cols.length; i++) {
+        let width = columnsSumWidth(settings, [i], false);
+        if (width) {
+            cols[i].colEl.css('width', width);
+            if (settings.scroll.x) {
+                cols[i].colEl.css('min-width', width);
+            }
+        }
+    }
+}
+/**
+ * Convert the index of a visible column to the index in the data array (take
+ * account of hidden columns)
+ *
+ * @param settings DataTables settings object
+ * @param visIdx Visible column index to lookup
+ * @returns i the data index
+ */
+function visibleToColumnIndex(settings, visIdx) {
+    let aiVis = getColumns(settings, 'visible');
+    return typeof aiVis[visIdx] === 'number' ? aiVis[visIdx] : null;
+}
+/**
+ * Convert the index of an index in the data array and convert it to the visible
+ * column index (take account of hidden columns)
+ *
+ * @param settings DataTables settings object
+ * @param match Column index to lookup
+ * @returns The data index
+ */
+function columnIndexToVisible(settings, match) {
+    let aiVis = getColumns(settings, 'visible');
+    let iPos = aiVis.indexOf(match);
+    return iPos !== -1 ? iPos : null;
+}
+/**
+ * Get the number of visible columns
+ *
+ * @param settings DataTables settings object
+ * @returns i the number of visible columns
+ */
+function visibleColumns(settings) {
+    let layout = settings.header;
+    let columns = settings.columns;
+    let vis = 0;
+    if (layout.length) {
+        for (let i = 0, iLen = layout[0].length; i < iLen; i++) {
+            if (columns[i].visible &&
+                Dom.s(layout[0][i].cell).css('display') !== 'none') {
+                vis++;
+            }
+        }
+    }
+    return vis;
+}
+/**
+ * Get an array of column indexes that match a given property
+ *
+ * @param settings DataTables settings object
+ * @param param Parameter in the columns array to look for
+ *  @returns Array of indexes with matched properties
+ */
+function getColumns(settings, param) {
+    let a = [];
+    settings.columns.map(function (val, i) {
+        if (val[param]) {
+            a.push(i);
+        }
+    });
+    return a;
+}
+/**
+ * Allow the result from a type detection function to be `true` while
+ * translating that into a string. Old type detection functions will return the
+ * type name if it passes. An object store would be better, but not backwards
+ * compatible.
+ *
+ * @param typeDetect Object or function for type detection
+ * @param res Result from the type detection function
+ * @returns Type name or false
+ */
+function _typeResult(typeDetect, res) {
+    return res === true ? typeDetect._name : res;
+}
+/**
+ * Calculate the 'type' of a column
+ * @param settings DataTables settings object
+ */
+function columnTypes(settings, originalTypes = '') {
+    var columns = settings.columns;
+    var data = settings.data;
+    var types = ext.type.detect;
+    var i, iLen, j, jen, k, ken;
+    var col, detectedType, cache;
+    if (!originalTypes) {
+        originalTypes = columns.map(c => c.type).join(',');
+    }
+    // For each column, spin over the data type detection functions, seeing if
+    // one matches
+    for (i = 0, iLen = columns.length; i < iLen; i++) {
+        col = columns[i];
+        cache = [];
+        if (!col.type && col.typeManual) {
+            col.type = col.typeManual;
+        }
+        else if (!col.type) {
+            // With SSP type detection can be unreliable and error prone, so we
+            // provide a way to turn it off.
+            if (!settings.typeDetect) {
+                return;
+            }
+            for (j = 0, jen = types.length; j < jen; j++) {
+                let typeDetect = types[j];
+                let oneOf;
+                let allOf;
+                let init;
+                let one = false;
+                // There can be either one, or three type detection functions
+                if (typeof typeDetect === 'function') {
+                    allOf = typeDetect;
+                }
+                else {
+                    oneOf = typeDetect.oneOf;
+                    allOf = typeDetect.allOf;
+                    init = typeDetect.init;
+                }
+                detectedType = null;
+                // Fast detect based on column assignment
+                if (init) {
+                    detectedType = _typeResult(typeDetect, init(settings, col, i));
+                    if (detectedType) {
+                        col.type = detectedType;
+                        break;
+                    }
+                }
+                for (k = 0, ken = data.length; k < ken; k++) {
+                    if (!data[k]) {
+                        continue;
+                    }
+                    // Use a cache array so we only need to get the type data
+                    // from the formatter once (when using multiple detectors)
+                    if (cache[k] === undefined) {
+                        cache[k] = getCellData(settings, k, i, 'type');
+                    }
+                    // Only one data point in the column needs to match this
+                    // function
+                    if (oneOf && !one) {
+                        one = _typeResult(typeDetect, oneOf(cache[k], settings));
+                    }
+                    // All data points need to match this function
+                    detectedType = _typeResult(typeDetect, allOf(cache[k], settings));
+                    // If null, then this type can't apply to this column, so
+                    // rather than testing all cells, break out. There is an
+                    // exception for the last type which is `html`. We need to
+                    // scan all rows since it is possible to mix string and HTML
+                    // types
+                    if (!detectedType && j !== types.length - 3) {
+                        break;
+                    }
+                    // Only a single match is needed for html type since it is
+                    // bottom of the pile and very similar to string - but it
+                    // must not be empty
+                    if (detectedType === 'html' && !util.is.empty(cache[k])) {
+                        break;
+                    }
+                }
+                // Type is valid for all data points in the column - use this
+                // type
+                if ((oneOf && one && detectedType) ||
+                    (!oneOf && detectedType)) {
+                    col.type = detectedType;
+                    break;
+                }
+            }
+            // Fall back - if no type was detected, always use string
+            if (!col.type) {
+                col.type = 'string';
+            }
+        }
+        // Set class names for header / footer for auto type classes
+        var autoClass = ext.type.className[col.type];
+        if (autoClass) {
+            _columnAutoClass(settings.header, i, autoClass);
+            _columnAutoClass(settings.footer, i, autoClass);
+        }
+        var renderer = ext.type.render[col.type];
+        // This can only happen once! There is no way to remove
+        // a renderer. After the first time the renderer has
+        // already been set so createTr will run the renderer itself.
+        if (renderer && !col.renderer) {
+            col.renderer = util.get(renderer);
+            _columnAutoRender(settings, i);
+        }
+    }
+    var newTypes = columns.map(c => c.type).join(',');
+    if (newTypes !== originalTypes) {
+        callbackFire(settings, null, 'columnTypes', [settings], false);
+    }
+}
+/**
+ * Apply an auto detected renderer to data which doesn't yet have a renderer
+ */
+function _columnAutoRender(settings, colIdx) {
+    let data = settings.data;
+    for (let i = 0; i < data.length; i++) {
+        let d = data[i];
+        if (d && d.tr) {
+            // We have to update the display here since there is no invalidation
+            // check for the data
+            let display = getCellData(settings, i, colIdx, 'display');
+            d.displayData[colIdx] = display;
+            writeCell(d.cells[colIdx], display);
+            // No need to update sort / filter data since it has been
+            // invalidated and will be re-read with the renderer now applied
+        }
+    }
+}
+/**
+ * Apply a class name to a column's header cells
+ *
+ * @param container The header / footer structure array
+ * @param colIdx Column index
+ * @param className Class name to apply
+ */
+function _columnAutoClass(container, colIdx, className) {
+    container.forEach(function (row) {
+        if (row[colIdx] && row[colIdx].unique) {
+            Dom.s(row[colIdx].cell).classAdd(className);
+        }
+    });
+}
+/**
+ * Take the column definitions and static columns arrays and calculate how they
+ * relate to column indexes. The callback function will then apply the
+ * definition found for a column to a suitable configuration object.
+ *
+ * @param settings DataTables settings object
+ * @param aoColDefs The aoColumnDefs array that is to be applied
+ * @param aoCols The aoColumns array that defines columns individually
+ * @param headerLayout Layout for header as it was loaded
+ * @param fn Callback function - takes two parameters, the calculated column
+ *    index and the definition for that column.
+ */
+function applyColumnDefs(settings, aoColDefs, aoCols, headerLayout, fn) {
+    var i, iLen, j, jLen, k, kLen;
+    var columns = settings.columns;
+    if (aoCols) {
+        for (i = 0, iLen = aoCols.length; i < iLen; i++) {
+            // Compat
+            if (aoCols[i] && aoCols[i].name) {
+                columns[i].name = aoCols[i].name;
+            }
+        }
+    }
+    // Column definitions with aTargets
+    if (aoColDefs) {
+        // Loop over the definitions array - loop in reverse so first instance
+        // has priority
+        for (i = aoColDefs.length - 1; i >= 0; i--) {
+            let def = aoColDefs[i];
+            /* Each definition can target multiple columns, as it is an array */
+            let aTargets = def.target !== undefined
+                ? def.target
+                : def.targets !== undefined
+                    ? def.targets
+                    : def.aTargets; // legacy
+            if (!Array.isArray(aTargets)) {
+                aTargets = [aTargets];
+            }
+            for (j = 0, jLen = aTargets.length; j < jLen; j++) {
+                var target = aTargets[j];
+                if (typeof target === 'number' && target >= 0) {
+                    /* Add columns that we don't yet know about */
+                    while (columns.length <= target) {
+                        addColumn(settings);
+                    }
+                    /* Integer, basic index */
+                    fn(target, def);
+                }
+                else if (typeof target === 'number' && target < 0) {
+                    /* Negative integer, right to left column counting */
+                    fn(columns.length + target, def);
+                }
+                else if (typeof target === 'string') {
+                    for (k = 0, kLen = columns.length; k < kLen; k++) {
+                        if (target === '_all') {
+                            // Apply to all columns
+                            fn(k, def);
+                        }
+                        else if (target.indexOf(':name') !== -1) {
+                            // Column selector
+                            if (columns[k].name === target.replace(':name', '')) {
+                                fn(k, def);
+                            }
+                        }
+                        else {
+                            // Cell selector
+                            headerLayout.forEach(function (row) {
+                                if (row[k]) {
+                                    var cell = row[k].cell;
+                                    // Legacy support. Note that it means that
+                                    // we don't support an element name selector
+                                    // only, since they are treated as class
+                                    // names for 1.x compat.
+                                    if (target.match(/^[a-z][\w-]*$/i)) {
+                                        target = '.' + target;
+                                    }
+                                    if (cell.matches(target)) {
+                                        fn(k, def);
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Statically defined columns array
+    if (aoCols) {
+        for (i = 0, iLen = aoCols.length; i < iLen; i++) {
+            fn(i, aoCols[i]);
+        }
+    }
+}
+/**
+ * Get the width for a given set of columns
+ *
+ * @param settings DataTables settings object
+ * @param targets Columns - comma separated string or array of numbers
+ * @param original Use the original width (true) or calculated (false)
+ * @param incVisible Include visible columns (true) or not (false)
+ * @returns Combined CSS value
+ */
+function columnsSumWidth(settings, targets, original, incVisible) {
+    if (!Array.isArray(targets)) {
+        targets = columnsFromHeader(targets);
+    }
+    let sum = 0;
+    let unit = 'px';
+    let columns = settings.columns;
+    for (let i = 0, iLen = targets.length; i < iLen; i++) {
+        let column = columns[targets[i]];
+        let definedWidth = original ? column.widthOrig : column.width;
+        if (column.visible === false) {
+            continue;
+        }
+        if (definedWidth === null || definedWidth === undefined) {
+            return null; // can't determine a defined width - browser defined
+        }
+        else if (typeof definedWidth === 'number') {
+            sum += definedWidth;
+        }
+        else {
+            let matched = definedWidth.match(/([\d\.]+)([^\d]*)/);
+            if (matched) {
+                sum += parseFloat(matched[1]);
+                unit = matched.length === 3 ? matched[2] : 'px';
+            }
+        }
+    }
+    return sum + unit;
+}
+/**
+ * Determine what columns a header cell covers (can be multiple for colspan
+ * cases).
+ *
+ * @param cell The header cell in question
+ * @returns An array of column indexes
+ */
+function columnsFromHeader(cell) {
+    let attr = Dom.s(cell).closest('[data-dt-column]').attr('data-dt-column');
+    if (!attr) {
+        return [];
+    }
+    return attr.split(',').map(function (val) {
+        return parseInt(val);
+    });
+}
+/**
+ * Get cells from the header or footer, including a specific row and / or cell
+ *
+ * @param header The header or footer strcture
+ * @param row A specific row, or null
+ * @param column A specific column, or null
+ * @returns An array of all matching cells
+ */
+function columnCells(header, row = null, column = null) {
+    var out = [];
+    for (var i = 0; i < header.length; i++) {
+        if (row === null || row === i) {
+            for (var j = 0; j < header[i].length; j++) {
+                var cell = header[i][j].cell;
+                if ((column === null || column === j) && !out.includes(cell)) {
+                    out.push(cell);
+                }
+            }
+        }
+    }
+    return out;
+}
+/**
+ * Get cells that apply for ordering handler or icons
+ *
+ * @param settings Context
+ * @param notSelector DOM selector to exclude elements
+ * @returns Array of selected elements
+ */
+function columnOrderingCells(settings, notSelector) {
+    var cells = [];
+    var titleRow = settings.titleRow;
+    if (titleRow === true) {
+        // Top row (legacy `orderCellsTop`)
+        cells = columnCells(settings.header, 0);
+    }
+    else if (titleRow === false) {
+        // Bottom row (legacy `orderCellsTop`)
+        cells = columnCells(settings.header, settings.header.length - 1);
+    }
+    else if (titleRow !== null) {
+        // Specific row
+        cells = columnCells(settings.header, titleRow);
+    }
+    else {
+        // All
+        cells = columnCells(settings.header);
+    }
+    return Dom.s(cells)
+        .filter('th' + notSelector + ', td' + notSelector)
+        .filter(el => {
+        return (Dom.s(el)
+            .parent()
+            .filter(notSelector)
+            .length !== 0);
+    });
+}
+
+const footer = (settings, cell, classes) => {
+    cell.classAdd(classes.tfoot.cell);
+};
+const header = (settings, cell, classes) => {
+    cell.classAdd(classes.thead.cell);
+    if (!settings.features.ordering) {
+        cell.classAdd(classes.order.none);
+    }
+    // Conditions to not apply the ordering icons
+    if (!columnOrderingCells(settings, ':not([data-dt-order="disable"])')
+        .get()
+        .includes(cell[0])) {
+        return;
+    }
+    // No additional mark-up required. Attach a sort listener to update on sort
+    // - note that using the `DT` namespace will allow the event to be removed
+    // automatically on destroy, while the `dt` namespaced event is the one we
+    // are listening for
+    Dom.s(settings.table).on('order.dt.DT column-visibility.dt.DT', function (e, ctx, column) {
+        if (settings !== ctx) {
+            // need to check if this is the host
+            return; // table, not a nested one
+        }
+        var sorting = ctx.sortDetails;
+        if (!sorting) {
+            return;
+        }
+        var orderedColumns = pluck(sorting, 'col');
+        // This handler is only needed on column visibility if the column is
+        // part of the ordering. If it isn't, then we can bail out to save
+        // performance. It could be a separate event handler, but this is a
+        // balance between code reuse / size and performance console.log(e,
+        // e.name, column, orderedColumns, orderedColumns.includes(column))
+        if (e.type === 'column-visibility' &&
+            !orderedColumns.includes(column)) {
+            return;
+        }
+        var i;
+        var orderClasses = classes.order;
+        var columns = ctx.api.columns(cell);
+        var col = settings.columns[columns.flatten()[0]];
+        var orderable = columns.orderable().includes(true);
+        var ariaType = '';
+        var indexes = columns.indexes();
+        var sortDirs = columns.orderable(true).flatten();
+        var tabIndex = settings.tabIndex;
+        var canOrder = ctx.orderHandler && orderable;
+        cell.classRemove(orderClasses.isAsc + ' ' + orderClasses.isDesc)
+            .classToggle(orderClasses.none, !orderable)
+            .classToggle(orderClasses.canAsc, canOrder && sortDirs.includes('asc'))
+            .classToggle(orderClasses.canDesc, canOrder && sortDirs.includes('desc'));
+        // Determine if all of the columns that this cell covers are
+        // included in the current ordering
+        var isOrdering = true;
+        for (i = 0; i < indexes.length; i++) {
+            if (!orderedColumns.includes(indexes[i])) {
+                isOrdering = false;
+            }
+        }
+        if (isOrdering) {
+            // Get the ordering direction for the columns under this cell
+            // Note that it is possible for a cell to be asc and desc
+            // sorting (column spanning cells)
+            var orderDirs = columns.order();
+            cell.classAdd((orderDirs.includes('asc') ? orderClasses.isAsc : '') +
+                (orderDirs.includes('desc') ? orderClasses.isDesc : ''));
+        }
+        // Find the first visible column that has ordering applied to it -
+        // it get's the aria information, as the ARIA spec says that only
+        // one column should be marked with aria-sort
+        var firstVis = -1; // column index
+        for (i = 0; i < orderedColumns.length; i++) {
+            if (settings.columns[orderedColumns[i]].visible) {
+                firstVis = orderedColumns[i];
+                break;
+            }
+        }
+        if (indexes[0] == firstVis) {
+            var firstSort = sorting[0];
+            var sortOrder = col.orderSequence;
+            cell.attr('aria-sort', firstSort.dir === 'asc' ? 'ascending' : 'descending');
+            // Determine if the next click will remove sorting or change the
+            // sort
+            ariaType =
+                sortOrder && !sortOrder[firstSort.index + 1]
+                    ? 'Remove'
+                    : 'Reverse';
+        }
+        else {
+            cell.attrRemove('aria-sort');
+        }
+        // Make the headers tab-able for keyboard navigation
+        if (orderable) {
+            var orderSpan = cell.find('.dt-column-order');
+            orderSpan
+                .attr('role', 'button')
+                .attr('aria-label', orderable
+                ? col.ariaTitle +
+                    ctx.api.i18n('aria.orderable' + ariaType)
+                : col.ariaTitle);
+            if (tabIndex !== -1) {
+                orderSpan.attr('tabindex', tabIndex);
+            }
+        }
+    });
+};
+const layout = (settings, container, items) => {
+    let classes = settings.classes.layout;
+    let row = Dom.c('div')
+        .attr('id', items.id || null)
+        .classAdd(items.className || classes.row)
+        .appendTo(container);
+    displayRowCells(items, function (key, val) {
+        var klass = '';
+        if (val.table) {
+            row.classAdd(classes.tableRow);
+            klass += classes.tableCell + ' ';
+        }
+        if (key === 'start') {
+            klass += classes.start;
+        }
+        else if (key === 'end') {
+            klass += classes.end;
+        }
+        else {
+            klass += classes.full;
+        }
+        Dom.c('div')
+            .attr({
+            id: val.id || null,
+            class: val.className
+                ? val.className
+                : classes.cell + ' ' + klass
+        })
+            .append(val.contents)
+            .appendTo(row);
+    });
+};
+const pagingButton = (settings, buttonType, content, active, disabled) => {
+    var classes = settings.classes.paging;
+    var btnClasses = [classes.button];
+    var btn;
+    if (active) {
+        btnClasses.push(classes.active);
+    }
+    if (disabled) {
+        btnClasses.push(classes.disabled);
+    }
+    if (buttonType === 'ellipsis') {
+        btn = Dom.c('span').classAdd('ellipsis').html(content).get(0);
+    }
+    else {
+        btn = Dom.c('button')
+            .classAdd(btnClasses.join(' '))
+            .attr('role', 'link')
+            .attr('type', 'button')
+            .html(content)
+            .get(0);
+    }
+    return {
+        display: btn,
+        clicker: btn
+    };
+};
+const pagingContainer = (settings, buttons) => {
+    // No wrapping element - just append directly to the host
+    return buttons;
+};
+function displayRowCells(items, fn) {
+    if (items.start) {
+        fn('start', items.start);
+    }
+    if (items.end) {
+        fn('end', items.end);
+    }
+    if (items.full) {
+        fn('full', items.full);
+    }
+}
+
+/**
+ * DataTables extensions
+ *
+ * This namespace acts as a collection area for plug-ins that can be used to
+ * extend DataTables capabilities. Indeed many of the build in methods
+ * use this method to provide their own capabilities (sorting methods for
+ * example).
+ *
+ * Note that this namespace is aliased to `jQuery.fn.dataTableExt` for legacy
+ * reasons
+ */
+const ext = {
+    /**
+     * DataTables build type (expanded by the download builder)
+     */
+    builder: 'bs5/dt-3.0.4',
+    /**
+     * Buttons. For use with the Buttons extension for DataTables. This is
+     * defined here so other extensions can define buttons regardless of load
+     * order. It is _not_ used by DataTables core.
+     */
+    buttons: {},
+    /**
+     * ColumnControl buttons and content
+     */
+    ccContent: {},
+    /**
+     * Element class names
+     */
+    classes: classes$1,
+    /**
+     * Error reporting.
+     *
+     * How should DataTables report an error. Can take the value 'alert',
+     * 'throw', 'none' or a function.
+     */
+    errMode: 'alert',
+    /** HTML entity escaping */
+    escape: {
+        /** When reading data-* attributes for initialisation options */
+        attributes: false
+    },
+    /**
+     * Legacy so v1 plug-ins don't throw js errors on load
+     */
+    feature: legacy,
+    /**
+     * Feature plug-ins.
+     *
+     * This is an object of callbacks which provide the features for DataTables
+     * to be initialised via the `layout` option.
+     */
+    features: features,
+    /**
+     * Row searching.
+     *
+     * This method of searching is complimentary to the default type based
+     * searching, and a lot more comprehensive as it allows you complete control
+     * over the searching logic. Each element in this array is a function
+     * (parameters described below) that is called for every row in the table,
+     * and your logic decides if it should be included in the searching data set
+     * or not.
+     */
+    search: [],
+    /**
+     * Selector extensions
+     *
+     * The `selector` option can be used to extend the options available for the
+     * selector modifier options (`selector-modifier` object data type) that
+     * each of the three built in selector types offer (row, column and cell +
+     * their plural counterparts). For example the Select extension uses this
+     * mechanism to provide an option to select only rows, columns and cells
+     * that have been marked as selected by the end user (`{selected: true}`),
+     * which can be used in conjunction with the existing built in selector
+     * options.
+     */
+    selector: {
+        cell: [],
+        column: [],
+        row: []
+    },
+    settings: [],
+    /**
+     * Legacy configuration options. Enable and disable legacy options that
+     * are available in DataTables.
+     *
+     *  @type object
+     */
+    legacy: {
+        /**
+         * Enable / disable DataTables 1.9 compatible server-side processing
+         * requests
+         */
+        ajax: null
+    },
+    /**
+     * Pagination plug-in methods.
+     *
+     * Each entry in this object is a function and defines which buttons should
+     * be shown by the pagination rendering method that is used for the table.
+     * The renderer addresses how the buttons are displayed in the document,
+     * while the functions here tell it what buttons to display. This is done by
+     * returning an array of button descriptions (what each button will do).
+     */
+    pager: pager,
+    renderer: {
+        footer: {
+            _: footer
+        },
+        header: {
+            _: header
+        },
+        layout: {
+            _: layout
+        },
+        pagingButton: {
+            _: pagingButton
+        },
+        pagingContainer: {
+            _: pagingContainer
+        }
+    },
+    /**
+     * Rendering helper function exposed for use by the styling integrations.
+     */
+    rendererDisplayRowCells: displayRowCells,
+    /**
+     * Ordering plug-ins - custom data source
+     *
+     * The extension options for ordering of data available here is
+     * complimentary to the default type based ordering that DataTables
+     * typically uses. It allows much greater control over the data that is
+     * being used to order a column, but is necessarily therefore more complex.
+     */
+    order: {},
+    /**
+     * Type based plug-ins.
+     *
+     * Each column in DataTables has a type assigned to it, either by automatic
+     * detection or by direct assignment using the `type` option for the column.
+     * The type of a column will effect how it is ordering and search (plug-ins
+     * can also make use of the column type if required).
+     */
+    type: store,
+    /**
+     * Unique DataTables instance counter
+     *
+     * @type int
+     * @private
+     */
+    _unique: 0,
+    //
+    // Depreciated
+    // The following properties are retained for backwards compatibility only.
+    // The should not be used in new projects and will be removed in a future
+    // version
+    //
+    /**
+     * Software version
+     *  @type string
+     */
+    version: '3.0.4'
+};
+//
+// Backwards compatibility. Alias to pre 1.10 Hungarian notation counter parts
+//
+Object.assign(ext, {
+    afnFiltering: ext.search,
+    aTypes: ext.type.detect,
+    ofnSearch: ext.type.search,
+    oSort: ext.type.order,
+    afnSortData: ext.order,
+    aoFeatures: ext.feature,
+    oStdClasses: ext.classes,
+    oPagination: ext.pager,
+    sVersion: ext.version,
+    fnVersionCheck: check$1
+});
+
+/**
  * Common run function for selector types
  */
 function selectorRun(type, selector, selectFn, settings, opts) {
@@ -9863,10 +9893,7 @@ function columnHeader(settings, column, row) {
         // backwards compatibility)
         for (var i = 0; i < header.length; i++) {
             if (header[i][column].unique &&
-                Dom
-                    .s(header[i][column].cell)
-                    .find('.dt-column-title')
-                    .text()) {
+                Dom.s(header[i][column].cell).find('.dt-column-title').text()) {
                 target = i;
             }
         }
@@ -9876,20 +9903,8 @@ function columnHeader(settings, column, row) {
     }
     return header[target][column].cell;
 }
-function columnHeaderCells(header) {
-    var out = [];
-    for (var i = 0; i < header.length; i++) {
-        for (var j = 0; j < header[i].length; j++) {
-            var cell = header[i][j].cell;
-            if (!out.includes(cell)) {
-                out.push(cell);
-            }
-        }
-    }
-    return out;
-}
 function selectColumns(settings, selector, opts) {
-    var columns = settings.columns, names, titles, nodes = columnHeaderCells(settings.header);
+    var columns = settings.columns, names, titles;
     var run = function (s) {
         var selInt = intVal(s);
         // Selector - all
@@ -9943,8 +9958,8 @@ function selectColumns(settings, selector, opts) {
                         }
                         // Selector
                         if (match && match[1]) {
-                            return Dom
-                                .s(nodes[mapIdx])
+                            let columnElements = columnCells(settings.header, null, col.idx);
+                            return Dom.s(columnElements)
                                 .filter(match[1])
                                 .count() > 0
                                 ? mapIdx
@@ -9980,11 +9995,10 @@ function selectColumns(settings, selector, opts) {
             return [s._DT_CellIndex.column];
         }
         // Selector on the TH elements for the columns
-        var result = Dom
-            .s(nodes)
+        var result = Dom.s(columnCells(settings.header))
             .filter(s)
             .mapTo(el => {
-            return columnsFromHeader(el); // `nodes` is column index complete and in order
+            return columnsFromHeader(el);
         })
             .flat()
             .sort(function (a, b) {
@@ -10121,9 +10135,7 @@ registerPlural('columns().titles()', 'column().title()', function (title, row) {
             row = title;
             title = undefined;
         }
-        var span = Dom
-            .s(this.column(column).header(row))
-            .find('.dt-column-title');
+        var span = Dom.s(this.column(column).header(row)).find('.dt-column-title');
         if (title !== undefined) {
             span.html(title);
             return this;
@@ -10194,9 +10206,7 @@ registerPlural('columns().widths()', 'column().width()', function () {
     // be read, regardless of colspan in the header and rows being present
     // in the body
     var columns = this.columns(':visible');
-    var row = Dom
-        .c('tr')
-        .html('<td>' + Array(columns.count()).join('</td><td>') + '</td>');
+    var row = Dom.c('tr').html('<td>' + Array(columns.count()).join('</td><td>') + '</td>');
     Dom.s(this.table().body()).append(row);
     var widths = [];
     var indexes = columns.indexes();
@@ -10907,7 +10917,7 @@ register('search()', function (input, regex, smart, caseInsen) {
         }
         let target = ctx.searches['*'];
         if (!target) {
-            target = create$2();
+            target = create$1();
         }
         if (typeof regex === 'object') {
             // New style object of options
@@ -10942,7 +10952,7 @@ register('search.fixed()', function (name, search, options) {
         else {
             let target = fixed[name];
             if (!target || !util.is.plainObject(target)) {
-                target = create$2();
+                target = create$1();
             }
             if (options) {
                 assign(target, options);
@@ -10966,7 +10976,7 @@ register(['columns().search()', 'column().search()'], function (input, regex, sm
         let colIdxs = columns.join(',');
         let target = ctx.searches[colIdxs];
         if (!target) {
-            target = create$2();
+            target = create$1();
         }
         // Delete the search for custom grouping types if removing
         if ((input === '' || input === null) && columns.length > 1) {
@@ -11026,7 +11036,7 @@ register(['columns().search.fixed()', 'column().search.fixed()'], function (name
         else {
             let target = fixed[name];
             if (!target || !util.is.plainObject(target)) {
-                target = create$2();
+                target = create$1();
             }
             if (options) {
                 assign(target, options);
@@ -11958,7 +11968,7 @@ register$2('search', function (settings, optsIn) {
     let searchName = opts.columns === '*' ? '*' : indexes.join(',');
     let appliedSearch = settings.searches[searchName];
     if (!appliedSearch) {
-        appliedSearch = create$2();
+        appliedSearch = create$1();
         settings.searches[searchName] = appliedSearch;
     }
     appliedSearch.columns = indexes;
@@ -12206,8 +12216,8 @@ function create(parts = {}) {
 
 var models = {
     Column: Settings,
-    Row: create$1,
-    Search: create$2,
+    Row: create$2,
+    Search: create$1,
     Settings: create
 };
 
@@ -12220,7 +12230,7 @@ const defaults = {
     autoWidth: true,
     caption: '',
     classes: {},
-    column: defaults$4,
+    column: defaults$2,
     columnDefs: null,
     columns: null,
     createdRow: null,
@@ -12392,8 +12402,8 @@ const DataTable = function (selector, options) {
         }
         table.trigger('options.dt', true, [init]);
         // Backwards compatibility parameter mapping
-        compatOpts(defaults);
-        compatCols(defaults$4);
+        compatOpts(defaults, true);
+        compatCols(defaults$2);
         // Allow data properties on the table element to be used as
         // initialisation options
         util.object.assign(init, escapeObject(table.data()));
@@ -12522,7 +12532,7 @@ const DataTable = function (selector, options) {
         ]);
         map(settings.language, config, 'infoCallback');
         // Setup global search
-        settings.searches['*'] = create$2(config.search);
+        settings.searches['*'] = create$1(config.search);
         /* Callback functions which are array driven */
         callbackReg(settings, 'draw', config.drawCallback);
         callbackReg(settings, 'stateSaveParams', config.stateSaveParams);

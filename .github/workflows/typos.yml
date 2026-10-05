@@ -23,4 +23,4 @@ jobs:
 
       # When this version is updated, do not forget to update this in `.pre-commit-config.yaml` too
       - name: Spell Check Repo
-        uses: crate-ci/typos@d43b6c087ac471e2ea7b8af622ff15f05c0c365b # v1.50.1
+        uses: crate-ci/typos@512fc24f32f44ab01972217aaaf3dc86ec234d53 # v1.50.2

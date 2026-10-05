@@ -6,6 +6,7 @@ use rocket::{
     Route,
     form::{Form, FromForm},
     fs::TempFile,
+    http::Status,
     serde::json::Json,
 };
 use serde_json::Value;
@@ -21,8 +22,8 @@ use crate::{
         DbConn, DbPool,
         models::{
             Archive, Attachment, AttachmentId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup,
-            CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, Membership,
-            MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
+            CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, KeyId,
+            Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
         },
     },
     util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
@@ -161,6 +162,12 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     let policies_json: Vec<Value> =
         OrgPolicy::find_confirmed_by_user(&headers.user.uuid, &conn).await.iter().map(OrgPolicy::to_json).collect();
 
+    let policies_new_json: Vec<Value> = OrgPolicy::find_accepted_and_confirmed_by_user(&headers.user.uuid, &conn)
+        .await
+        .iter()
+        .map(OrgPolicy::to_json)
+        .collect();
+
     let domains_json = if data.exclude_domains {
         Value::Null
     } else {
@@ -193,11 +200,13 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "folders": folders_json,
         "collections": collections_json,
         "policies": policies_json,
+        "policiesNew": policies_new_json,
         "ciphers": ciphers_json,
         "domains": domains_json,
         "sends": sends_json,
         "userDecryption": {
             "masterPasswordUnlock": master_password_unlock,
+            "userKeyId": headers.user.key_id,
         },
         "object": "sync"
     })))
@@ -260,12 +269,19 @@ pub struct CipherData {
 
     key: Option<String>,
 
+    pub encrypted_for: UserId, // Added in web-v2025.6.0
+    // Added in web-v2025.8.1, Optional for compat
+    pub encrypted_by_key_id: Option<KeyId>,
+
     /*
     Login = 1,
     SecureNote = 2,
     Card = 3,
     Identity = 4,
     SshKey = 5
+    BankAccount = 6
+    DriversLicense = 7
+    Passport = 8
     */
     pub r#type: i32,
     pub name: String,
@@ -278,6 +294,9 @@ pub struct CipherData {
     card: Option<Value>,
     identity: Option<Value>,
     ssh_key: Option<Value>,
+    bank_account: Option<Value>,
+    drivers_license: Option<Value>,
+    passport: Option<Value>,
 
     favorite: Option<bool>,
     reprompt: Option<i32>,
@@ -333,6 +352,10 @@ async fn post_ciphers_create(
 ) -> JsonResult {
     let mut data: ShareCipherData = data.into_inner();
 
+    if data.cipher.encrypted_for != headers.user.uuid {
+        err_code!("Invalid user cipher", Status::UnprocessableEntity.code);
+    }
+
     // This check is usually only needed in update_cipher_from_data(), but we
     // need it here as well to avoid creating an empty cipher in the call to
     // cipher.save() below.
@@ -361,6 +384,17 @@ async fn post_ciphers_create(
 #[post("/ciphers", data = "<data>")]
 async fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     let mut data: CipherData = data.into_inner();
+
+    if data.encrypted_for != headers.user.uuid {
+        err_code!("Invalid user cipher", Status::UnprocessableEntity.code);
+    }
+
+    if let Some(cipher_key_id) = &data.encrypted_by_key_id
+        && let Some(user_key_id) = &headers.user.key_id
+        && cipher_key_id != user_key_id
+    {
+        err_code!("Invalid key cipher", Status::UnprocessableEntity.code);
+    }
 
     // The web/browser clients set this field to null as expected, but the
     // mobile clients seem to set the invalid value `0001-01-01T00:00:00`,
@@ -510,6 +544,9 @@ pub async fn update_cipher_from_data(
         3 => data.card,
         4 => data.identity,
         5 => data.ssh_key,
+        6 => data.bank_account,
+        7 => data.drivers_license,
+        8 => data.passport,
         _ => err!("Invalid type"),
     };
 
@@ -1832,7 +1869,7 @@ async fn delete_cipher_by_uuid(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CipherIdsData {
-    ids: Vec<CipherId>,
+    ids: HashSet<CipherId>,
 }
 
 async fn delete_multiple_ciphers(
@@ -2143,8 +2180,15 @@ impl CipherSyncData {
             }
         }
 
+        // Generate a HashMap with the Organization UUID as key and the Membership record
+        let members: HashMap<OrganizationId, Membership> = Membership::find_confirmed_by_user(user_id, conn)
+            .await
+            .into_iter()
+            .map(|m| (m.org_uuid.clone(), m))
+            .collect();
+
         // Generate a list of Cipher UUID's containing a Vec with one or more Attachment records
-        let orgs = Membership::get_orgs_by_user(user_id, conn).await;
+        let orgs: Vec<OrganizationId> = members.keys().cloned().collect();
         let attachments = Attachment::find_all_by_user_and_orgs(user_id, &orgs, conn).await;
         let mut cipher_attachments: HashMap<CipherId, Vec<Attachment>> = HashMap::with_capacity(attachments.len());
         for attachment in attachments {
@@ -2158,13 +2202,6 @@ impl CipherSyncData {
         for (cipher, collection) in user_cipher_collections {
             cipher_collections.entry(cipher).or_default().push(collection);
         }
-
-        // Generate a HashMap with the Organization UUID as key and the Membership record
-        let members: HashMap<OrganizationId, Membership> = Membership::find_confirmed_by_user(user_id, conn)
-            .await
-            .into_iter()
-            .map(|m| (m.org_uuid.clone(), m))
-            .collect();
 
         // Generate a HashMap with the User_Collections UUID as key and the CollectionUser record
         let user_collections: HashMap<CollectionId, CollectionUser> = CollectionUser::find_by_user(user_id, conn)
