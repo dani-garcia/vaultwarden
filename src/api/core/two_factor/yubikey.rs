@@ -217,7 +217,9 @@ pub async fn validate_yubikey_login(response: &str, twofactor_data: &str) -> Emp
     }
 
     let yubikey_metadata: YubikeyMetadata = serde_json::from_str(twofactor_data).expect("Can't parse Yubikey Metadata");
-    let response_id = &response[..12];
+    let Some(response_id) = response.get(..12) else {
+        err!("Invalid Yubikey OTP");
+    };
 
     if !yubikey_metadata.keys.contains(&response_id.to_owned()) {
         err!("Given Yubikey is not registered");

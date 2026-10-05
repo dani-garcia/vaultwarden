@@ -42,6 +42,7 @@ pub fn routes() -> Vec<rocket::Route> {
         post_profile,
         put_avatar,
         get_public_keys,
+        get_keys,
         post_keys,
         post_password,
         post_set_password,
@@ -568,6 +569,24 @@ async fn get_public_keys(user_id: UserId, _headers: Headers, conn: DbConn) -> Js
     })))
 }
 
+#[get("/accounts/keys")]
+fn get_keys(headers: Headers) -> JsonResult {
+    let user = headers.user;
+
+    // The SDK reads a 404 as the user having no key pair yet
+    if user.private_key.is_none() || user.public_key.is_none() {
+        err_code!("User has no key pair", Status::NotFound.code)
+    }
+
+    Ok(Json(json!({
+        "key": (!user.akey.is_empty()).then_some(&user.akey),
+        "publicKey": user.public_key,
+        "privateKey": user.private_key,
+        "accountKeys": user.account_keys_json(),
+        "object": "keys",
+    })))
+}
+
 #[post("/accounts/keys", data = "<data>")]
 async fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: KeysData = data.into_inner();
@@ -994,7 +1013,8 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // Update cipher data
     for cipher_data in data.account_data.ciphers {
         if cipher_data.organization_id.is_none() {
-            let Some(saved_cipher) = existing_ciphers.iter_mut().find(|c| &c.uuid == cipher_data.id.as_ref().unwrap())
+            let Some(saved_cipher) =
+                cipher_data.id.as_ref().and_then(|id| existing_ciphers.iter_mut().find(|c| &c.uuid == id))
             else {
                 err!("Cipher doesn't exist")
             };
@@ -1360,14 +1380,33 @@ pub struct PreloginData {
     email: String,
 }
 
+/// Like upstream, an unknown email gets KDF settings picked from a list of common ones by a keyed hash of the email,
+/// so they stay the same between requests. The salt stays null, as for existing users.
+fn unknown_email_kdf(email: &str) -> (i32, i32, Option<i32>, Option<i32>) {
+    const PBKDF2: i32 = UserKdfType::Pbkdf2 as i32;
+    const ARGON2ID: i32 = UserKdfType::Argon2id as i32;
+    // Same list as upstream, the default is in it twice to give it more weight
+    const KDF_SETTINGS: [(i32, i32, Option<i32>, Option<i32>); 6] = [
+        (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+        (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+        (PBKDF2, 100_000, None, None),
+        (PBKDF2, 5_000, None, None),
+        (ARGON2ID, 3, Some(64), Some(4)),
+        (ARGON2ID, 6, Some(32), Some(4)),
+    ];
+    KDF_SETTINGS[crate::auth::prelogin_kdf_index(email, KDF_SETTINGS.len())]
+}
+
 pub async fn prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
     crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
 
     let data: PreloginData = data.into_inner();
+    // Normalized once, so the lookup and the settings for an unknown email use the same value
+    let email = data.email.trim().to_lowercase();
 
-    let (kdf_type, kdf_iter, kdf_mem, kdf_para) = match User::find_by_mail(&data.email, &conn).await {
+    let (kdf_type, kdf_iter, kdf_mem, kdf_para) = match User::find_by_mail(&email, &conn).await {
         Some(user) => (user.client_kdf_type, user.client_kdf_iter, user.client_kdf_memory, user.client_kdf_parallelism),
-        None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+        None => unknown_email_kdf(&email),
     };
 
     Ok(Json(json!({

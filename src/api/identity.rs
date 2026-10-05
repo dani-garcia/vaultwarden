@@ -20,7 +20,7 @@ use crate::{
                 authenticator, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn, yubikey,
             },
         },
-        master_password_policy,
+        identity_master_password_policy,
         push::register_push_device,
     },
     auth,
@@ -82,10 +82,6 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
             check_is_some(data.client_secret.as_ref(), "client_secret cannot be blank")?;
             check_is_some(data.scope.as_ref(), "scope cannot be blank")?;
-
-            check_is_some(data.device_identifier.as_ref(), "device_identifier cannot be blank")?;
-            check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
-            check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
             api_key_login(data, &mut user_id, &conn, &client_header.ip).await
         }
@@ -408,6 +404,7 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
 
         if auth_request.user_uuid != user.uuid
             || !auth_request.approved.unwrap_or(false)
+            || auth_request.authentication_date.is_some()
             || request_expired
             || ip.ip.to_string() != auth_request.request_ip
             || !auth_request.check_access_code(password)
@@ -484,6 +481,19 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
 
     let twofactor_token = twofactor_auth(&mut user, &data, &mut device, ip, conn).await?;
 
+    // Like upstream, an auth request can be used for one login only. Marked after 2FA so a 2FA prompt doesn't use it up.
+    if let Some(ref auth_request_id) = data.auth_request
+        && !AuthRequest::set_authentication_date(auth_request_id, conn).await?
+    {
+        err!(
+            "Username or access code is incorrect. Try again",
+            format!("IP: {}. Username: {log_username}.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn,
+            }
+        )
+    }
+
     let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password, data.client_id);
 
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
@@ -521,7 +531,7 @@ async fn authenticated_response(
     // Save to update `device.updated_at` to track usage and toggle new status
     device.save(true, conn).await?;
 
-    let master_password_policy = master_password_policy(user, conn).await;
+    let master_password_policy = identity_master_password_policy(user, conn).await;
 
     let has_master_password = !user.password_hash.is_empty();
     let master_password_unlock = if has_master_password {
@@ -594,7 +604,14 @@ async fn api_key_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &D
 
     // Validate scope
     match data.scope.as_ref() {
-        Some(scope) if scope == &AuthMethod::UserApiKey.scope() => user_api_key_login(data, user_id, conn, ip).await,
+        Some(scope) if scope == &AuthMethod::UserApiKey.scope() => {
+            // Like upstream, only the user API key logs in a device
+            check_is_some(data.device_identifier.as_ref(), "device_identifier cannot be blank")?;
+            check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
+            check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
+
+            user_api_key_login(data, user_id, conn, ip).await
+        }
         Some(scope) if scope == &AuthMethod::OrgApiKey.scope() => organization_api_key_login(data, conn, ip).await,
         _ => err!("Scope not supported"),
     }
@@ -811,12 +828,12 @@ async fn twofactor_auth(
     if ![TwoFactorType::Remember as i32, TwoFactorType::RecoveryCode as i32].contains(&selected_id)
         && !twofactor_ids.contains(&selected_id)
     {
-        err_json!(json_err_twofactor(&twofactor_ids, &user.uuid, data, conn).await?, "Invalid two factor provider")
+        err_json!(json_err_twofactor(&twofactor_ids, user, data, conn).await?, "Invalid two factor provider")
     }
 
     // Like upstream, a blank token counts as not provided
     let Some(twofactor_code) = data.two_factor_token.as_deref().filter(|t| !t.trim().is_empty()) else {
-        err_json!(json_err_twofactor(&twofactor_ids, &user.uuid, data, conn).await?, "2FA token not provided")
+        err_json!(json_err_twofactor(&twofactor_ids, user, data, conn).await?, "2FA token not provided")
     };
 
     let selected_twofactor = twofactors.into_iter().find(|tf| tf.atype == selected_id && tf.enabled);
@@ -859,16 +876,22 @@ async fn twofactor_auth(
                         device.save(true, conn).await?;
                     }
                     err_json!(
-                        json_err_twofactor(&twofactor_ids, &user.uuid, data, conn).await?,
+                        json_err_twofactor(&twofactor_ids, user, data, conn).await?,
                         "2FA Remember token not provided or expired"
                     )
                 }
             }
         }
         Some(TwoFactorType::RecoveryCode) => {
-            // Check if recovery code is correct
-            if !user.check_valid_recovery_code(twofactor_code) {
-                err!("Recovery code is incorrect. Try again.")
+            // Like upstream, spaces and case don't matter
+            let recovery_code = twofactor_code.replace(' ', "").trim().to_lowercase();
+            if !user.check_valid_recovery_code(&recovery_code) {
+                err!(
+                    "Two-step token is invalid. Try again.",
+                    ErrorEvent {
+                        event: EventType::UserFailedLogIn2fa
+                    }
+                )
             }
 
             // Remove all twofactors from the user
@@ -882,6 +905,13 @@ async fn twofactor_auth(
             enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, conn).await?;
 
             log_user_event(EventType::UserRecovered2fa as i32, &user.uuid, device.atype, &ip.ip, conn).await;
+
+            if CONFIG.mail_enabled()
+                && let Err(e) =
+                    mail::send_recover_twofactor(&user.email, &ip.ip.to_string(), &Utc::now().naive_utc()).await
+            {
+                error!("Error sending two-step login recovered email: {e:#?}");
+            }
 
             // Remove the recovery code, not needed without twofactors
             user.totp_recover = None;
@@ -910,20 +940,14 @@ fn selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
     tf.map(|t| t.data).map_res("Two factor doesn't exist")
 }
 
-async fn json_err_twofactor(
-    providers: &[i32],
-    user_id: &UserId,
-    data: &ConnectData,
-    conn: &DbConn,
-) -> ApiResult<Value> {
+async fn json_err_twofactor(providers: &[i32], user: &User, data: &ConnectData, conn: &DbConn) -> ApiResult<Value> {
+    let user_id = &user.uuid;
     let mut result = json!({
         "error" : "invalid_grant",
         "error_description" : "Two factor required.",
         "TwoFactorProviders" : providers.iter().map(ToString::to_string).collect::<Vec<String>>(),
         "TwoFactorProviders2" : {}, // { "0" : null }
-        "MasterPasswordPolicy": {
-            "Object": "masterPasswordPolicy"
-        }
+        "MasterPasswordPolicy": identity_master_password_policy(user, conn).await,
     });
 
     for provider in providers {
@@ -936,14 +960,8 @@ async fn json_err_twofactor(
             }
 
             Some(TwoFactorType::Duo) => {
-                let email = if let Some(u) = User::find_by_uuid(user_id, conn).await {
-                    u.email
-                } else {
-                    err!("User does not exist")
-                };
-
                 let auth_url = duo_oidc::get_duo_auth_url(
-                    &email,
+                    &user.email,
                     data.client_id.as_ref().unwrap(),
                     data.device_identifier.as_ref().unwrap(),
                     conn,
@@ -1212,7 +1230,7 @@ async fn oidcsignin_redirect(
     let state = sso::decode_state(&base64_state)?;
 
     let Some(mut sso_auth) = SsoAuth::find(&state, conn).await else {
-        err!(format!("Cannot retrieve sso_auth for {state}"))
+        err!(format!("Cannot retrieve sso_auth for {}", state.escape_debug()))
     };
 
     // Browser-binding check
@@ -1221,7 +1239,7 @@ async fn oidcsignin_redirect(
     let provided_hash = cookie_value.as_deref().map(|v| crypto::sha256_hex(v.as_bytes()));
     match (sso_auth.binding_hash.as_deref(), provided_hash.as_deref()) {
         (Some(expected), Some(actual)) if crypto::ct_eq(expected, actual) => {}
-        _ => err!(format!("SSO session binding mismatch for {state}")),
+        _ => err!(format!("SSO session binding mismatch for {}", state.escape_debug())),
     }
     cookies
         .remove(Cookie::build(SSO_BINDING_COOKIE).path(format!("{}/identity/connect/", CONFIG.domain_path())).build());

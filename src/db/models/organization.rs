@@ -342,7 +342,7 @@ impl OrganizationApiKey {
 impl Organization {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         if !crate::util::is_valid_email(&self.billing_email) {
-            err!(format!("BillingEmail {} is not a valid email address", self.billing_email))
+            err!(format!("BillingEmail {} is not a valid email address", self.billing_email.escape_debug()))
         }
 
         for member in &Membership::find_by_org(&self.uuid, conn).await {

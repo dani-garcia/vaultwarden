@@ -2,7 +2,6 @@ use std::{sync::LazyLock, time::Duration};
 
 use chrono::Utc;
 use derive_more::{AsRef, Deref, Display, From, Into};
-use regex::Regex;
 use url::Url;
 
 use crate::{
@@ -175,16 +174,16 @@ pub fn decode_state(base64_state: &str) -> ApiResult<OIDCState> {
         if let Ok(valid) = String::from_utf8(vec) {
             OIDCState(valid)
         } else {
-            err!(format!("Invalid utf8 chars in {base64_state} after base64 decoding"))
+            err!(format!("Invalid utf8 chars in {} after base64 decoding", base64_state.escape_debug()))
         }
     } else {
-        err!(format!("Failed to decode {base64_state} using base64"))
+        err!(format!("Failed to decode {} using base64", base64_state.escape_debug()))
     };
 
     Ok(state)
 }
 
-// redirect_uri from: https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/ApiClient.cs
+// redirect_uri from: https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/StaticClientStore.cs
 pub async fn authorize_url(
     state: OIDCState,
     client_challenge: OIDCCodeChallenge,
@@ -193,20 +192,21 @@ pub async fn authorize_url(
     binding_hash: Option<String>,
     conn: DbConn,
 ) -> ApiResult<Url> {
+    // The desktop app uses the localhost callback when it can't register the custom scheme (AppImage, dev builds)
+    let localhost_redirect_uri =
+        (8065..=8070).map(|port| format!("http://localhost:{port}")).find(|uri| uri == raw_redirect_uri);
+
     let redirect_uri = match client_id {
         "web" | "browser" => format!("{}/sso-connector.html", CONFIG.domain()),
-        "desktop" | "mobile" => "bitwarden://sso-callback".to_owned(),
+        "desktop" => localhost_redirect_uri.unwrap_or_else(|| "bitwarden://sso-callback".to_owned()),
+        "mobile" => "bitwarden://sso-callback".to_owned(),
         "cli" => {
-            let port_regex = Regex::new(r"^http://localhost:([0-9]{4})$").unwrap();
-            if let Some(port) =
-                port_regex.captures(raw_redirect_uri).and_then(|captures| captures.get(1).map(|c| c.as_str()))
-            {
-                format!("http://localhost:{port}")
-            } else {
-                err!("Failed to extract port number")
-            }
+            let Some(uri) = localhost_redirect_uri else {
+                err!(format!("Unsupported redirect uri {}", raw_redirect_uri.escape_debug()))
+            };
+            uri
         }
-        _ => err!(format!("Unsupported client {client_id}")),
+        _ => err!(format!("Unsupported client {}", client_id.escape_debug())),
     };
 
     let (auth_url, sso_auth) = Client::authorize_url(state, client_challenge, redirect_uri, binding_hash).await?;
@@ -242,7 +242,8 @@ impl OIDCIdentifier {
 
 // During the 2FA flow we will
 //  - retrieve the user information and then only discover he needs 2FA.
-//  - second time we will rely on `SsoAuth.auth_response` since the `code` has already been exchanged.
+//  - second time we will rely on `SsoAuth.auth_response` since the `code` has already been exchanged,
+//    after checking the PKCE verifier again like upstream does on every redemption.
 // The `SsoAuth` will ensure that the user is authorized only once.
 pub async fn exchange_code(
     code: &OIDCCode,
@@ -256,6 +257,7 @@ pub async fn exchange_code(
     };
 
     if let Some(authenticated_user) = sso_auth.auth_response.clone() {
+        Client::check_client_verifier(&client_verifier, &sso_auth)?;
         return Ok((sso_auth, authenticated_user));
     }
 
