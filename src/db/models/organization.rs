@@ -209,7 +209,7 @@ impl Organization {
             "usePolicies": true,
             "useScim": false, // Not supported (Not AGPLv3 Licensed)
             "useSso": false, // Not supported
-            "useKeyConnector": false, // Not supported
+            "useKeyConnector": CONFIG.key_connector_enabled(),
             "usePasswordManager": true,
             "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
             "selfHost": true,
@@ -483,7 +483,7 @@ impl Membership {
             "useResetPassword": CONFIG.mail_enabled(),
             "ssoBound": false, // Not supported
             "useSso": false, // Not supported
-            "useKeyConnector": false,
+            "useKeyConnector": CONFIG.key_connector_enabled(),
             "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
             "usePasswordManager": true,
             "useCustomPermissions": true,
@@ -504,8 +504,8 @@ impl Membership {
             "familySponsorshipFriendlyName": null,
             "familySponsorshipAvailable": false,
             "productTierType": 3, // Enterprise tier
-            "keyConnectorEnabled": false,
-            "keyConnectorUrl": null,
+            "keyConnectorEnabled": CONFIG.key_connector_enabled(),
+            "keyConnectorUrl": if CONFIG.key_connector_enabled() { Value::String(CONFIG.key_connector_url()) } else { Value::Null },
             "familySponsorshipLastSyncDate": null,
             "familySponsorshipValidUntil": null,
             "familySponsorshipToDelete": null,
