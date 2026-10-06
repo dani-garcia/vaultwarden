@@ -65,7 +65,7 @@ pub fn is_twofactor_provider_usable(provider_type: &TwoFactorType, provider_data
 }
 
 pub fn routes() -> Vec<Route> {
-    let mut routes = routes![get_twofactor, get_recover, get_device_verification_settings,];
+    let mut routes = routes![get_twofactor, get_recover, get_device_verification_settings];
 
     routes.append(&mut authenticator::routes());
     routes.append(&mut duo::routes());
@@ -122,9 +122,11 @@ async fn generate_recover_code(user: &mut User, conn: &DbConn) {
     }
 }
 
+/// Call after a 2FA provider, or one of its keys, was removed. No remembered device may keep skipping
+/// the providers that are left, and once every provider is gone the 2FA policy applies.
 pub async fn check_2fa_state(user: &User, device_type: i32, ip: &std::net::IpAddr, conn: &DbConn) -> EmptyResult {
+    Device::clear_twofactor_remember_by_user(&user.uuid, conn).await?;
     if TwoFactor::find_by_user(&user.uuid, conn).await.is_empty() {
-        Device::clear_twofactor_remember_by_user(&user.uuid, conn).await?;
         enforce_2fa_policy(user, &user.uuid, device_type, ip, conn).await?;
     }
     Ok(())

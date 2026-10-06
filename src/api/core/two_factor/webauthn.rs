@@ -394,9 +394,7 @@ async fn inner_delete_webauthns(
         }
     }
 
-    if keys.is_empty() {
-        super::check_2fa_state(&user, headers.device.atype, &headers.ip.ip, conn).await?;
-    }
+    super::check_2fa_state(&user, headers.device.atype, &headers.ip.ip, conn).await?;
 
     Ok(Json(json!({
         "webAuthn": json!({

@@ -6,12 +6,13 @@ use serde_json::Value;
 
 use crate::{
     CONFIG,
-    api::{EmptyResult, JsonResult},
+    api::{ApiResult, EmptyResult, JsonResult},
     auth::{AdminHeaders, Headers},
     db::{
         DbConn, DbPool,
         models::{Cipher, CipherId, Event, EventType, Membership, MembershipId, OrganizationId, UserId},
     },
+    error::MapResult,
     util::parse_date,
 };
 
@@ -29,6 +30,14 @@ struct EventRange {
     continuation_token: Option<String>,
 }
 
+impl EventRange {
+    fn date_range(&self) -> ApiResult<(NaiveDateTime, NaiveDateTime)> {
+        let start_date = parse_date(&self.start).map_res("Invalid start date")?;
+        let end_date = parse_date(self.continuation_token.as_ref().unwrap_or(&self.end)).map_res("Invalid end date")?;
+        Ok((start_date, end_date))
+    }
+}
+
 // Upstream: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Controllers/EventsController.cs#L87
 #[get("/organizations/<org_id>/events?<data..>")]
 async fn get_org_events(org_id: OrganizationId, data: EventRange, headers: AdminHeaders, conn: DbConn) -> JsonResult {
@@ -39,12 +48,7 @@ async fn get_org_events(org_id: OrganizationId, data: EventRange, headers: Admin
     // Return an empty vec when we org events are disabled.
     // This prevents client errors
     let events_json: Vec<Value> = if CONFIG.org_events_enabled() {
-        let start_date = parse_date(&data.start);
-        let end_date = if let Some(before_date) = &data.continuation_token {
-            parse_date(before_date)
-        } else {
-            parse_date(&data.end)
-        };
+        let (start_date, end_date) = data.date_range()?;
 
         Event::find_by_organization_uuid(&org_id, &start_date, &end_date, &conn)
             .await
@@ -69,12 +73,7 @@ async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Heade
     let events_json: Vec<Value> = if CONFIG.org_events_enabled()
         && Membership::user_has_ge_admin_access_to_cipher(&headers.user.uuid, &cipher_id, &conn).await
     {
-        let start_date = parse_date(&data.start);
-        let end_date = if let Some(before_date) = &data.continuation_token {
-            parse_date(before_date)
-        } else {
-            parse_date(&data.end)
-        };
+        let (start_date, end_date) = data.date_range()?;
 
         Event::find_by_cipher_uuid(&cipher_id, &start_date, &end_date, &conn).await.iter().map(Event::to_json).collect()
     } else {
@@ -102,12 +101,7 @@ async fn get_user_events(
     // Return an empty vec when we org events are disabled.
     // This prevents client errors
     let events_json: Vec<Value> = if CONFIG.org_events_enabled() {
-        let start_date = parse_date(&data.start);
-        let end_date = if let Some(before_date) = &data.continuation_token {
-            parse_date(before_date)
-        } else {
-            parse_date(&data.end)
-        };
+        let (start_date, end_date) = data.date_range()?;
 
         Event::find_by_org_and_member(&org_id, &member_id, &start_date, &end_date, &conn)
             .await
@@ -168,9 +162,10 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
     }
 
     for event in data.iter() {
-        let event_date = parse_date(&event.date);
+        let event_date = parse_date(&event.date).map_res("Invalid event date")?;
+        // Only the event types upstream accepts from clients, the rest are written server-side.
         match event.r#type {
-            1000..=1099 => {
+            t if t == EventType::UserClientExportedVault as i32 => {
                 log_user_event_impl(
                     event.r#type,
                     &headers.user.uuid,
@@ -181,7 +176,7 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                 )
                 .await;
             }
-            1600..=1699 => {
+            t if t == EventType::OrganizationClientExportedVault as i32 => {
                 // Only allow logging events for an organization the user is actually a member of.
                 if let Some(org_id) = &event.organization_id
                     && Membership::find_confirmed_by_user_and_org(&headers.user.uuid, org_id, &conn).await.is_some()
@@ -219,7 +214,8 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                     .await;
                 }
             }
-            _ => {
+            // Client-side cipher events (viewed, copied, toggled, autofilled).
+            1107..=1114 | 1117 | 1119..=1132 => {
                 // The cipher determines the organization the event is logged to, so make sure the
                 // user can actually access it instead of trusting the provided cipher uuid.
                 if let Some(cipher_uuid) = &event.cipher_id
@@ -240,6 +236,7 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                     .await;
                 }
             }
+            _ => {}
         }
     }
     Ok(())

@@ -15,10 +15,10 @@ use crate::{
     db::{
         DbConn,
         models::{
-            Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, EventType,
-            Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus, MembershipType,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, TwoFactor, TwoFactorType, User,
-            UserId,
+            Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, Device,
+            EventType, Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus,
+            MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, TwoFactor,
+            TwoFactorType, User, UserId,
         },
     },
     mail,
@@ -26,12 +26,13 @@ use crate::{
     util::{NumberOrString, convert_json_key_lcase_first},
 };
 
+use super::accounts::{AuthenticationData, UnlockData};
+
 pub fn routes() -> Vec<Route> {
     routes![
         get_organization,
         create_organization,
         delete_organization,
-        post_delete_organization,
         leave_organization,
         get_user_collections,
         get_org_collections,
@@ -39,13 +40,10 @@ pub fn routes() -> Vec<Route> {
         get_org_collection_detail,
         get_collection_users,
         put_organization,
-        post_organization,
         post_organization_collections,
         post_bulk_access_collections,
-        post_organization_collection_update,
         put_organization_collection_update,
         delete_organization_collection,
-        post_organization_collection_delete,
         bulk_delete_organization_collections,
         post_bulk_collections,
         get_org_details,
@@ -60,7 +58,6 @@ pub fn routes() -> Vec<Route> {
         get_org_user_mini_details,
         get_user,
         edit_member,
-        put_member,
         delete_member,
         bulk_delete_member,
         post_org_import,
@@ -70,7 +67,6 @@ pub fn routes() -> Vec<Route> {
         get_master_password_policy,
         get_policy,
         put_policy,
-        put_policy_vnext,
         get_plans,
         post_org_keys,
         get_organization_keys,
@@ -86,22 +82,16 @@ pub fn routes() -> Vec<Route> {
         post_groups,
         get_group,
         put_group,
-        post_group,
         get_group_details,
         delete_group,
-        post_delete_group,
         bulk_delete_groups,
         get_group_members,
-        put_group_members,
-        post_delete_group_member,
         put_reset_password_enrollment,
         get_reset_password_details,
-        put_reset_password,
         put_recover_account,
         get_org_export,
         post_api_key,
         rotate_api_key,
-        get_billing_metadata,
         get_billing_warnings,
         get_auto_enroll_status,
         get_self_host_billing_metadata,
@@ -245,16 +235,6 @@ async fn delete_organization(
     }
 }
 
-#[post("/organizations/<org_id>/delete", data = "<data>")]
-async fn post_delete_organization(
-    org_id: OrganizationId,
-    data: Json<PasswordOrOtpData>,
-    headers: OwnerHeaders,
-    conn: DbConn,
-) -> EmptyResult {
-    delete_organization(org_id, data, headers, conn).await
-}
-
 #[post("/organizations/<org_id>/leave")]
 async fn leave_organization(org_id: OrganizationId, headers: OrgMemberHeaders, conn: DbConn) -> EmptyResult {
     if headers.membership.status != MembershipStatus::Confirmed as i32 {
@@ -296,16 +276,6 @@ async fn get_organization(org_id: OrganizationId, headers: OwnerHeaders, conn: D
 
 #[put("/organizations/<org_id>", data = "<data>")]
 async fn put_organization(
-    org_id: OrganizationId,
-    headers: OwnerHeaders,
-    data: Json<OrganizationUpdateData>,
-    conn: DbConn,
-) -> JsonResult {
-    post_organization(org_id, headers, data, conn).await
-}
-
-#[post("/organizations/<org_id>", data = "<data>")]
-async fn post_organization(
     org_id: OrganizationId,
     headers: OwnerHeaders,
     data: Json<OrganizationUpdateData>,
@@ -641,17 +611,6 @@ async fn put_organization_collection_update(
     data: Json<FullCollectionData>,
     conn: DbConn,
 ) -> JsonResult {
-    post_organization_collection_update(org_id, col_id, headers, data, conn).await
-}
-
-#[post("/organizations/<org_id>/collections/<col_id>", data = "<data>", rank = 2)]
-async fn post_organization_collection_update(
-    org_id: OrganizationId,
-    col_id: CollectionId,
-    headers: ManagerHeaders,
-    data: Json<FullCollectionData>,
-    conn: DbConn,
-) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -738,16 +697,6 @@ async fn delete_organization_collection_impl(
 
 #[delete("/organizations/<org_id>/collections/<col_id>")]
 async fn delete_organization_collection(
-    org_id: OrganizationId,
-    col_id: CollectionId,
-    headers: ManagerHeaders,
-    conn: DbConn,
-) -> EmptyResult {
-    delete_organization_collection_impl(&org_id, &col_id, &headers, &conn).await
-}
-
-#[post("/organizations/<org_id>/collections/<col_id>/delete")]
-async fn post_organization_collection_delete(
     org_id: OrganizationId,
     col_id: CollectionId,
     headers: ManagerHeaders,
@@ -1081,7 +1030,7 @@ async fn send_invite(
         let user = match User::find_by_mail(email, &conn).await {
             None => {
                 if !CONFIG.invitations_allowed() {
-                    err!(format!("User does not exist: {email}"))
+                    err!(format!("User does not exist: {}", email.escape_debug()))
                 }
 
                 if !CONFIG.is_email_domain_allowed(email) {
@@ -1099,7 +1048,7 @@ async fn send_invite(
             }
             Some(user) => {
                 if Membership::find_by_user_and_org(&user.uuid, &org_id, &conn).await.is_some() {
-                    err!(format!("User already in organization: {email}"))
+                    err!(format!("User already in organization: {}", email.escape_debug()))
                 }
 
                 if !CONFIG.mail_enabled() {
@@ -1374,7 +1323,9 @@ async fn bulk_confirm_invite(
     match data.keys {
         Some(keys) => {
             for invite in keys {
-                let member_id = invite.id.unwrap();
+                let Some(member_id) = invite.id else {
+                    err!("Member id is required")
+                };
                 let user_key = invite.key.unwrap_or_default();
                 let err_msg = match confirm_invite_impl(&org_id, &member_id, &user_key, &headers, &conn, &nt).await {
                     Ok(()) => String::new(),
@@ -1532,17 +1483,6 @@ struct EditUserData {
 }
 
 #[put("/organizations/<org_id>/users/<member_id>", data = "<data>", rank = 1)]
-async fn put_member(
-    org_id: OrganizationId,
-    member_id: MembershipId,
-    data: Json<EditUserData>,
-    headers: AdminHeaders,
-    conn: DbConn,
-) -> EmptyResult {
-    edit_member(org_id, member_id, data, headers, conn).await
-}
-
-#[post("/organizations/<org_id>/users/<member_id>", data = "<data>", rank = 1)]
 async fn edit_member(
     org_id: OrganizationId,
     member_id: MembershipId,
@@ -1922,7 +1862,7 @@ async fn post_org_import(
 #[serde(rename_all = "camelCase")]
 struct BulkCollectionsData {
     organization_id: OrganizationId,
-    cipher_ids: Vec<CipherId>,
+    cipher_ids: HashSet<CipherId>,
     collection_ids: HashSet<CollectionId>,
     remove_collections: bool,
 }
@@ -2201,18 +2141,6 @@ async fn put_policy(
     Ok(Json(policy.to_json()))
 }
 
-// Deprecated with client v2026.5.0
-#[put("/organizations/<org_id>/policies/<pol_type>/vnext", data = "<data>")]
-async fn put_policy_vnext(
-    org_id: OrganizationId,
-    pol_type: i32,
-    data: Json<PutPolicy>,
-    headers: AdminHeaders,
-    conn: DbConn,
-) -> JsonResult {
-    put_policy(org_id, pol_type, data, headers, conn).await
-}
-
 #[get("/plans")]
 fn get_plans() -> Json<Value> {
     // Respond with a minimal json just enough to allow the creation of an new organization.
@@ -2241,12 +2169,6 @@ fn get_plans() -> Json<Value> {
     }))
 }
 
-#[get("/organizations/<_org_id>/billing/metadata")]
-fn get_billing_metadata(_org_id: OrganizationId, _headers: OrgMemberHeaders) -> Json<Value> {
-    // Prevent a 404 error, which also causes Javascript errors.
-    Json(empty_data_json())
-}
-
 #[get("/organizations/<_org_id>/billing/vnext/warnings")]
 fn get_billing_warnings(_org_id: OrganizationId, _headers: OrgMemberHeaders) -> Json<Value> {
     Json(json!({
@@ -2264,14 +2186,6 @@ fn get_self_host_billing_metadata(_org_id: OrganizationId, _headers: OrgMemberHe
         "isOnSecretsManagerStandalone": false, // Secrets Manager is not supported by Vaultwarden
         "organizationOccupiedSeats": 0 // Vaultwarden does not count seats
     }))
-}
-
-fn empty_data_json() -> Value {
-    json!({
-        "object": "list",
-        "data": [],
-        "continuationToken": null
-    })
 }
 
 #[derive(Deserialize, Debug)]
@@ -2592,17 +2506,6 @@ impl CollectionData {
     }
 }
 
-#[post("/organizations/<org_id>/groups/<group_id>", data = "<data>")]
-async fn post_group(
-    org_id: OrganizationId,
-    group_id: GroupId,
-    data: Json<GroupRequest>,
-    headers: AdminHeaders,
-    conn: DbConn,
-) -> JsonResult {
-    put_group(org_id, group_id, data, headers, conn).await
-}
-
 #[post("/organizations/<org_id>/groups", data = "<data>")]
 async fn post_groups(
     org_id: OrganizationId,
@@ -2712,7 +2615,6 @@ async fn add_update_group(
         "id": group.uuid,
         "organizationId": group.organizations_uuid,
         "name": group.name,
-        "accessAll": group.access_all,
         "externalId": group.external_id,
         "object": "group"
     })))
@@ -2737,16 +2639,6 @@ async fn get_group_details(
     };
 
     Ok(Json(group.to_json_details(&conn).await))
-}
-
-#[post("/organizations/<org_id>/groups/<group_id>/delete")]
-async fn post_delete_group(
-    org_id: OrganizationId,
-    group_id: GroupId,
-    headers: AdminHeaders,
-    conn: DbConn,
-) -> EmptyResult {
-    delete_group_impl(&org_id, &group_id, &headers, &conn).await
 }
 
 #[delete("/organizations/<org_id>/groups/<group_id>")]
@@ -2850,90 +2742,6 @@ async fn get_group_members(
     Ok(Json(json!(group_members)))
 }
 
-#[put("/organizations/<org_id>/groups/<group_id>/users", data = "<data>")]
-async fn put_group_members(
-    org_id: OrganizationId,
-    group_id: GroupId,
-    headers: AdminHeaders,
-    data: Json<Vec<MembershipId>>,
-    conn: DbConn,
-) -> EmptyResult {
-    if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
-    }
-    if !CONFIG.org_groups_enabled() {
-        err!("Group support is disabled");
-    }
-
-    if Group::find_by_uuid_and_org(&group_id, &org_id, &conn).await.is_none() {
-        err!("Group could not be found!", "Group uuid is invalid or does not belong to the organization")
-    }
-
-    let assigned_members = data.into_inner();
-
-    let org_memberships = Membership::find_by_org(&org_id, &conn).await;
-    let org_membership_ids: HashSet<&MembershipId> = org_memberships.iter().map(|m| &m.uuid).collect();
-    if let Some(e) = assigned_members.iter().find(|m| !org_membership_ids.contains(m)) {
-        err!("Invalid member", format!("Member {} does not belong to organization {}!", e, org_id))
-    }
-
-    GroupUser::delete_all_by_group(&group_id, &org_id, &conn).await?;
-    for assigned_member in assigned_members {
-        let mut user_entry = GroupUser::new(group_id.clone(), assigned_member.clone());
-        user_entry.save(&conn).await?;
-
-        log_event(
-            EventType::OrganizationUserUpdatedGroups,
-            &assigned_member,
-            &org_id,
-            &headers.user.uuid,
-            headers.device.atype,
-            &headers.ip.ip,
-            &conn,
-        )
-        .await;
-    }
-
-    Ok(())
-}
-
-#[post("/organizations/<org_id>/groups/<group_id>/delete-user/<member_id>")]
-async fn post_delete_group_member(
-    org_id: OrganizationId,
-    group_id: GroupId,
-    member_id: MembershipId,
-    headers: AdminHeaders,
-    conn: DbConn,
-) -> EmptyResult {
-    if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
-    }
-    if !CONFIG.org_groups_enabled() {
-        err!("Group support is disabled");
-    }
-
-    if Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await.is_none() {
-        err!("User could not be found or does not belong to the organization.");
-    }
-
-    if Group::find_by_uuid_and_org(&group_id, &org_id, &conn).await.is_none() {
-        err!("Group could not be found or does not belong to the organization.");
-    }
-
-    log_event(
-        EventType::OrganizationUserUpdatedGroups,
-        &member_id,
-        &org_id,
-        &headers.user.uuid,
-        headers.device.atype,
-        &headers.ip.ip,
-        &conn,
-    )
-    .await;
-
-    GroupUser::delete_by_group_and_member(&group_id, &member_id, &conn).await
-}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OrganizationUserResetPasswordEnrollmentRequest {
@@ -2945,8 +2753,13 @@ struct OrganizationUserResetPasswordEnrollmentRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OrganizationUserRecoverAccountRequest {
+    // Legacy payload
     new_master_password_hash: Option<String>,
     key: Option<String>,
+
+    // Current payload
+    authentication_data: Option<AuthenticationData>,
+    unlock_data: Option<UnlockData>,
 
     #[serde(default)]
     reset_master_password: bool,
@@ -2993,19 +2806,6 @@ async fn put_recover_account(
     recover_account(org_id, member_id, headers, data.into_inner(), conn, nt).await
 }
 
-// Deprecated since `v2026.4.2`
-#[put("/organizations/<org_id>/users/<member_id>/reset-password", data = "<data>")]
-async fn put_reset_password(
-    org_id: OrganizationId,
-    member_id: MembershipId,
-    headers: AdminHeaders,
-    data: Json<OrganizationUserRecoverAccountRequest>,
-    conn: DbConn,
-    nt: Notify<'_>,
-) -> EmptyResult {
-    recover_account(org_id, member_id, headers, data.into_inner(), conn, nt).await
-}
-
 async fn recover_account(
     org_id: OrganizationId,
     member_id: MembershipId,
@@ -3038,10 +2838,34 @@ async fn recover_account(
         err!("Organization user must be confirmed for password reset functionality");
     }
 
-    let fallback_2fa_email = if req.reset_two_factor && CONFIG.email_2fa_auto_fallback() {
-        TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await.is_none()
+    let fallback_2fa_email =
+        if req.reset_two_factor && CONFIG.mail_enabled() && CONFIG.email_2fa_auto_fallback() && user.verified() {
+            TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await.is_none()
+        } else {
+            false
+        };
+
+    // Check the new password before the email below, so that a rejected request doesn't tell the user
+    // their password was reset
+    let new_password = if req.reset_master_password {
+        let (new_master_password_hash, new_key) = if let (Some(authentication_data), Some(unlock_data)) =
+            (req.authentication_data, req.unlock_data)
+        {
+            authentication_data.check(&user, &unlock_data)?;
+
+            if !authentication_data.kdf.matches_user(&user) {
+                err!("KDF settings do not match the user account")
+            }
+
+            (authentication_data.master_password_authentication_hash, unlock_data.master_key_wrapped_user_key)
+        } else if let (Some(new_master_password_hash), Some(new_key)) = (req.new_master_password_hash, req.key) {
+            (new_master_password_hash, new_key)
+        } else {
+            err_code!("Unprocessable request", "Missing fields to reset password", Status::UnprocessableEntity.code);
+        };
+        Some((new_master_password_hash, new_key))
     } else {
-        false
+        None
     };
 
     // Sending email first ensure working email configuration and the resulting user notification.
@@ -3059,18 +2883,13 @@ async fn recover_account(
         err!(format!("Error sending user reset password email: {e:#?}"));
     }
 
-    if req.reset_master_password {
-        if let Some(key) = req.key
-            && let Some(hash) = req.new_master_password_hash
-        {
-            user.set_password(hash.as_str(), Some(key), true, None, &conn).await?;
-        } else {
-            err_code!("Unprocessable request", "Missing fields to reset password", Status::UnprocessableEntity.code);
-        }
+    if let Some((new_master_password_hash, new_key)) = new_password {
+        user.set_password(&new_master_password_hash, Some(new_key), true, None, &conn).await?;
     }
 
     if req.reset_two_factor {
         TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
+        Device::clear_twofactor_remember_by_user(&user.uuid, &conn).await?;
         if !fallback_2fa_email || two_factor::email::find_and_activate_email_2fa(&user.uuid, &conn).await.is_err() {
             two_factor::enforce_2fa_policy(&user, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
                 .await?;
@@ -3124,6 +2943,7 @@ async fn get_reset_password_details(
         "kdfIterations": user.client_kdf_iter,
         "kdfMemory": user.client_kdf_memory,
         "kdfParallelism": user.client_kdf_parallelism,
+        "masterPasswordSalt": user.master_password_salt(),
         "resetPasswordKey": member.reset_password_key,
         "encryptedPrivateKey": org.private_key,
     })))
@@ -3239,7 +3059,7 @@ async fn api_key(
     org_id: &OrganizationId,
     data: Json<PasswordOrOtpData>,
     rotate: bool,
-    headers: AdminHeaders,
+    headers: OwnerHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != &headers.org_id {
@@ -3248,7 +3068,7 @@ async fn api_key(
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
-    // Validate the admin users password/otp
+    // Validate the owner users password/otp
     data.validate(&user, true, &conn).await?;
 
     let org_api_key = if let Some(mut org_api_key) = OrganizationApiKey::find_by_org_uuid(org_id, &conn).await {
@@ -3276,7 +3096,7 @@ async fn api_key(
 async fn post_api_key(
     org_id: OrganizationId,
     data: Json<PasswordOrOtpData>,
-    headers: AdminHeaders,
+    headers: OwnerHeaders,
     conn: DbConn,
 ) -> JsonResult {
     api_key(&org_id, data, false, headers, conn).await
@@ -3286,7 +3106,7 @@ async fn post_api_key(
 async fn rotate_api_key(
     org_id: OrganizationId,
     data: Json<PasswordOrOtpData>,
-    headers: AdminHeaders,
+    headers: OwnerHeaders,
     conn: DbConn,
 ) -> JsonResult {
     api_key(&org_id, data, true, headers, conn).await

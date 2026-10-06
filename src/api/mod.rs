@@ -124,3 +124,21 @@ async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
     mpp_json["Object"] = json!("masterPasswordPolicy");
     mpp_json
 }
+
+// Identity responses use PascalCase keys like upstream, some clients (Android) only read those
+async fn identity_master_password_policy(user: &User, conn: &DbConn) -> Value {
+    match master_password_policy(user, conn).await {
+        Value::Object(policy) => Value::Object(
+            policy
+                .into_iter()
+                .map(|(mut key, value)| {
+                    if let Some(first) = key.get_mut(..1) {
+                        first.make_ascii_uppercase();
+                    }
+                    (key, value)
+                })
+                .collect(),
+        ),
+        policy => policy,
+    }
+}
