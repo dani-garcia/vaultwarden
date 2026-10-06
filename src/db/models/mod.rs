@@ -21,7 +21,7 @@ mod user;
 pub use self::archive::Archive;
 pub use self::attachment::{Attachment, AttachmentId};
 pub use self::auth_request::{AuthRequest, AuthRequestId};
-pub use self::cipher::{Cipher, CipherId, RepromptType};
+pub use self::cipher::{Cipher, CipherAccessScope, CipherId, RepromptType};
 pub use self::collection::{Collection, CollectionCipher, CollectionId, CollectionUser};
 pub use self::device::{Device, DeviceId, DeviceType, DeviceWithAuthRequest, PushId};
 pub use self::emergency_access::{EmergencyAccess, EmergencyAccessId, EmergencyAccessStatus, EmergencyAccessType};
@@ -30,6 +30,8 @@ pub use self::favorite::Favorite;
 pub use self::folder::{Folder, FolderCipher, FolderId};
 pub use self::group::{CollectionGroup, Group, GroupId, GroupUser};
 pub use self::org_policy::{OrgPolicy, OrgPolicyId, OrgPolicyType};
+/// The single list of Custom-role permissions, see `organization::custom_role_permissions`.
+pub(crate) use self::organization::custom_role_permissions;
 pub use self::organization::{
     Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, Organization, OrganizationApiKey,
     OrganizationId,
