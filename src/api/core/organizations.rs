@@ -2845,22 +2845,9 @@ async fn recover_account(
             false
         };
 
-    // Sending email first ensure working email configuration and the resulting user notification.
-    // Also this might add some protection against security flaws and misuse
-    if let Err(e) = mail::send_admin_account_recovery(
-        &user.email,
-        user.display_name(),
-        &org.name,
-        req.reset_master_password,
-        req.reset_two_factor,
-        fallback_2fa_email,
-    )
-    .await
-    {
-        err!(format!("Error sending user reset password email: {e:#?}"));
-    }
-
-    if req.reset_master_password {
+    // Check the new password before the email below, so that a rejected request doesn't tell the user
+    // their password was reset
+    let new_password = if req.reset_master_password {
         let (new_master_password_hash, new_key) = if let (Some(authentication_data), Some(unlock_data)) =
             (req.authentication_data, req.unlock_data)
         {
@@ -2876,7 +2863,27 @@ async fn recover_account(
         } else {
             err_code!("Unprocessable request", "Missing fields to reset password", Status::UnprocessableEntity.code);
         };
+        Some((new_master_password_hash, new_key))
+    } else {
+        None
+    };
 
+    // Sending email first ensure working email configuration and the resulting user notification.
+    // Also this might add some protection against security flaws and misuse
+    if let Err(e) = mail::send_admin_account_recovery(
+        &user.email,
+        user.display_name(),
+        &org.name,
+        req.reset_master_password,
+        req.reset_two_factor,
+        fallback_2fa_email,
+    )
+    .await
+    {
+        err!(format!("Error sending user reset password email: {e:#?}"));
+    }
+
+    if let Some((new_master_password_hash, new_key)) = new_password {
         user.set_password(&new_master_password_hash, Some(new_key), true, None, &conn).await?;
     }
 
