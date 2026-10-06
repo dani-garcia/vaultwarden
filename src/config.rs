@@ -1266,6 +1266,14 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         err!("`AUTH_REQUEST_PURGE_SCHEDULE` is not a valid cron expression")
     }
 
+    if !cfg.duo_context_purge_schedule.is_empty() && cfg.duo_context_purge_schedule.parse::<Schedule>().is_err() {
+        err!("`DUO_CONTEXT_PURGE_SCHEDULE` is not a valid cron expression")
+    }
+
+    if !cfg.purge_incomplete_sso_auth.is_empty() && cfg.purge_incomplete_sso_auth.parse::<Schedule>().is_err() {
+        err!("`PURGE_INCOMPLETE_SSO_AUTH` is not a valid cron expression")
+    }
+
     if !cfg.disable_admin_token {
         match cfg.admin_token.as_ref() {
             Some(t) if t.starts_with("$argon2") => {
