@@ -14,6 +14,7 @@ use ipnet::IpNet;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, errors::ErrorKind};
 use num_traits::FromPrimitive;
 use openssl::rsa::Rsa;
+use ring::hmac;
 use serde::{de::DeserializeOwned, ser::Serialize};
 
 use rocket::{
@@ -65,6 +66,7 @@ static JWT_2FA_REMEMBER_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|
 
 static PRIVATE_RSA_KEY: OnceLock<EncodingKey> = OnceLock::new();
 static PUBLIC_RSA_KEY: OnceLock<DecodingKey> = OnceLock::new();
+static PRELOGIN_KDF_KEY: OnceLock<hmac::Key> = OnceLock::new();
 
 pub async fn initialize_keys() -> Result<(), Error> {
     use std::io::Error as IoError;
@@ -99,7 +101,20 @@ pub async fn initialize_keys() -> Result<(), Error> {
     if PUBLIC_RSA_KEY.set(dec).is_err() {
         err!("PUBLIC_RSA_KEY must only be initialized once")
     }
+
+    // Derived from the RSA key, so it stays the same across restarts without storing another secret
+    let prelogin_kdf_key = hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, &priv_key_buffer), b"prelogin-kdf");
+    if PRELOGIN_KDF_KEY.set(hmac::Key::new(hmac::HMAC_SHA256, prelogin_kdf_key.as_ref())).is_err() {
+        err!("PRELOGIN_KDF_KEY must only be initialized once")
+    }
     Ok(())
+}
+
+/// Returns an index in `0..len` derived from the email, the same for every request
+pub fn prelogin_kdf_index(email: &str, len: usize) -> usize {
+    let tag = hmac::sign(PRELOGIN_KDF_KEY.wait(), email.as_bytes());
+    let tag = tag.as_ref();
+    usize::from(u16::from_be_bytes([tag[0], tag[1]])) % len
 }
 
 pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
@@ -422,7 +437,7 @@ pub fn generate_file_download_claims(cipher_id: CipherId, file_id: AttachmentId)
     let time_now = Utc::now();
     FileDownloadClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_minutes(5).unwrap()).timestamp(),
+        exp: (time_now + TimeDelta::try_minutes(1).unwrap()).timestamp(),
         iss: JWT_FILE_DOWNLOAD_ISSUER.to_string(),
         sub: cipher_id,
         file_id,
@@ -1091,6 +1106,31 @@ fn ip_header_is_trusted(remote: Option<IpAddr>) -> bool {
     trusted.split(',').filter_map(parse_trusted_proxy).any(|net| net.contains(&remote))
 }
 
+/// Each proxy appends the address it received the request from to a list header (`X-Forwarded-For: client, proxy1`).
+/// Like ASP.NET's ForwardedHeaders, walk the entries of every occurrence of the header from the right and take the
+/// first one that isn't a trusted proxy. If they all are, the leftmost one is the client.
+fn client_ip_from_header(req: &Request<'_>, header: &str, is_trusted: impl Fn(IpAddr) -> bool) -> Option<IpAddr> {
+    let values: Vec<&str> = req.headers().get(header).collect();
+    client_ip_from_header_values(&values, header, is_trusted)
+}
+
+fn client_ip_from_header_values(values: &[&str], header: &str, is_trusted: impl Fn(IpAddr) -> bool) -> Option<IpAddr> {
+    let entries: Vec<&str> = values.iter().flat_map(|value| value.split(',')).map(str::trim).collect();
+
+    let mut client_ip = None;
+    for entry in entries.into_iter().rev() {
+        let Ok(ip) = entry.parse() else {
+            warn!("'{header}' header is malformed: {entry}");
+            break;
+        };
+        client_ip = Some(ip);
+        if !is_trusted(ip) {
+            break;
+        }
+    }
+    client_ip
+}
+
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for ClientIp {
     type Error = ();
@@ -1099,15 +1139,7 @@ impl<'r> FromRequest<'r> for ClientIp {
         let remote = req.remote().map(|r| r.ip());
 
         let ip = if CONFIG._ip_header_enabled() && ip_header_is_trusted(remote) {
-            req.headers().get_one(&CONFIG.ip_header()).and_then(|ip| {
-                match ip.find(',') {
-                    Some(idx) => &ip[..idx],
-                    None => ip,
-                }
-                .parse()
-                .map_err(|_| warn!("'{}' header is malformed: {ip}", CONFIG.ip_header()))
-                .ok()
-            })
+            client_ip_from_header(req, &CONFIG.ip_header(), |ip| ip_header_is_trusted(Some(ip)))
         } else {
             if CONFIG._ip_header_enabled() && req.headers().get_one(&CONFIG.ip_header()).is_some() {
                 // Log the canonical IP, which is what the user filter will need to match against
@@ -1226,7 +1258,7 @@ impl AuthMethod {
         match scope {
             None => err!("Missing scope"),
             Some(scope) if scope == &method_scope => Ok(method_scope),
-            Some(scope) => err!(format!("Scope ({scope}) not supported")),
+            Some(scope) => err!(format!("Scope ({}) not supported", scope.escape_debug())),
         }
     }
 }
@@ -1344,4 +1376,53 @@ pub async fn refresh_tokens(
     };
 
     Ok((device, auth_tokens))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client_ip(values: &[&str]) -> Option<IpAddr> {
+        let is_trusted = |ip: IpAddr| match ip {
+            IpAddr::V4(v4) => v4.is_private() || v4.is_loopback(),
+            IpAddr::V6(v6) => v6.is_loopback(),
+        };
+        client_ip_from_header_values(values, "X-Forwarded-For", is_trusted)
+    }
+
+    fn ip(s: &str) -> Option<IpAddr> {
+        Some(s.parse().unwrap())
+    }
+
+    #[test]
+    fn ip_header_single_value() {
+        assert_eq!(client_ip(&["203.0.113.5"]), ip("203.0.113.5"));
+        assert_eq!(client_ip(&["10.0.0.7"]), ip("10.0.0.7"));
+        assert_eq!(client_ip(&["2001:db8::1"]), ip("2001:db8::1"));
+    }
+
+    #[test]
+    fn ip_header_uses_rightmost_untrusted_entry() {
+        // Entries already in the request come before the one the proxy appended
+        assert_eq!(client_ip(&["198.51.100.1, 203.0.113.5"]), ip("203.0.113.5"));
+        // Trusted proxies on the right are skipped
+        assert_eq!(client_ip(&["198.51.100.1, 203.0.113.5, 10.0.0.2, 127.0.0.1"]), ip("203.0.113.5"));
+        // All trusted, so the leftmost entry is the client
+        assert_eq!(client_ip(&["192.168.1.10, 10.0.0.2"]), ip("192.168.1.10"));
+    }
+
+    #[test]
+    fn ip_header_reads_every_occurrence() {
+        assert_eq!(client_ip(&["198.51.100.1", "203.0.113.5"]), ip("203.0.113.5"));
+        assert_eq!(client_ip(&["198.51.100.1", "203.0.113.5, 10.0.0.2"]), ip("203.0.113.5"));
+    }
+
+    #[test]
+    fn ip_header_malformed_entries() {
+        assert_eq!(client_ip(&[]), None);
+        assert_eq!(client_ip(&[""]), None);
+        assert_eq!(client_ip(&["203.0.113.5, not-an-ip"]), None);
+        // Stops at the malformed entry and keeps the closest proxy
+        assert_eq!(client_ip(&["not-an-ip, 10.0.0.2"]), ip("10.0.0.2"));
+    }
 }

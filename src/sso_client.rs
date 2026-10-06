@@ -212,6 +212,16 @@ impl Client {
         Ok((auth_url, SsoAuth::new(state, client_challenge, nonce.secret().clone(), redirect_uri, binding_hash)))
     }
 
+    // Check the client's PKCE verifier against the challenge it sent when starting the flow
+    pub fn check_client_verifier(client_verifier: &OIDCCodeVerifier, sso_auth: &SsoAuth) -> EmptyResult {
+        let verifier = PkceCodeVerifier::new(client_verifier.to_string());
+        let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
+        if challenge.as_str() != &*sso_auth.client_challenge {
+            err!("PKCE client challenge failed")
+        }
+        Ok(())
+    }
+
     pub async fn exchange_code(
         &self,
         code: OIDCCode,
@@ -234,15 +244,10 @@ impl Client {
 
         let mut exchange = self.core_client.exchange_code(oidc_code);
 
-        let verifier = PkceCodeVerifier::new(client_verifier.into());
         if CONFIG.sso_pkce() {
-            exchange = exchange.set_pkce_verifier(verifier);
+            exchange = exchange.set_pkce_verifier(PkceCodeVerifier::new(client_verifier.into()));
         } else {
-            let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
-            if challenge.as_str() != String::from(sso_auth.client_challenge.clone()) {
-                err!("PKCE client challenge failed")
-                // Might need to notify admin ? how ?
-            }
+            Self::check_client_verifier(&client_verifier, sso_auth)?;
         }
 
         match exchange.request_async(&self.http_client).await {
