@@ -62,7 +62,7 @@ DOCKER_BUILDKIT=1 docker compose --profile playwright --env-file test.env run Pl
 
 ### Keep services running
 
-If you want you can keep the DB and Keycloak runnning (states are not impacted by the tests):
+If you want you can keep the DB and Keycloak running (states are not impacted by the tests):
 
 ```bash
 PW_KEEP_SERVICE_RUNNING=true npx playwright test
