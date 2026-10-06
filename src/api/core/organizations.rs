@@ -26,6 +26,8 @@ use crate::{
     util::{NumberOrString, convert_json_key_lcase_first},
 };
 
+use super::accounts::{AuthenticationData, UnlockData};
+
 pub fn routes() -> Vec<Route> {
     routes![
         get_organization,
@@ -2751,8 +2753,13 @@ struct OrganizationUserResetPasswordEnrollmentRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OrganizationUserRecoverAccountRequest {
+    // Legacy payload
     new_master_password_hash: Option<String>,
     key: Option<String>,
+
+    // Current payload
+    authentication_data: Option<AuthenticationData>,
+    unlock_data: Option<UnlockData>,
 
     #[serde(default)]
     reset_master_password: bool,
@@ -2838,6 +2845,29 @@ async fn recover_account(
             false
         };
 
+    // Check the new password before the email below, so that a rejected request doesn't tell the user
+    // their password was reset
+    let new_password = if req.reset_master_password {
+        let (new_master_password_hash, new_key) = if let (Some(authentication_data), Some(unlock_data)) =
+            (req.authentication_data, req.unlock_data)
+        {
+            authentication_data.check(&user, &unlock_data)?;
+
+            if !authentication_data.kdf.matches_user(&user) {
+                err!("KDF settings do not match the user account")
+            }
+
+            (authentication_data.master_password_authentication_hash, unlock_data.master_key_wrapped_user_key)
+        } else if let (Some(new_master_password_hash), Some(new_key)) = (req.new_master_password_hash, req.key) {
+            (new_master_password_hash, new_key)
+        } else {
+            err_code!("Unprocessable request", "Missing fields to reset password", Status::UnprocessableEntity.code);
+        };
+        Some((new_master_password_hash, new_key))
+    } else {
+        None
+    };
+
     // Sending email first ensure working email configuration and the resulting user notification.
     // Also this might add some protection against security flaws and misuse
     if let Err(e) = mail::send_admin_account_recovery(
@@ -2853,14 +2883,8 @@ async fn recover_account(
         err!(format!("Error sending user reset password email: {e:#?}"));
     }
 
-    if req.reset_master_password {
-        if let Some(key) = req.key
-            && let Some(hash) = req.new_master_password_hash
-        {
-            user.set_password(hash.as_str(), Some(key), true, None, &conn).await?;
-        } else {
-            err_code!("Unprocessable request", "Missing fields to reset password", Status::UnprocessableEntity.code);
-        }
+    if let Some((new_master_password_hash, new_key)) = new_password {
+        user.set_password(&new_master_password_hash, Some(new_key), true, None, &conn).await?;
     }
 
     if req.reset_two_factor {
@@ -2919,6 +2943,7 @@ async fn get_reset_password_details(
         "kdfIterations": user.client_kdf_iter,
         "kdfMemory": user.client_kdf_memory,
         "kdfParallelism": user.client_kdf_parallelism,
+        "masterPasswordSalt": user.master_password_salt(),
         "resetPasswordKey": member.reset_password_key,
         "encryptedPrivateKey": org.private_key,
     })))
