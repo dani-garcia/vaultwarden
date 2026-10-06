@@ -2840,7 +2840,7 @@ async fn recover_account(
 
     let fallback_2fa_email =
         if req.reset_two_factor && CONFIG.mail_enabled() && CONFIG.email_2fa_auto_fallback() && user.verified() {
-            TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email as i32, &conn).await.is_none()
+            TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await.is_none()
         } else {
             false
         };
