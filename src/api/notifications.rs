@@ -529,11 +529,14 @@ impl WebSocketUsers {
         }
     }
 
+    /// `acting_device` is the device of this user that answered the request, and is the one left out
+    /// of the notification. An answer that came from outside their devices, as an approval by an
+    /// administrator of their organization does, passes `None` so that all of them hear about it.
     pub async fn send_auth_response(
         &self,
         user_id: &UserId,
         auth_request_id: &AuthRequestId,
-        device: &Device,
+        acting_device: Option<&Device>,
         conn: &DbConn,
     ) {
         // Skip any processing if both WebSockets and Push are not active
@@ -543,14 +546,14 @@ impl WebSocketUsers {
         let data = create_update(
             vec![("Id".into(), auth_request_id.to_string().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequestResponse,
-            Some(device.uuid.clone()),
+            acting_device.map(|device| device.uuid.clone()),
         );
         if CONFIG.enable_websocket() {
             self.send_update(user_id, &data).await;
         }
 
         if CONFIG.push_enabled() {
-            push_auth_response(user_id, auth_request_id, device, conn).await;
+            push_auth_response(user_id, auth_request_id, acting_device, conn).await;
         }
     }
 }

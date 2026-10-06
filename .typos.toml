@@ -14,9 +14,9 @@ extend-ignore-re = [
     # In SMTP it's called HELO, so ignore it
     "(?i)helo_name",
     "Server name sent during.+HELO",
-    # COSE Is short for CBOR Object Signing and Encryption, ignore these specific items
-    "COSEKey",
-    "COSEAlgorithm",
+    # COSE Is short for CBOR Object Signing and Encryption, which covers the type names taken from
+    # it as well as the acronym on its own
+    "COSE",
     # Ignore this specific string as it's valid
     "Ensure they are valid OTPs",
     # This word is misspelled upstream
