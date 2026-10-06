@@ -2,7 +2,7 @@
 
 This allows running integration tests using [Playwright](https://playwright.dev/).
 \
-It usse its own [test.env](/test/scenarios/test.env) with different ports to not collide with a running dev instance.
+It uses its own [test.env](./test.env) with different ports to not collide with a running dev instance.
 
 ## Install
 
