@@ -4,13 +4,13 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-3.0.3
+ *   https://datatables.net/download/#bs5/dt-3.1.3
  *
  * Included libraries:
- *   DataTables 3.0.3
+ *   DataTables 3.1.3
  */
 
-/*! DataTables 3.0.3
+/*! DataTables 3.1.3
  * Copyright (c) SpryMedia Ltd - datatables.net/license
  */
 
@@ -318,7 +318,7 @@ function htmlNum(d, decimalPoint, formatted, allowEmpty) {
     }
     return !html(d)
         ? null
-        : num$1(stripHtml(d), decimalPoint, formatted, allowEmpty)
+        : num(stripHtml(d), decimalPoint, formatted, allowEmpty)
             ? true
             : null;
 }
@@ -341,7 +341,7 @@ function jquery(input) {
  * @param allowEmpty Allow an empty value to be considered a number
  * @returns `true` if numeric
  */
-function num$1(d, decimalPoint, formatted, allowEmpty) {
+function num(d, decimalPoint, formatted, allowEmpty) {
     let type = typeof d;
     if (type === 'number' || type === 'bigint') {
         return true;
@@ -383,7 +383,7 @@ var is = /*#__PURE__*/Object.freeze({
     html: html,
     htmlNum: htmlNum,
     jquery: jquery,
-    num: num$1,
+    num: num,
     plainObject: plainObject
 });
 
@@ -476,7 +476,7 @@ function assignDeep(out, ...inputs) {
  * Deep merge objects, but shallow copy arrays. The reason we need to do this,
  * is that we don't want to deep copy array init values (such as aaSorting)
  * since the dev wouldn't be able to override them, but we do want to deep copy
- * arrays.
+ * objects.
  *
  * @param out Object to extend
  * @param extender Object from which the properties will be applied to out
@@ -485,7 +485,6 @@ function assignDeep(out, ...inputs) {
  *   present. This is so you can pass in a collection to DataTables and have
  *   that used as your data source without breaking the references
  * @returns out Reference, just for convenience - out === the return.
- * @todo This doesn't take account of arrays inside the deep copied objects.
  */
 function assignDeepObjects(out, extender, breakRefs = false) {
     let val;
@@ -496,7 +495,7 @@ function assignDeepObjects(out, extender, breakRefs = false) {
                 if (!plainObject(out[prop])) {
                     out[prop] = {};
                 }
-                assignDeep(out[prop], val);
+                assignDeepObjects(out[prop], val, breakRefs);
             }
             else if (breakRefs &&
                 prop !== 'data' &&
@@ -535,12 +534,134 @@ var object = /*#__PURE__*/Object.freeze({
     map: map$1
 });
 
+// Can be assigned in DateTable.use()
+var __win;
+var __bootstrap;
+var __foundation;
+var __luxon$1;
+var __moment$1;
+var __dateTime;
+var __dataTable;
+var __jquery;
+function getWin() {
+    if (__win) {
+        return __win;
+    }
+    if (typeof globalThis !== 'undefined' && globalThis.window) {
+        return globalThis.window;
+    }
+    if (typeof window !== 'undefined') {
+        return window;
+    }
+    return {};
+}
+/**
+ * Set the libraries that DataTables uses, or the global objects.
+ * Note that the arguments can be either way around (legacy support)
+ * and the second is optional. See docs.
+ */
+function external (arg1, arg2) {
+    // Reverse arguments for legacy support
+    var module = typeof arg1 === 'string' ? arg2 : arg1;
+    var type = typeof arg2 === 'string' ? arg2 : arg1;
+    // Getter
+    if (module === undefined && typeof type === 'string') {
+        switch (type) {
+            case 'lib':
+            case 'jq':
+                if (__jquery) {
+                    return __jquery;
+                }
+                let local = getWin().jQuery;
+                if (local && local.fn) {
+                    return local;
+                }
+                return null;
+            case 'win':
+                return getWin();
+            case 'doc':
+                return getWin().document;
+            case 'datatable':
+                return __dataTable;
+            case 'datetime':
+                return __dateTime;
+            case 'luxon':
+                return __luxon$1 || getWin().luxon || null;
+            case 'moment':
+                return __moment$1 || getWin().moment || null;
+            case 'bootstrap':
+                // Use local if set, otherwise try window, which could be undefined
+                return __bootstrap || getWin().bootstrap || null;
+            case 'foundation':
+                // Ditto
+                return __foundation || getWin().Foundation || null;
+            default:
+                return null;
+        }
+    }
+    // Setter
+    if (type === 'lib' ||
+        type === 'jq' ||
+        (module && module.fn && module.fn.jquery)) {
+        __jquery = module;
+        jQuerySetup();
+    }
+    else if (type === 'datatable' || (module && module.isDataTable)) {
+        __dataTable = module;
+    }
+    else if (type === 'win' || (module && module.document)) {
+        __win = module;
+    }
+    else if (type === 'datetime' || (module && module.type === 'DateTime')) {
+        __dateTime = module;
+    }
+    else if (type === 'luxon' || (module && module.FixedOffsetZone)) {
+        __luxon$1 = module;
+    }
+    else if (type === 'moment' || (module && module.isMoment)) {
+        __moment$1 = module;
+    }
+    else if (type === 'bootstrap' ||
+        (module && module.Modal && module.Modal.NAME === 'modal')) {
+        // This is currently for BS5 only. BS3/4 attach to jQuery, so no need to use `.use()`
+        __bootstrap = module;
+    }
+    else if (type === 'foundation' || (module && module.Reveal)) {
+        __foundation = module;
+    }
+}
+/**
+ * Attach jQuery to DataTables
+ */
+function jQuerySetup() {
+    if (!__dataTable || !__jquery) {
+        return;
+    }
+    // Provide access to the host jQuery object (circular reference)
+    __dataTable.$ = __jquery;
+    // jQuery integration - expose the core function.
+    __jquery.fn.dataTable = __dataTable;
+    // jQuery wrapper - returning a DataTable instance
+    __jquery.fn.DataTable = function (options) {
+        let table = new __dataTable(this.toArray(), options);
+        return table;
+    };
+    // Legacy aliases
+    __jquery.fn.dataTableSettings = __dataTable.ext.settings;
+    __jquery.fn.dataTableExt = __dataTable.ext;
+    // All properties that are available to $.fn.dataTable should also be available
+    // on $.fn.DataTable
+    each(__dataTable, function (prop, val) {
+        __jquery.fn.DataTable[prop] = val;
+    });
+}
+
 const defaults$5 = {
     cache: true,
     contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
     headers: {},
     traditional: false,
-    url: location.href
+    url: ''
 };
 /**
  * Trigger an Ajax call to the server based on the configuration parameters
@@ -699,8 +820,9 @@ function convertSpaces(sendData, options) {
  */
 function isCrossDomain(url) {
     // Use the current page as the base to handle relative URLs correctly
-    const target = new URL(url, window.location.origin);
-    return target.origin !== window.location.origin;
+    const win = external('win');
+    const target = new URL(url, win.location.origin);
+    return target.origin !== win.location.origin;
 }
 /**
  * Get the HTTP method from the Ajax request options
@@ -1239,107 +1361,6 @@ var data = /*#__PURE__*/Object.freeze({
     set: set$1
 });
 
-// Can be assigned in DateTable.use()
-var __bootstrap;
-var __foundation;
-var __luxon$1;
-var __moment$1;
-var __dateTime;
-var __dataTable;
-var __jquery;
-/**
- * Set the libraries that DataTables uses, or the global objects.
- * Note that the arguments can be either way around (legacy support)
- * and the second is optional. See docs.
- */
-function external (arg1, arg2) {
-    // Reverse arguments for legacy support
-    var module = typeof arg1 === 'string' ? arg2 : arg1;
-    var type = typeof arg2 === 'string' ? arg2 : arg1;
-    // Getter
-    if (module === undefined && typeof type === 'string') {
-        switch (type) {
-            case 'lib':
-            case 'jq':
-                return __jquery !== undefined ? __jquery : window.jQuery || null;
-            case 'win':
-                return window;
-            case 'datatable':
-                return __dataTable;
-            case 'datetime':
-                return __dateTime;
-            case 'luxon':
-                return __luxon$1 || window.luxon || null;
-            case 'moment':
-                return __moment$1 || window.moment || null;
-            case 'bootstrap':
-                // Use local if set, otherwise try window, which could be undefined
-                return __bootstrap || window.bootstrap || null;
-            case 'foundation':
-                // Ditto
-                return __foundation || window.Foundation || null;
-            default:
-                return null;
-        }
-    }
-    // Setter
-    if (type === 'lib' ||
-        type === 'jq' ||
-        (module && module.fn && module.fn.jquery)) {
-        __jquery = module;
-        jQuerySetup();
-    }
-    else if (type === 'datatable' || (module && module.isDataTable)) {
-        __dataTable = module;
-    }
-    else if (type === 'win' || (module && module.document)) {
-        window = module;
-        document = module.document;
-    }
-    else if (type === 'datetime' || (module && module.type === 'DateTime')) {
-        __dateTime = module;
-    }
-    else if (type === 'luxon' || (module && module.FixedOffsetZone)) {
-        __luxon$1 = module;
-    }
-    else if (type === 'moment' || (module && module.isMoment)) {
-        __moment$1 = module;
-    }
-    else if (type === 'bootstrap' ||
-        (module && module.Modal && module.Modal.NAME === 'modal')) {
-        // This is currently for BS5 only. BS3/4 attach to jQuery, so no need to use `.use()`
-        __bootstrap = module;
-    }
-    else if (type === 'foundation' || (module && module.Reveal)) {
-        __foundation = module;
-    }
-}
-/**
- * Attach jQuery to DataTables
- */
-function jQuerySetup() {
-    if (!__dataTable || !__jquery) {
-        return;
-    }
-    // Provide access to the host jQuery object (circular reference)
-    __dataTable.$ = __jquery;
-    // jQuery integration - expose the core function.
-    __jquery.fn.dataTable = __dataTable;
-    // jQuery wrapper - returning a DataTable instance
-    __jquery.fn.DataTable = function (options) {
-        let table = new __dataTable(this.toArray(), options);
-        return table;
-    };
-    // Legacy aliases
-    __jquery.fn.dataTableSettings = __dataTable.ext.settings;
-    __jquery.fn.dataTableExt = __dataTable.ext;
-    // All properties that are available to $.fn.dataTable should also be available
-    // on $.fn.DataTable
-    each(__dataTable, function (prop, val) {
-        __jquery.fn.DataTable[prop] = val;
-    });
-}
-
 function debounce(fn, timeout = 250) {
     let timer;
     return function (...args) {
@@ -1649,7 +1670,8 @@ function parseEventName(original) {
  */
 function add(el, nameFull, handler, selector, one) {
     let jq = external('jq');
-    if (jq) {
+    let doc = external('doc');
+    if (jq && el.constructor !== EventTarget) {
         let method = one ? 'one' : 'on';
         if (selector) {
             jq(el)[method](nameFull, selector, handler);
@@ -1666,8 +1688,8 @@ function add(el, nameFull, handler, selector, one) {
     }
     // Special handling for the "ready" event - it will trigger when the content
     // is ready, but also if it is already ready, when added.
-    if (el === document && eventName === 'DOMContentLoaded' && nameFull.includes('ready')) {
-        if (document.readyState === 'complete') {
+    if (el === doc && eventName === 'DOMContentLoaded' && nameFull.includes('ready')) {
+        if (doc.readyState === 'complete') {
             handler(new Event('DOMContentLoaded'));
             return;
         }
@@ -1738,7 +1760,7 @@ function add(el, nameFull, handler, selector, one) {
  */
 function remove(el, nameFull, handler, selector) {
     let jq = external('jq');
-    if (jq) {
+    if (jq && el.constructor !== EventTarget) {
         if (selector) {
             jq(el).off(nameFull, selector, handler);
         }
@@ -1806,7 +1828,8 @@ function remove(el, nameFull, handler, selector) {
  */
 function trigger(el, nameFull, bubbles = false, args = [], eventProps = null, returnEvent = false) {
     let jq = external('jq');
-    if (jq) {
+    let win = external('win');
+    if (jq && el.constructor !== EventTarget) {
         let method = bubbles ? 'trigger' : 'triggerHandler';
         let ev = jq.Event(nameFull);
         each(eventProps, (key, val) => {
@@ -1825,10 +1848,19 @@ function trigger(el, nameFull, bubbles = false, args = [], eventProps = null, re
     if (!eventName) {
         return false;
     }
-    let isMouseEvent = _mouseEvents.includes(eventName.toLowerCase());
-    let event = isMouseEvent
-        ? new MouseEvent(eventName, { bubbles, cancelable: true })
-        : new Event(eventName, { bubbles, cancelable: true });
+    let event;
+    // If running in Node, we might be using JSDom which has its own event
+    // classes. The EventTarget is always the global, separate from the window
+    // events. 99% of the time, they will be the same.
+    if (el.constructor === EventTarget) {
+        event = new Event(eventName, { bubbles, cancelable: true });
+    }
+    else {
+        let isMouseEvent = _mouseEvents.includes(eventName.toLowerCase());
+        event = isMouseEvent
+            ? new win.MouseEvent(eventName, { bubbles, cancelable: true })
+            : new win.Event(eventName, { bubbles, cancelable: true });
+    }
     // Set the extra properties for the event
     setEventProp(event, 'namespace', namespaces.join('.'));
     setEventProp(event, '_args', args || []);
@@ -1850,7 +1882,7 @@ var win = {
      */
     height() {
         var _a;
-        return ((_a = document.querySelector('html')) === null || _a === void 0 ? void 0 : _a.clientHeight) || 0;
+        return ((_a = external('doc').querySelector('html')) === null || _a === void 0 ? void 0 : _a.clientHeight) || 0;
     },
     /**
      * Remove an event handler from the window
@@ -1911,17 +1943,21 @@ var win = {
      */
     width() {
         var _a;
-        return ((_a = document.querySelector('html')) === null || _a === void 0 ? void 0 : _a.clientWidth) || 0;
+        return ((_a = external('doc').querySelector('html')) === null || _a === void 0 ? void 0 : _a.clientWidth) || 0;
     }
 };
 
 function create$3(name) {
-    let el = document.createElement(name);
+    let el = external('doc').createElement(name);
     return new Dom(el);
 }
 function select(selector) {
     return new Dom(selector);
 }
+/**
+ * Event target for events which don't use the document
+ */
+const _staticEventTarget = new EventTarget();
 /**
  * `Dom` is a class that provides a chaining UI for simple DOM manipulation and
  * selection.
@@ -1952,7 +1988,7 @@ class Dom {
     add(selector, sort = true) {
         if (selector) {
             if (typeof selector === 'string') {
-                let elements = Array.from(document.querySelectorAll(selector));
+                let elements = Array.from(external('doc').querySelectorAll(selector));
                 addArray(this, elements);
             }
             else if (selector instanceof Dom) {
@@ -2388,7 +2424,7 @@ class Dom {
             include === 'inner' ||
             include === 'outer') {
             let el = this[0];
-            let computed = window.getComputedStyle(this[0]);
+            let computed = external('win').getComputedStyle(this[0]);
             let rectHeight = el.getBoundingClientRect().height;
             if (!include || include === 'content') {
                 // Content. Minus scrollbar if there is one. This is basically
@@ -2466,7 +2502,7 @@ class Dom {
         if (this.count() === 0) {
             return false;
         }
-        return document.body.contains(this[0]);
+        return external('doc').body.contains(this[0]);
     }
     /**
      * Determine if the first element in the result set is visible or not.
@@ -2576,10 +2612,10 @@ class Dom {
             };
         }
         let box = this[0].getBoundingClientRect();
-        let docElem = document.documentElement;
+        let docElem = external('doc').documentElement;
         return {
-            top: box.top + window.pageYOffset - docElem.clientTop,
-            left: box.left + window.pageXOffset - docElem.clientLeft
+            top: box.top + external('win').pageYOffset - docElem.clientTop,
+            left: box.left + external('win').pageXOffset - docElem.clientLeft
         };
     }
     /**
@@ -2590,7 +2626,7 @@ class Dom {
      * @returns Instance with the result set as the offset parents
      */
     offsetParent() {
-        return this.map(el => el.offsetParent || document.body);
+        return this.map(el => el.offsetParent || external('doc').body);
     }
     on(arg1, arg2, arg3) {
         let { handler, names, selector } = normaliseEventParams(arg1, arg2, arg3);
@@ -2886,7 +2922,7 @@ class Dom {
             include === 'inner' ||
             include === 'outer') {
             let el = this[0];
-            let computed = window.getComputedStyle(el);
+            let computed = external('win').getComputedStyle(el);
             let rectWidth = el.getBoundingClientRect().width;
             if (!include || include === 'content') {
                 // Content. Minus scrollbar if there is one. This is basically
@@ -2940,6 +2976,15 @@ Dom.c = create$3;
  */
 Dom.create = create$3;
 /**
+ * Non-DOM event listener. Add an event listener with no document.
+ *
+ * @param name Event name
+ * @param fn Event callback
+ */
+Dom.on = function (name, fn) {
+    add(_staticEventTarget, name, fn, null, false);
+};
+/**
  * Select items from the document and wrap in a `Dom` instance (alias of
  * `select`)
  *
@@ -2960,6 +3005,20 @@ Dom.select = select;
  * false to disable and have it jump to the end.
  */
 Dom.transitions = true;
+/**
+ * Trigger an event non-DOM events.
+ *
+ * @param name Event name. This can optionally include period separated
+ *   namespaces. Multiple events can be added by space separation of the
+ *   names.
+ * @param args Arguments to pass to the event handlers (after the event
+ *   object, which is always the first parameter).
+ * @param props An object of key/value pairs which should be added to the
+ *   event object that is created and fired for the events.
+ */
+Dom.trigger = function (name, args, props) {
+    trigger(_staticEventTarget, name, true, args, props);
+};
 /**
  * Window object methods
  */
@@ -3011,10 +3070,10 @@ function documentOrder(a, b) {
     let position = a.compareDocumentPosition(b);
     if (position & Node.DOCUMENT_POSITION_DISCONNECTED) {
         // One is disconnected - find which
-        if (document.body.contains(a)) {
+        if (external('doc').body.contains(a)) {
             return -1;
         }
-        else if (document.body.contains(b)) {
+        else if (external('doc').body.contains(b)) {
             return 1;
         }
         return 0;
@@ -3241,194 +3300,3692 @@ var pager = {
     numbers_length: 7
 };
 
-const footer = (settings, cell, classes) => {
-    cell.classAdd(classes.tfoot.cell);
+const defaults$4 = {
+    addedClasses: [],
+    cells: [],
+    data: [],
+    details: undefined,
+    detailsShow: undefined,
+    displayData: null,
+    idx: -1,
+    orderCache: null,
+    searchCellCache: null,
+    searchRowCache: null,
+    src: 'dom',
+    tr: null
 };
-const header = (settings, cell, classes) => {
-    cell.classAdd(classes.thead.cell);
-    if (!settings.features.ordering) {
-        cell.classAdd(classes.order.none);
-    }
-    var titleRow = settings.titleRow;
-    var headerRows = cell.closest('thead').find('tr');
-    var rowIdx = cell.parent().index();
-    // Conditions to not apply the ordering icons
-    if (
-    // Cells and rows which have the attribute to disable the icons
-    cell.attr('data-dt-order') === 'disable' ||
-        cell.parent().attr('data-dt-order') === 'disable' ||
-        // titleRow support, for defining a specific row in the header
-        (titleRow === true && rowIdx !== 0) ||
-        (titleRow === false && rowIdx !== headerRows.count() - 1) ||
-        (typeof titleRow === 'number' && rowIdx !== titleRow)) {
-        return;
-    }
-    // No additional mark-up required. Attach a sort listener to update on sort
-    // - note that using the `DT` namespace will allow the event to be removed
-    // automatically on destroy, while the `dt` namespaced event is the one we
-    // are listening for
-    Dom.s(settings.table).on('order.dt.DT column-visibility.dt.DT', function (e, ctx, column) {
-        if (settings !== ctx) {
-            // need to check if this is the host
-            return; // table, not a nested one
-        }
-        var sorting = ctx.sortDetails;
-        if (!sorting) {
-            return;
-        }
-        var orderedColumns = pluck(sorting, 'col');
-        // This handler is only needed on column visibility if the column is
-        // part of the ordering. If it isn't, then we can bail out to save
-        // performance. It could be a separate event handler, but this is a
-        // balance between code reuse / size and performance console.log(e,
-        // e.name, column, orderedColumns, orderedColumns.includes(column))
-        if (e.type === 'column-visibility' &&
-            !orderedColumns.includes(column)) {
-            return;
-        }
-        var i;
-        var orderClasses = classes.order;
-        var columns = ctx.api.columns(cell);
-        var col = settings.columns[columns.flatten()[0]];
-        var orderable = columns.orderable().includes(true);
-        var ariaType = '';
-        var indexes = columns.indexes();
-        var sortDirs = columns.orderable(true).flatten();
-        var tabIndex = settings.tabIndex;
-        var canOrder = ctx.orderHandler && orderable;
-        cell.classRemove(orderClasses.isAsc + ' ' + orderClasses.isDesc)
-            .classToggle(orderClasses.none, !orderable)
-            .classToggle(orderClasses.canAsc, canOrder && sortDirs.includes('asc'))
-            .classToggle(orderClasses.canDesc, canOrder && sortDirs.includes('desc'));
-        // Determine if all of the columns that this cell covers are
-        // included in the current ordering
-        var isOrdering = true;
-        for (i = 0; i < indexes.length; i++) {
-            if (!orderedColumns.includes(indexes[i])) {
-                isOrdering = false;
-            }
-        }
-        if (isOrdering) {
-            // Get the ordering direction for the columns under this cell
-            // Note that it is possible for a cell to be asc and desc
-            // sorting (column spanning cells)
-            var orderDirs = columns.order();
-            cell.classAdd((orderDirs.includes('asc') ? orderClasses.isAsc : '') +
-                (orderDirs.includes('desc') ? orderClasses.isDesc : ''));
-        }
-        // Find the first visible column that has ordering applied to it -
-        // it get's the aria information, as the ARIA spec says that only
-        // one column should be marked with aria-sort
-        var firstVis = -1; // column index
-        for (i = 0; i < orderedColumns.length; i++) {
-            if (settings.columns[orderedColumns[i]].visible) {
-                firstVis = orderedColumns[i];
-                break;
-            }
-        }
-        if (indexes[0] == firstVis) {
-            var firstSort = sorting[0];
-            var sortOrder = col.orderSequence;
-            cell.attr('aria-sort', firstSort.dir === 'asc' ? 'ascending' : 'descending');
-            // Determine if the next click will remove sorting or change the
-            // sort
-            ariaType =
-                sortOrder && !sortOrder[firstSort.index + 1]
-                    ? 'Remove'
-                    : 'Reverse';
-        }
-        else {
-            cell.attrRemove('aria-sort');
-        }
-        // Make the headers tab-able for keyboard navigation
-        if (orderable) {
-            var orderSpan = cell.find('.dt-column-order');
-            orderSpan
-                .attr('role', 'button')
-                .attr('aria-label', orderable
-                ? col.ariaTitle +
-                    ctx.api.i18n('aria.orderable' + ariaType)
-                : col.ariaTitle);
-            if (tabIndex !== -1) {
-                orderSpan.attr('tabindex', tabIndex);
-            }
-        }
+/**
+ * Create a new object that is a row model
+ *
+ * @param parts Values to assign, otherwise the defaults will be used
+ * @returns New object
+ */
+function create$2(parts = {}) {
+    return util.object.assignDeep({}, defaults$4, parts);
+}
+
+/**
+ * Add a data array to the table, creating DOM node etc. This is the parallel to
+ * gatherData, but for adding rows from a JavaScript source, rather than a
+ * DOM source.
+ *
+ * @param settings DataTables settings object
+ * @param dataIn data array to be added
+ * @param tr TR element to add to the table - optional. If not given, DataTables
+ *   will create a row automatically
+ * @param tds Array of TD|TH elements for the row - must be given if tr is.
+ * @returns >=0 if successful (index of new data entry), -1 if failed
+ */
+function addData(settings, dataIn, tr, tds) {
+    /* Create the object for storing information about this new row */
+    var rowIdx = settings.data.length;
+    var row = create$2({
+        src: tr ? 'dom' : 'data',
+        idx: rowIdx
     });
-};
-const layout = (settings, container, items) => {
-    let classes = settings.classes.layout;
-    let row = Dom
-        .c('div')
-        .attr('id', items.id || null)
-        .classAdd(items.className || classes.row)
-        .appendTo(container);
-    displayRowCells(items, function (key, val) {
-        var klass = '';
-        if (val.table) {
-            row.classAdd(classes.tableRow);
-            klass += classes.tableCell + ' ';
-        }
-        if (key === 'start') {
-            klass += classes.start;
-        }
-        else if (key === 'end') {
-            klass += classes.end;
-        }
-        else {
-            klass += classes.full;
-        }
-        Dom.c('div')
-            .attr({
-            id: val.id || null,
-            class: val.className
-                ? val.className
-                : classes.cell + ' ' + klass
-        })
-            .append(val.contents)
-            .appendTo(row);
+    row.data = dataIn;
+    settings.data.push(row);
+    var columns = settings.columns;
+    for (var i = 0, iLen = columns.length; i < iLen; i++) {
+        // Invalidate the column types as the new data needs to be revalidated
+        columns[i].type = null;
+    }
+    /* Add to the display array */
+    settings.displayMaster.push(rowIdx);
+    var id = settings.rowIdFn(dataIn);
+    if (id !== undefined) {
+        settings.ids[id] = row;
+    }
+    /* Create the DOM information, or register it if already present */
+    if (tr || !settings.features.deferRender) {
+        createTr(settings, rowIdx, tr, tds);
+    }
+    return rowIdx;
+}
+/**
+ * Add one or more TR elements to the table. Generally we'd expect to
+ * use this for reading data from a DOM sourced table, but it could be
+ * used for an TR element. Note that if a TR is given, it is used (i.e.
+ * it is not cloned).
+ *
+ * @param settings DataTables settings object
+ * @param rows The TR element(s) to add to the table
+ * @returns Array of indexes for the added rows
+ */
+function addTr(settings, rows) {
+    return rows.mapTo(el => {
+        let row = getRowElementsFromNode(settings, el);
+        return addData(settings, row.data, el, row.cells);
     });
-};
-const pagingButton = (settings, buttonType, content, active, disabled) => {
-    var classes = settings.classes.paging;
-    var btnClasses = [classes.button];
-    var btn;
-    if (active) {
-        btnClasses.push(classes.active);
+}
+/**
+ * Get the data for a given cell from the internal cache, taking into account
+ * data mapping
+ *
+ * @param settings DataTables settings object
+ * @param rowIdx data row id
+ * @param colIdx Column index
+ * @param type data get type ('display', 'type' 'filter|search' 'sort|order')
+ * @returns Cell data
+ */
+function getCellData(settings, rowIdx, colIdx, type) {
+    if (type === 'search') {
+        type = 'filter';
     }
-    if (disabled) {
-        btnClasses.push(classes.disabled);
+    else if (type === 'order') {
+        type = 'sort';
     }
-    if (buttonType === 'ellipsis') {
-        btn = Dom.c('span').classAdd('ellipsis').html(content).get(0);
+    var row = settings.data[rowIdx];
+    if (!row) {
+        return undefined;
+    }
+    var draw = settings.drawCount;
+    var col = settings.columns[colIdx];
+    var rowData = row.data;
+    var defaultContent = col.defaultContent;
+    var cellData = col.dataGet(rowData, type, {
+        settings: settings,
+        row: rowIdx,
+        col: colIdx
+    });
+    // Allow for a node being returned for non-display types
+    if (type !== 'display' &&
+        cellData &&
+        typeof cellData === 'object' &&
+        cellData.nodeName) {
+        cellData = cellData.innerHTML;
+    }
+    if (cellData === undefined) {
+        if (settings.drawError != draw && defaultContent === null) {
+            log(settings, 0, 'Requested unknown parameter ' +
+                (typeof col.data == 'function'
+                    ? '{function}'
+                    : "'" + col.data + "'") +
+                ' for row ' +
+                rowIdx +
+                ', column ' +
+                colIdx, 4);
+            settings.drawError = draw;
+        }
+        return defaultContent;
+    }
+    // When the data source is null and a specific data type is requested (i.e.
+    // not the original data), we can use default column data
+    if ((cellData === rowData || cellData === null) &&
+        defaultContent !== null &&
+        type !== undefined) {
+        cellData = defaultContent;
+    }
+    else if (typeof cellData === 'function') {
+        // If the data source is a function, then we run it and use the return,
+        // executing in the scope of the data object (for instances)
+        return cellData.call(rowData);
+    }
+    if (cellData === null && type === 'display') {
+        return '';
+    }
+    if (type === 'filter') {
+        var formatters = ext.type.search;
+        if (col.type && formatters[col.type]) {
+            cellData = formatters[col.type](cellData);
+        }
+    }
+    return cellData;
+}
+/**
+ * Set the value for a specific cell, into the internal data cache
+ *
+ * @param settings DataTables settings object
+ * @param rowIdx data row id
+ * @param colIdx Column index
+ * @param val Value to set
+ */
+function setCellData(settings, rowIdx, colIdx, val) {
+    let row = settings.data[rowIdx];
+    if (row) {
+        let col = settings.columns[colIdx];
+        let rowData = row.data;
+        col.dataSet(rowData, val, {
+            settings: settings,
+            row: rowIdx,
+            col: colIdx
+        });
+    }
+}
+/**
+ * Write a value to a cell
+ *
+ * @param td Cell
+ * @param val Value
+ */
+function writeCell(td, val) {
+    let cell = Dom.s(td);
+    if (val && typeof val === 'object' && val.nodeName) {
+        cell.empty().append(val);
     }
     else {
-        btn = Dom
-            .c('button')
-            .classAdd(btnClasses.join(' '))
-            .attr('role', 'link')
-            .attr('type', 'button')
-            .html(content)
-            .get(0);
+        cell.html(val);
+    }
+}
+/**
+ * Return an array with the full table data
+ *
+ * @param settings DataTables settings object
+ * @returns array {array} aData Master data array
+ */
+function getDataMaster(settings) {
+    return util.array.pluck(settings.data, 'data');
+}
+/**
+ * Nuke the table
+ *
+ * @param settings DataTables settings object
+ */
+function clearTable(settings) {
+    settings.data.length = 0;
+    settings.displayMaster.length = 0;
+    settings.display.length = 0;
+    settings.ids = {};
+}
+/**
+ * Mark cached data as invalid such that a re-read of the data will occur when
+ * the cached data is next requested. Also update from the data source object.
+ *
+ * @param settings DataTables settings object
+ * @param rowIdx Row index to invalidate
+ * @param src Source to invalidate from: undefined, 'auto', 'dom' or 'data'
+ * @param colIdx Column index to invalidate. If undefined the whole row will be
+ *    invalidated
+ */
+function invalidateRow(settings, rowIdx, src, colIdx) {
+    var row = settings.data[rowIdx];
+    var i, iLen;
+    if (!row) {
+        return;
+    }
+    // Remove the cached data for the row
+    row.orderCache = null;
+    row.searchCellCache = null;
+    row.displayData = null;
+    // Are we reading last data from DOM or the data object?
+    if (src === 'dom' || ((!src || src === 'auto') && row.src === 'dom')) {
+        // Read the data from the DOM
+        row.data = getRowElementsFromModel(settings, row, colIdx).data;
+    }
+    else {
+        // Reading from data object, update the DOM
+        var cells = row.cells;
+        var display = getDisplay(settings, rowIdx);
+        if (cells.length) {
+            if (colIdx !== undefined) {
+                writeCell(cells[colIdx], display[colIdx]);
+            }
+            else {
+                for (i = 0, iLen = cells.length; i < iLen; i++) {
+                    writeCell(cells[i], display[i]);
+                }
+            }
+        }
+    }
+    invalidColumn(settings, colIdx);
+    // Update DataTables special `DT_*` attributes for the row
+    rowAttributes(settings, row);
+    callbackFire(settings, null, 'rowInvalidate', [settings, rowIdx, colIdx], false);
+}
+/**
+ * Column specific invalidation
+ *
+ * @param settings DataTables settings object
+ * @param colIdx Column index to invalidate, or all columns if not given
+ */
+function invalidColumn(settings, colIdx) {
+    // Column specific invalidation
+    var cols = settings.columns;
+    if (colIdx !== undefined) {
+        // Type - the data might have changed
+        cols[colIdx].type = null;
+        // Max length string. Its a fairly cheep recalculation, so not worth
+        // something more complicated
+        cols[colIdx].wideStrings = null;
+    }
+    else {
+        for (let i = 0, iLen = cols.length; i < iLen; i++) {
+            cols[i].type = null;
+            cols[i].wideStrings = null;
+        }
+    }
+    settings.containerWidth = -1;
+}
+/**
+ * Get the cells and data for a given row - from a <tr> element
+ *
+ * @param settings DataTables settings object
+ * @param row TR element from which to read data or existing row object from
+ *   which to re-read the data from the cells
+ */
+function getRowElementsFromNode(settings, row) {
+    let data = settings.rowReadObject ? {} : [];
+    let cells = Dom.s(row).children('th, td');
+    let id = row.getAttribute('id');
+    cells.each((el, idx) => {
+        readCellData(settings, el, data, idx);
+    });
+    if (id) {
+        util.set(settings.rowId)(data, id);
     }
     return {
-        display: btn,
-        clicker: btn
+        data: data,
+        cells: cells.get()
     };
+}
+/**
+ * Get the cells and data for a given row - from an existing row model
+ *
+ * @param settings DataTables settings object
+ * @param row Existing row object from which to re-read the data from the cells
+ * @param colIdx Optional column index
+ */
+function getRowElementsFromModel(settings, row, colIdx) {
+    let tds = row.cells;
+    for (let i = 0; i < tds.length; i++) {
+        if (colIdx === undefined || colIdx === i) {
+            readCellData(settings, tds[i], row.data, i);
+        }
+    }
+    // Read the ID from the DOM if present
+    if (row.tr) {
+        let id = row.tr.getAttribute('id');
+        if (id) {
+            util.set(settings.rowId)(row.data, id);
+        }
+    }
+    return {
+        data: row.data,
+        cells: tds
+    };
+}
+/**
+ * Read data from a cell into the data source object
+ *
+ * @param settings DataTables settings object
+ * @param cell The HTML cell element to read from
+ * @param data Data object / array to store data into
+ * @param colIdx The column index for the cell
+ */
+function readCellData(settings, cell, data, colIdx) {
+    let column = settings.columns[colIdx];
+    let contents = cell.innerHTML.trim();
+    if (column.attrSrc) {
+        // If we are working with attributes from the cell as values
+        let dataPoint = column.data;
+        let setter = util.set(dataPoint._);
+        let attr = function (str, cell) {
+            if (typeof str === 'string') {
+                let idx = str.indexOf('@');
+                if (idx !== -1) {
+                    let att = str.substring(idx + 1);
+                    let setter = util.set(str);
+                    setter(data, cell.getAttribute(att));
+                }
+            }
+        };
+        setter(data, contents);
+        attr(dataPoint.sort, cell);
+        attr(dataPoint.type, cell);
+        attr(dataPoint.filter, cell);
+    }
+    else {
+        if (!column.setter) {
+            // Cache the setter function
+            column.setter = util.set(column.data);
+        }
+        column.setter(data, contents);
+    }
+}
+
+/**
+ * Generate the node required for the processing node
+ *
+ * @param ctx DataTables settings object
+ */
+function processingHtml(ctx) {
+    var table = ctx.table;
+    var scrolling = ctx.scroll.x !== '' || ctx.scroll.y !== '';
+    if (ctx.features.processing) {
+        var n = Dom
+            .c('div')
+            .attr('id', ctx.tableId + '_processing')
+            .attr('role', 'status')
+            .classAdd(ctx.classes.processing.container)
+            .html(ctx.language.processing)
+            .append(Dom
+            .c('div')
+            .append(Dom.c('div'))
+            .append(Dom.c('div'))
+            .append(Dom.c('div'))
+            .append(Dom.c('div')));
+        // Different positioning depending on if scrolling is enabled or not
+        if (scrolling) {
+            n.prependTo(Dom.s(ctx.tableWrapper).find('div.dt-scroll').get(0));
+        }
+        else {
+            n.insertBefore(table);
+        }
+        Dom.s(table).on('processing.dt.DT', (e, s, show) => {
+            n.css('display', show ? 'block' : 'none');
+        });
+    }
+}
+/**
+ * Display or hide the processing indicator
+ *
+ * @param ctx DataTables settings object
+ * @param show Show the processing indicator (true) or not (false)
+ */
+function processingDisplay(ctx, show) {
+    // Ignore cases when we are still redrawing
+    if (ctx.doingDraw && show === false) {
+        return;
+    }
+    callbackFire(ctx, null, 'processing', [ctx, show]);
+}
+/**
+ * Show the processing element if an action takes longer than a given time
+ *
+ * @param ctx DataTables settings object
+ * @param enable Do (true) or not (false) async processing (local feature enablement)
+ * @param run Function to run
+ */
+function processingRun(ctx, enable, run) {
+    if (!enable) {
+        // Immediate execution, synchronous
+        run();
+    }
+    else {
+        processingDisplay(ctx, true);
+        // Allow the processing display to show if needed
+        setTimeout(function () {
+            run();
+            processingDisplay(ctx, false);
+        }, 0);
+    }
+}
+
+function renderer(ctx, type) {
+    var render = ctx.renderer;
+    var host = ext.renderer[type];
+    if (plainObject(render) && render[type]) {
+        // Specific renderer for this type. If available use it, otherwise use
+        // the default.
+        return host[render[type]] || host._;
+    }
+    else if (typeof render === 'string') {
+        // Common renderer - if there is one available for this type use it,
+        // otherwise use the default
+        return host[render] || host._;
+    }
+    // Use the default
+    return host._;
+}
+
+/**
+ * Recalculate the column widths, if needed (by a column having been
+ * invalidated)
+ *
+ * @param settings DataTables settings object
+ */
+function columnWidths(settings) {
+    if (settings.columns.map(c => c.wideStrings).includes(null)) {
+        calculateColumnWidths(settings);
+    }
+}
+/**
+ * Calculate the width of columns for the table
+ *
+ * @param settings DataTables settings object
+ */
+function calculateColumnWidths(settings) {
+    // Not interested in doing column width calculation if auto-width is disabled
+    if (!settings.features.autoWidth) {
+        return;
+    }
+    var table = settings.table, columns = settings.columns, scroll = settings.scroll, scrollY = scroll.y, scrollX = scroll.x, visibleColumns = getColumns(settings, 'visible'), tableWidthAttr = table.getAttribute('width'), // from DOM element
+    tableContainer = table.parentElement, i, j, column, columnIdx;
+    var styleWidth = table.style.width;
+    var containerWidth = wrapperWidth(settings);
+    // Don't re-run for the same width as the last time
+    if (containerWidth === settings.containerWidth) {
+        return false;
+    }
+    settings.containerWidth = containerWidth;
+    // If there is no width applied as a CSS style or as an attribute, we assume that
+    // the width is intended to be 100%, which is usually is in CSS, but it is very
+    // difficult to correctly parse the rules to get the final result.
+    if (!styleWidth && !tableWidthAttr) {
+        table.style.width = '100%';
+        styleWidth = '100%';
+    }
+    if (styleWidth && styleWidth.indexOf('%') !== -1) {
+        tableWidthAttr = styleWidth;
+    }
+    // Let plug-ins know that we are doing a recalc, in case they have changed any of the
+    // visible columns their own way (e.g. Responsive uses display:none).
+    callbackFire(settings, null, 'column-calc', [{ visible: visibleColumns }], false);
+    // Construct a worst case table with the widest, assign any user defined
+    // widths, then insert it into  the DOM and allow the browser to do all
+    // the hard work of calculating table widths
+    var tmpTable = Dom.s(table.cloneNode())
+        .css('visibility', 'hidden')
+        .css('margin', '0')
+        .attrRemove('id');
+    // Clean up the table body
+    tmpTable.append(Dom.c('tbody'));
+    // Clone the table header and footer - we can't use the header / footer
+    // from the cloned table, since if scrolling is active, the table's
+    // real header and footer are contained in different table tags
+    tmpTable
+        .append(settings.thead.cloneNode(true))
+        .append(settings.tfoot.cloneNode(true));
+    // Remove any assigned widths from the footer (from scrolling)
+    tmpTable.find('tfoot th, tfoot td').css('width', '');
+    // Apply custom sizing to the cloned header
+    tmpTable.find('thead th, thead td').each(cell => {
+        // Get the `width` from the header layout
+        var width = columnsSumWidth(settings, cell, true);
+        if (width) {
+            cell.style.width = width;
+            // For scrollX we need to force the column width otherwise the
+            // browser will collapse it. If this width is smaller than the
+            // width the column requires, then it will have no effect
+            if (scrollX) {
+                cell.style.minWidth = width;
+                Dom.s(cell).append(Dom.c('div').css({
+                    width: width,
+                    margin: '0',
+                    padding: '0',
+                    border: '0',
+                    height: '1px'
+                }));
+            }
+        }
+        else {
+            cell.style.width = '';
+        }
+    });
+    // Get the widest strings for each of the visible columns and add them to
+    // our table to create a "worst case"
+    var longestData = [];
+    for (i = 0; i < visibleColumns.length; i++) {
+        longestData.push(getWideStrings(settings, visibleColumns[i]));
+    }
+    if (longestData.length) {
+        for (i = 0; i < longestData[0].length; i++) {
+            var tr = Dom.c('tr').appendTo(tmpTable.children('tbody'));
+            for (j = 0; j < visibleColumns.length; j++) {
+                columnIdx = visibleColumns[j];
+                column = columns[columnIdx];
+                var longest = longestData[j][i] || '';
+                var autoClass = ext.type.className[column.type];
+                var padding = column.contentPadding || (scrollX ? '-' : '');
+                var text = longest + padding;
+                var cell = Dom.c('td')
+                    .classAdd(autoClass)
+                    .classAdd(column.className)
+                    .appendTo(tr);
+                if (longest.indexOf('<') === -1 &&
+                    longest.indexOf('&') === -1) {
+                    cell.text(text);
+                }
+                else {
+                    cell.html(text);
+                }
+            }
+        }
+    }
+    // Tidy the temporary table - remove name attributes so there aren't
+    // duplicated in the dom (radio elements for example)
+    tmpTable.find('[name]').attrRemove('name');
+    // Table has been built, attach to the document so we can work with it.
+    // A holding element is used, positioned at the top of the container
+    // with minimal height, so it has no effect on if the container scrolls
+    // or not. Otherwise it might trigger scrolling when it actually isn't
+    // needed
+    var holder = Dom.c('div')
+        .css(scrollX || scrollY
+        ? {
+            position: 'absolute',
+            top: '0',
+            left: '0',
+            height: '1px',
+            right: '0',
+            overflow: 'hidden'
+        }
+        : {})
+        .append(tmpTable)
+        .appendTo(tableContainer);
+    // When scrolling (X or Y) we want to set the width of the table as
+    // appropriate. However, when not scrolling leave the table width as it
+    // is. This results in slightly different, but I think correct behaviour
+    if (scrollX) {
+        tmpTable.css('width', 'auto').attrRemove('width');
+        // If there is no width attribute or style, then allow the table to
+        // collapse
+        if (tmpTable.width() < tableContainer.clientWidth && tableWidthAttr) {
+            tmpTable.width(tableContainer.clientWidth);
+        }
+    }
+    else if (scrollY) {
+        tmpTable.width(tableContainer.clientWidth);
+    }
+    else if (tableWidthAttr) {
+        tmpTable.width(tableWidthAttr);
+    }
+    // Get the width of each column in the constructed table
+    var total = 0;
+    var bodyCells = tmpTable.find('tbody tr').eq(0).children();
+    for (i = 0; i < visibleColumns.length; i++) {
+        // Use getBounding for sub-pixel accuracy, which we then want to round
+        // up!
+        var bounding = bodyCells.get(i).getBoundingClientRect().width;
+        // Total is tracked to remove any sub-pixel errors as the outerWidth
+        // of the table might not equal the total given here
+        total += bounding;
+        // Width for each column to use
+        columns[visibleColumns[i]].width = stringToCss(bounding);
+    }
+    table.style.width = stringToCss(total);
+    // Finished with the table - ditch it
+    holder.remove();
+    // If there is a width attr, we want to attach an event listener which
+    // allows the table sizing to automatically adjust when the window is
+    // resized. Use the width attr rather than CSS, since we can't know if the
+    // CSS is a relative value or absolute - DOM read is always px.
+    if (tableWidthAttr) {
+        table.style.width = stringToCss(tableWidthAttr);
+    }
+    if ((tableWidthAttr || scrollX) && !settings.reszEvt) {
+        var resize = util.throttle(function () {
+            var newWidth = wrapperWidth(settings);
+            // Don't do it if destroying or the container width is 0
+            if (!settings.destroying && newWidth !== 0) {
+                adjustColumnSizing(settings);
+            }
+        });
+        // For browsers that support it (~2020 onwards for wide support) we can watch for the
+        // container changing width.
+        if (window.ResizeObserver) {
+            // This is a tricky beast - if the element is visible when `.observe()` is called,
+            // then the callback is immediately run. Which we don't want. If the element isn't
+            // visible, then it isn't run, but we want it to run when it is then made visible.
+            // This flag allows the above to be satisfied.
+            var first = Dom.s(settings.tableWrapper).isVisible();
+            // Use an empty div to attach the observer so it isn't impacted by height changes
+            var resizer = Dom.c('div')
+                .css({
+                width: '100%',
+                height: '0'
+            })
+                .classAdd('dt-autosize')
+                .appendTo(settings.tableWrapper);
+            settings.resizeObserver = new ResizeObserver(function (e) {
+                if (first) {
+                    first = false;
+                }
+                else {
+                    resize();
+                }
+            });
+            settings.resizeObserver.observe(resizer.get(0));
+        }
+        else {
+            // For old browsers, the best we can do is listen for a window
+            // resize
+            window.addEventListener('resize', resize);
+            settings.windowResizeCb = resize; // For removal in `destroy`
+        }
+        settings.reszEvt = true;
+    }
+}
+/**
+ * Get the width of the DataTables wrapper element
+ *
+ * @param settings DataTables settings object
+ * @returns Width
+ */
+function wrapperWidth(settings) {
+    let wrapper = Dom.s(settings.tableWrapper);
+    return wrapper.isVisible() ? wrapper.width() : 0;
+}
+/**
+ * Get the widest strings for each column.
+ *
+ * It is very difficult to determine what the widest string actually is due to variable character
+ * width and kerning. Doing an exact calculation with the DOM or even Canvas would kill performance
+ * and this is a critical point, so we use two techniques to determine a collection of the longest
+ * strings from the column, which will likely contain the widest strings:
+ *
+ * 1) Get the top three longest strings from the column
+ * 2) Get the top three widest words (i.e. an unbreakable phrase)
+ *
+ * @param settings DataTables settings object
+ * @param colIdx column of interest
+ * @returns Array of the longest strings
+ */
+function getWideStrings(settings, colIdx) {
+    var column = settings.columns[colIdx];
+    // Do we need to recalculate (i.e. was invalidated), or just use the cached
+    // data? Recalculate if display based for the column.
+    if (!column.wideStrings || column.widthCalc === 'display') {
+        var allStrings = [];
+        var collection = [];
+        let rows = settings.displayMaster;
+        if (column.widthCalc === 'display') {
+            rows = settings.display.slice(settings.displayStart, settings.displayStart + settings.pageLength);
+        }
+        // Create an array with the string information for the column
+        for (var i = 0, len = rows.length; i < len; i++) {
+            var rowIdx = rows[i];
+            var data = getDisplay(settings, rowIdx, colIdx);
+            var cellString = data && typeof data === 'object' && data.nodeType
+                ? data.innerHTML
+                : data + '';
+            // Remove id / name attributes from elements so they
+            // don't interfere with existing elements
+            cellString = cellString
+                .replace(/id=".*?"/g, '')
+                .replace(/name=".*?"/g, '');
+            // Don't want script, dialog or template tags in the width
+            // calculations as they are hidden content
+            cellString = cellString
+                .replace(/<script[\s\S]*?<\/script(?:\s[^>]*)?>/gi, ' ')
+                .replace(/<dialog[\s\S]*?<\/dialog(?:\s[^>]*)?>/gi, ' ')
+                .replace(/<template[\s\S]*?<\/template(?:\s[^>]*)?>/gi, ' ');
+            var noHtml = util.string
+                .stripHtml(cellString, ' ')
+                .replace(/&nbsp;/g, ' ');
+            collection.push({
+                str: cellString,
+                len: noHtml.length
+            });
+            allStrings.push(noHtml);
+        }
+        // Order and then cut down to the size we need
+        collection
+            .sort(function (a, b) {
+            return b.len - a.len;
+        })
+            .splice(3);
+        column.wideStrings = collection.map(function (item) {
+            return item.str;
+        });
+        // Longest unbroken string
+        const parts = allStrings.join(' ').split(' ');
+        parts.sort(function (a, b) {
+            return b.length - a.length;
+        });
+        if (parts.length) {
+            column.wideStrings.push(parts[0]);
+        }
+        if (parts.length > 1) {
+            column.wideStrings.push(parts[1]);
+        }
+        if (parts.length > 2) {
+            column.wideStrings.push(parts[3]);
+        }
+    }
+    return column.wideStrings;
+}
+/**
+ * Append a CSS unit (only if required) to a string
+ *
+ * @param s Value to css-ify
+ * @returns Value with css unit
+ */
+function stringToCss(s) {
+    if (s === null) {
+        return '0px';
+    }
+    if (typeof s == 'number') {
+        return s < 0 ? '0px' : s + 'px';
+    }
+    // Check it has a unit character already
+    return s.match(/\d$/) ? s + 'px' : s;
+}
+/**
+ * Re-insert the `col` elements for current visibility
+ *
+ * @param settings DT settings
+ */
+function colGroup(settings) {
+    var cols = settings.columns;
+    settings.colgroup.empty();
+    for (var i = 0; i < cols.length; i++) {
+        if (cols[i].visible) {
+            settings.colgroup.append(cols[i].colEl);
+        }
+    }
+}
+
+/**
+ * Scrolling setup
+ *
+ * @param settings DataTables settings object
+ * @returns Node to add to the DOM
+ */
+function featureTable(settings) {
+    let table = Dom.s(settings.table);
+    let scroll = settings.scroll;
+    let scrollX = scroll.x;
+    let scrollY = scroll.y;
+    // No scrolling or x-scrolling only
+    if (scrollY === '' && scrollX === '') {
+        return table.get(0);
+    }
+    let classes = settings.classes.scrolling;
+    let caption = settings.captionNode;
+    let captionSide = caption
+        ? caption._captionSide
+        : null;
+    let tableCloneHeader = table.clone(false);
+    let tableCloneFooter = table.clone(false);
+    let footer = table.children('tfoot');
+    let size = function (s) {
+        return !s ? '100%' : stringToCss(s);
+    };
+    /*
+     * The HTML structure that we want to generate in this function is:
+     *  div - scroller
+     *    div - scroll head
+     *      div - scroll head inner
+     *        table - scroll head table
+     *          thead - thead
+     *    div - scroll body
+     *      table - table (master table)
+     *        thead - thead clone for sizing
+     *        tbody - tbody
+     *    div - scroll foot
+     *      div - scroll foot inner
+     *        table - scroll foot table
+     *          tfoot - tfoot
+     */
+    let scroller = Dom.c('div')
+        .classAdd(classes.container)
+        .attr('role', 'table')
+        .append(Dom.c('div')
+        .classAdd(classes.header.self)
+        .css({
+        overflow: 'hidden',
+        position: 'relative',
+        border: '0',
+        width: scrollX ? size(scrollX) : '100%'
+    })
+        .attr('role', 'none')
+        .append(Dom.c('div')
+        .classAdd(classes.header.inner)
+        .css({
+        'box-sizing': 'content-box',
+        width: scroll.xInner || '100%'
+    })
+        .attr('role', 'none')
+        .append(tableCloneHeader
+        .attrRemove('id')
+        .css('margin-left', '0')
+        .append(captionSide === 'top' ? caption : null)
+        .append(table.children('thead')))))
+        .append(Dom.c('div')
+        .classAdd(classes.body)
+        .css({
+        position: 'relative',
+        overflow: 'auto',
+        width: size(scrollX)
+    })
+        .attr('role', 'none')
+        .append(table));
+    if (footer.count()) {
+        scroller.append(Dom.c('div')
+            .classAdd(classes.footer.self)
+            .css({
+            overflow: 'hidden',
+            border: '0',
+            width: scrollX ? size(scrollX) : '100%'
+        })
+            .attr('role', 'none')
+            .append(Dom.c('div')
+            .classAdd(classes.footer.inner)
+            .attr('role', 'none')
+            .append(tableCloneFooter
+            .attrRemove('id')
+            .css('margin-left', '0')
+            .append(captionSide === 'bottom' ? caption : null)
+            .append(table.children('tfoot')))));
+    }
+    let children = scroller.children();
+    let scrollHead = children.eq(0);
+    let scrollBody = children.eq(1);
+    let scrollFoot = children.eq(2);
+    // When the body is scrolled, then we also want to scroll the header and
+    // footer. Equally we want changes in the header / footer to transition the
+    // body. The header and footer are `overflow: hidden`, so the user can't
+    // scroll those elements other than triggering a focus action in them.
+    scrollBody.on('scroll.DT', () => {
+        let scrollLeft = scrollBody.scrollLeft();
+        scrollHead.scrollLeft(scrollLeft);
+        scrollFoot.scrollLeft(scrollLeft);
+    });
+    scrollHead.on('focusin.DT', () => {
+        let scrollLeft = scrollHead.scrollLeft();
+        scrollBody.scrollLeft(scrollLeft);
+        scrollFoot.scrollLeft(scrollLeft);
+    });
+    scrollFoot.on('focusin.DT', () => {
+        let scrollLeft = scrollFoot.scrollLeft();
+        scrollHead.scrollLeft(scrollLeft);
+        scrollBody.scrollLeft(scrollLeft);
+    });
+    scrollBody.css('max-height', size(scrollY));
+    if (!scroll.collapse) {
+        scrollBody.css('height', size(scrollY));
+    }
+    settings.scrollHead = scrollHead;
+    settings.scrollBody = scrollBody;
+    settings.scrollFoot = scrollFoot;
+    // On redraw - align columns
+    settings.callbacks.draw.push(scrollDraw);
+    // Aria roles - because we break the table up into parts we need to be very
+    // explicit with the roles to create the accessability tree for the table,
+    // otherwise browser's attempt to "fix" the tree by filling in what it
+    // thinks are gaps. The static elements that we can assign roles to are done
+    // here. Dynamic ones are done in the draw function below.
+    table.attr('role', 'none');
+    table.find('tbody').attr('role', 'rowgroup');
+    tableCloneHeader.attr('role', 'none');
+    tableCloneFooter.attr('role', 'none');
+    settings.colgroup.find('colgroup').attr('role', 'none');
+    // Move the info feature's aria desc by to the new "table"
+    let describedBy = table.attr('aria-describedby');
+    if (describedBy) {
+        scroller.attr('aria-describedby', describedBy);
+        table.attrRemove('aria-describedby');
+    }
+    return scroller.get(0);
+}
+/**
+ * Update the header, footer and body tables for resizing - i.e. column
+ * alignment.
+ *
+ * Welcome to the most horrible function DataTables. The process that this
+ * function follows is basically:
+ *   1. Re-create the table inside the scrolling div
+ *   2. Correct colgroup > col values if needed
+ *   3. Copy colgroup > col over to header and footer
+ *   4. Clean up
+ *
+ * @param settings DataTables settings object
+ */
+function scrollDraw(settings) {
+    // Given that this is such a monster function, a lot of variables are use
+    // to try and keep the minimised size as small as possible
+    let scroll = settings.scroll, barWidth = scroll.barWidth, divHeader = settings.scrollHead, divHeaderInner = divHeader.children('div'), divHeaderTable = divHeaderInner.children('table'), divBodyEl = settings.scrollBody, divBody = divBodyEl, divFooter = settings.scrollFoot, divFooterInner = divFooter.children('div'), divFooterTable = divFooterInner.children('table'), header = Dom.s(settings.thead), table = Dom.s(settings.table), footer = Dom.s(settings.tfoot), browser = settings.browser, headerCopy, footerCopy;
+    // If the scrollbar visibility has changed from the last draw, we need to
+    // adjust the column sizes as the table width will have changed to account
+    // for the scrollbar
+    let scrollBarVis = divBodyEl.get(0).scrollHeight > divBodyEl.get(0).clientHeight;
+    if (settings.scrollBarVis !== scrollBarVis &&
+        settings.scrollBarVis !== undefined) {
+        settings.scrollBarVis = scrollBarVis;
+        adjustColumnSizing(settings);
+        return; // adjust column sizing will call this function again
+    }
+    else {
+        settings.scrollBarVis = scrollBarVis;
+    }
+    header.find('thead').attr('role', 'rowgroup');
+    footer.find('tfoot').attr('role', 'rowgroup');
+    // 1. Re-create the table inside the scrolling div
+    // Remove the old minimised thead and tfoot elements in the inner table
+    table.children('thead, tfoot').remove();
+    // Clone the current header and footer elements and then place it into the
+    // inner table
+    headerCopy = header.clone(true).prependTo(table);
+    headerCopy.find('th, td').attrRemove('tabindex');
+    headerCopy.find('[id]').attrRemove('id');
+    if (footer.count()) {
+        footerCopy = footer.clone(true).prependTo(table);
+        footerCopy.find('[id]').attrRemove('id');
+    }
+    // 2. Correct colgroup > col values if needed
+    // It is possible that the cell sizes are smaller than the content, so we need to
+    // correct colgroup>col for such cases. This can happen if the auto width detection
+    // uses a cell which has a longer string, but isn't the widest! For example
+    // "Chief Executive Officer (CEO)" is the longest string in the demo, but
+    // "Systems Administrator" is actually the widest string since it doesn't collapse.
+    // Note the use of translating into a column index to get the `col` element. This
+    // is because of Responsive which might remove `col` elements, knocking the alignment
+    // of the indexes out.
+    if (settings.display.length) {
+        // Get the column sizes from the first row in the table. This should really be a
+        // [].find, but it wasn't supported in Chrome until Sept 2015, and DT has 10 year
+        // browser support
+        let firstTr = null;
+        let start = dataSource(settings) !== 'ssp' ? settings.displayStart : 0;
+        for (let i = start; i < start + settings.display.length; i++) {
+            let idx = settings.display[i];
+            let row = settings.data[idx];
+            if (row) {
+                let tr = row.tr;
+                if (tr) {
+                    firstTr = tr;
+                    break;
+                }
+            }
+        }
+        if (firstTr) {
+            let colSizes = Dom.s(firstTr)
+                .children('th, td')
+                .mapTo(function (cell, idx) {
+                return {
+                    idx: visibleToColumnIndex(settings, idx),
+                    width: Dom.s(cell).width('outer')
+                };
+            });
+            // Check against what the colgroup > col is set to and correct if needed
+            for (let i = 0; i < colSizes.length; i++) {
+                let colEl = settings.columns[colSizes[i].idx].colEl;
+                colEl.css('width', colSizes[i].width + 'px');
+                if (scroll.x) {
+                    colEl.css('minWidth', colSizes[i].width + 'px');
+                }
+            }
+        }
+    }
+    // 3. Copy the colgroup over to the header and footer
+    divHeaderTable.find('colgroup').remove();
+    divHeaderTable.append(settings.colgroup.clone(true));
+    if (footer) {
+        divFooterTable.find('colgroup').remove();
+        divFooterTable.append(settings.colgroup.clone(true));
+    }
+    // "Hide" the header and footer that we used for the sizing. We need to keep
+    // the content of the cell so that the width applied to the header and body
+    // both match, but we want to hide it completely.
+    headerCopy.find('th, td').each(function (el) {
+        Dom.c('div')
+            .classAdd('dt-scroll-sizing')
+            .append(Array.from(el.childNodes))
+            .appendTo(el);
+    });
+    if (footerCopy) {
+        footerCopy.find('th, td').each(function (el) {
+            Dom.c('div')
+                .classAdd('dt-scroll-sizing')
+                .append(Array.from(el.childNodes))
+                .appendTo(el);
+        });
+    }
+    // 4. Clean up
+    // Figure out if there are scrollbar present - if so then we need the header and footer to
+    // provide a bit more space to allow "overflow" scrolling (i.e. past the scrollbar)
+    let isScrolling = Math.floor(table.height()) > divBodyEl.get(0).clientHeight ||
+        divBody.css('overflow-y') == 'scroll';
+    let paddingSide = 'padding' + (browser.scrollbarLeft ? 'Left' : 'Right');
+    // Set the width's of the header and footer tables
+    let outerWidth = table.width('withPadding');
+    divHeaderTable.css('width', stringToCss(outerWidth));
+    divHeaderInner
+        .css('width', stringToCss(outerWidth))
+        .css(paddingSide, isScrolling ? barWidth + 'px' : '0px');
+    if (footer.count()) {
+        divFooterTable.css('width', stringToCss(outerWidth));
+        divFooterInner
+            .css('width', stringToCss(outerWidth))
+            .css(paddingSide, isScrolling ? barWidth + 'px' : '0px');
+    }
+    // Correct DOM ordering for colgroup - comes before the thead
+    table.children('colgroup').prependTo(table);
+    // Remove tabindex from the hidden row elements
+    table.find('thead, tfoot').find('[tabindex]').attrRemove('tabindex');
+    // Dynamic ARIA roles - see setup for details on why this is needed
+    table
+        .find('thead, tfoot')
+        .attr('role', 'none')
+        .find('[role]')
+        .attrRemove('role');
+    table.find('tbody tr:not([role])').attr('role', 'row');
+    table
+        .find('tbody td:not([role]), tbody th:not([role])')
+        .attr('role', 'cell');
+    scrollAria(headerCopy);
+    scrollAria(footerCopy);
+    // Adjust the position of the header in case we loose the y-scrollbar
+    divBody.trigger('scroll');
+    // If sorting or filtering has occurred, jump the scrolling back to the top
+    // only if we aren't holding the position
+    if ((settings.wasOrdered || settings.wasFiltered) && !settings.drawHold) {
+        divBodyEl.scrollTop(0);
+    }
+}
+/**
+ * Apply ARIA roles for the header / footer of a scrolling table
+ * @param element
+ */
+function scrollAria(element) {
+    if (element) {
+        element.find('tfoot:not([role])').attr('role', 'rowgroup');
+        element.find('tr:not([role])').attr('role', 'row');
+        element.find('th:not([role])').attr('role', 'columnheader');
+        element.find('td:not([role])').attr('role', 'cell');
+    }
+}
+
+/**
+ * Add the options to the page HTML for the table
+ *
+ * @param ctx DataTables context
+ */
+function createLayout(ctx) {
+    var classes = ctx.classes;
+    // Wrapper div around everything DataTables controls
+    var insert = Dom
+        .c('div')
+        .attr('id', ctx.tableId + '_wrapper')
+        .classAdd(classes.container)
+        .insertBefore(ctx.table);
+    ctx.tableWrapper = insert.get(0);
+    if (ctx.dom) {
+        // Legacy
+        legacyDom(ctx, ctx.dom, insert);
+    }
+    else {
+        var top = convert(ctx, ctx.layout, 'top');
+        var bottom = convert(ctx, ctx.layout, 'bottom');
+        var render = renderer(ctx, 'layout');
+        // Everything above - the renderer will actually insert the contents into the document
+        top.forEach(function (item) {
+            render(ctx, insert, item);
+        });
+        // The table - always the center of attention
+        render(ctx, insert, {
+            full: {
+                contents: [featureTable(ctx)],
+                items: [],
+                table: true
+            }
+        });
+        // Everything below
+        bottom.forEach(function (item) {
+            render(ctx, insert, item);
+        });
+    }
+    // Processing floats on top, so it isn't an inserted feature
+    processingHtml(ctx);
+}
+/**
+ * Expand the layout items into an object for the rendering function
+ */
+function layoutItems(row, align, items) {
+    if (Array.isArray(items)) {
+        for (var i = 0; i < items.length; i++) {
+            layoutItems(row, align, items[i]);
+        }
+        return;
+    }
+    var rowCell = row[align]; // can't be undefined - will have been created by getRow
+    // If it is an object, then there can be multiple features contained in it
+    if (util.is.plainObject(items)) {
+        // Is it an cell object already, with rowId, etc. A feature plugin cannot
+        // be named "features" due to this check
+        if (items.features) {
+            if (items.rowId) {
+                row.id = items.rowId;
+            }
+            if (items.rowClass) {
+                row.className = items.rowClass;
+            }
+            rowCell.id = items.id;
+            rowCell.className = items.className;
+            layoutItems(row, align, items.features);
+        }
+        else {
+            // An object of features and configuration options - e.g. `{paging: {startEnd: false}}`
+            util.object.each(items, (key, val) => {
+                rowCell.items.push({
+                    feature: key,
+                    opts: val
+                });
+            });
+        }
+    }
+    else {
+        // Otherwise, it is a function, node or Dom / jQuery instance and can just get added
+        rowCell.items.push(items);
+    }
+}
+/**
+ * Find, or create a layout row and setup a target cell in it
+ *
+ * @param rows Rows array to search for the target row. Is mutated when a row is
+ *   added if not found.
+ * @param rowNum Row index to get
+ * @param align Where the cell position is
+ * @returns The row
+ */
+function getRow(rows, rowNum, align) {
+    var row;
+    // Find existing rows
+    for (var i = 0; i < rows.length; i++) {
+        row = rows[i];
+        if (row.rowNum === rowNum) {
+            // full is on its own, but start and end share a row
+            if ((align === 'full' && row.full) ||
+                ((align === 'start' || align === 'end') &&
+                    (row.start || row.end))) {
+                if (!row[align]) {
+                    row[align] = {
+                        contents: [],
+                        items: []
+                    };
+                }
+                return row;
+            }
+        }
+    }
+    // If we get this far, then there was no match, create a new row
+    row = {
+        rowNum: rowNum
+    };
+    row[align] = {
+        contents: [],
+        items: []
+    };
+    rows.push(row);
+    return row;
+}
+/**
+ * Convert a `layout` object given by a user to the object structure needed
+ * for the renderer. This is done twice, once for above and once for below
+ * the table. Ordering must also be considered.
+ *
+ * @param settings DataTables settings object
+ * @param layout Layout object to convert
+ * @param side `top` or `bottom`
+ * @returns Converted array structure - one item for each row.
+ */
+function convert(settings, layout, side) {
+    var rows = [];
+    // Split out into an array
+    util.object.each(layout, function (pos, items) {
+        var parts = pos.match(/^([a-z]+)([0-9]*)([A-Za-z]*)$/);
+        if (items === null || !parts) {
+            return;
+        }
+        var rowNum = parts[2] ? parseInt(parts[2]) : 0;
+        var align = parts[3] ? parts[3].toLowerCase() : 'full';
+        // Filter out the side we aren't interested in
+        if (parts[1] !== side) {
+            return;
+        }
+        // Only really a type check
+        if (align !== 'full' && align !== 'start' && align !== 'end') {
+            return;
+        }
+        // Get or create the row we should attach to
+        var row = getRow(rows, rowNum, align);
+        layoutItems(row, align, items);
+    });
+    // Order by item identifier
+    rows.sort(function (a, b) {
+        var order1 = a.rowNum || 0;
+        var order2 = b.rowNum || 0;
+        // If both in the same row, then the row with `full` comes first
+        if (order1 === order2) {
+            var ret = a.full && !b.full ? -1 : 1;
+            return side === 'bottom' ? ret * -1 : ret;
+        }
+        return order2 - order1;
+    });
+    // Invert for below the table
+    if (side === 'bottom') {
+        rows.reverse();
+    }
+    for (var row = 0; row < rows.length; row++) {
+        delete rows[row].rowNum;
+        resolve(settings, rows[row]);
+    }
+    return rows;
+}
+/**
+ * Convert the contents of a row's layout object to nodes that can be inserted
+ * into the document by a renderer. Execute functions, look up plug-ins, etc.
+ *
+ * @param settings DataTables settings object
+ * @param row Layout object for this row
+ */
+function resolve(settings, row) {
+    var getFeature = function (feature, opts) {
+        if (!ext.features[feature]) {
+            log(settings, 0, 'Unknown feature: ' + feature);
+        }
+        return ext.features[feature].apply(this, [settings, opts]);
+    };
+    // Resolve items in the `contents` array from being an identifier, such as
+    // the name of a feature, into the node to display.
+    var resolve = function (item) {
+        if (!row[item]) {
+            return;
+        }
+        row[item].contents = row[item].items
+            .filter(item => !!item)
+            .map(item => {
+            if (typeof item === 'string') {
+                return getFeature(item, null);
+            }
+            else if (util.is.plainObject(item)) {
+                // If it's an object, it just has feature and opts properties from
+                // the transform in _layoutArray
+                return getFeature(item.feature, item.opts);
+            }
+            else if (typeof item.node === 'function') {
+                return item.node(settings);
+            }
+            else if (typeof item === 'function') {
+                var inst = item(settings);
+                return typeof inst.node === 'function' ? inst.node() : inst;
+            }
+            else if (item.nodeName) {
+                // An HTML element
+                return item;
+            }
+            else if (item instanceof Dom) {
+                return item.get(0);
+            }
+            else if (item.length) {
+                // Possibly jQuery
+                return item[0];
+            }
+        });
+    };
+    resolve('start');
+    resolve('end');
+    resolve('full');
+}
+/**
+ * Draw the table with the legacy DOM property
+ *
+ * @param settings DT settings instance
+ * @param layout DOM string
+ * @param insert Insert point
+ */
+function legacyDom(settings, layout, insert) {
+    let parts = layout.match(/(".*?")|('.*?')|./g);
+    let featureNode, option, newNode, next, attr;
+    if (!parts) {
+        return;
+    }
+    for (let i = 0; i < parts.length; i++) {
+        featureNode = null;
+        option = parts[i];
+        if (option == '<') {
+            // New container div
+            newNode = Dom.c('div');
+            // Check to see if we should append an id and/or a class name to the container
+            next = parts[i + 1];
+            if (next[0] == "'" || next[0] == '"') {
+                attr = next.replace(/['"]/g, '');
+                let id = '', className;
+                /* The attribute can be in the format of "#id.class", "#id" or "class" This logic
+                 * breaks the string into parts and applies them as needed
+                 */
+                if (attr.indexOf('.') != -1) {
+                    let split = attr.split('.');
+                    id = split[0];
+                    className = split[1];
+                }
+                else if (attr[0] == '#') {
+                    id = attr;
+                }
+                else {
+                    className = attr;
+                }
+                newNode.attr('id', id.substring(1)).classAdd(className);
+                i++; // Move along the position array
+            }
+            insert.append(newNode.get()); // TODO
+            insert = newNode;
+        }
+        else if (option == '>') {
+            // End container div
+            insert = insert.parent();
+        }
+        else if (option == 't') {
+            // Table
+            featureNode = featureTable(settings);
+        }
+        else {
+            ext.feature.forEach(function (feature) {
+                if (option == feature.cFeature) {
+                    featureNode = feature.fnInit(settings);
+                }
+            });
+        }
+        // Add to the display
+        if (featureNode) {
+            // TODO when doing the full dom update, won't need this check
+            insert.append(featureNode instanceof Dom ? featureNode.get() : featureNode);
+        }
+    }
+}
+
+function sortInit(settings) {
+    var notSelector = ':not([data-dt-order="disable"]):not([data-dt-order="icon-only"])';
+    if (settings.orderHandler) {
+        columnOrderingCells(settings, notSelector)
+            .each(el => {
+            sortAttachListener(settings, el, '');
+        });
+    }
+    // Need to resolve the user input array into our internal structure
+    var order = [];
+    sortResolve(settings, order, settings.order);
+    settings.order = order;
+}
+/**
+ * Attach event listeners to a node that will trigger ordering on a column
+ *
+ * @param settings DataTables context
+ * @param node Node to attach to
+ * @param selector Delegate selector
+ * @param column Column index to target
+ * @param callback Callback for when done
+ */
+function sortAttachListener(settings, node, selector, column, callback) {
+    bindAction(node, selector, function (e) {
+        var run = false;
+        var columns = column === undefined
+            ? columnsFromHeader(e.target)
+            : typeof column === 'function'
+                ? column()
+                : Array.isArray(column)
+                    ? column
+                    : [column];
+        if (columns.length) {
+            for (var i = 0, iLen = columns.length; i < iLen; i++) {
+                var ret = sortAdd(settings, columns[i], i, e.shiftKey);
+                if (ret !== false) {
+                    run = true;
+                }
+                // If the first entry is no sort, then subsequent
+                // sort columns are ignored
+                if (settings.order.length === 1 &&
+                    settings.order[0][1] === '') {
+                    break;
+                }
+            }
+            if (run) {
+                processingRun(settings, true, function () {
+                    sort(settings);
+                    sortDisplay(settings, settings.display);
+                    reDraw(settings, false, false);
+                    if (callback) {
+                        callback();
+                    }
+                });
+            }
+        }
+    });
+}
+/**
+ * Sort the display array to match the master's order
+ *
+ * @param settings DataTables context
+ * @param display The display array
+ */
+function sortDisplay(settings, display) {
+    if (display.length < 2) {
+        return;
+    }
+    var master = settings.displayMaster;
+    var masterMap = {};
+    var map = {};
+    var i;
+    // Rather than needing an `indexOf` on master array, we can create a map
+    for (i = 0; i < master.length; i++) {
+        masterMap[master[i]] = i;
+    }
+    // And then cache what would be the indexOf from the display
+    for (i = 0; i < display.length; i++) {
+        map[display[i]] = masterMap[display[i]];
+    }
+    display.sort(function (a, b) {
+        // Short version of this function is simply `master.indexOf(a) - master.indexOf(b);`
+        return map[a] - map[b];
+    });
+}
+/**
+ * Convert the API variants that can be used for defining the order into our
+ * internal OrderColumn array.
+ *
+ * @param settings DataTable context object
+ * @param nestedSort Array to write the resolve values to
+ * @param sortItem Source object / array from user (It is really an `Order`
+ *   but due to `aaSorting` being used for input and the internal structure
+ *   it is currently any).
+ * @todo Split aaSorting into unresolved and resolved parameters (in state.ts as
+ *   well)
+ */
+function sortResolve(settings, nestedSort, sortItem // TODO typing
+) {
+    var push = function (a) {
+        if (plainObject(a)) {
+            let orderIdx = a;
+            let orderName = a;
+            if (orderIdx.idx !== undefined) {
+                // Index based ordering
+                nestedSort.push([orderIdx.idx, orderIdx.dir]);
+            }
+            else if (orderName.name) {
+                // Name based ordering
+                var cols = pluck(settings.columns, 'name');
+                var idx = cols.indexOf(orderName.name);
+                if (idx !== -1) {
+                    nestedSort.push([idx, orderName.dir]);
+                }
+            }
+        }
+        else {
+            // Plain column index and direction pair
+            nestedSort.push(a);
+        }
+    };
+    if (plainObject(sortItem)) {
+        // Object
+        push(sortItem);
+    }
+    else if (Array.isArray(sortItem) && typeof sortItem[0] === 'number') {
+        // 1D array
+        push(sortItem);
+    }
+    else if (Array.isArray(sortItem)) {
+        // 2D array
+        for (var z = 0; z < sortItem.length; z++) {
+            push(sortItem[z]); // Object or array
+        }
+    }
+}
+function sortFlatten(settings) {
+    var i, k, kLen, aSort = [], extSort = ext.type.order, aoColumns = settings.columns, dataSort, colIdx, type, srcCol, fixed = settings.orderFixed, fixedObj = plainObject(fixed), nestedSort = [];
+    if (!settings.features.ordering) {
+        return aSort;
+    }
+    // Build the sort array, with pre-fix and post-fix options if they have been
+    // specified
+    if (Array.isArray(fixed)) {
+        sortResolve(settings, nestedSort, fixed);
+    }
+    if (fixedObj && fixed.pre) {
+        sortResolve(settings, nestedSort, fixed.pre);
+    }
+    sortResolve(settings, nestedSort, settings.order);
+    if (fixedObj && fixed.post) {
+        sortResolve(settings, nestedSort, fixed.post);
+    }
+    for (i = 0; i < nestedSort.length; i++) {
+        srcCol = nestedSort[i][0];
+        if (aoColumns[srcCol]) {
+            dataSort = aoColumns[srcCol].orderData;
+            for (k = 0, kLen = dataSort.length; k < kLen; k++) {
+                colIdx = dataSort[k];
+                type = aoColumns[colIdx].type || 'string';
+                if (nestedSort[i]._idx === undefined) {
+                    nestedSort[i]._idx = aoColumns[colIdx].orderSequence.indexOf(nestedSort[i][1]);
+                }
+                if (nestedSort[i][1]) {
+                    aSort.push({
+                        src: srcCol,
+                        col: colIdx,
+                        dir: nestedSort[i][1],
+                        index: nestedSort[i]._idx,
+                        type: type,
+                        formatter: extSort[type + '-pre'],
+                        sorter: extSort[type + '-' + nestedSort[i][1]]
+                    });
+                }
+            }
+        }
+    }
+    return aSort;
+}
+/**
+ * Change the order of the table
+ *
+ * @param ctx DataTables settings object
+ * @param col Column to perform sort on
+ * @param dir Direction to sort on
+ */
+function sort(ctx, col, dir) {
+    var i, iLen, aiOrig = [], extSort = ext.type.order, data = ctx.data, sortCol, displayMaster = ctx.displayMaster, aSort;
+    // Make sure the columns all have types defined
+    columnTypes(ctx);
+    // Allow a specific column to be sorted, which will _not_ alter the display
+    // master
+    if (col !== undefined) {
+        var srcCol = ctx.columns[col];
+        aSort = [
+            {
+                src: col,
+                col: col,
+                dir: dir || '',
+                index: 0,
+                type: srcCol.type,
+                formatter: extSort[srcCol.type + '-pre'],
+                sorter: extSort[srcCol.type + '-' + dir]
+            }
+        ];
+        displayMaster = displayMaster.slice();
+    }
+    else {
+        aSort = sortFlatten(ctx);
+    }
+    for (i = 0, iLen = aSort.length; i < iLen; i++) {
+        sortCol = aSort[i];
+        // Load the data needed for the sort, for each cell
+        sortData(ctx, sortCol.col);
+    }
+    /* No sorting required if server-side or no sorting array */
+    if (dataSource(ctx) != 'ssp' && aSort.length !== 0) {
+        // Reset the initial positions on each pass so we get a stable sort
+        for (i = 0, iLen = displayMaster.length; i < iLen; i++) {
+            aiOrig[i] = i;
+        }
+        // If the first sort is desc, then reverse the array to preserve original
+        // order, just in reverse
+        if (aSort.length && aSort[0].dir === 'desc' && ctx.orderDescReverse) {
+            aiOrig.reverse();
+        }
+        /* Do the sort - here we want multi-column sorting based on a given data source (column)
+         * and sorting function (from oSort) in a certain direction. It's reasonably complex to
+         * follow on its own, but this is what we want (example two column sorting):
+         *  fnLocalSorting = function(a,b){
+         *    var test;
+         *    test = oSort['string-asc']('data11', 'data12');
+         *      if (test !== 0)
+         *        return test;
+         *    test = oSort['numeric-desc']('data21', 'data22');
+         *    if (test !== 0)
+         *      return test;
+         *    return oSort['numeric-asc']( aiOrig[a], aiOrig[b] );
+         *  }
+         * Basically we have a test for each sorting column, if the data in that column is equal,
+         * test the next column. If all columns match, then we use a numeric sort on the row
+         * positions in the original data array to provide a stable sort.
+         */
+        displayMaster.sort(function (a, b) {
+            var _a, _b;
+            var x, y, k, test, sortItem, len = aSort.length, dataA = (_a = data[a]) === null || _a === void 0 ? void 0 : _a.orderCache, dataB = (_b = data[b]) === null || _b === void 0 ? void 0 : _b.orderCache;
+            for (k = 0; k < len; k++) {
+                sortItem = aSort[k];
+                // Data, which may have already been through a `-pre` function
+                x = dataA[sortItem.col];
+                y = dataB[sortItem.col];
+                if (sortItem.sorter) {
+                    // If there is a custom sorter (`-asc` or `-desc`) for this
+                    // data type, use it
+                    test = sortItem.sorter(x, y);
+                    if (test !== 0) {
+                        return test;
+                    }
+                }
+                else {
+                    // Otherwise, use generic sorting
+                    test = x < y ? -1 : x > y ? 1 : 0;
+                    if (test !== 0) {
+                        return sortItem.dir === 'asc' ? test : -test;
+                    }
+                }
+            }
+            x = aiOrig[a];
+            y = aiOrig[b];
+            return x < y ? -1 : x > y ? 1 : 0;
+        });
+    }
+    else if (aSort.length === 0) {
+        // Apply index order
+        displayMaster.sort(function (x, y) {
+            return x < y ? -1 : x > y ? 1 : 0;
+        });
+    }
+    if (col === undefined) {
+        // Tell the draw function that we have sorted the data
+        ctx.wasOrdered = true;
+        ctx.sortDetails = aSort;
+        callbackFire(ctx, null, 'order', [ctx, aSort]);
+    }
+    return displayMaster;
+}
+/**
+ * Function to run on user sort request
+ *
+ * @param settings dataTables settings object
+ * @param colIdx column sorting index
+ * @param addIndex Counter
+ * @param shift Shift click add
+ */
+function sortAdd(settings, colIdx, addIndex, shift) {
+    var col = settings.columns[colIdx];
+    var sorting = settings.order;
+    var asSorting = col.orderSequence;
+    var nextSortIdx;
+    var next = function (a, overflow) {
+        var idx = a._idx;
+        if (idx === undefined) {
+            idx = asSorting.indexOf(a[1]);
+        }
+        return idx + 1 < asSorting.length ? idx + 1 : overflow ? null : 0;
+    };
+    if (!col.orderable) {
+        return false;
+    }
+    // Convert to 2D array if needed
+    if (typeof sorting[0] === 'number') {
+        sorting = settings.order = [sorting];
+    }
+    // If appending the sort then we are multi-column sorting
+    if ((shift || addIndex) && settings.features.orderMulti) {
+        // Are we already doing some kind of sort on this column?
+        var sortIdx = pluck(sorting, '0').indexOf(colIdx);
+        if (sortIdx !== -1) {
+            // Yes, modify the sort
+            nextSortIdx = next(sorting[sortIdx], true);
+            if (nextSortIdx === null && sorting.length === 1) {
+                nextSortIdx = 0; // can't remove sorting completely
+            }
+            if (nextSortIdx === null || asSorting[nextSortIdx] === '') {
+                sorting.splice(sortIdx, 1);
+            }
+            else {
+                sorting[sortIdx][1] = asSorting[nextSortIdx];
+                sorting[sortIdx]._idx = nextSortIdx;
+            }
+        }
+        else if (shift) {
+            // No sort on this column yet, being added by shift click
+            // add it as itself
+            sorting.push([colIdx, asSorting[0], 0]);
+            sorting[sorting.length - 1]._idx = 0;
+        }
+        else {
+            // No sort on this column yet, being added from a colspan
+            // so add with same direction as first column
+            sorting.push([colIdx, sorting[0][1], 0]);
+            sorting[sorting.length - 1]._idx = 0;
+        }
+    }
+    else if (sorting.length && sorting[0][0] == colIdx) {
+        // Single column - already sorting on this column, modify the sort
+        nextSortIdx = next(sorting[0]);
+        if (nextSortIdx) {
+            sorting.length = 1;
+            sorting[0][1] = asSorting[nextSortIdx];
+            sorting[0]._idx = nextSortIdx;
+        }
+        else {
+            sorting.length = 1;
+            sorting[0][1] = asSorting[0];
+            sorting[0]._idx = 0;
+        }
+    }
+    else {
+        // Single column - sort only on this column
+        sorting.length = 0;
+        sorting.push([colIdx, asSorting[0]]);
+        sorting[0]._idx = 0;
+    }
+}
+/**
+ * Set the sorting classes on table's body, Note: it is safe to call this function
+ * when bSort and bSortClasses are false
+ *
+ * @param settings DataTables settings object
+ */
+function sortingClasses(settings) {
+    var oldSort = settings.lastOrder;
+    var sortClass = settings.classes.order.position;
+    var sortFlat = sortFlatten(settings);
+    var features = settings.features;
+    var i, iLen, colIdx;
+    if (features.ordering && features.orderClasses) {
+        // Remove old sorting classes
+        for (i = 0, iLen = oldSort.length; i < iLen; i++) {
+            colIdx = oldSort[i].src;
+            // Remove column sorting
+            Dom.s(pluck(settings.data, 'cells', colIdx)).classRemove(sortClass + (i < 2 ? i + 1 : 3));
+        }
+        // Add new column sorting
+        for (i = 0, iLen = sortFlat.length; i < iLen; i++) {
+            colIdx = sortFlat[i].src;
+            Dom.s(pluck(settings.data, 'cells', colIdx)).classAdd(sortClass + (i < 2 ? i + 1 : 3));
+        }
+    }
+    settings.lastOrder = sortFlat;
+}
+/**
+ * Get the data to sort a column, be it from cache, fresh (populating the
+ * cache), or from a sort formatter
+ *
+ * @param settings DataTables settings object
+ * @param colIdx Column index
+ */
+function sortData(settings, colIdx) {
+    // Custom sorting function - provided by the sort data type
+    var column = settings.columns[colIdx];
+    var customSort = ext.order[column.orderDataType];
+    var customData;
+    if (customSort) {
+        customData = customSort.call(settings.instance, settings, colIdx, columnIndexToVisible(settings, colIdx));
+    }
+    // Use / populate cache
+    var row, cellData;
+    var formatter = ext.type.order[column.type + '-pre'];
+    var data = settings.data;
+    for (var rowIdx = 0; rowIdx < data.length; rowIdx++) {
+        // Sparse array
+        if (!data[rowIdx]) {
+            continue;
+        }
+        row = data[rowIdx];
+        if (row && !row.orderCache) {
+            row.orderCache = [];
+        }
+        if (row && (!row.orderCache[colIdx] || customSort)) {
+            cellData = customSort
+                ? customData[rowIdx] // If there was a custom sort function, use data from there
+                : getCellData(settings, rowIdx, colIdx, 'sort');
+            row.orderCache[colIdx] = formatter
+                ? formatter(cellData, settings)
+                : cellData;
+        }
+    }
+}
+
+const defaults$3 = {
+    boundary: false,
+    caseInsensitive: true,
+    columns: null,
+    exact: false,
+    regex: false,
+    return: false,
+    search: '',
+    smart: true
 };
-const pagingContainer = (settings, buttons) => {
-    // No wrapping element - just append directly to the host
-    return buttons;
-};
-function displayRowCells(items, fn) {
-    if (items.start) {
-        fn('start', items.start);
+/**
+ * Create a new search options object
+ *
+ * @param parts Values to assign, otherwise the defaults will be used
+ * @returns New object
+ */
+function create$1(parts = {}) {
+    return util.object.assignDeep({}, defaults$3, parts);
+}
+
+/**
+ * Alter the display settings to change the page
+ *
+ * @param settings DataTables settings object
+ * @param action Paging action to take: "first", "previous", "next" or "last" or
+ *   page number to jump to (integer)
+ * @param redraw Automatically draw the update or not
+ * @returns true page has changed, false - no change
+ */
+function pageChange(settings, action, redraw) {
+    var start = settings.displayStart, len = settings.pageLength, records = recordsDisplay(settings);
+    if (records === 0 || len === -1) {
+        start = 0;
     }
-    if (items.end) {
-        fn('end', items.end);
+    else if (typeof action === 'number') {
+        start = action * len;
+        if (start > records) {
+            start = 0;
+        }
     }
-    if (items.full) {
-        fn('full', items.full);
+    else if (action == 'first') {
+        start = 0;
     }
+    else if (action == 'previous') {
+        start = len >= 0 ? start - len : 0;
+        if (start < 0) {
+            start = 0;
+        }
+    }
+    else if (action == 'next') {
+        if (start + len < records) {
+            start += len;
+        }
+    }
+    else if (action == 'last') {
+        start = Math.floor((records - 1) / len) * len;
+    }
+    else if (action === 'ellipsis') {
+        return;
+    }
+    else {
+        log(settings, 0, 'Unknown paging action: ' + action, 5);
+    }
+    var changed = settings.displayStart !== start;
+    settings.displayStart = start;
+    callbackFire(settings, null, changed ? 'page' : 'page-nc', [settings]);
+    if (changed && redraw) {
+        draw(settings);
+    }
+    return changed;
+}
+
+/**
+ * State information for a table
+ *
+ * @param settings DataTables settings object
+ */
+function saveState(settings) {
+    if (settings.loadingState) {
+        return;
+    }
+    // Sort state saving uses [[idx, order]] structure.
+    var sorting = [];
+    sortResolve(settings, sorting, settings.order);
+    /* Store the interesting variables */
+    var columns = settings.columns;
+    var state = {
+        columns: settings.columns.map(function (col, i) {
+            return {
+                name: col.name,
+                visible: col.visible,
+                search: Object.assign({}, settings.searches[i])
+            };
+        }),
+        length: settings.pageLength,
+        order: sorting.map(function (sort) {
+            // If a column name is available, use it
+            return columns[sort[0]] && columns[sort[0]].name
+                ? [columns[sort[0]].name, sort[1]]
+                : sort.slice();
+        }),
+        search: Object.assign({}, settings.searches['*']),
+        searchGroups: Object.keys(settings.searches)
+            .filter(c => c.includes(',')) // Limit to only multi-column subsets
+            .map(c => Object.assign({}, settings.searches[c])),
+        start: settings.displayStart,
+        time: +new Date()
+    };
+    settings.stateSaved = state;
+    callbackFire(settings, 'stateSaveParams', 'stateSaveParams', [
+        settings,
+        state
+    ]);
+    if (settings.features.stateSave && !settings.destroying) {
+        settings.stateSaveCallback.call(settings.instance, settings, state);
+    }
+}
+/**
+ * Attempt to load a saved table state
+ *
+ * @param settings dataTables settings object
+ * @param callback Callback to execute when the state has been loaded
+ */
+function loadState(settings, callback) {
+    if (!settings.features.stateSave) {
+        callback();
+        return;
+    }
+    var loaded = function (state, ignoreTime = false) {
+        implementState(settings, state, ignoreTime, callback);
+    };
+    var state = settings.stateLoadCallback.call(settings.instance, settings, loaded);
+    if (state !== undefined) {
+        implementState(settings, state, false, callback);
+    }
+    // otherwise, wait for the loaded callback to be executed
+    return true;
+}
+function implementState(settings, s, ignoreTime, callback) {
+    var i, iLen;
+    var columns = settings.columns;
+    var currentNames = pluck(settings.columns, 'name');
+    settings.loadingState = true;
+    // When StateRestore was introduced the state could now be implemented at
+    // any time Not just initialisation. To do this an api instance is required
+    // in some places
+    var api = settings.initDone ? new Api(settings) : null;
+    if (!ignoreTime) {
+        if (!s || !s.time) {
+            settings.loadingState = false;
+            callback();
+            return;
+        }
+        // Reject old data
+        var duration = settings.stateDuration;
+        if (duration > 0 && s.time < +new Date() - duration * 1000) {
+            settings.loadingState = false;
+            callback();
+            return;
+        }
+    }
+    // Allow custom and plug-in manipulation functions to alter the saved data
+    // set and cancelling of loading by returning false
+    var abStateLoad = callbackFire(settings, 'stateLoadParams', 'stateLoadParams', [settings, s]);
+    if (abStateLoad.indexOf(false) !== -1) {
+        settings.loadingState = false;
+        callback();
+        return;
+    }
+    // Store the saved state so it might be accessed at any time
+    settings.stateLoaded = assignDeep({}, s);
+    // This is needed for ColReorder, which has to happen first to allow all
+    // the stored indexes to be usable. It is not publicly documented.
+    callbackFire(settings, null, 'stateLoadInit', [settings, s], true);
+    // Page Length
+    if (s.length !== undefined) {
+        // If already initialised just set the value directly so that the select
+        // element is also updated
+        if (api) {
+            api.page.len(s.length);
+        }
+        else {
+            settings.pageLength = s.length;
+        }
+    }
+    // Restore key features
+    if (s.start !== undefined) {
+        if (api === null) {
+            settings.displayStart = s.start;
+            settings.displayStartInit = s.start;
+        }
+        else {
+            pageChange(settings, s.start / settings.pageLength);
+        }
+    }
+    // Order
+    if (s.order !== undefined) {
+        settings.order = [];
+        for (let i = 0; i < s.order.length; i++) {
+            let col = s.order[i];
+            let set = [col[0], col[1]];
+            // A column name was stored and should be used for restore
+            if (typeof col[0] === 'string') {
+                // Find the name from the current list of column names
+                let idx = currentNames.indexOf(col[0]);
+                if (idx < 0) {
+                    // If the column was not found ignore it and continue
+                    continue;
+                }
+                set[0] = idx;
+            }
+            else if (set[0] >= columns.length) {
+                // If the column index is out of bounds ignore it and continue
+                continue;
+            }
+            settings.order.push(set);
+        }
+    }
+    // Search
+    if (s.search !== undefined) {
+        Object.assign(settings.searches['*'], s.search);
+    }
+    if (s.searchGroups) {
+        s.searchGroups.forEach(group => {
+            if (group.columns) {
+                let index = group.columns.join(',');
+                settings.searches[index] = create$1(group);
+            }
+        });
+    }
+    // Columns
+    if (s.columns) {
+        var set = s.columns;
+        var incoming = pluck(s.columns, 'name');
+        // Check if it is a 2.2 style state object with a `name` property for
+        // the columns, and if the name was defined. If so, then create a new
+        // array that will map the state object given, to the current columns
+        // (don't bother if they are already matching tho).
+        if (incoming.join('').length &&
+            incoming.join('') !== currentNames.join('')) {
+            set = [];
+            // For each column, try to find the name in the incoming array
+            for (i = 0; i < currentNames.length; i++) {
+                if (currentNames[i] != '') {
+                    var idx = incoming.indexOf(currentNames[i]);
+                    if (idx >= 0) {
+                        set.push(s.columns[idx]);
+                    }
+                    else {
+                        // No matching column name in the state's columns, so
+                        // this might be a new column and thus can't have a
+                        // state already.
+                        set.push({});
+                    }
+                }
+                else {
+                    // If no name, but other columns did have a name, then there
+                    // is no knowing where this one came from originally so it
+                    // can't be restored.
+                    set.push({});
+                }
+            }
+        }
+        // If the number of columns to restore is different from current, then
+        // all bets are off.
+        if (set.length === columns.length) {
+            for (i = 0, iLen = set.length; i < iLen; i++) {
+                var col = set[i];
+                // Visibility
+                if (col.visible !== undefined) {
+                    // If the api is defined, the table has been initialised so
+                    // we need to use it rather than internal settings
+                    if (api) {
+                        // Don't redraw the columns on every iteration of this
+                        // loop, we will do this at the end instead
+                        api.column(i).visible(col.visible, false);
+                    }
+                    else {
+                        columns[i].visible = col.visible;
+                    }
+                }
+                // Search
+                if (col.search !== undefined) {
+                    Object.assign(settings.searches[i], col.search);
+                    // If out of order due to a change in order from named
+                    // columns we need to make sure the index is correct
+                    settings.searches[i].columns = [i];
+                }
+            }
+            // If the api is defined then we need to adjust the columns once the
+            // visibility has been changed
+            if (api) {
+                api.one('draw', function () {
+                    api.columns.adjust();
+                });
+            }
+        }
+    }
+    settings.loadingState = false;
+    callbackFire(settings, 'stateLoaded', 'stateLoaded', [settings, s]);
+    callback();
+}
+
+/**
+ * Draw the table for the first time, adding all required features
+ *
+ * @param settings DataTables settings object
+ */
+function initialise(settings) {
+    var i;
+    var init = settings.init;
+    var deferLoading = settings.deferLoading;
+    var dataSrc = dataSource(settings);
+    // Ensure that the table data is fully initialised
+    if (!settings.initialised) {
+        setTimeout(function () {
+            initialise(settings);
+        }, 200);
+        return;
+    }
+    // Build the header / footer for the table
+    buildHead(settings, 'header');
+    buildHead(settings, 'footer');
+    // Load the table's state (if needed) and then render around it and draw
+    loadState(settings, function () {
+        // Then draw the header / footer
+        drawHead(settings, settings.header);
+        drawHead(settings, settings.footer);
+        // Cache the paging start point, as the first redraw will reset it
+        var iAjaxStart = settings.displayStartInit;
+        // Local data load
+        // Check if there is data passing into the constructor
+        if (init && init.data) {
+            for (i = 0; i < init.data.length; i++) {
+                addData(settings, init.data[i]);
+            }
+        }
+        else if (deferLoading || dataSrc == 'dom') {
+            // Grab the data from the page
+            addTr(settings, Dom.s(settings.tbody).children('tr'));
+        }
+        // Filter not yet applied - copy the display master
+        settings.display = settings.displayMaster.slice();
+        // Enable features
+        createLayout(settings);
+        sortInit(settings);
+        colGroup(settings);
+        /* Okay to show that something is going on now */
+        processingDisplay(settings, true);
+        callbackFire(settings, null, 'preInit', [settings], true);
+        // If there is default sorting required - let's do it. The sort function
+        // will do the drawing for us. Otherwise we draw the table regardless of
+        // the Ajax source - this allows the table to look initialised for Ajax
+        // sourcing data (show 'loading' message possibly)
+        reDraw(settings);
+        // Server-side processing init complete is done by _fnAjaxUpdateDraw
+        if (dataSrc != 'ssp' || deferLoading) {
+            // if there is an ajax source load the data
+            if (dataSrc == 'ajax') {
+                buildAjax(settings, {}, function (json) {
+                    var aData = ajaxDataSrc(settings, json, false);
+                    // Got the data - add it to the table
+                    for (i = 0; i < aData.length; i++) {
+                        addData(settings, aData[i]);
+                    }
+                    // Reset the init display for cookie saving. We've already
+                    // done a filter, and therefore cleared it before. So we
+                    // need to make it appear 'fresh'
+                    settings.displayStartInit = iAjaxStart;
+                    reDraw(settings);
+                    processingDisplay(settings, false);
+                    initComplete(settings);
+                });
+            }
+            else {
+                initComplete(settings);
+                processingDisplay(settings, false);
+            }
+        }
+    });
+}
+/**
+ * Draw the table for the first time, adding all required features
+ *
+ * @param settings DataTables settings object
+ */
+function initComplete(settings) {
+    if (settings.initDone) {
+        return;
+    }
+    var args = [settings, settings.json];
+    settings.initDone = true;
+    // If the footer element is empty after initialisation, then remove it
+    let tfoot = Dom.s(settings.tfoot);
+    if (tfoot.children().count() === 0) {
+        tfoot.remove();
+    }
+    // Table is fully set up and we have data, so calculate the
+    // column widths
+    adjustColumnSizing(settings);
+    callbackFire(settings, null, 'plugin-init', args, true);
+    callbackFire(settings, 'init', 'init', args, true);
+}
+
+/**
+ * Create an Ajax call based on the table's settings, taking into account that
+ * parameters can have multiple forms, and backwards compatibility.
+ *
+ * @param settings DataTables settings object
+ * @param data Data to send to the server, required by DataTables - may be
+ *   augmented by developer callbacks
+ * @param fn Callback function to run when data is obtained
+ */
+function buildAjax(settings, data, fn) {
+    var ajaxData;
+    var ajaxConfig = settings.ajax;
+    var instance = settings.instance;
+    var callback = function (json) {
+        var status = settings.jqXHR ? settings.jqXHR.status : null;
+        if (json === null || (typeof status === 'number' && status == 204)) {
+            json = {};
+            ajaxDataSrc(settings, json, []);
+        }
+        var error = json.error || json.sError;
+        if (error) {
+            log(settings, 0, error);
+        }
+        // Microsoft often wrap JSON as a string in another JSON object Let's
+        // handle that automatically
+        if (json.d && typeof json.d === 'string') {
+            try {
+                json = JSON.parse(json.d);
+            }
+            catch (e) {
+                // noop
+            }
+        }
+        settings.json = json;
+        invalidColumn(settings);
+        callbackFire(settings, null, 'xhr', [settings, json, settings.jqXHR], true);
+        fn(json);
+    };
+    if (util.is.plainObject(ajaxConfig) && ajaxConfig.data) {
+        ajaxData = ajaxConfig.data;
+        var newData = typeof ajaxData === 'function'
+            ? ajaxData(data, settings) // fn can manipulate data or return
+            : ajaxData; // an object or array to merge
+        // If the function returned something, use that alone
+        data =
+            typeof ajaxData === 'function' && newData
+                ? newData
+                : util.object.assignDeep(data, newData);
+        // Remove the data property as we've resolved it already and don't want
+        // jQuery to do it again (it is restored at the end of the function)
+        delete ajaxConfig.data;
+    }
+    var baseAjax = {
+        url: typeof ajaxConfig === 'string' ? ajaxConfig : '',
+        data: data,
+        success: callback,
+        dataType: 'json',
+        cache: false,
+        type: settings.serverMethod,
+        error: function (xhr, error) {
+            var ret = callbackFire(settings, null, 'xhr', [settings, null, settings.jqXHR], true);
+            if (ret.indexOf(false) === -1) {
+                if (error == 'parsererror') {
+                    log(settings, 0, 'Invalid JSON response', 1);
+                }
+                else if (xhr.readyState === 4) {
+                    log(settings, 0, 'Ajax error', 7);
+                }
+            }
+            processingDisplay(settings, false);
+        }
+    };
+    // If `ajax` option is an object, extend and override our default base
+    if (util.is.plainObject(ajaxConfig)) {
+        util.object.assign(baseAjax, ajaxConfig);
+    }
+    // Store the data submitted for the API
+    settings.ajaxData = data;
+    // Allow plug-ins and external processes to modify the data
+    callbackFire(settings, null, 'preXhr', [settings, data, baseAjax], true);
+    if (typeof ajaxConfig === 'function') {
+        // Is a function - let the caller define what needs to be done
+        settings.jqXHR = ajaxConfig.call(instance, data, callback, settings);
+    }
+    else if (ajaxConfig &&
+        typeof ajaxConfig !== 'string' &&
+        ajaxConfig.url === '') {
+        // No url, so don't load any data. Just apply an empty data array
+        // to the object for the callback.
+        var empty = {};
+        ajaxDataSrc(settings, empty, []);
+        callback(empty);
+    }
+    else {
+        // Object to extend the base settings
+        settings.jqXHR = util.ajax(baseAjax);
+    }
+    // Restore for next time around
+    if (ajaxData) {
+        ajaxConfig.data = ajaxData;
+    }
+}
+/**
+ * Update the table using an Ajax call
+ *
+ * @param settings DataTables settings object
+ * @returns Block the table drawing or not
+ */
+function ajaxUpdate(settings) {
+    settings.drawCount++;
+    processingDisplay(settings, true);
+    buildAjax(settings, ajaxParameters(settings), function (json) {
+        ajaxUpdateDraw(settings, json);
+    });
+}
+function functionOrValue(val) {
+    return typeof val === 'function' ? 'function' : val.toString();
+}
+/**
+ * Build up the parameters in an object needed for a server-side processing
+ * request.
+ *
+ * @param settings DataTables settings object
+ * @returns Block the table drawing or not
+ */
+function ajaxParameters(settings) {
+    var columns = settings.columns, features = settings.features, searches = settings.searches, searchesFixed = settings.searchesFixed, colData = function (idx, prop) {
+        return typeof columns[idx][prop] === 'function'
+            ? 'function'
+            : columns[idx][prop];
+    };
+    return {
+        draw: settings.drawCount,
+        columns: columns.map(function (column, i) {
+            return {
+                data: colData(i, 'data'),
+                name: column.name,
+                searchable: column.searchable,
+                orderable: column.orderable,
+                search: {
+                    value: searches[i]
+                        ? functionOrValue(searches[i].search)
+                        : '',
+                    regex: searches[i] ? searches[i].regex : false,
+                    fixed: searchesFixed[i]
+                        ? Object.keys(searchesFixed[i]).map(name => ({
+                            name: name,
+                            term: functionOrValue(searchesFixed[i][name].search)
+                        }))
+                        : []
+                }
+            };
+        }),
+        order: sortFlatten(settings).map(function (val) {
+            return {
+                column: val.col,
+                dir: val.dir,
+                name: colData(val.col, 'name')
+            };
+        }),
+        start: settings.displayStart,
+        length: features.paging ? settings.pageLength : -1,
+        search: {
+            value: functionOrValue(searches['*'].search),
+            regex: searches['*'].regex,
+            fixed: Object.keys(settings.searchesFixed['*']).map(name => ({
+                name: name,
+                term: functionOrValue(settings.searchesFixed['*'][name].search)
+            })),
+            groups: Object.keys(settings.searches)
+                .filter(c => c.includes(',')) // Limit to only multi-column subsets
+                .map(c => ({
+                columns: settings.searches[c].columns || [],
+                term: functionOrValue(settings.searches[c].search)
+            })),
+            groupsFixed: Object.keys(settings.searchesFixed)
+                .filter(c => c.includes(',')) // Limit to only multi-column subsets
+                .map(c => {
+                let searches = settings.searchesFixed[c];
+                return Object.keys(searches).map(n => ({
+                    columns: searches[n].columns || [],
+                    name: n,
+                    term: functionOrValue(searches[n].search)
+                }));
+            })
+                .flat()
+        }
+    };
+}
+/**
+ * Data the data from the server (nuking the old) and redraw the table
+ *
+ * @param settings DataTables settings object
+ * @param json json data return from the server.
+ */
+function ajaxUpdateDraw(settings, json) {
+    var data = ajaxDataSrc(settings, json, false);
+    var drawUnique = ajaxDataSrcParam(settings, 'draw', json);
+    var recordsTotal = ajaxDataSrcParam(settings, 'recordsTotal', json);
+    var recordsFiltered = ajaxDataSrcParam(settings, 'recordsFiltered', json);
+    var existingTypes = settings.columns.map(c => c.type).join(',');
+    if (drawUnique !== undefined) {
+        // Protect against out of sequence returns
+        if (drawUnique * 1 < settings.drawCount) {
+            return;
+        }
+        settings.drawCount = drawUnique * 1;
+    }
+    // No data in returned object, so rather than an array, we show an empty
+    // table
+    if (!data) {
+        data = [];
+    }
+    clearTable(settings);
+    settings.recordsTotal = parseInt(recordsTotal, 10);
+    settings.recordsDisplay = parseInt(recordsFiltered, 10);
+    for (var i = 0, iLen = data.length; i < iLen; i++) {
+        addData(settings, data[i]);
+    }
+    settings.display = settings.displayMaster.slice();
+    columnTypes(settings, existingTypes);
+    draw(settings, true);
+    initComplete(settings);
+    processingDisplay(settings, false);
+}
+/**
+ * Get the data from the JSON data source to use for drawing a table.
+ *
+ * @param settings DataTables settings object
+ * @param json Data source object / array from the server
+ * @param write Array or object to write the data to
+ * @return Array of data to use
+ */
+function ajaxDataSrc(settings, json, write) {
+    var dataProp = 'data';
+    if (util.is.plainObject(settings.ajax) &&
+        settings.ajax.dataSrc !== undefined) {
+        // Could in inside a `dataSrc` object, or not!
+        var dataSrc = settings.ajax.dataSrc;
+        // string, function and object are valid types
+        if (typeof dataSrc === 'string' || typeof dataSrc === 'function') {
+            dataProp = dataSrc;
+        }
+        else if (dataSrc.data !== undefined) {
+            dataProp = dataSrc.data;
+        }
+    }
+    if (!write) {
+        if (dataProp === 'data') {
+            // If the default, then we still want to support the old style, and
+            // safely ignore it if possible
+            return json.aaData || json[dataProp];
+        }
+        return dataProp !== '' ? util.get(dataProp)(json) : json;
+    }
+    // set
+    util.set(dataProp)(json, write);
+}
+/**
+ * Very similar to ajaxDataSrc, but for the other SSP properties
+ *
+ * @param settings DataTables settings object
+ * @param param Target parameter
+ * @param json JSON data
+ * @returns Resolved value
+ */
+function ajaxDataSrcParam(settings, param, json) {
+    var dataSrc = util.is.plainObject(settings.ajax)
+        ? settings.ajax.dataSrc // TODO
+        : null;
+    if (dataSrc && dataSrc[param]) {
+        // Get from custom location
+        return util.data.get(dataSrc[param])(json);
+    }
+    // else - Default behaviour
+    var old = '';
+    // Legacy support
+    if (param === 'draw') {
+        old = 'sEcho';
+    }
+    else if (param === 'recordsTotal') {
+        old = 'iTotalRecords';
+    }
+    else if (param === 'recordsFiltered') {
+        old = 'iTotalDisplayRecords';
+    }
+    return json[old] !== undefined ? json[old] : json[param];
+}
+
+let __filter_div;
+let __filter_div_textContent;
+function createFilterDiv() {
+    __filter_div = Dom.c('div').get(0);
+    __filter_div_textContent = __filter_div.textContent !== undefined;
+}
+/**
+ * Filter the table using both the global filter and column based filtering
+ *
+ * @param settings DataTables settings object
+ */
+function filterComplete(settings) {
+    settings.columns;
+    // In server-side processing all filtering is done by the server, so no
+    // point hanging around here
+    if (dataSource(settings) != 'ssp') {
+        // Check if any of the rows were invalidated
+        filterData(settings);
+        // Start from the full data set
+        settings.display = settings.displayMaster.slice();
+        // Column set filters first
+        util.object.each(settings.searches, (key, s) => {
+            filter(settings.display, settings, s.search, s);
+        });
+        // Fixed (named) filters next
+        util.object.each(settings.searchesFixed, function (columns) {
+            util.object.each(settings.searchesFixed[columns], function (name, s) {
+                filter(settings.display, settings, s.search, s);
+            });
+        });
+        // And finally legacy global filtering
+        filterCustom(settings);
+    }
+    // Tell the draw function we have been filtering
+    settings.wasFiltered = true;
+    callbackFire(settings, null, 'search', [settings]);
+}
+/**
+ * Apply custom filtering functions
+ *
+ * This is legacy now that we have named functions, but it is widely used
+ * from 1.x, so it is not yet deprecated.
+ *
+ * @param settings DataTables settings object
+ */
+function filterCustom(settings) {
+    let filters = ext.search;
+    let displayRows = settings.display;
+    let row, rowIdx;
+    for (let i = 0, iLen = filters.length; i < iLen; i++) {
+        let rows = [];
+        // Loop over each row and see if it should be included
+        for (let j = 0, jen = displayRows.length; j < jen; j++) {
+            rowIdx = displayRows[j];
+            row = settings.data[rowIdx];
+            if (row &&
+                filters[i](settings, row.searchCellCache, rowIdx, row.data, j)) {
+                rows.push(rowIdx);
+            }
+        }
+        // So the array reference doesn't break set the results into the
+        // existing array
+        displayRows.length = 0;
+        arrayApply(displayRows, rows);
+    }
+}
+/**
+ * Filter the data table based on user input and draw the table
+ *
+ * @param searchRows
+ * @param settings
+ * @param input
+ * @param options
+ * @returns
+ */
+function filter(searchRows, settings, input, options) {
+    if (input === '') {
+        return;
+    }
+    let i = 0;
+    let matched = [];
+    // Search term can be a function, regex or string - if a string we apply our
+    // smart filtering regex (assuming the options require that)
+    let searchFunc = typeof input === 'function' ? input : null;
+    let rpSearch = input instanceof RegExp
+        ? input
+        : searchFunc
+            ? null
+            : filterCreateSearch(input, options);
+    let columns = options.columns
+        ? options.columns
+        : util.array.range(settings.columns.length);
+    // Then for each row, does the test pass. If not, lop the row from the array
+    for (i = 0; i < searchRows.length; i++) {
+        let row = settings.data[searchRows[i]];
+        if (row) {
+            // Get the data array based on the columns to include in the search
+            let data = util.array.selectiveJoin(row.searchCellCache, columns);
+            // Run the search action
+            if ((searchFunc &&
+                searchFunc(data, row.data, searchRows[i], columns.length === 1 ? columns[0] : columns // compat
+                )) ||
+                (rpSearch && typeof data === 'string' && rpSearch.test(data))) {
+                matched.push(searchRows[i]);
+            }
+        }
+    }
+    // Mutate the searchRows array
+    searchRows.length = matched.length;
+    for (i = 0; i < matched.length; i++) {
+        searchRows[i] = matched[i];
+    }
+}
+/**
+ * Build a regular expression object suitable for searching a table
+ */
+function filterCreateSearch(searchIn, inOpts) {
+    let not = [];
+    let options = Object.assign({}, {
+        boundary: false,
+        caseInsensitive: true,
+        exact: false,
+        regex: false,
+        smart: true
+    }, inOpts);
+    let search = typeof searchIn !== 'string' ? searchIn.toString() : searchIn;
+    // Remove diacritics if normalize is set up to do so
+    search = util.diacritics(search);
+    if (options.exact) {
+        return new RegExp('^' + util.escapeRegex(search) + '$', options.caseInsensitive ? 'i' : '');
+    }
+    search = options.regex ? search : util.escapeRegex(search);
+    if (options.smart) {
+        /* For smart filtering we want to allow the search to work regardless of
+         * word order. We also want double quoted text to be preserved, so word
+         * order is important - a la google. And a negative look around for
+         * finding rows which don't contain a given string.
+         *
+         * So this is the sort of thing we want to generate:
+         *
+         * ^(?=.*?\bone\b)(?=.*?\btwo three\b)(?=.*?\bfour\b).*$
+         */
+        let parts = search.match(/!?["\u201C][^"\u201D]+["\u201D]|[^ ]+/g) || [
+            ''
+        ];
+        let a = parts.map(function (word) {
+            let negative = false;
+            let m;
+            // Determine if it is a "does not include"
+            if (word.charAt(0) === '!') {
+                negative = true;
+                word = word.substring(1);
+            }
+            // Strip the quotes from around matched phrases
+            if (word.charAt(0) === '"') {
+                m = word.match(/^"(.*)"$/);
+                word = m ? m[1] : word;
+            }
+            else if (word.charAt(0) === '\u201C') {
+                // Smart quote match (iPhone users)
+                m = word.match(/^\u201C(.*)\u201D$/);
+                word = m ? m[1] : word;
+            }
+            // For our "not" case, we need to modify the string that is
+            // allowed to match at the end of the expression.
+            if (negative) {
+                if (word.length > 1) {
+                    not.push('(?!' + word + ')');
+                }
+                word = '';
+            }
+            return word.replace(/"/g, '');
+        });
+        let match = not.length ? not.join('') : '';
+        let boundary = options.boundary ? '\\b' : '';
+        search =
+            '^(?=.*?' +
+                boundary +
+                a.join(')(?=.*?' + boundary) +
+                ')(' +
+                match +
+                '.)*$';
+    }
+    return new RegExp(search, options.caseInsensitive ? 'i' : '');
+}
+// Update the filtering data for each row if needed (by invalidation or first
+// run)
+function filterData(settings) {
+    let columns = settings.columns;
+    let data = settings.data;
+    let column;
+    let j, jen, cellData, row;
+    let wasInvalidated = false;
+    if (!__filter_div) {
+        createFilterDiv();
+    }
+    for (let rowIdx = 0; rowIdx < data.length; rowIdx++) {
+        if (!data[rowIdx]) {
+            continue;
+        }
+        row = data[rowIdx];
+        if (row && !row.searchCellCache) {
+            const rowFilterData = [];
+            for (j = 0, jen = columns.length; j < jen; j++) {
+                column = columns[j];
+                if (column.searchable) {
+                    cellData = getCellData(settings, rowIdx, j, 'filter');
+                    // Search in DataTables is string based
+                    if (cellData === null) {
+                        cellData = '';
+                    }
+                    if (typeof cellData !== 'string' && cellData.toString) {
+                        cellData = cellData.toString();
+                    }
+                }
+                else {
+                    cellData = '';
+                }
+                // If it looks like there is an HTML entity in the string,
+                // attempt to decode it so sorting works as expected. Note that
+                // we could use a single line of jQuery to do this, but the DOM
+                // method used here is much faster
+                // https://jsperf.com/html-decode
+                if (cellData.indexOf && cellData.indexOf('&') !== -1) {
+                    __filter_div.innerHTML = cellData;
+                    cellData = __filter_div_textContent
+                        ? __filter_div.textContent
+                        : __filter_div.innerText;
+                }
+                if (cellData.replace) {
+                    cellData = cellData.replace(/[\r\n\u2028]/g, '');
+                }
+                rowFilterData.push(cellData);
+            }
+            row.searchCellCache = rowFilterData;
+            row.searchRowCache = rowFilterData.join('  ');
+            wasInvalidated = true;
+        }
+    }
+    return wasInvalidated;
+}
+
+function getDisplay(settings, rowIdx, colIdx = null) {
+    var rowModal = settings.data[rowIdx];
+    var columns = settings.columns;
+    if (!rowModal) {
+        return [];
+    }
+    if (!rowModal.displayData) {
+        // Need to render and cache
+        rowModal.displayData = [];
+    }
+    const displayData = rowModal.displayData;
+    // Check if we need to actually perform the render to get the display data
+    if (!displayData._complete) {
+        if (colIdx !== null) {
+            // Single cell
+            if (!displayData[colIdx]) {
+                displayData[colIdx] = getCellData(settings, rowIdx, colIdx, 'display');
+            }
+        }
+        else {
+            // Whole row
+            for (var i = 0, len = columns.length; i < len; i++) {
+                if (!displayData[i]) {
+                    displayData[i] = getCellData(settings, rowIdx, i, 'display');
+                    displayData._complete = true;
+                }
+            }
+        }
+    }
+    // At this point the item(s) we want will have been created - possibly all,
+    // but that doesn't matter, as long as we've got the one we want.
+    return colIdx !== null ? displayData[colIdx] : displayData;
+}
+/**
+ * Create a new TR element (and it's TD children) for a row
+ *
+ * @param settings DataTables settings object
+ * @param rowIdx Row to consider
+ * @param trIn TR element to add to the table - optional. If not given,
+ *   DataTables will create a row automatically
+ * @param tds Array of TD|TH elements for the row - must be given if trIn is.
+ */
+function createTr(settings, rowIdx, trIn, tds) {
+    var row = settings.data[rowIdx], cells = [], tr, td, column, i, iLen, create, trClass = settings.classes.tbody.row, doc = external('doc');
+    if (row && row.tr === null) {
+        let rowData = row.data;
+        tr = trIn || doc.createElement('tr');
+        row.tr = tr;
+        row.cells = cells;
+        Dom.s(tr).classAdd(trClass);
+        // Use a private property on the node to allow reserve mapping from the node
+        // to the aoData array for fast look up
+        tr._DT_RowIndex = rowIdx;
+        // Special parameters can be given by the data source to be used on the
+        // row
+        rowAttributes(settings, row);
+        /* Process each column */
+        for (i = 0, iLen = settings.columns.length; i < iLen; i++) {
+            column = settings.columns[i];
+            create = trIn && tds && tds[i] ? false : true;
+            td = create
+                ? doc.createElement(column.cellType)
+                : tds[i];
+            if (!td) {
+                log(settings, 0, 'Incorrect column count', 18);
+            }
+            td._DT_CellIndex = {
+                row: rowIdx,
+                column: i
+            };
+            cells.push(td);
+            var display = getDisplay(settings, rowIdx);
+            // Need to create the HTML if new, or if a rendering function is
+            // defined
+            if (create ||
+                ((column.render || column.data !== i) &&
+                    (!util.is.plainObject(column.data) ||
+                        (column.data &&
+                            column.data._ !== i + '.display')))) {
+                writeCell(td, display[i]);
+            }
+            // column class
+            Dom.s(td).classAdd(column.className);
+            // Visibility - add or remove as required
+            if (column.visible && create) {
+                tr.appendChild(td);
+            }
+            else if (!column.visible && !create) {
+                td.parentNode.removeChild(td);
+            }
+            if (column.createdCell) {
+                column.createdCell.call(settings.instance, td, getCellData(settings, rowIdx, i), rowData, rowIdx, i);
+            }
+        }
+        callbackFire(settings, 'rowCreated', 'row-created', [
+            tr,
+            rowData,
+            rowIdx,
+            cells
+        ]);
+    }
+    else if (row) {
+        Dom.s(row.tr).classAdd(trClass);
+    }
+}
+/**
+ * Add attributes to a row based on the special `DT_*` parameters in a data
+ * source object.
+ *
+ * @param settings DataTables settings object
+ * @param row Row object for the row to be modified
+ */
+function rowAttributes(settings, row) {
+    var tr = row.tr;
+    var data = row.data;
+    if (tr) {
+        var id = settings.rowIdFn(data);
+        if (id) {
+            tr.id = id;
+        }
+        if (data.DT_RowClass) {
+            // Remove any classes added by DT_RowClass before
+            var a = data.DT_RowClass.split(' ');
+            row.addedClasses = row.addedClasses
+                ? util.unique(row.addedClasses.concat(a))
+                : a;
+            Dom.s(tr)
+                .classRemove(row.addedClasses.join(' '))
+                .classAdd(data.DT_RowClass);
+        }
+        if (data.DT_RowAttr) {
+            Dom.s(tr).attr(data.DT_RowAttr);
+        }
+        if (data.DT_RowData) {
+            Dom.s(tr).data(data.DT_RowData);
+        }
+    }
+}
+/**
+ * Create the HTML header for the table
+ *
+ * @param settings DataTable instance
+ * @param side If the header or footer should be used
+ * @returns
+ */
+function buildHead(settings, side) {
+    let classes = settings.classes;
+    let columns = settings.columns;
+    let i, iLen, row;
+    let target = Dom.s(side === 'header' ? settings.thead : settings.tfoot);
+    let titleProp = side === 'header' ? 'title' : side;
+    // Footer might be defined
+    if (!target) {
+        return;
+    }
+    // If no cells yet and we have content for them, then create
+    if (side === 'header' ||
+        util.array.pluck(settings.columns, titleProp).join('')) {
+        row = target.find('tr');
+        // Add a row if needed
+        if (!row.count()) {
+            row = Dom.c('tr').appendTo(target);
+        }
+        // Add the number of cells needed to make up to the number of columns
+        if (row.count() === 1) {
+            let cellCount = 0;
+            row.find('td, th').each(el => {
+                cellCount += el.colSpan;
+            });
+            for (i = cellCount, iLen = columns.length; i < iLen; i++) {
+                Dom.c('th')
+                    .html(columns[i][titleProp] || '')
+                    .appendTo(row);
+            }
+        }
+    }
+    let detected = detectHeader(settings, target.get(0), true);
+    if (side === 'header') {
+        settings.header = detected;
+        target.find('tr').classAdd(classes.thead.row);
+    }
+    else {
+        settings.footer = detected;
+        target.find('tr').classAdd(classes.tfoot.row);
+    }
+    // Every cell needs to be passed through the renderer
+    target
+        .children('tr')
+        .children('th, td')
+        .each(el => {
+        // Should just be able to do `renderer(settings, side)` here but
+        // Typescript doesn't like it, despite it already being constrained!
+        let runner = side === 'header'
+            ? renderer(settings, 'header')
+            : renderer(settings, 'footer');
+        runner(settings, Dom.s(el), classes);
+    });
+}
+/**
+ * Build a layout structure for a header or footer
+ *
+ * @param settings DataTables settings
+ * @param source Source layout array
+ * @param incColumns What columns should be included
+ * @returns Layout array in column index order
+ */
+function headerLayout(settings, source, incColumns) {
+    var row, column, cell;
+    var local = [];
+    var structure = [];
+    var columns = settings.columns;
+    var columnCount = columns.length;
+    var rowspan, colspan;
+    if (!source) {
+        return;
+    }
+    // Default is to work on only visible columns
+    if (!incColumns) {
+        incColumns = util.array.range(columnCount).filter(function (idx) {
+            return columns[idx].visible;
+        });
+    }
+    // Make a copy of the master layout array, but with only the columns we want
+    for (row = 0; row < source.length; row++) {
+        // Remove any columns we haven't selected
+        local[row] = source[row].slice().filter(function (c, i) {
+            return incColumns.includes(i);
+        });
+        // Prep the structure array - it needs an element for each row
+        structure.push([]);
+    }
+    for (row = 0; row < local.length; row++) {
+        for (column = 0; column < local[row].length; column++) {
+            rowspan = 1;
+            colspan = 1;
+            // Check to see if there is already a cell (row/colspan) covering
+            // our target insert point. If there is, then there is nothing to
+            // do.
+            if (structure[row][column] === undefined) {
+                cell = local[row][column].cell;
+                // Expand for rowspan
+                while (local[row + rowspan] !== undefined &&
+                    local[row][column].cell == local[row + rowspan][column].cell) {
+                    structure[row + rowspan][column] = null;
+                    rowspan++;
+                }
+                // And for colspan
+                while (local[row][column + colspan] !== undefined &&
+                    local[row][column].cell == local[row][column + colspan].cell) {
+                    // Which also needs to go over rows
+                    for (var k = 0; k < rowspan; k++) {
+                        structure[row + k][column + colspan] = null;
+                    }
+                    colspan++;
+                }
+                var titleSpan = Dom.s(cell).find('.dt-column-title');
+                structure[row][column] = {
+                    cell: cell,
+                    colspan: colspan,
+                    rowspan: rowspan,
+                    title: titleSpan.count()
+                        ? titleSpan.html()
+                        : Dom.s(cell).html()
+                };
+            }
+        }
+    }
+    return structure;
+}
+/**
+ * Draw the header (or footer) element based on the column visibility states.
+ *
+ * @param settings DataTables settings object
+ * @param source Layout array from detectHeader
+ */
+function drawHead(settings, source) {
+    let layout = headerLayout(settings, source);
+    let tr;
+    if (!layout) {
+        return;
+    }
+    for (let row = 0; row < source.length; row++) {
+        tr = source[row].row;
+        // All cells are going to be replaced, so empty out the row
+        if (tr) {
+            Dom.s(tr).detachChildren();
+        }
+        for (let column = 0; column < layout[row].length; column++) {
+            let point = layout[row][column];
+            if (point) {
+                Dom.s(point.cell)
+                    .appendTo(tr)
+                    .attr('rowspan', point.rowspan)
+                    .attr('colspan', point.colspan);
+            }
+        }
+    }
+}
+/**
+ * Insert the required TR nodes into the table for display
+ *
+ * @param settings DataTables settings object
+ * @param ajaxComplete true after ajax call to complete rendering
+ */
+function draw(settings, ajaxComplete) {
+    // Allow for state saving and a custom start position
+    setStartPosition(settings);
+    // Provide a pre-callback function which can be used to cancel the draw is
+    // false is returned
+    var aPreDraw = callbackFire(settings, 'preDraw', 'preDraw', [settings]);
+    if (aPreDraw.indexOf(false) !== -1) {
+        processingDisplay(settings, false);
+        return;
+    }
+    var rowEls = [];
+    var rowCount = 0;
+    var isServerSide = dataSource(settings) == 'ssp';
+    var display = settings.display;
+    var start = settings.displayStart;
+    var end = displayEnd(settings);
+    var columns = settings.columns;
+    var body = Dom.s(settings.tbody);
+    settings.doingDraw = true;
+    /* Server-side processing draw intercept */
+    if (settings.deferLoading) {
+        settings.deferLoading = false;
+        settings.drawCount++;
+        processingDisplay(settings, false);
+    }
+    else if (!isServerSide) {
+        settings.drawCount++;
+    }
+    else if (!settings.destroying && !ajaxComplete) {
+        // Show loading message for server-side processing
+        if (settings.drawCount === 0) {
+            body.empty().append(_emptyRow(settings));
+        }
+        ajaxUpdate(settings);
+        return;
+    }
+    if (display.length !== 0) {
+        var iStart = isServerSide ? 0 : start;
+        var iEnd = isServerSide ? settings.data.length : end;
+        for (var j = iStart; j < iEnd; j++) {
+            var dataIdx = display[j];
+            var data = settings.data[dataIdx];
+            // Row has been deleted - can't be displayed
+            if (data === null) {
+                continue;
+            }
+            // Row node hasn't been created yet
+            if (data.tr === null) {
+                createTr(settings, dataIdx);
+            }
+            var nRow = data.tr;
+            // Add various classes as needed
+            for (var i = 0; i < columns.length; i++) {
+                var col = columns[i];
+                var td = data.cells[i];
+                Dom.s(td)
+                    .classAdd(col.type ? ext.type.className[col.type] : null) // auto class
+                    .classAdd(settings.classes.tbody.cell); // all cells
+            }
+            // Row callback functions - might want to manipulate the row
+            // rowCount and j are not currently documented. Are they at all
+            // useful?
+            callbackFire(settings, 'row', null, [
+                nRow,
+                data.data,
+                rowCount,
+                j,
+                dataIdx
+            ]);
+            rowEls.push(nRow);
+            rowCount++;
+        }
+    }
+    else {
+        rowEls[0] = _emptyRow(settings);
+    }
+    /* Header and footer callbacks */
+    callbackFire(settings, 'header', 'header', [
+        Dom.s(settings.thead).children('tr').get(0),
+        getDataMaster(settings),
+        start,
+        end,
+        display
+    ]);
+    callbackFire(settings, 'footer', 'footer', [
+        Dom.s(settings.tfoot).children('tr').get(0),
+        getDataMaster(settings),
+        start,
+        end,
+        display
+    ]);
+    body.detachChildren().append(rowEls);
+    // Empty table needs a specific class
+    Dom.s(settings.tableWrapper).classToggle('dt-empty-footer', Dom.s(settings.tfoot).find('tr').count() === 0);
+    // Call all required callback functions for the end of a draw
+    callbackFire(settings, 'draw', 'draw', [settings], true);
+    // Draw is complete, sorting and filtering must be as well
+    settings.wasOrdered = false;
+    settings.wasFiltered = false;
+    settings.doingDraw = false;
+}
+/**
+ * Redraw the table - taking account of the various features which are enabled
+ *
+ * @param settings DataTables settings object
+ * @param holdPosition Keep the current paging position. By default the paging
+ *    is reset to the first page
+ * @param recompute Indicate if a rebuild of sort and filter should happen
+ */
+function reDraw(settings, holdPosition, recompute) {
+    let features = settings.features, doSort = features.ordering, doFilter = features.searching;
+    if (recompute === undefined || recompute === true) {
+        // Resolve any column types that are unknown due to addition or
+        // invalidation
+        columnTypes(settings);
+        columnWidths(settings);
+        if (doSort) {
+            sort(settings);
+        }
+        if (doFilter) {
+            filterComplete(settings);
+        }
+        else {
+            // No filtering, so we want to just use the display master
+            settings.display = settings.displayMaster.slice();
+        }
+    }
+    if (holdPosition !== true) {
+        settings.displayStart = 0;
+    }
+    else {
+        // Keep position, but make sure that there is actually data to display,
+        // otherwise we need to rewind a bit (e.g. if rows were deleted)
+        lengthOverflow(settings);
+    }
+    // Let any modules know about the draw hold position state (used by
+    // scrolling internally)
+    settings.drawHold = holdPosition;
+    draw(settings);
+    settings.api.one('draw', function () {
+        settings.drawHold = false;
+    });
+}
+/**
+ * Table is empty - create a row with an empty message in it
+ *
+ * @param settings DataTables context
+ */
+function _emptyRow(settings) {
+    let lang = settings.language;
+    let zero = lang.zeroRecords;
+    let dataSrc = dataSource(settings);
+    // Make use of the fact that settings.json is only set once the initial data
+    // has been loaded. Show loading when that isn't the case
+    if ((dataSrc === 'ssp' || dataSrc === 'ajax') && !settings.json) {
+        zero = lang.loadingRecords;
+    }
+    else if (lang.emptyTable && recordsTotal(settings) === 0) {
+        zero = lang.emptyTable;
+    }
+    return Dom.c('tr')
+        .append(Dom.c('td')
+        .attr('colSpan', visibleColumns(settings))
+        .classAdd(settings.classes.empty.row)
+        .html(zero))
+        .get(0);
+}
+/**
+ * Use the DOM source to create up an array of header cells. The idea here is to
+ * create a layout grid (array) of rows x columns, which contains a reference to
+ * the cell at that point in the grid (regardless of col/rowspan), such that any
+ * column / row could be removed and the new grid constructed.
+ *
+ * @param settings DataTables context
+ * @param thead thead / tbody element
+ * @param write If cells should be written (if required)
+ * @returns Calculated layout array
+ */
+function detectHeader(settings, thead, write) {
+    let columns = settings.columns;
+    let rows = Dom.s(thead).children('tr');
+    let row, loopCell;
+    let i, k, l, len, shifted, column, colspan, rowspan;
+    let titleRow = settings.titleRow;
+    let isHeader = thead && thead.nodeName.toLowerCase() === 'thead';
+    let layout = [];
+    let isUnique;
+    let shift = function (a, b, j) {
+        let d = a[b];
+        while (d[j]) {
+            j++;
+        }
+        return j;
+    };
+    // We know how many rows there are in the layout - so prep it
+    for (i = 0, len = rows.count(); i < len; i++) {
+        layout.push([]);
+    }
+    for (i = 0, len = rows.count(); i < len; i++) {
+        row = rows.get(i);
+        column = 0;
+        // For every cell in the row..
+        loopCell = row.firstChild;
+        while (loopCell) {
+            if (loopCell.nodeName.toUpperCase() == 'TD' ||
+                loopCell.nodeName.toUpperCase() == 'TH') {
+                let cell = Dom.s(loopCell);
+                let cols = [];
+                // Get the col and rowspan attributes from the DOM and sanitise
+                // them
+                colspan = parseInt(cell.attr('colspan') || '1') || 1;
+                rowspan = parseInt(cell.attr('rowspan') || '1') || 1;
+                colspan =
+                    !colspan || colspan === 0 || colspan === 1 ? 1 : colspan;
+                rowspan =
+                    !rowspan || rowspan === 0 || rowspan === 1 ? 1 : rowspan;
+                // There might be colspan cells already in this row, so shift
+                // our target accordingly
+                shifted = shift(layout, i, column);
+                // Cache calculation for unique columns
+                isUnique = colspan === 1 ? true : false;
+                // Perform header setup
+                if (write) {
+                    if (isUnique) {
+                        // Allow column options to be set from HTML attributes
+                        columnOptions(settings, shifted, escapeObject(cell.data()));
+                        // Get the width for the column. This can be defined
+                        // from the width attribute, style attribute or
+                        // `columns.width` option
+                        let columnDef = columns[shifted];
+                        let width = cell.attr('width') || null;
+                        let t = cell
+                            .get(0)
+                            .style.width.match(/width:\s*(\d+[pxem%]+)/);
+                        if (t) {
+                            width = t[1];
+                        }
+                        columnDef.widthOrig = columnDef.width || width;
+                        if (isHeader) {
+                            // Column title handling - can be user set, or read
+                            // from the DOM This happens before the render, so
+                            // the original is still in place
+                            if (columnDef.title !== null &&
+                                !columnDef.autoTitle) {
+                                if ((titleRow === true && i === 0) || // top row
+                                    (titleRow === false &&
+                                        i === rows.count() - 1) || // bottom row
+                                    titleRow === i || // specific row
+                                    titleRow === null) {
+                                    cell.html(columnDef.title);
+                                }
+                            }
+                            if (!columnDef.title && isUnique) {
+                                columnDef.title = util.string.stripHtml(cell.html());
+                                columnDef.autoTitle = true;
+                            }
+                        }
+                        else {
+                            // Footer specific operations
+                            if (columnDef.footer) {
+                                cell.html(columnDef.footer);
+                            }
+                        }
+                        // Fall back to the aria-label attribute on the table
+                        // header if no ariaTitle is provided.
+                        if (!columnDef.ariaTitle) {
+                            columnDef.ariaTitle =
+                                cell.attr('aria-label') || columnDef.title;
+                        }
+                        // Column specific class names
+                        if (columnDef.className) {
+                            cell.classAdd(columnDef.className);
+                        }
+                    }
+                    // Wrap the column title so we can write to it in future
+                    if (cell.find('div.dt-column-title').count() === 0) {
+                        Dom.c('div')
+                            .classAdd('dt-column-title')
+                            .append(Array.from(cell.get(0).childNodes))
+                            .appendTo(cell);
+                    }
+                    if (settings.orderIndicators &&
+                        isHeader &&
+                        cell.filter(':not([data-dt-order=disable])').count() !==
+                            0 &&
+                        cell.parent(':not([data-dt-order=disable])').count() !==
+                            0 &&
+                        cell.find('div.dt-column-order').count() === 0) {
+                        Dom.c('div').classAdd('dt-column-order').appendTo(cell);
+                    }
+                    // We need to wrap the elements in the header in another
+                    // element to use flexbox layout for those elements
+                    var headerFooter = isHeader ? 'header' : 'footer';
+                    if (cell.find('div.dt-column-' + headerFooter).count() === 0) {
+                        Dom.c('div')
+                            .classAdd('dt-column-' + headerFooter)
+                            .append(Array.from(cell.get(0).childNodes))
+                            .appendTo(cell);
+                    }
+                }
+                // If there is col / rowspan, copy the information into the
+                // layout grid
+                for (l = 0; l < colspan; l++) {
+                    for (k = 0; k < rowspan; k++) {
+                        layout[i + k][shifted + l] = {
+                            cell: cell.get(0),
+                            unique: isUnique
+                        };
+                        layout[i + k].row = row;
+                    }
+                    cols.push(shifted + l);
+                }
+                // Assign an attribute so spanning cells can still be identified
+                // as belonging to a column
+                cell.attr('data-dt-column', util.unique(cols).join(','));
+            }
+            loopCell = loopCell.nextSibling;
+        }
+    }
+    return layout;
+}
+/**
+ * Set the start position for draw
+ *
+ * @param settings DataTables settings object
+ */
+function setStartPosition(settings) {
+    var bServerSide = dataSource(settings) == 'ssp';
+    var iInitDisplayStart = settings.displayStartInit;
+    // Check and see if we have an initial draw position from state saving
+    if (iInitDisplayStart !== undefined && iInitDisplayStart !== -1) {
+        settings.displayStart = bServerSide
+            ? iInitDisplayStart
+            : iInitDisplayStart >= recordsDisplay(settings)
+                ? 0
+                : iInitDisplayStart;
+        settings.displayStartInit = -1;
+    }
+}
+/**
+ * Get the number of records in the current record set, before filtering
+ *
+ * @param ctx DataTables settings object
+ */
+function recordsTotal(ctx) {
+    return dataSource(ctx) == 'ssp'
+        ? ctx.recordsTotal * 1
+        : ctx.displayMaster.length;
+}
+/**
+ * Get the number of records in the current record set, after filtering
+ *
+ * @param ctx DataTables settings object
+ */
+function recordsDisplay(ctx) {
+    return dataSource(ctx) == 'ssp'
+        ? ctx.recordsDisplay * 1
+        : ctx.display.length;
+}
+/**
+ * Get the display end point - display index
+ *
+ * @param ctx DataTables settings object
+ */
+function displayEnd(ctx) {
+    var len = ctx.pageLength, start = ctx.displayStart, calc = start + len, records = ctx.display.length, features = ctx.features, paginate = features.paging;
+    if (features.serverSide) {
+        return paginate === false || len === -1
+            ? start + records
+            : Math.min(start + len, ctx.recordsDisplay);
+    }
+    else {
+        return !paginate || calc > records || len === -1 ? records : calc;
+    }
+}
+
+/**
+ * Log an error message
+ *
+ * @param ctx DataTables settings object
+ * @param level log error messages, or display them to the user
+ * @param msg error message
+ * @param tn Technical note id to get more information about the error.
+ */
+function log(ctx, level, msg, tn) {
+    msg =
+        'DataTables warning: ' +
+            (ctx ? 'table id=' + ctx.tableId + ' - ' : '') +
+            msg;
+    if (tn) {
+        msg +=
+            '. For more information about this error, please see ' +
+                'https://datatables.net/tn/' +
+                tn;
+    }
+    {
+        // Backwards compatibility pre 1.10
+        var type = ext.sErrMode || ext.errMode;
+        if (ctx) {
+            callbackFire(ctx, null, 'dt-error', [ctx, tn, msg], true);
+        }
+        if (type == 'alert') {
+            alert(msg);
+        }
+        else if (type == 'throw') {
+            throw new Error(msg);
+        }
+        else if (typeof type == 'function') {
+            type(ctx, tn, msg);
+        }
+    }
+}
+/**
+ * See if a property is defined on one object, if so assign it to the other
+ * object
+ *
+ * @param ret target object
+ * @param src source object
+ * @param name property
+ * @param mappedName name to map too - optional, name used if not given
+ */
+function map(ret, src, name, mappedName) {
+    if (Array.isArray(name)) {
+        for (let i = 0; i < name.length; i++) {
+            let val = name[i];
+            if (Array.isArray(val)) {
+                map(ret, src, val[0], val[1]);
+            }
+            else {
+                map(ret, src, val);
+            }
+        }
+        return;
+    }
+    if (mappedName === undefined) {
+        mappedName = name;
+    }
+    if (src[name] !== undefined) {
+        ret[mappedName] = src[name];
+    }
+}
+/**
+ * Bind an event handler to allow a click or return key to activate the callback.
+ * This is good for accessibility since a return on the keyboard will have the
+ * same effect as a click, if the element has focus.
+ *
+ * @param n Element to bind the action to
+ * @param selector Selector (for delegated events)
+ * @param fn Callback function for when the event is triggered
+ */
+function bindAction(n, selector, fn) {
+    Dom.s(n)
+        .on('click.DT', selector, function (e) {
+        fn(e);
+    })
+        .on('keypress.DT', selector, function (e) {
+        if (e.which === 13) {
+            e.preventDefault();
+            fn(e);
+        }
+    })
+        .on('selectstart.DT', selector, function () {
+        // Don't want a double click resulting in text selection
+        return false;
+    });
+}
+/**
+ * Register a callback function. Easily allows a callback function to be added
+ * to an array store of callback functions that can then all be called together.
+ *
+ * @param settings dataTables settings object
+ * @param store Name of the array storage for the callbacks in settings
+ * @param fn Function to be called back
+ */
+function callbackReg(ctx, store, fn) {
+    if (fn) {
+        ctx.callbacks[store].push(fn);
+    }
+}
+/**
+ * Fire callback functions and trigger events. Note that the loop over the
+ * callback array store is done backwards! Further note that you do not want to
+ * fire off triggers in time sensitive applications (for example cell creation)
+ * as its slow.
+ *
+ * @param ctx DataTables settings object
+ * @param callbackArr Name of the array storage for the callbacks in the context
+ * @param eventName Name of the custom event to trigger. If null no trigger is
+ *   fired
+ * @param args Array of arguments to pass to the callback function / trigger
+ * @param bubbles True if the event should bubble
+ */
+function callbackFire(ctx, callbackArr, eventName, args, bubbles = false) {
+    var ret = [];
+    if (callbackArr) {
+        ret = ctx.callbacks[callbackArr]
+            .slice()
+            .reverse()
+            .map(function (val) {
+            return val.apply(ctx.instance, args);
+        });
+    }
+    if (eventName !== null) {
+        // Non-DOM events
+        if (bubbles) {
+            Dom.trigger(eventName + '.dt', args, {
+                dt: ctx.api
+            });
+        }
+        let table = Dom.s(ctx.table);
+        let result = table.trigger(eventName + '.dt', bubbles, args, {
+            dt: ctx.api
+        });
+        // If not yet attached to the document, trigger the event
+        // on the body directly to sort of simulate the bubble
+        if (bubbles && table.closest('body').count() === 0) {
+            Dom.s('body').trigger(eventName + '.dt', bubbles, args, {
+                dt: ctx.api
+            });
+        }
+        ret.push(result[0]);
+    }
+    return ret;
+}
+function lengthOverflow(ctx) {
+    var start = ctx.displayStart, end = displayEnd(ctx), len = ctx.pageLength;
+    // If we have space to show extra rows (backing up from the end point - then
+    // do so
+    if (start >= end) {
+        start = end - len;
+    }
+    // Keep the start record on the current page
+    start -= start % len;
+    if (len === -1 || start < 0) {
+        start = 0;
+    }
+    ctx.displayStart = start;
+}
+/**
+ * Detect the data source being used for the table. Used to simplify the code a
+ * little (ajax) and to make it compress a little smaller.
+ *
+ * @param ctx DataTables settings object
+ * @returns Data source
+ */
+function dataSource(ctx) {
+    if (ctx.features.serverSide) {
+        return 'ssp';
+    }
+    else if (ctx.ajax) {
+        return 'ajax';
+    }
+    return 'dom';
+}
+/**
+ * Common replacement for language strings
+ *
+ * @param ctx DataTables settings object
+ * @param str String with values to replace
+ * @param entries Plural number for _ENTRIES_ - can be undefined
+ * @returns String
+ */
+function macros(ctx, str, entries) {
+    // When infinite scrolling, we are always starting at 1. _iDisplayStart is
+    // used only internally
+    var formatter = ctx.formatNumber, start = ctx.displayStart + 1, len = ctx.pageLength, vis = recordsDisplay(ctx), max = recordsTotal(ctx), all = len === -1;
+    return str
+        .replace(/_START_/g, formatter(start, ctx))
+        .replace(/_END_/g, formatter(displayEnd(ctx), ctx))
+        .replace(/_MAX_/g, formatter(max, ctx))
+        .replace(/_TOTAL_/g, formatter(vis, ctx))
+        .replace(/_PAGE_/g, formatter(all ? 1 : Math.ceil(start / len), ctx))
+        .replace(/_PAGES_/g, formatter(all ? 1 : Math.ceil(vis / len), ctx))
+        .replace(/_ENTRIES_/g, ctx.api.i18n('entries', '', entries))
+        .replace(/_ENTRIES-MAX_/g, ctx.api.i18n('entries', '', max))
+        .replace(/_ENTRIES-TOTAL_/g, ctx.api.i18n('entries', '', vis));
+}
+/**
+ * Add elements to an array as quickly as possible, but stack safe.
+ *
+ * @param arr Array to add the data to
+ * @param data Data array that is to be added
+ */
+function arrayApply(arr, data) {
+    if (!data) {
+        return;
+    }
+    // Chrome can throw a max stack error if apply is called with
+    // too large an array, but apply is faster.
+    if (data.length < 10000) {
+        arr.push.apply(arr, data);
+    }
+    else {
+        for (var i = 0; i < data.length; i++) {
+            arr.push(data[i]);
+        }
+    }
+}
+/**
+ * Add one or more listeners to the table
+ *
+ * @param that JQ for the table
+ * @param name Event name
+ * @param src Listener(s)
+ */
+function listener(that, name, src) {
+    let srcArr = Array.isArray(src) ? src : [src];
+    for (var i = 0; i < srcArr.length; i++) {
+        that.on(name + '.dt.DT', srcArr[i]);
+    }
+}
+/**
+ * Escape HTML entities in strings, in an object
+ */
+function escapeObject(obj) {
+    if (ext.escape.attributes) {
+        each(obj, function (key, val) {
+            obj[key] = escapeHtml(val);
+        });
+    }
+    return obj;
 }
 
 const store = {
@@ -3779,426 +7336,6 @@ register$1('num', {
     }
 });
 
-/**
- * DataTables extensions
- *
- * This namespace acts as a collection area for plug-ins that can be used to
- * extend DataTables capabilities. Indeed many of the build in methods
- * use this method to provide their own capabilities (sorting methods for
- * example).
- *
- * Note that this namespace is aliased to `jQuery.fn.dataTableExt` for legacy
- * reasons
- */
-const ext = {
-    /**
-     * DataTables build type (expanded by the download builder)
-     */
-    builder: 'bs5/dt-3.0.3',
-    /**
-     * Buttons. For use with the Buttons extension for DataTables. This is
-     * defined here so other extensions can define buttons regardless of load
-     * order. It is _not_ used by DataTables core.
-     */
-    buttons: {},
-    /**
-     * ColumnControl buttons and content
-     */
-    ccContent: {},
-    /**
-     * Element class names
-     */
-    classes: classes$1,
-    /**
-     * Error reporting.
-     *
-     * How should DataTables report an error. Can take the value 'alert',
-     * 'throw', 'none' or a function.
-     */
-    errMode: 'alert',
-    /** HTML entity escaping */
-    escape: {
-        /** When reading data-* attributes for initialisation options */
-        attributes: false
-    },
-    /**
-     * Legacy so v1 plug-ins don't throw js errors on load
-     */
-    feature: legacy,
-    /**
-     * Feature plug-ins.
-     *
-     * This is an object of callbacks which provide the features for DataTables
-     * to be initialised via the `layout` option.
-     */
-    features: features,
-    /**
-     * Row searching.
-     *
-     * This method of searching is complimentary to the default type based
-     * searching, and a lot more comprehensive as it allows you complete control
-     * over the searching logic. Each element in this array is a function
-     * (parameters described below) that is called for every row in the table,
-     * and your logic decides if it should be included in the searching data set
-     * or not.
-     */
-    search: [],
-    /**
-     * Selector extensions
-     *
-     * The `selector` option can be used to extend the options available for the
-     * selector modifier options (`selector-modifier` object data type) that
-     * each of the three built in selector types offer (row, column and cell +
-     * their plural counterparts). For example the Select extension uses this
-     * mechanism to provide an option to select only rows, columns and cells
-     * that have been marked as selected by the end user (`{selected: true}`),
-     * which can be used in conjunction with the existing built in selector
-     * options.
-     */
-    selector: {
-        cell: [],
-        column: [],
-        row: []
-    },
-    settings: [],
-    /**
-     * Legacy configuration options. Enable and disable legacy options that
-     * are available in DataTables.
-     *
-     *  @type object
-     */
-    legacy: {
-        /**
-         * Enable / disable DataTables 1.9 compatible server-side processing
-         * requests
-         */
-        ajax: null
-    },
-    /**
-     * Pagination plug-in methods.
-     *
-     * Each entry in this object is a function and defines which buttons should
-     * be shown by the pagination rendering method that is used for the table.
-     * The renderer addresses how the buttons are displayed in the document,
-     * while the functions here tell it what buttons to display. This is done by
-     * returning an array of button descriptions (what each button will do).
-     */
-    pager: pager,
-    renderer: {
-        footer: {
-            _: footer
-        },
-        header: {
-            _: header
-        },
-        layout: {
-            _: layout
-        },
-        pagingButton: {
-            _: pagingButton
-        },
-        pagingContainer: {
-            _: pagingContainer
-        }
-    },
-    /**
-     * Rendering helper function exposed for use by the styling integrations.
-     */
-    rendererDisplayRowCells: displayRowCells,
-    /**
-     * Ordering plug-ins - custom data source
-     *
-     * The extension options for ordering of data available here is
-     * complimentary to the default type based ordering that DataTables
-     * typically uses. It allows much greater control over the data that is
-     * being used to order a column, but is necessarily therefore more complex.
-     */
-    order: {},
-    /**
-     * Type based plug-ins.
-     *
-     * Each column in DataTables has a type assigned to it, either by automatic
-     * detection or by direct assignment using the `type` option for the column.
-     * The type of a column will effect how it is ordering and search (plug-ins
-     * can also make use of the column type if required).
-     */
-    type: store,
-    /**
-     * Unique DataTables instance counter
-     *
-     * @type int
-     * @private
-     */
-    _unique: 0,
-    //
-    // Depreciated
-    // The following properties are retained for backwards compatibility only.
-    // The should not be used in new projects and will be removed in a future
-    // version
-    //
-    /**
-     * Software version
-     *  @type string
-     */
-    version: '3.0.3'
-};
-//
-// Backwards compatibility. Alias to pre 1.10 Hungarian notation counter parts
-//
-Object.assign(ext, {
-    afnFiltering: ext.search,
-    aTypes: ext.type.detect,
-    ofnSearch: ext.type.search,
-    oSort: ext.type.order,
-    afnSortData: ext.order,
-    aoFeatures: ext.feature,
-    oStdClasses: ext.classes,
-    oPagination: ext.pager,
-    sVersion: ext.version,
-    fnVersionCheck: check$1
-});
-
-/**
- * Log an error message
- *
- * @param ctx DataTables settings object
- * @param level log error messages, or display them to the user
- * @param msg error message
- * @param tn Technical note id to get more information about the error.
- */
-function log(ctx, level, msg, tn) {
-    msg =
-        'DataTables warning: ' +
-            (ctx ? 'table id=' + ctx.tableId + ' - ' : '') +
-            msg;
-    if (tn) {
-        msg +=
-            '. For more information about this error, please see ' +
-                'https://datatables.net/tn/' +
-                tn;
-    }
-    {
-        // Backwards compatibility pre 1.10
-        var type = ext.sErrMode || ext.errMode;
-        if (ctx) {
-            callbackFire(ctx, null, 'dt-error', [ctx, tn, msg], true);
-        }
-        if (type == 'alert') {
-            alert(msg);
-        }
-        else if (type == 'throw') {
-            throw new Error(msg);
-        }
-        else if (typeof type == 'function') {
-            type(ctx, tn, msg);
-        }
-    }
-}
-/**
- * See if a property is defined on one object, if so assign it to the other
- * object
- *
- * @param ret target object
- * @param src source object
- * @param name property
- * @param mappedName name to map too - optional, name used if not given
- */
-function map(ret, src, name, mappedName) {
-    if (Array.isArray(name)) {
-        for (let i = 0; i < name.length; i++) {
-            let val = name[i];
-            if (Array.isArray(val)) {
-                map(ret, src, val[0], val[1]);
-            }
-            else {
-                map(ret, src, val);
-            }
-        }
-        return;
-    }
-    if (mappedName === undefined) {
-        mappedName = name;
-    }
-    if (src[name] !== undefined) {
-        ret[mappedName] = src[name];
-    }
-}
-/**
- * Bind an event handler to allow a click or return key to activate the callback.
- * This is good for accessibility since a return on the keyboard will have the
- * same effect as a click, if the element has focus.
- *
- * @param n Element to bind the action to
- * @param selector Selector (for delegated events)
- * @param fn Callback function for when the event is triggered
- */
-function bindAction(n, selector, fn) {
-    Dom.s(n)
-        .on('click.DT', selector, function (e) {
-        fn(e);
-    })
-        .on('keypress.DT', selector, function (e) {
-        if (e.which === 13) {
-            e.preventDefault();
-            fn(e);
-        }
-    })
-        .on('selectstart.DT', selector, function () {
-        // Don't want a double click resulting in text selection
-        return false;
-    });
-}
-/**
- * Register a callback function. Easily allows a callback function to be added
- * to an array store of callback functions that can then all be called together.
- *
- * @param settings dataTables settings object
- * @param store Name of the array storage for the callbacks in settings
- * @param fn Function to be called back
- */
-function callbackReg(ctx, store, fn) {
-    if (fn) {
-        ctx.callbacks[store].push(fn);
-    }
-}
-/**
- * Fire callback functions and trigger events. Note that the loop over the
- * callback array store is done backwards! Further note that you do not want to
- * fire off triggers in time sensitive applications (for example cell creation)
- * as its slow.
- *
- * @param ctx DataTables settings object
- * @param callbackArr Name of the array storage for the callbacks in the context
- * @param eventName Name of the custom event to trigger. If null no trigger is
- *   fired
- * @param args Array of arguments to pass to the callback function / trigger
- * @param bubbles True if the event should bubble
- */
-function callbackFire(ctx, callbackArr, eventName, args, bubbles = false) {
-    var ret = [];
-    if (callbackArr) {
-        ret = ctx.callbacks[callbackArr]
-            .slice()
-            .reverse()
-            .map(function (val) {
-            return val.apply(ctx.instance, args);
-        });
-    }
-    if (eventName !== null) {
-        let table = Dom.s(ctx.table);
-        let result = table.trigger(eventName + '.dt', bubbles, args, {
-            dt: ctx.api
-        });
-        // If not yet attached to the document, trigger the event
-        // on the body directly to sort of simulate the bubble
-        if (bubbles && table.closest('body').count() === 0) {
-            Dom.s('body').trigger(eventName + '.dt', bubbles, args, {
-                dt: ctx.api
-            });
-        }
-        ret.push(result[0]);
-    }
-    return ret;
-}
-function lengthOverflow(ctx) {
-    var start = ctx.displayStart, end = displayEnd(ctx), len = ctx.pageLength;
-    // If we have space to show extra rows (backing up from the end point - then
-    // do so
-    if (start >= end) {
-        start = end - len;
-    }
-    // Keep the start record on the current page
-    start -= start % len;
-    if (len === -1 || start < 0) {
-        start = 0;
-    }
-    ctx.displayStart = start;
-}
-/**
- * Detect the data source being used for the table. Used to simplify the code a
- * little (ajax) and to make it compress a little smaller.
- *
- * @param ctx DataTables settings object
- * @returns Data source
- */
-function dataSource(ctx) {
-    if (ctx.features.serverSide) {
-        return 'ssp';
-    }
-    else if (ctx.ajax) {
-        return 'ajax';
-    }
-    return 'dom';
-}
-/**
- * Common replacement for language strings
- *
- * @param ctx DataTables settings object
- * @param str String with values to replace
- * @param entries Plural number for _ENTRIES_ - can be undefined
- * @returns String
- */
-function macros(ctx, str, entries) {
-    // When infinite scrolling, we are always starting at 1. _iDisplayStart is
-    // used only internally
-    var formatter = ctx.formatNumber, start = ctx.displayStart + 1, len = ctx.pageLength, vis = recordsDisplay(ctx), max = recordsTotal(ctx), all = len === -1;
-    return str
-        .replace(/_START_/g, formatter(start, ctx))
-        .replace(/_END_/g, formatter(displayEnd(ctx), ctx))
-        .replace(/_MAX_/g, formatter(max, ctx))
-        .replace(/_TOTAL_/g, formatter(vis, ctx))
-        .replace(/_PAGE_/g, formatter(all ? 1 : Math.ceil(start / len), ctx))
-        .replace(/_PAGES_/g, formatter(all ? 1 : Math.ceil(vis / len), ctx))
-        .replace(/_ENTRIES_/g, ctx.api.i18n('entries', '', entries))
-        .replace(/_ENTRIES-MAX_/g, ctx.api.i18n('entries', '', max))
-        .replace(/_ENTRIES-TOTAL_/g, ctx.api.i18n('entries', '', vis));
-}
-/**
- * Add elements to an array as quickly as possible, but stack safe.
- *
- * @param arr Array to add the data to
- * @param data Data array that is to be added
- */
-function arrayApply(arr, data) {
-    if (!data) {
-        return;
-    }
-    // Chrome can throw a max stack error if apply is called with
-    // too large an array, but apply is faster.
-    if (data.length < 10000) {
-        arr.push.apply(arr, data);
-    }
-    else {
-        for (var i = 0; i < data.length; i++) {
-            arr.push(data[i]);
-        }
-    }
-}
-/**
- * Add one or more listeners to the table
- *
- * @param that JQ for the table
- * @param name Event name
- * @param src Listener(s)
- */
-function listener(that, name, src) {
-    let srcArr = Array.isArray(src) ? src : [src];
-    for (var i = 0; i < srcArr.length; i++) {
-        that.on(name + '.dt.DT', srcArr[i]);
-    }
-}
-/**
- * Escape HTML entities in strings, in an object
- */
-function escapeObject(obj) {
-    if (ext.escape.attributes) {
-        each(obj, function (key, val) {
-            obj[key] = escapeHtml(val);
-        });
-    }
-    return obj;
-}
-
 /*
  * Public helper functions. These aren't used internally by DataTables, or
  * called by any of the options passed into DataTables, but they can be used
@@ -4362,24 +7499,29 @@ function __mlHelper(localeString) {
         };
     };
 }
-// Based on locale, determine standard number formatting
-// Fallback for legacy browsers is US English
-var __thousands = ',';
-var __decimal = '.';
-if (window.Intl !== undefined) {
-    try {
-        var num = new Intl.NumberFormat().formatToParts(100000.1);
-        for (var i = 0; i < num.length; i++) {
-            if (num[i].type === 'group') {
-                __thousands = num[i].value;
-            }
-            else if (num[i].type === 'decimal') {
-                __decimal = num[i].value;
+var __thousands;
+var __decimal;
+function detectIntl() {
+    let win = DataTable.use('win');
+    // Based on locale, determine standard number formatting
+    // Fallback for legacy browsers is US English
+    __thousands = ',';
+    __decimal = '.';
+    if (win.Intl !== undefined) {
+        try {
+            var num = new Intl.NumberFormat().formatToParts(100000.1);
+            for (var i = 0; i < num.length; i++) {
+                if (num[i].type === 'group') {
+                    __thousands = num[i].value;
+                }
+                else if (num[i].type === 'decimal') {
+                    __decimal = num[i].value;
+                }
             }
         }
-    }
-    catch (e) {
-        // noop
+        catch (e) {
+            // noop
+        }
     }
 }
 /**
@@ -4420,6 +7562,9 @@ var helpers = {
     datetime: __mlHelper('toLocaleString'),
     time: __mlHelper('toLocaleTimeString'),
     number: function (thousands, decimal, precision, prefix, postfix) {
+        if (!__thousands && !__decimal) {
+            detectIntl();
+        }
         // Auto locale detection
         if (thousands === null || thousands === undefined) {
             thousands = __thousands;
@@ -4481,7 +7626,7 @@ var helpers = {
 /**
  * Column options that can be given to DataTables at initialisation time.
  */
-const defaults$4 = {
+const defaults$2 = {
     ariaTitle: '',
     cellType: 'td',
     className: '',
@@ -4501,7 +7646,8 @@ const defaults$4 = {
     title: null,
     type: null,
     visible: true,
-    width: null
+    width: null,
+    widthCalc: 'all'
 };
 
 /**
@@ -4603,30 +7749,14 @@ class Settings {
          */
         this.width = null;
         /**
+         * Which cells to use when calculating the column width
+         */
+        this.widthCalc = 'all';
+        /**
          * Width of the column when it was first "encountered"
          */
         this.widthOrig = null;
     }
-}
-
-const defaults$3 = {
-    boundary: false,
-    caseInsensitive: true,
-    columns: null,
-    exact: false,
-    regex: false,
-    return: false,
-    search: '',
-    smart: true
-};
-/**
- * Create a new search options object
- *
- * @param parts Values to assign, otherwise the defaults will be used
- * @returns New object
- */
-function create$2(parts = {}) {
-    return util.object.assignDeep({}, defaults$3, parts);
 }
 
 const browser = {
@@ -4679,8 +7809,9 @@ function compatMap(o, newKey, oldKey) {
  * change only.
  *
  * @param init Object to map
+ * @param defaults Indicate if the object is the defaults object or not
  */
-function compatOpts(init) {
+function compatOpts(init, defaults = false) {
     // Convert any old style parameters to camelCase
     hungarianToCamel(init);
     // Map old parameter names to new
@@ -4707,7 +7838,9 @@ function compatOpts(init) {
                 : true;
         init.orderHandler =
             init.ordering.handler !== undefined ? init.ordering.handler : true;
-        init.ordering = true;
+        if (!defaults) {
+            init.ordering = true;
+        }
     }
     else if (init.ordering === false) {
         init.orderIndicators = false;
@@ -4786,7 +7919,7 @@ function browserDetect(ctx) {
             .css({
             position: 'fixed',
             top: '0',
-            left: -1 * window.pageXOffset + 'px', // allow for scrolling
+            left: -1 * external('win').pageXOffset + 'px', // allow for scrolling
             height: '1px',
             width: '1px',
             overflow: 'hidden'
@@ -4815,1015 +7948,6 @@ function browserDetect(ctx) {
     ctx.scroll.barWidth = browser.barWidth;
 }
 
-const defaults$2 = {
-    addedClasses: [],
-    cells: [],
-    data: [],
-    details: undefined,
-    detailsShow: undefined,
-    displayData: null,
-    idx: -1,
-    orderCache: null,
-    searchCellCache: null,
-    searchRowCache: null,
-    src: 'dom',
-    tr: null
-};
-/**
- * Create a new object that is a row model
- *
- * @param parts Values to assign, otherwise the defaults will be used
- * @returns New object
- */
-function create$1(parts = {}) {
-    return util.object.assignDeep({}, defaults$2, parts);
-}
-
-/**
- * Add a data array to the table, creating DOM node etc. This is the parallel to
- * gatherData, but for adding rows from a JavaScript source, rather than a
- * DOM source.
- *
- * @param settings DataTables settings object
- * @param dataIn data array to be added
- * @param tr TR element to add to the table - optional. If not given, DataTables
- *   will create a row automatically
- * @param tds Array of TD|TH elements for the row - must be given if tr is.
- * @returns >=0 if successful (index of new data entry), -1 if failed
- */
-function addData(settings, dataIn, tr, tds) {
-    /* Create the object for storing information about this new row */
-    var rowIdx = settings.data.length;
-    var row = create$1({
-        src: tr ? 'dom' : 'data',
-        idx: rowIdx
-    });
-    row.data = dataIn;
-    settings.data.push(row);
-    var columns = settings.columns;
-    for (var i = 0, iLen = columns.length; i < iLen; i++) {
-        // Invalidate the column types as the new data needs to be revalidated
-        columns[i].type = null;
-    }
-    /* Add to the display array */
-    settings.displayMaster.push(rowIdx);
-    var id = settings.rowIdFn(dataIn);
-    if (id !== undefined) {
-        settings.ids[id] = row;
-    }
-    /* Create the DOM information, or register it if already present */
-    if (tr || !settings.features.deferRender) {
-        createTr(settings, rowIdx, tr, tds);
-    }
-    return rowIdx;
-}
-/**
- * Add one or more TR elements to the table. Generally we'd expect to
- * use this for reading data from a DOM sourced table, but it could be
- * used for an TR element. Note that if a TR is given, it is used (i.e.
- * it is not cloned).
- *
- * @param settings DataTables settings object
- * @param rows The TR element(s) to add to the table
- * @returns Array of indexes for the added rows
- */
-function addTr(settings, rows) {
-    return rows.mapTo(el => {
-        let row = getRowElementsFromNode(settings, el);
-        return addData(settings, row.data, el, row.cells);
-    });
-}
-/**
- * Get the data for a given cell from the internal cache, taking into account
- * data mapping
- *
- * @param settings DataTables settings object
- * @param rowIdx data row id
- * @param colIdx Column index
- * @param type data get type ('display', 'type' 'filter|search' 'sort|order')
- * @returns Cell data
- */
-function getCellData(settings, rowIdx, colIdx, type) {
-    if (type === 'search') {
-        type = 'filter';
-    }
-    else if (type === 'order') {
-        type = 'sort';
-    }
-    var row = settings.data[rowIdx];
-    if (!row) {
-        return undefined;
-    }
-    var draw = settings.drawCount;
-    var col = settings.columns[colIdx];
-    var rowData = row.data;
-    var defaultContent = col.defaultContent;
-    var cellData = col.dataGet(rowData, type, {
-        settings: settings,
-        row: rowIdx,
-        col: colIdx
-    });
-    // Allow for a node being returned for non-display types
-    if (type !== 'display' &&
-        cellData &&
-        typeof cellData === 'object' &&
-        cellData.nodeName) {
-        cellData = cellData.innerHTML;
-    }
-    if (cellData === undefined) {
-        if (settings.drawError != draw && defaultContent === null) {
-            log(settings, 0, 'Requested unknown parameter ' +
-                (typeof col.data == 'function'
-                    ? '{function}'
-                    : "'" + col.data + "'") +
-                ' for row ' +
-                rowIdx +
-                ', column ' +
-                colIdx, 4);
-            settings.drawError = draw;
-        }
-        return defaultContent;
-    }
-    // When the data source is null and a specific data type is requested (i.e.
-    // not the original data), we can use default column data
-    if ((cellData === rowData || cellData === null) &&
-        defaultContent !== null &&
-        type !== undefined) {
-        cellData = defaultContent;
-    }
-    else if (typeof cellData === 'function') {
-        // If the data source is a function, then we run it and use the return,
-        // executing in the scope of the data object (for instances)
-        return cellData.call(rowData);
-    }
-    if (cellData === null && type === 'display') {
-        return '';
-    }
-    if (type === 'filter') {
-        var formatters = ext.type.search;
-        if (col.type && formatters[col.type]) {
-            cellData = formatters[col.type](cellData);
-        }
-    }
-    return cellData;
-}
-/**
- * Set the value for a specific cell, into the internal data cache
- *
- * @param settings DataTables settings object
- * @param rowIdx data row id
- * @param colIdx Column index
- * @param val Value to set
- */
-function setCellData(settings, rowIdx, colIdx, val) {
-    let row = settings.data[rowIdx];
-    if (row) {
-        let col = settings.columns[colIdx];
-        let rowData = row.data;
-        col.dataSet(rowData, val, {
-            settings: settings,
-            row: rowIdx,
-            col: colIdx
-        });
-    }
-}
-/**
- * Write a value to a cell
- *
- * @param td Cell
- * @param val Value
- */
-function writeCell(td, val) {
-    let cell = Dom.s(td);
-    if (val && typeof val === 'object' && val.nodeName) {
-        cell.empty().append(val);
-    }
-    else {
-        cell.html(val);
-    }
-}
-/**
- * Return an array with the full table data
- *
- * @param settings DataTables settings object
- * @returns array {array} aData Master data array
- */
-function getDataMaster(settings) {
-    return util.array.pluck(settings.data, 'data');
-}
-/**
- * Nuke the table
- *
- * @param settings DataTables settings object
- */
-function clearTable(settings) {
-    settings.data.length = 0;
-    settings.displayMaster.length = 0;
-    settings.display.length = 0;
-    settings.ids = {};
-}
-/**
- * Mark cached data as invalid such that a re-read of the data will occur when
- * the cached data is next requested. Also update from the data source object.
- *
- * @param settings DataTables settings object
- * @param rowIdx Row index to invalidate
- * @param src Source to invalidate from: undefined, 'auto', 'dom' or 'data'
- * @param colIdx Column index to invalidate. If undefined the whole row will be
- *    invalidated
- */
-function invalidateRow(settings, rowIdx, src, colIdx) {
-    var row = settings.data[rowIdx];
-    var i, iLen;
-    if (!row) {
-        return;
-    }
-    // Remove the cached data for the row
-    row.orderCache = null;
-    row.searchCellCache = null;
-    row.displayData = null;
-    // Are we reading last data from DOM or the data object?
-    if (src === 'dom' || ((!src || src === 'auto') && row.src === 'dom')) {
-        // Read the data from the DOM
-        row.data = getRowElementsFromModel(settings, row, colIdx).data;
-    }
-    else {
-        // Reading from data object, update the DOM
-        var cells = row.cells;
-        var display = getRowDisplay(settings, rowIdx);
-        if (cells.length) {
-            if (colIdx !== undefined) {
-                writeCell(cells[colIdx], display[colIdx]);
-            }
-            else {
-                for (i = 0, iLen = cells.length; i < iLen; i++) {
-                    writeCell(cells[i], display[i]);
-                }
-            }
-        }
-    }
-    invalidColumn(settings, colIdx);
-    // Update DataTables special `DT_*` attributes for the row
-    rowAttributes(settings, row);
-    callbackFire(settings, null, 'rowInvalidate', [settings, rowIdx, colIdx], false);
-}
-/**
- * Column specific invalidation
- *
- * @param settings DataTables settings object
- * @param colIdx Column index to invalidate, or all columns if not given
- */
-function invalidColumn(settings, colIdx) {
-    // Column specific invalidation
-    var cols = settings.columns;
-    if (colIdx !== undefined) {
-        // Type - the data might have changed
-        cols[colIdx].type = null;
-        // Max length string. Its a fairly cheep recalculation, so not worth
-        // something more complicated
-        cols[colIdx].wideStrings = null;
-    }
-    else {
-        for (let i = 0, iLen = cols.length; i < iLen; i++) {
-            cols[i].type = null;
-            cols[i].wideStrings = null;
-        }
-    }
-    settings.containerWidth = -1;
-}
-/**
- * Get the cells and data for a given row - from a <tr> element
- *
- * @param settings DataTables settings object
- * @param row TR element from which to read data or existing row object from
- *   which to re-read the data from the cells
- */
-function getRowElementsFromNode(settings, row) {
-    let data = settings.rowReadObject ? {} : [];
-    let cells = Dom.s(row).children('th, td');
-    let id = row.getAttribute('id');
-    cells.each((el, idx) => {
-        readCellData(settings, el, data, idx);
-    });
-    if (id) {
-        util.set(settings.rowId)(data, id);
-    }
-    return {
-        data: data,
-        cells: cells.get()
-    };
-}
-/**
- * Get the cells and data for a given row - from an existing row model
- *
- * @param settings DataTables settings object
- * @param row Existing row object from which to re-read the data from the cells
- * @param colIdx Optional column index
- */
-function getRowElementsFromModel(settings, row, colIdx) {
-    let tds = row.cells;
-    for (let i = 0; i < tds.length; i++) {
-        if (colIdx === undefined || colIdx === i) {
-            readCellData(settings, tds[i], row.data, i);
-        }
-    }
-    // Read the ID from the DOM if present
-    if (row.tr) {
-        let id = row.tr.getAttribute('id');
-        if (id) {
-            util.set(settings.rowId)(row.data, id);
-        }
-    }
-    return {
-        data: row.data,
-        cells: tds
-    };
-}
-/**
- * Read data from a cell into the data source object
- *
- * @param settings DataTables settings object
- * @param cell The HTML cell element to read from
- * @param data Data object / array to store data into
- * @param colIdx The column index for the cell
- */
-function readCellData(settings, cell, data, colIdx) {
-    let column = settings.columns[colIdx];
-    let contents = cell.innerHTML.trim();
-    if (column.attrSrc) {
-        // If we are working with attributes from the cell as values
-        let dataPoint = column.data;
-        let setter = util.set(dataPoint._);
-        let attr = function (str, cell) {
-            if (typeof str === 'string') {
-                let idx = str.indexOf('@');
-                if (idx !== -1) {
-                    let att = str.substring(idx + 1);
-                    let setter = util.set(str);
-                    setter(data, cell.getAttribute(att));
-                }
-            }
-        };
-        setter(data, contents);
-        attr(dataPoint.sort, cell);
-        attr(dataPoint.type, cell);
-        attr(dataPoint.filter, cell);
-    }
-    else {
-        if (!column.setter) {
-            // Cache the setter function
-            column.setter = util.set(column.data);
-        }
-        column.setter(data, contents);
-    }
-}
-
-/**
- * Recalculate the column widths, if needed (by a column having been
- * invalidated)
- *
- * @param settings DataTables settings object
- */
-function columnWidths(settings) {
-    if (settings.columns.map(c => c.wideStrings).includes(null)) {
-        calculateColumnWidths(settings);
-    }
-}
-/**
- * Calculate the width of columns for the table
- *
- * @param settings DataTables settings object
- */
-function calculateColumnWidths(settings) {
-    // Not interested in doing column width calculation if auto-width is disabled
-    if (!settings.features.autoWidth) {
-        return;
-    }
-    var table = settings.table, columns = settings.columns, scroll = settings.scroll, scrollY = scroll.y, scrollX = scroll.x, visibleColumns = getColumns(settings, 'visible'), tableWidthAttr = table.getAttribute('width'), // from DOM element
-    tableContainer = table.parentElement, i, j, column, columnIdx;
-    var styleWidth = table.style.width;
-    var containerWidth = wrapperWidth(settings);
-    // Don't re-run for the same width as the last time
-    if (containerWidth === settings.containerWidth) {
-        return false;
-    }
-    settings.containerWidth = containerWidth;
-    // If there is no width applied as a CSS style or as an attribute, we assume that
-    // the width is intended to be 100%, which is usually is in CSS, but it is very
-    // difficult to correctly parse the rules to get the final result.
-    if (!styleWidth && !tableWidthAttr) {
-        table.style.width = '100%';
-        styleWidth = '100%';
-    }
-    if (styleWidth && styleWidth.indexOf('%') !== -1) {
-        tableWidthAttr = styleWidth;
-    }
-    // Let plug-ins know that we are doing a recalc, in case they have changed any of the
-    // visible columns their own way (e.g. Responsive uses display:none).
-    callbackFire(settings, null, 'column-calc', [{ visible: visibleColumns }], false);
-    // Construct a worst case table with the widest, assign any user defined
-    // widths, then insert it into  the DOM and allow the browser to do all
-    // the hard work of calculating table widths
-    var tmpTable = Dom
-        .s(table.cloneNode())
-        .css('visibility', 'hidden')
-        .css('margin', '0')
-        .attrRemove('id');
-    // Clean up the table body
-    tmpTable.append(Dom.c('tbody'));
-    // Clone the table header and footer - we can't use the header / footer
-    // from the cloned table, since if scrolling is active, the table's
-    // real header and footer are contained in different table tags
-    tmpTable
-        .append(settings.thead.cloneNode(true))
-        .append(settings.tfoot.cloneNode(true));
-    // Remove any assigned widths from the footer (from scrolling)
-    tmpTable.find('tfoot th, tfoot td').css('width', '');
-    // Apply custom sizing to the cloned header
-    tmpTable.find('thead th, thead td').each(cell => {
-        // Get the `width` from the header layout
-        var width = columnsSumWidth(settings, cell, true);
-        if (width) {
-            cell.style.width = width;
-            // For scrollX we need to force the column width otherwise the
-            // browser will collapse it. If this width is smaller than the
-            // width the column requires, then it will have no effect
-            if (scrollX) {
-                cell.style.minWidth = width;
-                Dom.s(cell).append(Dom.c('div').css({
-                    width: width,
-                    margin: '0',
-                    padding: '0',
-                    border: '0',
-                    height: '1px'
-                }));
-            }
-        }
-        else {
-            cell.style.width = '';
-        }
-    });
-    // Get the widest strings for each of the visible columns and add them to
-    // our table to create a "worst case"
-    var longestData = [];
-    for (i = 0; i < visibleColumns.length; i++) {
-        longestData.push(getWideStrings(settings, visibleColumns[i]));
-    }
-    if (longestData.length) {
-        for (i = 0; i < longestData[0].length; i++) {
-            var tr = Dom.c('tr').appendTo(tmpTable.find('tbody'));
-            for (j = 0; j < visibleColumns.length; j++) {
-                columnIdx = visibleColumns[j];
-                column = columns[columnIdx];
-                var longest = longestData[j][i] || '';
-                var autoClass = ext.type.className[column.type];
-                var padding = column.contentPadding || (scrollX ? '-' : '');
-                var text = longest + padding;
-                var cell = Dom
-                    .c('td')
-                    .classAdd(autoClass)
-                    .classAdd(column.className)
-                    .appendTo(tr);
-                if (longest.indexOf('<') === -1 &&
-                    longest.indexOf('&') === -1) {
-                    cell.text(text);
-                }
-                else {
-                    cell.html(text);
-                }
-            }
-        }
-    }
-    // Tidy the temporary table - remove name attributes so there aren't
-    // duplicated in the dom (radio elements for example)
-    tmpTable.find('[name]').attrRemove('name');
-    // Table has been built, attach to the document so we can work with it.
-    // A holding element is used, positioned at the top of the container
-    // with minimal height, so it has no effect on if the container scrolls
-    // or not. Otherwise it might trigger scrolling when it actually isn't
-    // needed
-    var holder = Dom
-        .c('div')
-        .css(scrollX || scrollY
-        ? {
-            position: 'absolute',
-            top: '0',
-            left: '0',
-            height: '1px',
-            right: '0',
-            overflow: 'hidden'
-        }
-        : {})
-        .append(tmpTable)
-        .appendTo(tableContainer);
-    // When scrolling (X or Y) we want to set the width of the table as
-    // appropriate. However, when not scrolling leave the table width as it
-    // is. This results in slightly different, but I think correct behaviour
-    if (scrollX) {
-        tmpTable.css('width', 'auto').attrRemove('width');
-        // If there is no width attribute or style, then allow the table to
-        // collapse
-        if (tmpTable.width() < tableContainer.clientWidth && tableWidthAttr) {
-            tmpTable.width(tableContainer.clientWidth);
-        }
-    }
-    else if (scrollY) {
-        tmpTable.width(tableContainer.clientWidth);
-    }
-    else if (tableWidthAttr) {
-        tmpTable.width(tableWidthAttr);
-    }
-    // Get the width of each column in the constructed table
-    var total = 0;
-    var bodyCells = tmpTable.find('tbody tr').eq(0).children();
-    for (i = 0; i < visibleColumns.length; i++) {
-        // Use getBounding for sub-pixel accuracy, which we then want to round
-        // up!
-        var bounding = bodyCells.get(i).getBoundingClientRect().width;
-        // Total is tracked to remove any sub-pixel errors as the outerWidth
-        // of the table might not equal the total given here
-        total += bounding;
-        // Width for each column to use
-        columns[visibleColumns[i]].width = stringToCss(bounding);
-    }
-    table.style.width = stringToCss(total);
-    // Finished with the table - ditch it
-    holder.remove();
-    // If there is a width attr, we want to attach an event listener which
-    // allows the table sizing to automatically adjust when the window is
-    // resized. Use the width attr rather than CSS, since we can't know if the
-    // CSS is a relative value or absolute - DOM read is always px.
-    if (tableWidthAttr) {
-        table.style.width = stringToCss(tableWidthAttr);
-    }
-    if ((tableWidthAttr || scrollX) && !settings.reszEvt) {
-        var resize = util.throttle(function () {
-            var newWidth = wrapperWidth(settings);
-            // Don't do it if destroying or the container width is 0
-            if (!settings.destroying && newWidth !== 0) {
-                adjustColumnSizing(settings);
-            }
-        });
-        // For browsers that support it (~2020 onwards for wide support) we can watch for the
-        // container changing width.
-        if (window.ResizeObserver) {
-            // This is a tricky beast - if the element is visible when `.observe()` is called,
-            // then the callback is immediately run. Which we don't want. If the element isn't
-            // visible, then it isn't run, but we want it to run when it is then made visible.
-            // This flag allows the above to be satisfied.
-            var first = Dom.s(settings.tableWrapper).isVisible();
-            // Use an empty div to attach the observer so it isn't impacted by height changes
-            var resizer = Dom
-                .c('div')
-                .css({
-                width: '100%',
-                height: '0'
-            })
-                .classAdd('dt-autosize')
-                .appendTo(settings.tableWrapper);
-            settings.resizeObserver = new ResizeObserver(function (e) {
-                if (first) {
-                    first = false;
-                }
-                else {
-                    resize();
-                }
-            });
-            settings.resizeObserver.observe(resizer.get(0));
-        }
-        else {
-            // For old browsers, the best we can do is listen for a window
-            // resize
-            window.addEventListener('resize', resize);
-            settings.windowResizeCb = resize; // For removal in `destroy`
-        }
-        settings.reszEvt = true;
-    }
-}
-/**
- * Get the width of the DataTables wrapper element
- *
- * @param settings DataTables settings object
- * @returns Width
- */
-function wrapperWidth(settings) {
-    let wrapper = Dom.s(settings.tableWrapper);
-    return wrapper.isVisible() ? wrapper.width() : 0;
-}
-/**
- * Get the widest strings for each column.
- *
- * It is very difficult to determine what the widest string actually is due to variable character
- * width and kerning. Doing an exact calculation with the DOM or even Canvas would kill performance
- * and this is a critical point, so we use two techniques to determine a collection of the longest
- * strings from the column, which will likely contain the widest strings:
- *
- * 1) Get the top three longest strings from the column
- * 2) Get the top three widest words (i.e. an unbreakable phrase)
- *
- * @param settings DataTables settings object
- * @param colIdx column of interest
- * @returns Array of the longest strings
- */
-function getWideStrings(settings, colIdx) {
-    var column = settings.columns[colIdx];
-    // Do we need to recalculate (i.e. was invalidated), or just use the cached data?
-    if (!column.wideStrings) {
-        var allStrings = [];
-        var collection = [];
-        // Create an array with the string information for the column
-        for (var i = 0, iLen = settings.displayMaster.length; i < iLen; i++) {
-            var rowIdx = settings.displayMaster[i];
-            var data = getRowDisplay(settings, rowIdx)[colIdx];
-            var cellString = data && typeof data === 'object' && data.nodeType
-                ? data.innerHTML
-                : data + '';
-            // Remove id / name attributes from elements so they
-            // don't interfere with existing elements
-            cellString = cellString
-                .replace(/id=".*?"/g, '')
-                .replace(/name=".*?"/g, '');
-            // Don't want script, dialog or template tags in the width
-            // calculations as they are hidden content
-            cellString = cellString
-                .replace(/<script[\s\S]*?<\/script(?:\s[^>]*)?>/gi, ' ')
-                .replace(/<dialog[\s\S]*?<\/dialog(?:\s[^>]*)?>/gi, ' ')
-                .replace(/<template[\s\S]*?<\/template(?:\s[^>]*)?>/gi, ' ');
-            var noHtml = util.string
-                .stripHtml(cellString, ' ')
-                .replace(/&nbsp;/g, ' ');
-            collection.push({
-                str: cellString,
-                len: noHtml.length
-            });
-            allStrings.push(noHtml);
-        }
-        // Order and then cut down to the size we need
-        collection
-            .sort(function (a, b) {
-            return b.len - a.len;
-        })
-            .splice(3);
-        column.wideStrings = collection.map(function (item) {
-            return item.str;
-        });
-        // Longest unbroken string
-        const parts = allStrings.join(' ').split(' ');
-        parts.sort(function (a, b) {
-            return b.length - a.length;
-        });
-        if (parts.length) {
-            column.wideStrings.push(parts[0]);
-        }
-        if (parts.length > 1) {
-            column.wideStrings.push(parts[1]);
-        }
-        if (parts.length > 2) {
-            column.wideStrings.push(parts[3]);
-        }
-    }
-    return column.wideStrings;
-}
-/**
- * Append a CSS unit (only if required) to a string
- *
- * @param s Value to css-ify
- * @returns Value with css unit
- */
-function stringToCss(s) {
-    if (s === null) {
-        return '0px';
-    }
-    if (typeof s == 'number') {
-        return s < 0 ? '0px' : s + 'px';
-    }
-    // Check it has a unit character already
-    return s.match(/\d$/) ? s + 'px' : s;
-}
-/**
- * Re-insert the `col` elements for current visibility
- *
- * @param settings DT settings
- */
-function colGroup(settings) {
-    var cols = settings.columns;
-    settings.colgroup.empty();
-    for (var i = 0; i < cols.length; i++) {
-        if (cols[i].visible) {
-            settings.colgroup.append(cols[i].colEl);
-        }
-    }
-}
-
-/**
- * Scrolling setup
- *
- * @param settings DataTables settings object
- * @returns Node to add to the DOM
- */
-function featureTable(settings) {
-    let table = Dom.s(settings.table);
-    let scroll = settings.scroll;
-    let scrollX = scroll.x;
-    let scrollY = scroll.y;
-    // No scrolling or x-scrolling only
-    if (scrollY === '' && scrollX === '') {
-        return table.get(0);
-    }
-    let classes = settings.classes.scrolling;
-    let caption = settings.captionNode;
-    let captionSide = caption
-        ? caption._captionSide
-        : null;
-    let tableCloneHeader = table.clone(false);
-    let tableCloneFooter = table.clone(false);
-    let footer = table.children('tfoot');
-    let size = function (s) {
-        return !s ? '100%' : stringToCss(s);
-    };
-    /*
-     * The HTML structure that we want to generate in this function is:
-     *  div - scroller
-     *    div - scroll head
-     *      div - scroll head inner
-     *        table - scroll head table
-     *          thead - thead
-     *    div - scroll body
-     *      table - table (master table)
-     *        thead - thead clone for sizing
-     *        tbody - tbody
-     *    div - scroll foot
-     *      div - scroll foot inner
-     *        table - scroll foot table
-     *          tfoot - tfoot
-     */
-    let scroller = Dom.c('div')
-        .classAdd(classes.container)
-        .attr('role', 'table')
-        .append(Dom.c('div')
-        .classAdd(classes.header.self)
-        .css({
-        overflow: 'hidden',
-        position: 'relative',
-        border: '0',
-        width: scrollX ? size(scrollX) : '100%'
-    })
-        .attr('role', 'none')
-        .append(Dom.c('div')
-        .classAdd(classes.header.inner)
-        .css({
-        'box-sizing': 'content-box',
-        width: scroll.xInner || '100%'
-    })
-        .attr('role', 'none')
-        .append(tableCloneHeader
-        .attrRemove('id')
-        .css('margin-left', '0')
-        .append(captionSide === 'top' ? caption : null)
-        .append(table.children('thead')))))
-        .append(Dom.c('div')
-        .classAdd(classes.body)
-        .css({
-        position: 'relative',
-        overflow: 'auto',
-        width: size(scrollX)
-    })
-        .attr('role', 'none')
-        .append(table));
-    if (footer.count()) {
-        scroller.append(Dom.c('div')
-            .classAdd(classes.footer.self)
-            .css({
-            overflow: 'hidden',
-            border: '0',
-            width: scrollX ? size(scrollX) : '100%'
-        })
-            .attr('role', 'none')
-            .append(Dom.c('div')
-            .classAdd(classes.footer.inner)
-            .attr('role', 'none')
-            .append(tableCloneFooter
-            .attrRemove('id')
-            .css('margin-left', '0')
-            .append(captionSide === 'bottom' ? caption : null)
-            .append(table.children('tfoot')))));
-    }
-    let children = scroller.children();
-    let scrollHead = children.eq(0);
-    let scrollBody = children.eq(1);
-    let scrollFoot = children.eq(2);
-    // When the body is scrolled, then we also want to scroll the header and
-    // footer. Note that each element has its own scroll listener, and that in
-    // turn sets the scroll for the other elements. However this doesn't lead to
-    // an infinite loop as `scroll` is only triggered if the value changes.
-    scrollBody.on('scroll.DT', () => {
-        let scrollLeft = scrollBody.scrollLeft();
-        scrollHead.scrollLeft(scrollLeft);
-        scrollFoot.scrollLeft(scrollLeft);
-    });
-    scrollHead.on('scroll.DT', () => {
-        let scrollLeft = scrollHead.scrollLeft();
-        scrollBody.scrollLeft(scrollLeft);
-        scrollFoot.scrollLeft(scrollLeft);
-    });
-    scrollFoot.on('scroll.DT', () => {
-        let scrollLeft = scrollFoot.scrollLeft();
-        scrollHead.scrollLeft(scrollLeft);
-        scrollBody.scrollLeft(scrollLeft);
-    });
-    scrollBody.css('max-height', size(scrollY));
-    if (!scroll.collapse) {
-        scrollBody.css('height', size(scrollY));
-    }
-    settings.scrollHead = scrollHead;
-    settings.scrollBody = scrollBody;
-    settings.scrollFoot = scrollFoot;
-    // On redraw - align columns
-    settings.callbacks.draw.push(scrollDraw);
-    // Aria roles - because we break the table up into parts we need to be very
-    // explicit with the roles to create the accessability tree for the table,
-    // otherwise browser's attempt to "fix" the tree by filling in what it
-    // thinks are gaps. The static elements that we can assign roles to are done
-    // here. Dynamic ones are done in the draw function below.
-    table.attr('role', 'none');
-    table.find('tbody').attr('role', 'rowgroup');
-    tableCloneHeader.attr('role', 'none');
-    tableCloneFooter.attr('role', 'none');
-    settings.colgroup.find('colgroup').attr('role', 'none');
-    // Move the info feature's aria desc by to the new "table"
-    let describedBy = table.attr('aria-describedby');
-    if (describedBy) {
-        scroller.attr('aria-describedby', describedBy);
-        table.attrRemove('aria-describedby');
-    }
-    return scroller.get(0);
-}
-/**
- * Update the header, footer and body tables for resizing - i.e. column
- * alignment.
- *
- * Welcome to the most horrible function DataTables. The process that this
- * function follows is basically:
- *   1. Re-create the table inside the scrolling div
- *   2. Correct colgroup > col values if needed
- *   3. Copy colgroup > col over to header and footer
- *   4. Clean up
- *
- * @param settings DataTables settings object
- */
-function scrollDraw(settings) {
-    // Given that this is such a monster function, a lot of variables are use
-    // to try and keep the minimised size as small as possible
-    let scroll = settings.scroll, barWidth = scroll.barWidth, divHeader = settings.scrollHead, divHeaderInner = divHeader.children('div'), divHeaderTable = divHeaderInner.children('table'), divBodyEl = settings.scrollBody, divBody = divBodyEl, divFooter = settings.scrollFoot, divFooterInner = divFooter.children('div'), divFooterTable = divFooterInner.children('table'), header = Dom.s(settings.thead), table = Dom.s(settings.table), footer = Dom.s(settings.tfoot), browser = settings.browser, headerCopy, footerCopy;
-    // If the scrollbar visibility has changed from the last draw, we need to
-    // adjust the column sizes as the table width will have changed to account
-    // for the scrollbar
-    let scrollBarVis = divBodyEl.get(0).scrollHeight > divBodyEl.get(0).clientHeight;
-    if (settings.scrollBarVis !== scrollBarVis &&
-        settings.scrollBarVis !== undefined) {
-        settings.scrollBarVis = scrollBarVis;
-        adjustColumnSizing(settings);
-        return; // adjust column sizing will call this function again
-    }
-    else {
-        settings.scrollBarVis = scrollBarVis;
-    }
-    header.find('thead').attr('role', 'rowgroup');
-    footer.find('tfoot').attr('role', 'rowgroup');
-    // 1. Re-create the table inside the scrolling div
-    // Remove the old minimised thead and tfoot elements in the inner table
-    table.children('thead, tfoot').remove();
-    // Clone the current header and footer elements and then place it into the
-    // inner table
-    headerCopy = header.clone(true).prependTo(table);
-    headerCopy.find('th, td').attrRemove('tabindex');
-    headerCopy.find('[id]').attrRemove('id');
-    if (footer.count()) {
-        footerCopy = footer.clone(true).prependTo(table);
-        footerCopy.find('[id]').attrRemove('id');
-    }
-    // 2. Correct colgroup > col values if needed
-    // It is possible that the cell sizes are smaller than the content, so we need to
-    // correct colgroup>col for such cases. This can happen if the auto width detection
-    // uses a cell which has a longer string, but isn't the widest! For example
-    // "Chief Executive Officer (CEO)" is the longest string in the demo, but
-    // "Systems Administrator" is actually the widest string since it doesn't collapse.
-    // Note the use of translating into a column index to get the `col` element. This
-    // is because of Responsive which might remove `col` elements, knocking the alignment
-    // of the indexes out.
-    if (settings.display.length) {
-        // Get the column sizes from the first row in the table. This should really be a
-        // [].find, but it wasn't supported in Chrome until Sept 2015, and DT has 10 year
-        // browser support
-        let firstTr = null;
-        let start = dataSource(settings) !== 'ssp' ? settings.displayStart : 0;
-        for (let i = start; i < start + settings.display.length; i++) {
-            let idx = settings.display[i];
-            let row = settings.data[idx];
-            if (row) {
-                let tr = row.tr;
-                if (tr) {
-                    firstTr = tr;
-                    break;
-                }
-            }
-        }
-        if (firstTr) {
-            let colSizes = Dom.s(firstTr)
-                .children('th, td')
-                .mapTo(function (cell, idx) {
-                return {
-                    idx: visibleToColumnIndex(settings, idx),
-                    width: Dom.s(cell).width('outer')
-                };
-            });
-            // Check against what the colgroup > col is set to and correct if needed
-            for (let i = 0; i < colSizes.length; i++) {
-                let colEl = settings.columns[colSizes[i].idx].colEl;
-                colEl.css('width', colSizes[i].width + 'px');
-                if (scroll.x) {
-                    colEl.css('minWidth', colSizes[i].width + 'px');
-                }
-            }
-        }
-    }
-    // 3. Copy the colgroup over to the header and footer
-    divHeaderTable.find('colgroup').remove();
-    divHeaderTable.append(settings.colgroup.clone(true));
-    if (footer) {
-        divFooterTable.find('colgroup').remove();
-        divFooterTable.append(settings.colgroup.clone(true));
-    }
-    // "Hide" the header and footer that we used for the sizing. We need to keep
-    // the content of the cell so that the width applied to the header and body
-    // both match, but we want to hide it completely.
-    headerCopy.find('th, td').each(function (el) {
-        Dom.c('div')
-            .classAdd('dt-scroll-sizing')
-            .append(Array.from(el.childNodes))
-            .appendTo(el);
-    });
-    if (footerCopy) {
-        footerCopy.find('th, td').each(function (el) {
-            Dom.c('div')
-                .classAdd('dt-scroll-sizing')
-                .append(Array.from(el.childNodes))
-                .appendTo(el);
-        });
-    }
-    // 4. Clean up
-    // Figure out if there are scrollbar present - if so then we need the header and footer to
-    // provide a bit more space to allow "overflow" scrolling (i.e. past the scrollbar)
-    let isScrolling = Math.floor(table.height()) > divBodyEl.get(0).clientHeight ||
-        divBody.css('overflow-y') == 'scroll';
-    let paddingSide = 'padding' + (browser.scrollbarLeft ? 'Left' : 'Right');
-    // Set the width's of the header and footer tables
-    let outerWidth = table.width('withPadding');
-    divHeaderTable.css('width', stringToCss(outerWidth));
-    divHeaderInner
-        .css('width', stringToCss(outerWidth))
-        .css(paddingSide, isScrolling ? barWidth + 'px' : '0px');
-    if (footer.count()) {
-        divFooterTable.css('width', stringToCss(outerWidth));
-        divFooterInner
-            .css('width', stringToCss(outerWidth))
-            .css(paddingSide, isScrolling ? barWidth + 'px' : '0px');
-    }
-    // Correct DOM ordering for colgroup - comes before the thead
-    table.children('colgroup').prependTo(table);
-    // Remove tabindex from the hidden row elements
-    table.find('thead, tfoot').find('[tabindex]').attrRemove('tabindex');
-    // Dynamic ARIA roles - see setup for details on why this is needed
-    table
-        .find('thead, tfoot')
-        .attr('role', 'none')
-        .find('[role]')
-        .attrRemove('role');
-    table.find('tbody tr:not([role])').attr('role', 'row');
-    table.find('tbody td:not([role]), tbody th:not([role])').attr('role', 'cell');
-    scrollAria(headerCopy);
-    scrollAria(footerCopy);
-    // Adjust the position of the header in case we loose the y-scrollbar
-    divBody.trigger('scroll');
-    // If sorting or filtering has occurred, jump the scrolling back to the top
-    // only if we aren't holding the position
-    if ((settings.wasOrdered || settings.wasFiltered) && !settings.drawHold) {
-        divBodyEl.scrollTop(0);
-    }
-}
-/**
- * Apply ARIA roles for the header / footer of a scrolling table
- * @param element
- */
-function scrollAria(element) {
-    if (element) {
-        element.find('tfoot:not([role])').attr('role', 'rowgroup');
-        element.find('tr:not([role])').attr('role', 'row');
-        element.find('th:not([role])').attr('role', 'columnheader');
-        element.find('td:not([role])').attr('role', 'cell');
-    }
-}
-
 /**
  * Add a column to the list used for the table with default values
  *
@@ -5832,16 +7956,14 @@ function scrollAria(element) {
 function addColumn(settings) {
     // Add column to aoColumns array
     let columnIdx = settings.columns.length;
-    let column = util.object.assign({}, new Settings(), defaults$4, {
-        orderData: defaults$4.orderData
-            ? defaults$4.orderData
+    let column = util.object.assign({}, new Settings(), defaults$2, {
+        orderData: defaults$2.orderData
+            ? defaults$2.orderData
             : [columnIdx],
-        data: defaults$4.data ? defaults$4.data : columnIdx,
+        data: defaults$2.data ? defaults$2.data : columnIdx,
         idx: columnIdx,
         searchFixed: {},
-        colEl: Dom
-            .c('col')
-            .attr('data-dt-column', columnIdx)
+        colEl: Dom.c('col').attr('data-dt-column', columnIdx)
     });
     settings.columns.push(column);
     // Legacy support for `searchCols` property. If set, and there is a value
@@ -5849,9 +7971,7 @@ function addColumn(settings) {
     // specific `search` option is applied in `columnOptions`, but we always
     // want the search object for the column to exist.
     let searchCols = settings.searchCols;
-    settings.searches[columnIdx] = create$2(searchCols[columnIdx]
-        ? hungarianToCamel(searchCols[columnIdx])
-        : {});
+    settings.searches[columnIdx] = create$1(searchCols[columnIdx] ? hungarianToCamel(searchCols[columnIdx]) : {});
     settings.searches[columnIdx].columns = [columnIdx];
 }
 /**
@@ -6331,2421 +8451,432 @@ function columnsFromHeader(cell) {
         return parseInt(val);
     });
 }
-
 /**
- * Generate the node required for the processing node
+ * Get cells from the header or footer, including a specific row and / or cell
  *
- * @param ctx DataTables settings object
+ * @param header The header or footer strcture
+ * @param row A specific row, or null
+ * @param column A specific column, or null
+ * @returns An array of all matching cells
  */
-function processingHtml(ctx) {
-    var table = ctx.table;
-    var scrolling = ctx.scroll.x !== '' || ctx.scroll.y !== '';
-    if (ctx.features.processing) {
-        var n = Dom
-            .c('div')
-            .attr('id', ctx.tableId + '_processing')
-            .attr('role', 'status')
-            .classAdd(ctx.classes.processing.container)
-            .html(ctx.language.processing)
-            .append(Dom
-            .c('div')
-            .append(Dom.c('div'))
-            .append(Dom.c('div'))
-            .append(Dom.c('div'))
-            .append(Dom.c('div')));
-        // Different positioning depending on if scrolling is enabled or not
-        if (scrolling) {
-            n.prependTo(Dom.s(ctx.tableWrapper).find('div.dt-scroll').get(0));
-        }
-        else {
-            n.insertBefore(table);
-        }
-        Dom.s(table).on('processing.dt.DT', (e, s, show) => {
-            n.css('display', show ? 'block' : 'none');
-        });
-    }
-}
-/**
- * Display or hide the processing indicator
- *
- * @param ctx DataTables settings object
- * @param show Show the processing indicator (true) or not (false)
- */
-function processingDisplay(ctx, show) {
-    // Ignore cases when we are still redrawing
-    if (ctx.doingDraw && show === false) {
-        return;
-    }
-    callbackFire(ctx, null, 'processing', [ctx, show]);
-}
-/**
- * Show the processing element if an action takes longer than a given time
- *
- * @param ctx DataTables settings object
- * @param enable Do (true) or not (false) async processing (local feature enablement)
- * @param run Function to run
- */
-function processingRun(ctx, enable, run) {
-    if (!enable) {
-        // Immediate execution, synchronous
-        run();
-    }
-    else {
-        processingDisplay(ctx, true);
-        // Allow the processing display to show if needed
-        setTimeout(function () {
-            run();
-            processingDisplay(ctx, false);
-        }, 0);
-    }
-}
-
-function renderer(ctx, type) {
-    var render = ctx.renderer;
-    var host = ext.renderer[type];
-    if (plainObject(render) && render[type]) {
-        // Specific renderer for this type. If available use it, otherwise use
-        // the default.
-        return host[render[type]] || host._;
-    }
-    else if (typeof render === 'string') {
-        // Common renderer - if there is one available for this type use it,
-        // otherwise use the default
-        return host[render] || host._;
-    }
-    // Use the default
-    return host._;
-}
-
-/**
- * Add the options to the page HTML for the table
- *
- * @param ctx DataTables context
- */
-function createLayout(ctx) {
-    var classes = ctx.classes;
-    // Wrapper div around everything DataTables controls
-    var insert = Dom
-        .c('div')
-        .attr('id', ctx.tableId + '_wrapper')
-        .classAdd(classes.container)
-        .insertBefore(ctx.table);
-    ctx.tableWrapper = insert.get(0);
-    if (ctx.dom) {
-        // Legacy
-        legacyDom(ctx, ctx.dom, insert);
-    }
-    else {
-        var top = convert(ctx, ctx.layout, 'top');
-        var bottom = convert(ctx, ctx.layout, 'bottom');
-        var render = renderer(ctx, 'layout');
-        // Everything above - the renderer will actually insert the contents into the document
-        top.forEach(function (item) {
-            render(ctx, insert, item);
-        });
-        // The table - always the center of attention
-        render(ctx, insert, {
-            full: {
-                contents: [featureTable(ctx)],
-                items: [],
-                table: true
-            }
-        });
-        // Everything below
-        bottom.forEach(function (item) {
-            render(ctx, insert, item);
-        });
-    }
-    // Processing floats on top, so it isn't an inserted feature
-    processingHtml(ctx);
-}
-/**
- * Expand the layout items into an object for the rendering function
- */
-function layoutItems(row, align, items) {
-    if (Array.isArray(items)) {
-        for (var i = 0; i < items.length; i++) {
-            layoutItems(row, align, items[i]);
-        }
-        return;
-    }
-    var rowCell = row[align]; // can't be undefined - will have been created by getRow
-    // If it is an object, then there can be multiple features contained in it
-    if (util.is.plainObject(items)) {
-        // Is it an cell object already, with rowId, etc. A feature plugin cannot
-        // be named "features" due to this check
-        if (items.features) {
-            if (items.rowId) {
-                row.id = items.rowId;
-            }
-            if (items.rowClass) {
-                row.className = items.rowClass;
-            }
-            rowCell.id = items.id;
-            rowCell.className = items.className;
-            layoutItems(row, align, items.features);
-        }
-        else {
-            // An object of features and configuration options - e.g. `{paging: {startEnd: false}}`
-            util.object.each(items, (key, val) => {
-                rowCell.items.push({
-                    feature: key,
-                    opts: val
-                });
-            });
-        }
-    }
-    else {
-        // Otherwise, it is a function, node or Dom / jQuery instance and can just get added
-        rowCell.items.push(items);
-    }
-}
-/**
- * Find, or create a layout row and setup a target cell in it
- *
- * @param rows Rows array to search for the target row. Is mutated when a row is
- *   added if not found.
- * @param rowNum Row index to get
- * @param align Where the cell position is
- * @returns The row
- */
-function getRow(rows, rowNum, align) {
-    var row;
-    // Find existing rows
-    for (var i = 0; i < rows.length; i++) {
-        row = rows[i];
-        if (row.rowNum === rowNum) {
-            // full is on its own, but start and end share a row
-            if ((align === 'full' && row.full) ||
-                ((align === 'start' || align === 'end') &&
-                    (row.start || row.end))) {
-                if (!row[align]) {
-                    row[align] = {
-                        contents: [],
-                        items: []
-                    };
-                }
-                return row;
-            }
-        }
-    }
-    // If we get this far, then there was no match, create a new row
-    row = {
-        rowNum: rowNum
-    };
-    row[align] = {
-        contents: [],
-        items: []
-    };
-    rows.push(row);
-    return row;
-}
-/**
- * Convert a `layout` object given by a user to the object structure needed
- * for the renderer. This is done twice, once for above and once for below
- * the table. Ordering must also be considered.
- *
- * @param settings DataTables settings object
- * @param layout Layout object to convert
- * @param side `top` or `bottom`
- * @returns Converted array structure - one item for each row.
- */
-function convert(settings, layout, side) {
-    var rows = [];
-    // Split out into an array
-    util.object.each(layout, function (pos, items) {
-        var parts = pos.match(/^([a-z]+)([0-9]*)([A-Za-z]*)$/);
-        if (items === null || !parts) {
-            return;
-        }
-        var rowNum = parts[2] ? parseInt(parts[2]) : 0;
-        var align = parts[3] ? parts[3].toLowerCase() : 'full';
-        // Filter out the side we aren't interested in
-        if (parts[1] !== side) {
-            return;
-        }
-        // Only really a type check
-        if (align !== 'full' && align !== 'start' && align !== 'end') {
-            return;
-        }
-        // Get or create the row we should attach to
-        var row = getRow(rows, rowNum, align);
-        layoutItems(row, align, items);
-    });
-    // Order by item identifier
-    rows.sort(function (a, b) {
-        var order1 = a.rowNum || 0;
-        var order2 = b.rowNum || 0;
-        // If both in the same row, then the row with `full` comes first
-        if (order1 === order2) {
-            var ret = a.full && !b.full ? -1 : 1;
-            return side === 'bottom' ? ret * -1 : ret;
-        }
-        return order2 - order1;
-    });
-    // Invert for below the table
-    if (side === 'bottom') {
-        rows.reverse();
-    }
-    for (var row = 0; row < rows.length; row++) {
-        delete rows[row].rowNum;
-        resolve(settings, rows[row]);
-    }
-    return rows;
-}
-/**
- * Convert the contents of a row's layout object to nodes that can be inserted
- * into the document by a renderer. Execute functions, look up plug-ins, etc.
- *
- * @param settings DataTables settings object
- * @param row Layout object for this row
- */
-function resolve(settings, row) {
-    var getFeature = function (feature, opts) {
-        if (!ext.features[feature]) {
-            log(settings, 0, 'Unknown feature: ' + feature);
-        }
-        return ext.features[feature].apply(this, [settings, opts]);
-    };
-    // Resolve items in the `contents` array from being an identifier, such as
-    // the name of a feature, into the node to display.
-    var resolve = function (item) {
-        if (!row[item]) {
-            return;
-        }
-        row[item].contents = row[item].items
-            .filter(item => !!item)
-            .map(item => {
-            if (typeof item === 'string') {
-                return getFeature(item, null);
-            }
-            else if (util.is.plainObject(item)) {
-                // If it's an object, it just has feature and opts properties from
-                // the transform in _layoutArray
-                return getFeature(item.feature, item.opts);
-            }
-            else if (typeof item.node === 'function') {
-                return item.node(settings);
-            }
-            else if (typeof item === 'function') {
-                var inst = item(settings);
-                return typeof inst.node === 'function' ? inst.node() : inst;
-            }
-            else if (item.nodeName) {
-                // An HTML element
-                return item;
-            }
-            else if (item instanceof Dom) {
-                return item.get(0);
-            }
-            else if (item.length) {
-                // Possibly jQuery
-                return item[0];
-            }
-        });
-    };
-    resolve('start');
-    resolve('end');
-    resolve('full');
-}
-/**
- * Draw the table with the legacy DOM property
- *
- * @param settings DT settings instance
- * @param layout DOM string
- * @param insert Insert point
- */
-function legacyDom(settings, layout, insert) {
-    let parts = layout.match(/(".*?")|('.*?')|./g);
-    let featureNode, option, newNode, next, attr;
-    if (!parts) {
-        return;
-    }
-    for (let i = 0; i < parts.length; i++) {
-        featureNode = null;
-        option = parts[i];
-        if (option == '<') {
-            // New container div
-            newNode = Dom.c('div');
-            // Check to see if we should append an id and/or a class name to the container
-            next = parts[i + 1];
-            if (next[0] == "'" || next[0] == '"') {
-                attr = next.replace(/['"]/g, '');
-                let id = '', className;
-                /* The attribute can be in the format of "#id.class", "#id" or "class" This logic
-                 * breaks the string into parts and applies them as needed
-                 */
-                if (attr.indexOf('.') != -1) {
-                    let split = attr.split('.');
-                    id = split[0];
-                    className = split[1];
-                }
-                else if (attr[0] == '#') {
-                    id = attr;
-                }
-                else {
-                    className = attr;
-                }
-                newNode.attr('id', id.substring(1)).classAdd(className);
-                i++; // Move along the position array
-            }
-            insert.append(newNode.get()); // TODO
-            insert = newNode;
-        }
-        else if (option == '>') {
-            // End container div
-            insert = insert.parent();
-        }
-        else if (option == 't') {
-            // Table
-            featureNode = featureTable(settings);
-        }
-        else {
-            ext.feature.forEach(function (feature) {
-                if (option == feature.cFeature) {
-                    featureNode = feature.fnInit(settings);
-                }
-            });
-        }
-        // Add to the display
-        if (featureNode) {
-            // TODO when doing the full dom update, won't need this check
-            insert.append(featureNode instanceof Dom ? featureNode.get() : featureNode);
-        }
-    }
-}
-
-function sortInit(settings) {
-    var target = settings.thead;
-    var headerRows = target.querySelectorAll('tr');
-    var titleRow = settings.titleRow;
-    var notSelector = ':not([data-dt-order="disable"]):not([data-dt-order="icon-only"])';
-    // Legacy support for `orderCellsTop`
-    if (titleRow === true) {
-        target = headerRows[0];
-    }
-    else if (titleRow === false) {
-        target = headerRows[headerRows.length - 1];
-    }
-    else if (titleRow !== null) {
-        target = headerRows[titleRow];
-    }
-    // else - all rows
-    if (settings.orderHandler) {
-        sortAttachListener(settings, target, target === settings.thead
-            ? 'tr' +
-                notSelector +
-                ' th' +
-                notSelector +
-                ', tr' +
-                notSelector +
-                ' td' +
-                notSelector
-            : 'th' + notSelector + ', td' + notSelector);
-    }
-    // Need to resolve the user input array into our internal structure
-    var order = [];
-    sortResolve(settings, order, settings.order);
-    settings.order = order;
-}
-/**
- * Attach event listeners to a node that will trigger ordering on a column
- *
- * @param settings DataTables context
- * @param node Node to attach to
- * @param selector Delegate selector
- * @param column Column index to target
- * @param callback Callback for when done
- */
-function sortAttachListener(settings, node, selector, column, callback) {
-    bindAction(node, selector, function (e) {
-        var run = false;
-        var columns = column === undefined
-            ? columnsFromHeader(e.target)
-            : typeof column === 'function'
-                ? column()
-                : Array.isArray(column)
-                    ? column
-                    : [column];
-        if (columns.length) {
-            for (var i = 0, iLen = columns.length; i < iLen; i++) {
-                var ret = sortAdd(settings, columns[i], i, e.shiftKey);
-                if (ret !== false) {
-                    run = true;
-                }
-                // If the first entry is no sort, then subsequent
-                // sort columns are ignored
-                if (settings.order.length === 1 &&
-                    settings.order[0][1] === '') {
-                    break;
-                }
-            }
-            if (run) {
-                processingRun(settings, true, function () {
-                    sort(settings);
-                    sortDisplay(settings, settings.display);
-                    reDraw(settings, false, false);
-                    if (callback) {
-                        callback();
-                    }
-                });
-            }
-        }
-    });
-}
-/**
- * Sort the display array to match the master's order
- *
- * @param settings DataTables context
- * @param display The display array
- */
-function sortDisplay(settings, display) {
-    if (display.length < 2) {
-        return;
-    }
-    var master = settings.displayMaster;
-    var masterMap = {};
-    var map = {};
-    var i;
-    // Rather than needing an `indexOf` on master array, we can create a map
-    for (i = 0; i < master.length; i++) {
-        masterMap[master[i]] = i;
-    }
-    // And then cache what would be the indexOf from the display
-    for (i = 0; i < display.length; i++) {
-        map[display[i]] = masterMap[display[i]];
-    }
-    display.sort(function (a, b) {
-        // Short version of this function is simply `master.indexOf(a) - master.indexOf(b);`
-        return map[a] - map[b];
-    });
-}
-/**
- * Convert the API variants that can be used for defining the order into our
- * internal OrderColumn array.
- *
- * @param settings DataTable context object
- * @param nestedSort Array to write the resolve values to
- * @param sortItem Source object / array from user (It is really an `Order`
- *   but due to `aaSorting` being used for input and the internal structure
- *   it is currently any).
- * @todo Split aaSorting into unresolved and resolved parameters (in state.ts as
- *   well)
- */
-function sortResolve(settings, nestedSort, sortItem // TODO typing
-) {
-    var push = function (a) {
-        if (plainObject(a)) {
-            let orderIdx = a;
-            let orderName = a;
-            if (orderIdx.idx !== undefined) {
-                // Index based ordering
-                nestedSort.push([orderIdx.idx, orderIdx.dir]);
-            }
-            else if (orderName.name) {
-                // Name based ordering
-                var cols = pluck(settings.columns, 'name');
-                var idx = cols.indexOf(orderName.name);
-                if (idx !== -1) {
-                    nestedSort.push([idx, orderName.dir]);
-                }
-            }
-        }
-        else {
-            // Plain column index and direction pair
-            nestedSort.push(a);
-        }
-    };
-    if (plainObject(sortItem)) {
-        // Object
-        push(sortItem);
-    }
-    else if (Array.isArray(sortItem) && typeof sortItem[0] === 'number') {
-        // 1D array
-        push(sortItem);
-    }
-    else if (Array.isArray(sortItem)) {
-        // 2D array
-        for (var z = 0; z < sortItem.length; z++) {
-            push(sortItem[z]); // Object or array
-        }
-    }
-}
-function sortFlatten(settings) {
-    var i, k, kLen, aSort = [], extSort = ext.type.order, aoColumns = settings.columns, dataSort, colIdx, type, srcCol, fixed = settings.orderFixed, fixedObj = plainObject(fixed), nestedSort = [];
-    if (!settings.features.ordering) {
-        return aSort;
-    }
-    // Build the sort array, with pre-fix and post-fix options if they have been
-    // specified
-    if (Array.isArray(fixed)) {
-        sortResolve(settings, nestedSort, fixed);
-    }
-    if (fixedObj && fixed.pre) {
-        sortResolve(settings, nestedSort, fixed.pre);
-    }
-    sortResolve(settings, nestedSort, settings.order);
-    if (fixedObj && fixed.post) {
-        sortResolve(settings, nestedSort, fixed.post);
-    }
-    for (i = 0; i < nestedSort.length; i++) {
-        srcCol = nestedSort[i][0];
-        if (aoColumns[srcCol]) {
-            dataSort = aoColumns[srcCol].orderData;
-            for (k = 0, kLen = dataSort.length; k < kLen; k++) {
-                colIdx = dataSort[k];
-                type = aoColumns[colIdx].type || 'string';
-                if (nestedSort[i]._idx === undefined) {
-                    nestedSort[i]._idx = aoColumns[colIdx].orderSequence.indexOf(nestedSort[i][1]);
-                }
-                if (nestedSort[i][1]) {
-                    aSort.push({
-                        src: srcCol,
-                        col: colIdx,
-                        dir: nestedSort[i][1],
-                        index: nestedSort[i]._idx,
-                        type: type,
-                        formatter: extSort[type + '-pre'],
-                        sorter: extSort[type + '-' + nestedSort[i][1]]
+function columnCells(header, row = null, column = null) {
+    var out = [];
+    var included = [];
+    for (var i = 0; i < header.length; i++) {
+        if (row === null || row === i) {
+            for (var j = 0; j < header[i].length; j++) {
+                var cell = header[i][j].cell;
+                if ((column === null || column === j) &&
+                    !included.includes(cell)) {
+                    included.push(cell);
+                    out.push({
+                        cell,
+                        row: header[i].row
                     });
                 }
             }
         }
     }
-    return aSort;
+    return out;
 }
 /**
- * Change the order of the table
+ * Get cells that apply for ordering handler or icons
  *
- * @param ctx DataTables settings object
- * @param col Column to perform sort on
- * @param dir Direction to sort on
+ * @param settings Context
+ * @param notSelector DOM selector to exclude elements
+ * @returns Array of selected elements
  */
-function sort(ctx, col, dir) {
-    var i, iLen, aiOrig = [], extSort = ext.type.order, data = ctx.data, sortCol, displayMaster = ctx.displayMaster, aSort;
-    // Make sure the columns all have types defined
-    columnTypes(ctx);
-    // Allow a specific column to be sorted, which will _not_ alter the display
-    // master
-    if (col !== undefined) {
-        var srcCol = ctx.columns[col];
-        aSort = [
-            {
-                src: col,
-                col: col,
-                dir: dir || '',
-                index: 0,
-                type: srcCol.type,
-                formatter: extSort[srcCol.type + '-pre'],
-                sorter: extSort[srcCol.type + '-' + dir]
-            }
-        ];
-        displayMaster = displayMaster.slice();
-    }
-    else {
-        aSort = sortFlatten(ctx);
-    }
-    for (i = 0, iLen = aSort.length; i < iLen; i++) {
-        sortCol = aSort[i];
-        // Load the data needed for the sort, for each cell
-        sortData(ctx, sortCol.col);
-    }
-    /* No sorting required if server-side or no sorting array */
-    if (dataSource(ctx) != 'ssp' && aSort.length !== 0) {
-        // Reset the initial positions on each pass so we get a stable sort
-        for (i = 0, iLen = displayMaster.length; i < iLen; i++) {
-            aiOrig[i] = i;
-        }
-        // If the first sort is desc, then reverse the array to preserve original
-        // order, just in reverse
-        if (aSort.length && aSort[0].dir === 'desc' && ctx.orderDescReverse) {
-            aiOrig.reverse();
-        }
-        /* Do the sort - here we want multi-column sorting based on a given data source (column)
-         * and sorting function (from oSort) in a certain direction. It's reasonably complex to
-         * follow on its own, but this is what we want (example two column sorting):
-         *  fnLocalSorting = function(a,b){
-         *    var test;
-         *    test = oSort['string-asc']('data11', 'data12');
-         *      if (test !== 0)
-         *        return test;
-         *    test = oSort['numeric-desc']('data21', 'data22');
-         *    if (test !== 0)
-         *      return test;
-         *    return oSort['numeric-asc']( aiOrig[a], aiOrig[b] );
-         *  }
-         * Basically we have a test for each sorting column, if the data in that column is equal,
-         * test the next column. If all columns match, then we use a numeric sort on the row
-         * positions in the original data array to provide a stable sort.
-         */
-        displayMaster.sort(function (a, b) {
-            var _a, _b;
-            var x, y, k, test, sortItem, len = aSort.length, dataA = (_a = data[a]) === null || _a === void 0 ? void 0 : _a.orderCache, dataB = (_b = data[b]) === null || _b === void 0 ? void 0 : _b.orderCache;
-            for (k = 0; k < len; k++) {
-                sortItem = aSort[k];
-                // Data, which may have already been through a `-pre` function
-                x = dataA[sortItem.col];
-                y = dataB[sortItem.col];
-                if (sortItem.sorter) {
-                    // If there is a custom sorter (`-asc` or `-desc`) for this
-                    // data type, use it
-                    test = sortItem.sorter(x, y);
-                    if (test !== 0) {
-                        return test;
-                    }
-                }
-                else {
-                    // Otherwise, use generic sorting
-                    test = x < y ? -1 : x > y ? 1 : 0;
-                    if (test !== 0) {
-                        return sortItem.dir === 'asc' ? test : -test;
-                    }
-                }
-            }
-            x = aiOrig[a];
-            y = aiOrig[b];
-            return x < y ? -1 : x > y ? 1 : 0;
-        });
-    }
-    else if (aSort.length === 0) {
-        // Apply index order
-        displayMaster.sort(function (x, y) {
-            return x < y ? -1 : x > y ? 1 : 0;
-        });
-    }
-    if (col === undefined) {
-        // Tell the draw function that we have sorted the data
-        ctx.wasOrdered = true;
-        ctx.sortDetails = aSort;
-        callbackFire(ctx, null, 'order', [ctx, aSort]);
-    }
-    return displayMaster;
-}
-/**
- * Function to run on user sort request
- *
- * @param settings dataTables settings object
- * @param colIdx column sorting index
- * @param addIndex Counter
- * @param shift Shift click add
- */
-function sortAdd(settings, colIdx, addIndex, shift) {
-    var col = settings.columns[colIdx];
-    var sorting = settings.order;
-    var asSorting = col.orderSequence;
-    var nextSortIdx;
-    var next = function (a, overflow) {
-        var idx = a._idx;
-        if (idx === undefined) {
-            idx = asSorting.indexOf(a[1]);
-        }
-        return idx + 1 < asSorting.length ? idx + 1 : overflow ? null : 0;
-    };
-    if (!col.orderable) {
-        return false;
-    }
-    // Convert to 2D array if needed
-    if (typeof sorting[0] === 'number') {
-        sorting = settings.order = [sorting];
-    }
-    // If appending the sort then we are multi-column sorting
-    if ((shift || addIndex) && settings.features.orderMulti) {
-        // Are we already doing some kind of sort on this column?
-        var sortIdx = pluck(sorting, '0').indexOf(colIdx);
-        if (sortIdx !== -1) {
-            // Yes, modify the sort
-            nextSortIdx = next(sorting[sortIdx], true);
-            if (nextSortIdx === null && sorting.length === 1) {
-                nextSortIdx = 0; // can't remove sorting completely
-            }
-            if (nextSortIdx === null || asSorting[nextSortIdx] === '') {
-                sorting.splice(sortIdx, 1);
-            }
-            else {
-                sorting[sortIdx][1] = asSorting[nextSortIdx];
-                sorting[sortIdx]._idx = nextSortIdx;
-            }
-        }
-        else if (shift) {
-            // No sort on this column yet, being added by shift click
-            // add it as itself
-            sorting.push([colIdx, asSorting[0], 0]);
-            sorting[sorting.length - 1]._idx = 0;
-        }
-        else {
-            // No sort on this column yet, being added from a colspan
-            // so add with same direction as first column
-            sorting.push([colIdx, sorting[0][1], 0]);
-            sorting[sorting.length - 1]._idx = 0;
-        }
-    }
-    else if (sorting.length && sorting[0][0] == colIdx) {
-        // Single column - already sorting on this column, modify the sort
-        nextSortIdx = next(sorting[0]);
-        if (nextSortIdx) {
-            sorting.length = 1;
-            sorting[0][1] = asSorting[nextSortIdx];
-            sorting[0]._idx = nextSortIdx;
-        }
-        else {
-            sorting.length = 1;
-            sorting[0][1] = asSorting[0];
-            sorting[0]._idx = 0;
-        }
-    }
-    else {
-        // Single column - sort only on this column
-        sorting.length = 0;
-        sorting.push([colIdx, asSorting[0]]);
-        sorting[0]._idx = 0;
-    }
-}
-/**
- * Set the sorting classes on table's body, Note: it is safe to call this function
- * when bSort and bSortClasses are false
- *
- * @param settings DataTables settings object
- */
-function sortingClasses(settings) {
-    var oldSort = settings.lastOrder;
-    var sortClass = settings.classes.order.position;
-    var sortFlat = sortFlatten(settings);
-    var features = settings.features;
-    var i, iLen, colIdx;
-    if (features.ordering && features.orderClasses) {
-        // Remove old sorting classes
-        for (i = 0, iLen = oldSort.length; i < iLen; i++) {
-            colIdx = oldSort[i].src;
-            // Remove column sorting
-            Dom.s(pluck(settings.data, 'cells', colIdx)).classRemove(sortClass + (i < 2 ? i + 1 : 3));
-        }
-        // Add new column sorting
-        for (i = 0, iLen = sortFlat.length; i < iLen; i++) {
-            colIdx = sortFlat[i].src;
-            Dom.s(pluck(settings.data, 'cells', colIdx)).classAdd(sortClass + (i < 2 ? i + 1 : 3));
-        }
-    }
-    settings.lastOrder = sortFlat;
-}
-/**
- * Get the data to sort a column, be it from cache, fresh (populating the
- * cache), or from a sort formatter
- *
- * @param settings DataTables settings object
- * @param colIdx Column index
- */
-function sortData(settings, colIdx) {
-    // Custom sorting function - provided by the sort data type
-    var column = settings.columns[colIdx];
-    var customSort = ext.order[column.orderDataType];
-    var customData;
-    if (customSort) {
-        customData = customSort.call(settings.instance, settings, colIdx, columnIndexToVisible(settings, colIdx));
-    }
-    // Use / populate cache
-    var row, cellData;
-    var formatter = ext.type.order[column.type + '-pre'];
-    var data = settings.data;
-    for (var rowIdx = 0; rowIdx < data.length; rowIdx++) {
-        // Sparse array
-        if (!data[rowIdx]) {
-            continue;
-        }
-        row = data[rowIdx];
-        if (row && !row.orderCache) {
-            row.orderCache = [];
-        }
-        if (row && (!row.orderCache[colIdx] || customSort)) {
-            cellData = customSort
-                ? customData[rowIdx] // If there was a custom sort function, use data from there
-                : getCellData(settings, rowIdx, colIdx, 'sort');
-            row.orderCache[colIdx] = formatter
-                ? formatter(cellData, settings)
-                : cellData;
-        }
-    }
-}
-
-/**
- * Alter the display settings to change the page
- *
- * @param settings DataTables settings object
- * @param action Paging action to take: "first", "previous", "next" or "last" or
- *   page number to jump to (integer)
- * @param redraw Automatically draw the update or not
- * @returns true page has changed, false - no change
- */
-function pageChange(settings, action, redraw) {
-    var start = settings.displayStart, len = settings.pageLength, records = recordsDisplay(settings);
-    if (records === 0 || len === -1) {
-        start = 0;
-    }
-    else if (typeof action === 'number') {
-        start = action * len;
-        if (start > records) {
-            start = 0;
-        }
-    }
-    else if (action == 'first') {
-        start = 0;
-    }
-    else if (action == 'previous') {
-        start = len >= 0 ? start - len : 0;
-        if (start < 0) {
-            start = 0;
-        }
-    }
-    else if (action == 'next') {
-        if (start + len < records) {
-            start += len;
-        }
-    }
-    else if (action == 'last') {
-        start = Math.floor((records - 1) / len) * len;
-    }
-    else if (action === 'ellipsis') {
-        return;
-    }
-    else {
-        log(settings, 0, 'Unknown paging action: ' + action, 5);
-    }
-    var changed = settings.displayStart !== start;
-    settings.displayStart = start;
-    callbackFire(settings, null, changed ? 'page' : 'page-nc', [settings]);
-    if (changed && redraw) {
-        draw(settings);
-    }
-    return changed;
-}
-
-/**
- * State information for a table
- *
- * @param settings DataTables settings object
- */
-function saveState(settings) {
-    if (settings.loadingState) {
-        return;
-    }
-    // Sort state saving uses [[idx, order]] structure.
-    var sorting = [];
-    sortResolve(settings, sorting, settings.order);
-    /* Store the interesting variables */
-    var columns = settings.columns;
-    var state = {
-        columns: settings.columns.map(function (col, i) {
-            return {
-                name: col.name,
-                visible: col.visible,
-                search: Object.assign({}, settings.searches[i])
-            };
-        }),
-        length: settings.pageLength,
-        order: sorting.map(function (sort) {
-            // If a column name is available, use it
-            return columns[sort[0]] && columns[sort[0]].name
-                ? [columns[sort[0]].name, sort[1]]
-                : sort.slice();
-        }),
-        search: Object.assign({}, settings.searches['*']),
-        searchGroups: Object.keys(settings.searches)
-            .filter(c => c.includes(',')) // Limit to only multi-column subsets
-            .map(c => Object.assign({}, settings.searches[c])),
-        start: settings.displayStart,
-        time: +new Date()
-    };
-    settings.stateSaved = state;
-    callbackFire(settings, 'stateSaveParams', 'stateSaveParams', [
-        settings,
-        state
-    ]);
-    if (settings.features.stateSave && !settings.destroying) {
-        settings.stateSaveCallback.call(settings.instance, settings, state);
-    }
-}
-/**
- * Attempt to load a saved table state
- *
- * @param settings dataTables settings object
- * @param callback Callback to execute when the state has been loaded
- */
-function loadState(settings, callback) {
-    if (!settings.features.stateSave) {
-        callback();
-        return;
-    }
-    var loaded = function (state, ignoreTime = false) {
-        implementState(settings, state, ignoreTime, callback);
-    };
-    var state = settings.stateLoadCallback.call(settings.instance, settings, loaded);
-    if (state !== undefined) {
-        implementState(settings, state, false, callback);
-    }
-    // otherwise, wait for the loaded callback to be executed
-    return true;
-}
-function implementState(settings, s, ignoreTime, callback) {
-    var i, iLen;
-    var columns = settings.columns;
-    var currentNames = pluck(settings.columns, 'name');
-    settings.loadingState = true;
-    // When StateRestore was introduced the state could now be implemented at
-    // any time Not just initialisation. To do this an api instance is required
-    // in some places
-    var api = settings.initDone ? new Api(settings) : null;
-    if (!ignoreTime) {
-        if (!s || !s.time) {
-            settings.loadingState = false;
-            callback();
-            return;
-        }
-        // Reject old data
-        var duration = settings.stateDuration;
-        if (duration > 0 && s.time < +new Date() - duration * 1000) {
-            settings.loadingState = false;
-            callback();
-            return;
-        }
-    }
-    // Allow custom and plug-in manipulation functions to alter the saved data
-    // set and cancelling of loading by returning false
-    var abStateLoad = callbackFire(settings, 'stateLoadParams', 'stateLoadParams', [settings, s]);
-    if (abStateLoad.indexOf(false) !== -1) {
-        settings.loadingState = false;
-        callback();
-        return;
-    }
-    // Store the saved state so it might be accessed at any time
-    settings.stateLoaded = assignDeep({}, s);
-    // This is needed for ColReorder, which has to happen first to allow all
-    // the stored indexes to be usable. It is not publicly documented.
-    callbackFire(settings, null, 'stateLoadInit', [settings, s], true);
-    // Page Length
-    if (s.length !== undefined) {
-        // If already initialised just set the value directly so that the select
-        // element is also updated
-        if (api) {
-            api.page.len(s.length);
-        }
-        else {
-            settings.pageLength = s.length;
-        }
-    }
-    // Restore key features
-    if (s.start !== undefined) {
-        if (api === null) {
-            settings.displayStart = s.start;
-            settings.displayStartInit = s.start;
-        }
-        else {
-            pageChange(settings, s.start / settings.pageLength);
-        }
-    }
-    // Order
-    if (s.order !== undefined) {
-        settings.order = [];
-        for (let i = 0; i < s.order.length; i++) {
-            let col = s.order[i];
-            let set = [col[0], col[1]];
-            // A column name was stored and should be used for restore
-            if (typeof col[0] === 'string') {
-                // Find the name from the current list of column names
-                let idx = currentNames.indexOf(col[0]);
-                if (idx < 0) {
-                    // If the column was not found ignore it and continue
-                    continue;
-                }
-                set[0] = idx;
-            }
-            else if (set[0] >= columns.length) {
-                // If the column index is out of bounds ignore it and continue
-                continue;
-            }
-            settings.order.push(set);
-        }
-    }
-    // Search
-    if (s.search !== undefined) {
-        Object.assign(settings.searches['*'], s.search);
-    }
-    if (s.searchGroups) {
-        s.searchGroups.forEach(group => {
-            if (group.columns) {
-                let index = group.columns.join(',');
-                settings.searches[index] = create$2(group);
-            }
-        });
-    }
-    // Columns
-    if (s.columns) {
-        var set = s.columns;
-        var incoming = pluck(s.columns, 'name');
-        // Check if it is a 2.2 style state object with a `name` property for
-        // the columns, and if the name was defined. If so, then create a new
-        // array that will map the state object given, to the current columns
-        // (don't bother if they are already matching tho).
-        if (incoming.join('').length &&
-            incoming.join('') !== currentNames.join('')) {
-            set = [];
-            // For each column, try to find the name in the incoming array
-            for (i = 0; i < currentNames.length; i++) {
-                if (currentNames[i] != '') {
-                    var idx = incoming.indexOf(currentNames[i]);
-                    if (idx >= 0) {
-                        set.push(s.columns[idx]);
-                    }
-                    else {
-                        // No matching column name in the state's columns, so
-                        // this might be a new column and thus can't have a
-                        // state already.
-                        set.push({});
-                    }
-                }
-                else {
-                    // If no name, but other columns did have a name, then there
-                    // is no knowing where this one came from originally so it
-                    // can't be restored.
-                    set.push({});
-                }
-            }
-        }
-        // If the number of columns to restore is different from current, then
-        // all bets are off.
-        if (set.length === columns.length) {
-            for (i = 0, iLen = set.length; i < iLen; i++) {
-                var col = set[i];
-                // Visibility
-                if (col.visible !== undefined) {
-                    // If the api is defined, the table has been initialised so
-                    // we need to use it rather than internal settings
-                    if (api) {
-                        // Don't redraw the columns on every iteration of this
-                        // loop, we will do this at the end instead
-                        api.column(i).visible(col.visible, false);
-                    }
-                    else {
-                        columns[i].visible = col.visible;
-                    }
-                }
-                // Search
-                if (col.search !== undefined) {
-                    Object.assign(settings.searches[i], col.search);
-                    // If out of order due to a change in order from named
-                    // columns we need to make sure the index is correct
-                    settings.searches[i].columns = [i];
-                }
-            }
-            // If the api is defined then we need to adjust the columns once the
-            // visibility has been changed
-            if (api) {
-                api.one('draw', function () {
-                    api.columns.adjust();
-                });
-            }
-        }
-    }
-    settings.loadingState = false;
-    callbackFire(settings, 'stateLoaded', 'stateLoaded', [settings, s]);
-    callback();
-}
-
-/**
- * Draw the table for the first time, adding all required features
- *
- * @param settings DataTables settings object
- */
-function initialise(settings) {
-    var i;
-    var init = settings.init;
-    var deferLoading = settings.deferLoading;
-    var dataSrc = dataSource(settings);
-    // Ensure that the table data is fully initialised
-    if (!settings.initialised) {
-        setTimeout(function () {
-            initialise(settings);
-        }, 200);
-        return;
-    }
-    // Build the header / footer for the table
-    buildHead(settings, 'header');
-    buildHead(settings, 'footer');
-    // Load the table's state (if needed) and then render around it and draw
-    loadState(settings, function () {
-        // Then draw the header / footer
-        drawHead(settings, settings.header);
-        drawHead(settings, settings.footer);
-        // Cache the paging start point, as the first redraw will reset it
-        var iAjaxStart = settings.displayStartInit;
-        // Local data load
-        // Check if there is data passing into the constructor
-        if (init && init.data) {
-            for (i = 0; i < init.data.length; i++) {
-                addData(settings, init.data[i]);
-            }
-        }
-        else if (deferLoading || dataSrc == 'dom') {
-            // Grab the data from the page
-            addTr(settings, Dom.s(settings.tbody).children('tr'));
-        }
-        // Filter not yet applied - copy the display master
-        settings.display = settings.displayMaster.slice();
-        // Enable features
-        createLayout(settings);
-        sortInit(settings);
-        colGroup(settings);
-        /* Okay to show that something is going on now */
-        processingDisplay(settings, true);
-        callbackFire(settings, null, 'preInit', [settings], true);
-        // If there is default sorting required - let's do it. The sort function
-        // will do the drawing for us. Otherwise we draw the table regardless of
-        // the Ajax source - this allows the table to look initialised for Ajax
-        // sourcing data (show 'loading' message possibly)
-        reDraw(settings);
-        // Server-side processing init complete is done by _fnAjaxUpdateDraw
-        if (dataSrc != 'ssp' || deferLoading) {
-            // if there is an ajax source load the data
-            if (dataSrc == 'ajax') {
-                buildAjax(settings, {}, function (json) {
-                    var aData = ajaxDataSrc(settings, json, false);
-                    // Got the data - add it to the table
-                    for (i = 0; i < aData.length; i++) {
-                        addData(settings, aData[i]);
-                    }
-                    // Reset the init display for cookie saving. We've already
-                    // done a filter, and therefore cleared it before. So we
-                    // need to make it appear 'fresh'
-                    settings.displayStartInit = iAjaxStart;
-                    reDraw(settings);
-                    processingDisplay(settings, false);
-                    initComplete(settings);
-                });
-            }
-            else {
-                initComplete(settings);
-                processingDisplay(settings, false);
-            }
-        }
-    });
-}
-/**
- * Draw the table for the first time, adding all required features
- *
- * @param settings DataTables settings object
- */
-function initComplete(settings) {
-    if (settings.initDone) {
-        return;
-    }
-    var args = [settings, settings.json];
-    settings.initDone = true;
-    // If the footer element is empty after initialisation, then remove it
-    let tfoot = Dom.s(settings.tfoot);
-    if (tfoot.children().count() === 0) {
-        tfoot.remove();
-    }
-    // Table is fully set up and we have data, so calculate the
-    // column widths
-    adjustColumnSizing(settings);
-    callbackFire(settings, null, 'plugin-init', args, true);
-    callbackFire(settings, 'init', 'init', args, true);
-}
-
-/**
- * Create an Ajax call based on the table's settings, taking into account that
- * parameters can have multiple forms, and backwards compatibility.
- *
- * @param settings DataTables settings object
- * @param data Data to send to the server, required by DataTables - may be
- *   augmented by developer callbacks
- * @param fn Callback function to run when data is obtained
- */
-function buildAjax(settings, data, fn) {
-    var ajaxData;
-    var ajaxConfig = settings.ajax;
-    var instance = settings.instance;
-    var callback = function (json) {
-        var status = settings.jqXHR ? settings.jqXHR.status : null;
-        if (json === null || (typeof status === 'number' && status == 204)) {
-            json = {};
-            ajaxDataSrc(settings, json, []);
-        }
-        var error = json.error || json.sError;
-        if (error) {
-            log(settings, 0, error);
-        }
-        // Microsoft often wrap JSON as a string in another JSON object Let's
-        // handle that automatically
-        if (json.d && typeof json.d === 'string') {
-            try {
-                json = JSON.parse(json.d);
-            }
-            catch (e) {
-                // noop
-            }
-        }
-        settings.json = json;
-        callbackFire(settings, null, 'xhr', [settings, json, settings.jqXHR], true);
-        fn(json);
-    };
-    if (util.is.plainObject(ajaxConfig) && ajaxConfig.data) {
-        ajaxData = ajaxConfig.data;
-        var newData = typeof ajaxData === 'function'
-            ? ajaxData(data, settings) // fn can manipulate data or return
-            : ajaxData; // an object or array to merge
-        // If the function returned something, use that alone
-        data =
-            typeof ajaxData === 'function' && newData
-                ? newData
-                : util.object.assignDeep(data, newData);
-        // Remove the data property as we've resolved it already and don't want
-        // jQuery to do it again (it is restored at the end of the function)
-        delete ajaxConfig.data;
-    }
-    var baseAjax = {
-        url: typeof ajaxConfig === 'string' ? ajaxConfig : '',
-        data: data,
-        success: callback,
-        dataType: 'json',
-        cache: false,
-        type: settings.serverMethod,
-        error: function (xhr, error) {
-            var ret = callbackFire(settings, null, 'xhr', [settings, null, settings.jqXHR], true);
-            if (ret.indexOf(false) === -1) {
-                if (error == 'parsererror') {
-                    log(settings, 0, 'Invalid JSON response', 1);
-                }
-                else if (xhr.readyState === 4) {
-                    log(settings, 0, 'Ajax error', 7);
-                }
-            }
-            processingDisplay(settings, false);
-        }
-    };
-    // If `ajax` option is an object, extend and override our default base
-    if (util.is.plainObject(ajaxConfig)) {
-        util.object.assign(baseAjax, ajaxConfig);
-    }
-    // Store the data submitted for the API
-    settings.ajaxData = data;
-    // Allow plug-ins and external processes to modify the data
-    callbackFire(settings, null, 'preXhr', [settings, data, baseAjax], true);
-    if (typeof ajaxConfig === 'function') {
-        // Is a function - let the caller define what needs to be done
-        settings.jqXHR = ajaxConfig.call(instance, data, callback, settings);
-    }
-    else if (ajaxConfig &&
-        typeof ajaxConfig !== 'string' &&
-        ajaxConfig.url === '') {
-        // No url, so don't load any data. Just apply an empty data array
-        // to the object for the callback.
-        var empty = {};
-        ajaxDataSrc(settings, empty, []);
-        callback(empty);
-    }
-    else {
-        // Object to extend the base settings
-        settings.jqXHR = util.ajax(baseAjax);
-    }
-    // Restore for next time around
-    if (ajaxData) {
-        ajaxConfig.data = ajaxData;
-    }
-}
-/**
- * Update the table using an Ajax call
- *
- * @param settings DataTables settings object
- * @returns Block the table drawing or not
- */
-function ajaxUpdate(settings) {
-    settings.drawCount++;
-    processingDisplay(settings, true);
-    buildAjax(settings, ajaxParameters(settings), function (json) {
-        ajaxUpdateDraw(settings, json);
-    });
-}
-function functionOrValue(val) {
-    return typeof val === 'function' ? 'function' : val.toString();
-}
-/**
- * Build up the parameters in an object needed for a server-side processing
- * request.
- *
- * @param settings DataTables settings object
- * @returns Block the table drawing or not
- */
-function ajaxParameters(settings) {
-    var columns = settings.columns, features = settings.features, searches = settings.searches, searchesFixed = settings.searchesFixed, colData = function (idx, prop) {
-        return typeof columns[idx][prop] === 'function'
-            ? 'function'
-            : columns[idx][prop];
-    };
-    return {
-        draw: settings.drawCount,
-        columns: columns.map(function (column, i) {
-            return {
-                data: colData(i, 'data'),
-                name: column.name,
-                searchable: column.searchable,
-                orderable: column.orderable,
-                search: {
-                    value: searches[i]
-                        ? functionOrValue(searches[i].search)
-                        : '',
-                    regex: searches[i] ? searches[i].regex : false,
-                    fixed: searchesFixed[i]
-                        ? Object.keys(searchesFixed[i]).map(name => ({
-                            name: name,
-                            term: functionOrValue(searchesFixed[i][name].search)
-                        }))
-                        : []
-                }
-            };
-        }),
-        order: sortFlatten(settings).map(function (val) {
-            return {
-                column: val.col,
-                dir: val.dir,
-                name: colData(val.col, 'name')
-            };
-        }),
-        start: settings.displayStart,
-        length: features.paging ? settings.pageLength : -1,
-        search: {
-            value: functionOrValue(searches['*'].search),
-            regex: searches['*'].regex,
-            fixed: Object.keys(settings.searchesFixed['*']).map(name => ({
-                name: name,
-                term: functionOrValue(settings.searchesFixed['*'][name].search)
-            })),
-            groups: Object.keys(settings.searches)
-                .filter(c => c.includes(',')) // Limit to only multi-column subsets
-                .map(c => ({
-                columns: settings.searches[c].columns || [],
-                term: functionOrValue(settings.searches[c].search)
-            })),
-            groupsFixed: Object.keys(settings.searchesFixed)
-                .filter(c => c.includes(',')) // Limit to only multi-column subsets
-                .map(c => {
-                let searches = settings.searchesFixed[c];
-                return Object.keys(searches).map(n => ({
-                    columns: searches[n].columns || [],
-                    name: n,
-                    term: functionOrValue(searches[n].search)
-                }));
-            })
-                .flat()
-        }
-    };
-}
-/**
- * Data the data from the server (nuking the old) and redraw the table
- *
- * @param settings DataTables settings object
- * @param json json data return from the server.
- */
-function ajaxUpdateDraw(settings, json) {
-    var data = ajaxDataSrc(settings, json, false);
-    var drawUnique = ajaxDataSrcParam(settings, 'draw', json);
-    var recordsTotal = ajaxDataSrcParam(settings, 'recordsTotal', json);
-    var recordsFiltered = ajaxDataSrcParam(settings, 'recordsFiltered', json);
-    var existingTypes = settings.columns.map(c => c.type).join(',');
-    if (drawUnique !== undefined) {
-        // Protect against out of sequence returns
-        if (drawUnique * 1 < settings.drawCount) {
-            return;
-        }
-        settings.drawCount = drawUnique * 1;
-    }
-    // No data in returned object, so rather than an array, we show an empty
-    // table
-    if (!data) {
-        data = [];
-    }
-    clearTable(settings);
-    settings.recordsTotal = parseInt(recordsTotal, 10);
-    settings.recordsDisplay = parseInt(recordsFiltered, 10);
-    for (var i = 0, iLen = data.length; i < iLen; i++) {
-        addData(settings, data[i]);
-    }
-    settings.display = settings.displayMaster.slice();
-    columnTypes(settings, existingTypes);
-    draw(settings, true);
-    initComplete(settings);
-    processingDisplay(settings, false);
-}
-/**
- * Get the data from the JSON data source to use for drawing a table.
- *
- * @param settings DataTables settings object
- * @param json Data source object / array from the server
- * @param write Array or object to write the data to
- * @return Array of data to use
- */
-function ajaxDataSrc(settings, json, write) {
-    var dataProp = 'data';
-    if (util.is.plainObject(settings.ajax) &&
-        settings.ajax.dataSrc !== undefined) {
-        // Could in inside a `dataSrc` object, or not!
-        var dataSrc = settings.ajax.dataSrc;
-        // string, function and object are valid types
-        if (typeof dataSrc === 'string' || typeof dataSrc === 'function') {
-            dataProp = dataSrc;
-        }
-        else if (dataSrc.data !== undefined) {
-            dataProp = dataSrc.data;
-        }
-    }
-    if (!write) {
-        if (dataProp === 'data') {
-            // If the default, then we still want to support the old style, and
-            // safely ignore it if possible
-            return json.aaData || json[dataProp];
-        }
-        return dataProp !== '' ? util.get(dataProp)(json) : json;
-    }
-    // set
-    util.set(dataProp)(json, write);
-}
-/**
- * Very similar to ajaxDataSrc, but for the other SSP properties
- *
- * @param settings DataTables settings object
- * @param param Target parameter
- * @param json JSON data
- * @returns Resolved value
- */
-function ajaxDataSrcParam(settings, param, json) {
-    var dataSrc = util.is.plainObject(settings.ajax)
-        ? settings.ajax.dataSrc // TODO
-        : null;
-    if (dataSrc && dataSrc[param]) {
-        // Get from custom location
-        return util.data.get(dataSrc[param])(json);
-    }
-    // else - Default behaviour
-    var old = '';
-    // Legacy support
-    if (param === 'draw') {
-        old = 'sEcho';
-    }
-    else if (param === 'recordsTotal') {
-        old = 'iTotalRecords';
-    }
-    else if (param === 'recordsFiltered') {
-        old = 'iTotalDisplayRecords';
-    }
-    return json[old] !== undefined ? json[old] : json[param];
-}
-
-const __filter_div = Dom.c('div').get(0);
-const __filter_div_textContent = __filter_div.textContent !== undefined;
-/**
- * Filter the table using both the global filter and column based filtering
- *
- * @param settings DataTables settings object
- */
-function filterComplete(settings) {
-    settings.columns;
-    // In server-side processing all filtering is done by the server, so no
-    // point hanging around here
-    if (dataSource(settings) != 'ssp') {
-        // Check if any of the rows were invalidated
-        filterData(settings);
-        // Start from the full data set
-        settings.display = settings.displayMaster.slice();
-        // Column set filters first
-        util.object.each(settings.searches, (key, s) => {
-            filter(settings.display, settings, s.search, s);
-        });
-        // Fixed (named) filters next
-        util.object.each(settings.searchesFixed, function (columns) {
-            util.object.each(settings.searchesFixed[columns], function (name, s) {
-                filter(settings.display, settings, s.search, s);
-            });
-        });
-        // And finally legacy global filtering
-        filterCustom(settings);
-    }
-    // Tell the draw function we have been filtering
-    settings.wasFiltered = true;
-    callbackFire(settings, null, 'search', [settings]);
-}
-/**
- * Apply custom filtering functions
- *
- * This is legacy now that we have named functions, but it is widely used
- * from 1.x, so it is not yet deprecated.
- *
- * @param settings DataTables settings object
- */
-function filterCustom(settings) {
-    let filters = ext.search;
-    let displayRows = settings.display;
-    let row, rowIdx;
-    for (let i = 0, iLen = filters.length; i < iLen; i++) {
-        let rows = [];
-        // Loop over each row and see if it should be included
-        for (let j = 0, jen = displayRows.length; j < jen; j++) {
-            rowIdx = displayRows[j];
-            row = settings.data[rowIdx];
-            if (row &&
-                filters[i](settings, row.searchCellCache, rowIdx, row.data, j)) {
-                rows.push(rowIdx);
-            }
-        }
-        // So the array reference doesn't break set the results into the
-        // existing array
-        displayRows.length = 0;
-        arrayApply(displayRows, rows);
-    }
-}
-/**
- * Filter the data table based on user input and draw the table
- *
- * @param searchRows
- * @param settings
- * @param input
- * @param options
- * @returns
- */
-function filter(searchRows, settings, input, options) {
-    if (input === '') {
-        return;
-    }
-    let i = 0;
-    let matched = [];
-    // Search term can be a function, regex or string - if a string we apply our
-    // smart filtering regex (assuming the options require that)
-    let searchFunc = typeof input === 'function' ? input : null;
-    let rpSearch = input instanceof RegExp
-        ? input
-        : searchFunc
-            ? null
-            : filterCreateSearch(input, options);
-    let columns = options.columns
-        ? options.columns
-        : util.array.range(settings.columns.length);
-    // Then for each row, does the test pass. If not, lop the row from the array
-    for (i = 0; i < searchRows.length; i++) {
-        let row = settings.data[searchRows[i]];
-        if (row) {
-            // Get the data array based on the columns to include in the search
-            let data = util.array.selectiveJoin(row.searchCellCache, columns);
-            // Run the search action
-            if ((searchFunc &&
-                searchFunc(data, row.data, searchRows[i], columns.length === 1 ? columns[0] : columns // compat
-                )) ||
-                (rpSearch && typeof data === 'string' && rpSearch.test(data))) {
-                matched.push(searchRows[i]);
-            }
-        }
-    }
-    // Mutate the searchRows array
-    searchRows.length = matched.length;
-    for (i = 0; i < matched.length; i++) {
-        searchRows[i] = matched[i];
-    }
-}
-/**
- * Build a regular expression object suitable for searching a table
- */
-function filterCreateSearch(searchIn, inOpts) {
-    let not = [];
-    let options = Object.assign({}, {
-        boundary: false,
-        caseInsensitive: true,
-        exact: false,
-        regex: false,
-        smart: true
-    }, inOpts);
-    let search = typeof searchIn !== 'string' ? searchIn.toString() : searchIn;
-    // Remove diacritics if normalize is set up to do so
-    search = util.diacritics(search);
-    if (options.exact) {
-        return new RegExp('^' + util.escapeRegex(search) + '$', options.caseInsensitive ? 'i' : '');
-    }
-    search = options.regex ? search : util.escapeRegex(search);
-    if (options.smart) {
-        /* For smart filtering we want to allow the search to work regardless of
-         * word order. We also want double quoted text to be preserved, so word
-         * order is important - a la google. And a negative look around for
-         * finding rows which don't contain a given string.
-         *
-         * So this is the sort of thing we want to generate:
-         *
-         * ^(?=.*?\bone\b)(?=.*?\btwo three\b)(?=.*?\bfour\b).*$
-         */
-        let parts = search.match(/!?["\u201C][^"\u201D]+["\u201D]|[^ ]+/g) || [
-            ''
-        ];
-        let a = parts.map(function (word) {
-            let negative = false;
-            let m;
-            // Determine if it is a "does not include"
-            if (word.charAt(0) === '!') {
-                negative = true;
-                word = word.substring(1);
-            }
-            // Strip the quotes from around matched phrases
-            if (word.charAt(0) === '"') {
-                m = word.match(/^"(.*)"$/);
-                word = m ? m[1] : word;
-            }
-            else if (word.charAt(0) === '\u201C') {
-                // Smart quote match (iPhone users)
-                m = word.match(/^\u201C(.*)\u201D$/);
-                word = m ? m[1] : word;
-            }
-            // For our "not" case, we need to modify the string that is
-            // allowed to match at the end of the expression.
-            if (negative) {
-                if (word.length > 1) {
-                    not.push('(?!' + word + ')');
-                }
-                word = '';
-            }
-            return word.replace(/"/g, '');
-        });
-        let match = not.length ? not.join('') : '';
-        let boundary = options.boundary ? '\\b' : '';
-        search =
-            '^(?=.*?' +
-                boundary +
-                a.join(')(?=.*?' + boundary) +
-                ')(' +
-                match +
-                '.)*$';
-    }
-    return new RegExp(search, options.caseInsensitive ? 'i' : '');
-}
-// Update the filtering data for each row if needed (by invalidation or first
-// run)
-function filterData(settings) {
-    let columns = settings.columns;
-    let data = settings.data;
-    let column;
-    let j, jen, cellData, row;
-    let wasInvalidated = false;
-    for (let rowIdx = 0; rowIdx < data.length; rowIdx++) {
-        if (!data[rowIdx]) {
-            continue;
-        }
-        row = data[rowIdx];
-        if (row && !row.searchCellCache) {
-            const rowFilterData = [];
-            for (j = 0, jen = columns.length; j < jen; j++) {
-                column = columns[j];
-                if (column.searchable) {
-                    cellData = getCellData(settings, rowIdx, j, 'filter');
-                    // Search in DataTables is string based
-                    if (cellData === null) {
-                        cellData = '';
-                    }
-                    if (typeof cellData !== 'string' && cellData.toString) {
-                        cellData = cellData.toString();
-                    }
-                }
-                else {
-                    cellData = '';
-                }
-                // If it looks like there is an HTML entity in the string,
-                // attempt to decode it so sorting works as expected. Note that
-                // we could use a single line of jQuery to do this, but the DOM
-                // method used here is much faster
-                // https://jsperf.com/html-decode
-                if (cellData.indexOf && cellData.indexOf('&') !== -1) {
-                    __filter_div.innerHTML = cellData;
-                    cellData = __filter_div_textContent
-                        ? __filter_div.textContent
-                        : __filter_div.innerText;
-                }
-                if (cellData.replace) {
-                    cellData = cellData.replace(/[\r\n\u2028]/g, '');
-                }
-                rowFilterData.push(cellData);
-            }
-            row.searchCellCache = rowFilterData;
-            row.searchRowCache = rowFilterData.join('  ');
-            wasInvalidated = true;
-        }
-    }
-    return wasInvalidated;
-}
-
-/**
- * Render and cache a row's display data for the columns, if required
- *
- * @param settings DataTables settings object
- * @param rowIdx Row index
- * @returns Array with display information
- */
-function getRowDisplay(settings, rowIdx) {
-    var rowModal = settings.data[rowIdx];
-    var columns = settings.columns;
-    if (!rowModal) {
-        return [];
-    }
-    if (!rowModal.displayData) {
-        // Need to render and cache
-        rowModal.displayData = [];
-        for (var colIdx = 0, len = columns.length; colIdx < len; colIdx++) {
-            rowModal.displayData.push(getCellData(settings, rowIdx, colIdx, 'display'));
-        }
-    }
-    return rowModal.displayData;
-}
-/**
- * Create a new TR element (and it's TD children) for a row
- *
- * @param settings DataTables settings object
- * @param rowIdx Row to consider
- * @param trIn TR element to add to the table - optional. If not given,
- *   DataTables will create a row automatically
- * @param tds Array of TD|TH elements for the row - must be given if trIn is.
- */
-function createTr(settings, rowIdx, trIn, tds) {
-    var row = settings.data[rowIdx], cells = [], tr, td, column, i, iLen, create, trClass = settings.classes.tbody.row;
-    if (row && row.tr === null) {
-        let rowData = row.data;
-        tr = trIn || document.createElement('tr');
-        row.tr = tr;
-        row.cells = cells;
-        Dom.s(tr).classAdd(trClass);
-        // Use a private property on the node to allow reserve mapping from the node
-        // to the aoData array for fast look up
-        tr._DT_RowIndex = rowIdx;
-        // Special parameters can be given by the data source to be used on the
-        // row
-        rowAttributes(settings, row);
-        /* Process each column */
-        for (i = 0, iLen = settings.columns.length; i < iLen; i++) {
-            column = settings.columns[i];
-            create = trIn && tds && tds[i] ? false : true;
-            td = create
-                ? document.createElement(column.cellType)
-                : tds[i];
-            if (!td) {
-                log(settings, 0, 'Incorrect column count', 18);
-            }
-            td._DT_CellIndex = {
-                row: rowIdx,
-                column: i
-            };
-            cells.push(td);
-            var display = getRowDisplay(settings, rowIdx);
-            // Need to create the HTML if new, or if a rendering function is
-            // defined
-            if (create ||
-                ((column.render || column.data !== i) &&
-                    (!util.is.plainObject(column.data) ||
-                        (column.data &&
-                            column.data._ !== i + '.display')))) {
-                writeCell(td, display[i]);
-            }
-            // column class
-            Dom.s(td).classAdd(column.className);
-            // Visibility - add or remove as required
-            if (column.visible && create) {
-                tr.appendChild(td);
-            }
-            else if (!column.visible && !create) {
-                td.parentNode.removeChild(td);
-            }
-            if (column.createdCell) {
-                column.createdCell.call(settings.instance, td, getCellData(settings, rowIdx, i), rowData, rowIdx, i);
-            }
-        }
-        callbackFire(settings, 'rowCreated', 'row-created', [
-            tr,
-            rowData,
-            rowIdx,
-            cells
-        ]);
-    }
-    else if (row) {
-        Dom.s(row.tr).classAdd(trClass);
-    }
-}
-/**
- * Add attributes to a row based on the special `DT_*` parameters in a data
- * source object.
- *
- * @param settings DataTables settings object
- * @param row Row object for the row to be modified
- */
-function rowAttributes(settings, row) {
-    var tr = row.tr;
-    var data = row.data;
-    if (tr) {
-        var id = settings.rowIdFn(data);
-        if (id) {
-            tr.id = id;
-        }
-        if (data.DT_RowClass) {
-            // Remove any classes added by DT_RowClass before
-            var a = data.DT_RowClass.split(' ');
-            row.addedClasses = row.addedClasses
-                ? util.unique(row.addedClasses.concat(a))
-                : a;
-            Dom.s(tr)
-                .classRemove(row.addedClasses.join(' '))
-                .classAdd(data.DT_RowClass);
-        }
-        if (data.DT_RowAttr) {
-            Dom.s(tr).attr(data.DT_RowAttr);
-        }
-        if (data.DT_RowData) {
-            Dom.s(tr).data(data.DT_RowData);
-        }
-    }
-}
-/**
- * Create the HTML header for the table
- *
- * @param settings DataTable instance
- * @param side If the header or footer should be used
- * @returns
- */
-function buildHead(settings, side) {
-    let classes = settings.classes;
-    let columns = settings.columns;
-    let i, iLen, row;
-    let target = Dom.s(side === 'header' ? settings.thead : settings.tfoot);
-    let titleProp = side === 'header' ? 'title' : side;
-    // Footer might be defined
-    if (!target) {
-        return;
-    }
-    // If no cells yet and we have content for them, then create
-    if (side === 'header' ||
-        util.array.pluck(settings.columns, titleProp).join('')) {
-        row = target.find('tr');
-        // Add a row if needed
-        if (!row.count()) {
-            row = Dom.c('tr').appendTo(target);
-        }
-        // Add the number of cells needed to make up to the number of columns
-        if (row.count() === 1) {
-            let cellCount = 0;
-            row.find('td, th').each(el => {
-                cellCount += el.colSpan;
-            });
-            for (i = cellCount, iLen = columns.length; i < iLen; i++) {
-                Dom.c('th')
-                    .html(columns[i][titleProp] || '')
-                    .appendTo(row);
-            }
-        }
-    }
-    let detected = detectHeader(settings, target.get(0), true);
-    if (side === 'header') {
-        settings.header = detected;
-        target.find('tr').classAdd(classes.thead.row);
-    }
-    else {
-        settings.footer = detected;
-        target.find('tr').classAdd(classes.tfoot.row);
-    }
-    // Every cell needs to be passed through the renderer
-    target
-        .children('tr')
-        .children('th, td')
-        .each(el => {
-        // Should just be able to do `renderer(settings, side)` here but
-        // Typescript doesn't like it, despite it already being constrained!
-        let runner = side === 'header'
-            ? renderer(settings, 'header')
-            : renderer(settings, 'footer');
-        runner(settings, Dom.s(el), classes);
-    });
-}
-/**
- * Build a layout structure for a header or footer
- *
- * @param settings DataTables settings
- * @param source Source layout array
- * @param incColumns What columns should be included
- * @returns Layout array in column index order
- */
-function headerLayout(settings, source, incColumns) {
-    var row, column, cell;
-    var local = [];
-    var structure = [];
-    var columns = settings.columns;
-    var columnCount = columns.length;
-    var rowspan, colspan;
-    if (!source) {
-        return;
-    }
-    // Default is to work on only visible columns
-    if (!incColumns) {
-        incColumns = util.array.range(columnCount).filter(function (idx) {
-            return columns[idx].visible;
-        });
-    }
-    // Make a copy of the master layout array, but with only the columns we want
-    for (row = 0; row < source.length; row++) {
-        // Remove any columns we haven't selected
-        local[row] = source[row].slice().filter(function (c, i) {
-            return incColumns.includes(i);
-        });
-        // Prep the structure array - it needs an element for each row
-        structure.push([]);
-    }
-    for (row = 0; row < local.length; row++) {
-        for (column = 0; column < local[row].length; column++) {
-            rowspan = 1;
-            colspan = 1;
-            // Check to see if there is already a cell (row/colspan) covering
-            // our target insert point. If there is, then there is nothing to
-            // do.
-            if (structure[row][column] === undefined) {
-                cell = local[row][column].cell;
-                // Expand for rowspan
-                while (local[row + rowspan] !== undefined &&
-                    local[row][column].cell == local[row + rowspan][column].cell) {
-                    structure[row + rowspan][column] = null;
-                    rowspan++;
-                }
-                // And for colspan
-                while (local[row][column + colspan] !== undefined &&
-                    local[row][column].cell == local[row][column + colspan].cell) {
-                    // Which also needs to go over rows
-                    for (var k = 0; k < rowspan; k++) {
-                        structure[row + k][column + colspan] = null;
-                    }
-                    colspan++;
-                }
-                var titleSpan = Dom.s(cell).find('.dt-column-title');
-                structure[row][column] = {
-                    cell: cell,
-                    colspan: colspan,
-                    rowspan: rowspan,
-                    title: titleSpan.count()
-                        ? titleSpan.html()
-                        : Dom.s(cell).html()
-                };
-            }
-        }
-    }
-    return structure;
-}
-/**
- * Draw the header (or footer) element based on the column visibility states.
- *
- * @param settings DataTables settings object
- * @param source Layout array from detectHeader
- */
-function drawHead(settings, source) {
-    let layout = headerLayout(settings, source);
-    let tr;
-    if (!layout) {
-        return;
-    }
-    for (let row = 0; row < source.length; row++) {
-        tr = source[row].row;
-        // All cells are going to be replaced, so empty out the row
-        if (tr) {
-            Dom.s(tr).detachChildren();
-        }
-        for (let column = 0; column < layout[row].length; column++) {
-            let point = layout[row][column];
-            if (point) {
-                Dom.s(point.cell)
-                    .appendTo(tr)
-                    .attr('rowspan', point.rowspan)
-                    .attr('colspan', point.colspan);
-            }
-        }
-    }
-}
-/**
- * Insert the required TR nodes into the table for display
- *
- * @param settings DataTables settings object
- * @param ajaxComplete true after ajax call to complete rendering
- */
-function draw(settings, ajaxComplete) {
-    // Allow for state saving and a custom start position
-    setStartPosition(settings);
-    // Provide a pre-callback function which can be used to cancel the draw is
-    // false is returned
-    var aPreDraw = callbackFire(settings, 'preDraw', 'preDraw', [settings]);
-    if (aPreDraw.indexOf(false) !== -1) {
-        processingDisplay(settings, false);
-        return;
-    }
-    var rowEls = [];
-    var rowCount = 0;
-    var isServerSide = dataSource(settings) == 'ssp';
-    var display = settings.display;
-    var start = settings.displayStart;
-    var end = displayEnd(settings);
-    var columns = settings.columns;
-    var body = Dom.s(settings.tbody);
-    settings.doingDraw = true;
-    /* Server-side processing draw intercept */
-    if (settings.deferLoading) {
-        settings.deferLoading = false;
-        settings.drawCount++;
-        processingDisplay(settings, false);
-    }
-    else if (!isServerSide) {
-        settings.drawCount++;
-    }
-    else if (!settings.destroying && !ajaxComplete) {
-        // Show loading message for server-side processing
-        if (settings.drawCount === 0) {
-            body.empty().append(_emptyRow(settings));
-        }
-        ajaxUpdate(settings);
-        return;
-    }
-    if (display.length !== 0) {
-        var iStart = isServerSide ? 0 : start;
-        var iEnd = isServerSide ? settings.data.length : end;
-        for (var j = iStart; j < iEnd; j++) {
-            var dataIdx = display[j];
-            var data = settings.data[dataIdx];
-            // Row has been deleted - can't be displayed
-            if (data === null) {
-                continue;
-            }
-            // Row node hasn't been created yet
-            if (data.tr === null) {
-                createTr(settings, dataIdx);
-            }
-            var nRow = data.tr;
-            // Add various classes as needed
-            for (var i = 0; i < columns.length; i++) {
-                var col = columns[i];
-                var td = data.cells[i];
-                Dom.s(td)
-                    .classAdd(col.type ? ext.type.className[col.type] : null) // auto class
-                    .classAdd(settings.classes.tbody.cell); // all cells
-            }
-            // Row callback functions - might want to manipulate the row
-            // rowCount and j are not currently documented. Are they at all
-            // useful?
-            callbackFire(settings, 'row', null, [
-                nRow,
-                data.data,
-                rowCount,
-                j,
-                dataIdx
-            ]);
-            rowEls.push(nRow);
-            rowCount++;
-        }
-    }
-    else {
-        rowEls[0] = _emptyRow(settings);
-    }
-    /* Header and footer callbacks */
-    callbackFire(settings, 'header', 'header', [
-        Dom.s(settings.thead).children('tr').get(0),
-        getDataMaster(settings),
-        start,
-        end,
-        display
-    ]);
-    callbackFire(settings, 'footer', 'footer', [
-        Dom.s(settings.tfoot).children('tr').get(0),
-        getDataMaster(settings),
-        start,
-        end,
-        display
-    ]);
-    body.detachChildren().append(rowEls);
-    // Empty table needs a specific class
-    Dom.s(settings.tableWrapper).classToggle('dt-empty-footer', Dom.s(settings.tfoot).find('tr').count() === 0);
-    // Call all required callback functions for the end of a draw
-    callbackFire(settings, 'draw', 'draw', [settings], true);
-    // Draw is complete, sorting and filtering must be as well
-    settings.wasOrdered = false;
-    settings.wasFiltered = false;
-    settings.doingDraw = false;
-}
-/**
- * Redraw the table - taking account of the various features which are enabled
- *
- * @param settings DataTables settings object
- * @param holdPosition Keep the current paging position. By default the paging
- *    is reset to the first page
- * @param recompute Indicate if a rebuild of sort and filter should happen
- */
-function reDraw(settings, holdPosition, recompute) {
-    let features = settings.features, doSort = features.ordering, doFilter = features.searching;
-    if (recompute === undefined || recompute === true) {
-        // Resolve any column types that are unknown due to addition or
-        // invalidation
-        columnTypes(settings);
-        columnWidths(settings);
-        if (doSort) {
-            sort(settings);
-        }
-        if (doFilter) {
-            filterComplete(settings);
-        }
-        else {
-            // No filtering, so we want to just use the display master
-            settings.display = settings.displayMaster.slice();
-        }
-    }
-    if (holdPosition !== true) {
-        settings.displayStart = 0;
-    }
-    else {
-        // Keep position, but make sure that there is actually data to display,
-        // otherwise we need to rewind a bit (e.g. if rows were deleted)
-        lengthOverflow(settings);
-    }
-    // Let any modules know about the draw hold position state (used by
-    // scrolling internally)
-    settings.drawHold = holdPosition;
-    draw(settings);
-    settings.api.one('draw', function () {
-        settings.drawHold = false;
-    });
-}
-/**
- * Table is empty - create a row with an empty message in it
- *
- * @param settings DataTables context
- */
-function _emptyRow(settings) {
-    let lang = settings.language;
-    let zero = lang.zeroRecords;
-    let dataSrc = dataSource(settings);
-    // Make use of the fact that settings.json is only set once the initial data
-    // has been loaded. Show loading when that isn't the case
-    if ((dataSrc === 'ssp' || dataSrc === 'ajax') && !settings.json) {
-        zero = lang.loadingRecords;
-    }
-    else if (lang.emptyTable && recordsTotal(settings) === 0) {
-        zero = lang.emptyTable;
-    }
-    return Dom
-        .c('tr')
-        .append(Dom
-        .c('td')
-        .attr('colSpan', visibleColumns(settings))
-        .classAdd(settings.classes.empty.row)
-        .html(zero))
-        .get(0);
-}
-/**
- * Use the DOM source to create up an array of header cells. The idea here is to
- * create a layout grid (array) of rows x columns, which contains a reference to
- * the cell at that point in the grid (regardless of col/rowspan), such that any
- * column / row could be removed and the new grid constructed.
- *
- * @param settings DataTables context
- * @param thead thead / tbody element
- * @param write If cells should be written (if required)
- * @returns Calculated layout array
- */
-function detectHeader(settings, thead, write) {
-    let columns = settings.columns;
-    let rows = Dom.s(thead).children('tr');
-    let row, loopCell;
-    let i, k, l, len, shifted, column, colspan, rowspan;
+function columnOrderingCells(settings, notSelector) {
+    let combined = [];
     let titleRow = settings.titleRow;
-    let isHeader = thead && thead.nodeName.toLowerCase() === 'thead';
-    let layout = [];
-    let isUnique;
-    let shift = function (a, b, j) {
-        let d = a[b];
-        while (d[j]) {
-            j++;
-        }
-        return j;
-    };
-    // We know how many rows there are in the layout - so prep it
-    for (i = 0, len = rows.count(); i < len; i++) {
-        layout.push([]);
+    if (titleRow === true) {
+        // Top row (legacy `orderCellsTop`)
+        combined = columnCells(settings.header, 0);
     }
-    for (i = 0, len = rows.count(); i < len; i++) {
-        row = rows.get(i);
-        column = 0;
-        // For every cell in the row..
-        loopCell = row.firstChild;
-        while (loopCell) {
-            if (loopCell.nodeName.toUpperCase() == 'TD' ||
-                loopCell.nodeName.toUpperCase() == 'TH') {
-                let cell = Dom.s(loopCell);
-                let cols = [];
-                // Get the col and rowspan attributes from the DOM and sanitise
-                // them
-                colspan = parseInt(cell.attr('colspan') || '1') || 1;
-                rowspan = parseInt(cell.attr('rowspan') || '1') || 1;
-                colspan =
-                    !colspan || colspan === 0 || colspan === 1 ? 1 : colspan;
-                rowspan =
-                    !rowspan || rowspan === 0 || rowspan === 1 ? 1 : rowspan;
-                // There might be colspan cells already in this row, so shift
-                // our target accordingly
-                shifted = shift(layout, i, column);
-                // Cache calculation for unique columns
-                isUnique = colspan === 1 ? true : false;
-                // Perform header setup
-                if (write) {
-                    if (isUnique) {
-                        // Allow column options to be set from HTML attributes
-                        columnOptions(settings, shifted, escapeObject(cell.data()));
-                        // Get the width for the column. This can be defined
-                        // from the width attribute, style attribute or
-                        // `columns.width` option
-                        let columnDef = columns[shifted];
-                        let width = cell.attr('width') || null;
-                        let t = cell
-                            .get(0)
-                            .style.width.match(/width:\s*(\d+[pxem%]+)/);
-                        if (t) {
-                            width = t[1];
-                        }
-                        columnDef.widthOrig = columnDef.width || width;
-                        if (isHeader) {
-                            // Column title handling - can be user set, or read
-                            // from the DOM This happens before the render, so
-                            // the original is still in place
-                            if (columnDef.title !== null &&
-                                !columnDef.autoTitle) {
-                                if ((titleRow === true && i === 0) || // top row
-                                    (titleRow === false &&
-                                        i === rows.count() - 1) || // bottom row
-                                    titleRow === i || // specific row
-                                    titleRow === null) {
-                                    cell.html(columnDef.title);
-                                }
-                            }
-                            if (!columnDef.title && isUnique) {
-                                columnDef.title = util.string.stripHtml(cell.html());
-                                columnDef.autoTitle = true;
-                            }
-                        }
-                        else {
-                            // Footer specific operations
-                            if (columnDef.footer) {
-                                cell.html(columnDef.footer);
-                            }
-                        }
-                        // Fall back to the aria-label attribute on the table
-                        // header if no ariaTitle is provided.
-                        if (!columnDef.ariaTitle) {
-                            columnDef.ariaTitle =
-                                cell.attr('aria-label') || columnDef.title;
-                        }
-                        // Column specific class names
-                        if (columnDef.className) {
-                            cell.classAdd(columnDef.className);
-                        }
-                    }
-                    // Wrap the column title so we can write to it in future
-                    if (cell.find('div.dt-column-title').count() === 0) {
-                        Dom.c('div')
-                            .classAdd('dt-column-title')
-                            .append(Array.from(cell.get(0).childNodes))
-                            .appendTo(cell);
-                    }
-                    if (settings.orderIndicators &&
-                        isHeader &&
-                        cell.filter(':not([data-dt-order=disable])').count() !==
-                            0 &&
-                        cell.parent(':not([data-dt-order=disable])').count() !==
-                            0 &&
-                        cell.find('div.dt-column-order').count() === 0) {
-                        Dom.c('div')
-                            .classAdd('dt-column-order')
-                            .appendTo(cell);
-                    }
-                    // We need to wrap the elements in the header in another
-                    // element to use flexbox layout for those elements
-                    var headerFooter = isHeader ? 'header' : 'footer';
-                    if (cell.find('div.dt-column-' + headerFooter).count() ===
-                        0) {
-                        Dom.c('div')
-                            .classAdd('dt-column-' + headerFooter)
-                            .append(Array.from(cell.get(0).childNodes))
-                            .appendTo(cell);
-                    }
-                }
-                // If there is col / rowspan, copy the information into the
-                // layout grid
-                for (l = 0; l < colspan; l++) {
-                    for (k = 0; k < rowspan; k++) {
-                        layout[i + k][shifted + l] = {
-                            cell: cell.get(0),
-                            unique: isUnique
-                        };
-                        layout[i + k].row = row;
-                    }
-                    cols.push(shifted + l);
-                }
-                // Assign an attribute so spanning cells can still be identified
-                // as belonging to a column
-                cell.attr('data-dt-column', util.unique(cols).join(','));
-            }
-            loopCell = loopCell.nextSibling;
-        }
+    else if (titleRow === false) {
+        // Bottom row (legacy `orderCellsTop`)
+        combined = columnCells(settings.header, settings.header.length - 1);
     }
-    return layout;
-}
-/**
- * Set the start position for draw
- *
- * @param settings DataTables settings object
- */
-function setStartPosition(settings) {
-    var bServerSide = dataSource(settings) == 'ssp';
-    var iInitDisplayStart = settings.displayStartInit;
-    // Check and see if we have an initial draw position from state saving
-    if (iInitDisplayStart !== undefined && iInitDisplayStart !== -1) {
-        settings.displayStart = bServerSide
-            ? iInitDisplayStart
-            : iInitDisplayStart >= recordsDisplay(settings)
-                ? 0
-                : iInitDisplayStart;
-        settings.displayStartInit = -1;
-    }
-}
-/**
- * Get the number of records in the current record set, before filtering
- *
- * @param ctx DataTables settings object
- */
-function recordsTotal(ctx) {
-    return dataSource(ctx) == 'ssp'
-        ? ctx.recordsTotal * 1
-        : ctx.displayMaster.length;
-}
-/**
- * Get the number of records in the current record set, after filtering
- *
- * @param ctx DataTables settings object
- */
-function recordsDisplay(ctx) {
-    return dataSource(ctx) == 'ssp'
-        ? ctx.recordsDisplay * 1
-        : ctx.display.length;
-}
-/**
- * Get the display end point - display index
- *
- * @param ctx DataTables settings object
- */
-function displayEnd(ctx) {
-    var len = ctx.pageLength, start = ctx.displayStart, calc = start + len, records = ctx.display.length, features = ctx.features, paginate = features.paging;
-    if (features.serverSide) {
-        return paginate === false || len === -1
-            ? start + records
-            : Math.min(start + len, ctx.recordsDisplay);
+    else if (titleRow !== null) {
+        // Specific row
+        combined = columnCells(settings.header, titleRow);
     }
     else {
-        return !paginate || calc > records || len === -1 ? records : calc;
+        // All
+        combined = columnCells(settings.header);
+    }
+    let cells = combined.map(c => c.cell);
+    let rows = combined.map(c => c.row);
+    return Dom.s(cells)
+        .filter('th' + notSelector + ', td' + notSelector)
+        .filter(el => {
+        let idx = cells.indexOf(el);
+        if (idx >= 0) {
+            return Dom.s(rows[idx]).filter(notSelector).length !== 0;
+        }
+        // Shouldn't be able to get here!
+        return true;
+    });
+}
+
+const footer = (settings, cell, classes) => {
+    cell.classAdd(classes.tfoot.cell);
+};
+const header = (settings, cell, classes) => {
+    cell.classAdd(classes.thead.cell);
+    if (!settings.features.ordering) {
+        cell.classAdd(classes.order.none);
+    }
+    // Conditions to not apply the ordering icons
+    if (!columnOrderingCells(settings, ':not([data-dt-order="disable"])')
+        .get()
+        .includes(cell[0])) {
+        return;
+    }
+    // No additional mark-up required. Attach a sort listener to update on sort
+    // - note that using the `DT` namespace will allow the event to be removed
+    // automatically on destroy, while the `dt` namespaced event is the one we
+    // are listening for
+    Dom.s(settings.table).on('order.dt.DT column-visibility.dt.DT', function (e, ctx, column) {
+        if (settings !== ctx) {
+            // need to check if this is the host
+            return; // table, not a nested one
+        }
+        var sorting = ctx.sortDetails;
+        if (!sorting) {
+            return;
+        }
+        var orderedColumns = pluck(sorting, 'col');
+        // This handler is only needed on column visibility if the column is
+        // part of the ordering. If it isn't, then we can bail out to save
+        // performance. It could be a separate event handler, but this is a
+        // balance between code reuse / size and performance console.log(e,
+        // e.name, column, orderedColumns, orderedColumns.includes(column))
+        if (e.type === 'column-visibility' &&
+            !orderedColumns.includes(column)) {
+            return;
+        }
+        var i;
+        var orderClasses = classes.order;
+        var columns = ctx.api.columns(cell);
+        var col = settings.columns[columns.flatten()[0]];
+        var orderable = columns.orderable().includes(true);
+        var ariaType = '';
+        var indexes = columns.indexes();
+        var sortDirs = columns.orderable(true).flatten();
+        var tabIndex = settings.tabIndex;
+        var canOrder = ctx.orderHandler && orderable;
+        cell.classRemove(orderClasses.isAsc + ' ' + orderClasses.isDesc)
+            .classToggle(orderClasses.none, !orderable)
+            .classToggle(orderClasses.canAsc, canOrder && sortDirs.includes('asc'))
+            .classToggle(orderClasses.canDesc, canOrder && sortDirs.includes('desc'));
+        // Determine if all of the columns that this cell covers are
+        // included in the current ordering
+        var isOrdering = true;
+        for (i = 0; i < indexes.length; i++) {
+            if (!orderedColumns.includes(indexes[i])) {
+                isOrdering = false;
+            }
+        }
+        if (isOrdering) {
+            // Get the ordering direction for the columns under this cell
+            // Note that it is possible for a cell to be asc and desc
+            // sorting (column spanning cells)
+            var orderDirs = columns.order();
+            cell.classAdd((orderDirs.includes('asc') ? orderClasses.isAsc : '') +
+                (orderDirs.includes('desc') ? orderClasses.isDesc : ''));
+        }
+        // Find the first visible column that has ordering applied to it -
+        // it get's the aria information, as the ARIA spec says that only
+        // one column should be marked with aria-sort
+        var firstVis = -1; // column index
+        for (i = 0; i < orderedColumns.length; i++) {
+            if (settings.columns[orderedColumns[i]].visible) {
+                firstVis = orderedColumns[i];
+                break;
+            }
+        }
+        if (indexes[0] == firstVis) {
+            var firstSort = sorting[0];
+            var sortOrder = col.orderSequence;
+            cell.attr('aria-sort', firstSort.dir === 'asc' ? 'ascending' : 'descending');
+            // Determine if the next click will remove sorting or change the
+            // sort
+            ariaType =
+                sortOrder && !sortOrder[firstSort.index + 1]
+                    ? 'Remove'
+                    : 'Reverse';
+        }
+        else {
+            cell.attrRemove('aria-sort');
+        }
+        // Make the headers tab-able for keyboard navigation
+        if (orderable) {
+            var orderSpan = cell.find('.dt-column-order');
+            orderSpan
+                .attr('role', 'button')
+                .attr('aria-label', orderable
+                ? col.ariaTitle +
+                    ctx.api.i18n('aria.orderable' + ariaType)
+                : col.ariaTitle);
+            if (tabIndex !== -1) {
+                orderSpan.attr('tabindex', tabIndex);
+            }
+        }
+    });
+};
+const layout = (settings, container, items) => {
+    let classes = settings.classes.layout;
+    let row = Dom.c('div')
+        .attr('id', items.id || null)
+        .classAdd(items.className || classes.row)
+        .appendTo(container);
+    displayRowCells(items, function (key, val) {
+        var klass = '';
+        if (val.table) {
+            row.classAdd(classes.tableRow);
+            klass += classes.tableCell + ' ';
+        }
+        if (key === 'start') {
+            klass += classes.start;
+        }
+        else if (key === 'end') {
+            klass += classes.end;
+        }
+        else {
+            klass += classes.full;
+        }
+        Dom.c('div')
+            .attr({
+            id: val.id || null,
+            class: val.className
+                ? val.className
+                : classes.cell + ' ' + klass
+        })
+            .append(val.contents)
+            .appendTo(row);
+    });
+};
+const pagingButton = (settings, buttonType, content, active, disabled) => {
+    var classes = settings.classes.paging;
+    var btnClasses = [classes.button];
+    var btn;
+    if (active) {
+        btnClasses.push(classes.active);
+    }
+    if (disabled) {
+        btnClasses.push(classes.disabled);
+    }
+    if (buttonType === 'ellipsis') {
+        btn = Dom.c('span').classAdd('ellipsis').html(content).get(0);
+    }
+    else {
+        btn = Dom.c('button')
+            .classAdd(btnClasses.join(' '))
+            .attr('role', 'link')
+            .attr('type', 'button')
+            .html(content)
+            .get(0);
+    }
+    return {
+        display: btn,
+        clicker: btn
+    };
+};
+const pagingContainer = (settings, buttons) => {
+    // No wrapping element - just append directly to the host
+    return buttons;
+};
+function displayRowCells(items, fn) {
+    if (items.start) {
+        fn('start', items.start);
+    }
+    if (items.end) {
+        fn('end', items.end);
+    }
+    if (items.full) {
+        fn('full', items.full);
     }
 }
+
+/**
+ * DataTables extensions
+ *
+ * This namespace acts as a collection area for plug-ins that can be used to
+ * extend DataTables capabilities. Indeed many of the build in methods
+ * use this method to provide their own capabilities (sorting methods for
+ * example).
+ *
+ * Note that this namespace is aliased to `jQuery.fn.dataTableExt` for legacy
+ * reasons
+ */
+const ext = {
+    /**
+     * DataTables build type (expanded by the download builder)
+     */
+    builder: 'bs5/dt-3.1.3',
+    /**
+     * Buttons. For use with the Buttons extension for DataTables. This is
+     * defined here so other extensions can define buttons regardless of load
+     * order. It is _not_ used by DataTables core.
+     */
+    buttons: {},
+    /**
+     * ColumnControl buttons and content
+     */
+    ccContent: {},
+    /**
+     * Element class names
+     */
+    classes: classes$1,
+    /**
+     * Error reporting.
+     *
+     * How should DataTables report an error. Can take the value 'alert',
+     * 'throw', 'none' or a function.
+     */
+    errMode: 'alert',
+    /** HTML entity escaping */
+    escape: {
+        /** When reading data-* attributes for initialisation options */
+        attributes: false
+    },
+    /**
+     * Legacy so v1 plug-ins don't throw js errors on load
+     */
+    feature: legacy,
+    /**
+     * Feature plug-ins.
+     *
+     * This is an object of callbacks which provide the features for DataTables
+     * to be initialised via the `layout` option.
+     */
+    features: features,
+    /**
+     * Row searching.
+     *
+     * This method of searching is complimentary to the default type based
+     * searching, and a lot more comprehensive as it allows you complete control
+     * over the searching logic. Each element in this array is a function
+     * (parameters described below) that is called for every row in the table,
+     * and your logic decides if it should be included in the searching data set
+     * or not.
+     */
+    search: [],
+    /**
+     * Selector extensions
+     *
+     * The `selector` option can be used to extend the options available for the
+     * selector modifier options (`selector-modifier` object data type) that
+     * each of the three built in selector types offer (row, column and cell +
+     * their plural counterparts). For example the Select extension uses this
+     * mechanism to provide an option to select only rows, columns and cells
+     * that have been marked as selected by the end user (`{selected: true}`),
+     * which can be used in conjunction with the existing built in selector
+     * options.
+     */
+    selector: {
+        cell: [],
+        column: [],
+        row: []
+    },
+    settings: [],
+    /**
+     * Legacy configuration options. Enable and disable legacy options that
+     * are available in DataTables.
+     *
+     *  @type object
+     */
+    legacy: {
+        /**
+         * Enable / disable DataTables 1.9 compatible server-side processing
+         * requests
+         */
+        ajax: null
+    },
+    /**
+     * Pagination plug-in methods.
+     *
+     * Each entry in this object is a function and defines which buttons should
+     * be shown by the pagination rendering method that is used for the table.
+     * The renderer addresses how the buttons are displayed in the document,
+     * while the functions here tell it what buttons to display. This is done by
+     * returning an array of button descriptions (what each button will do).
+     */
+    pager: pager,
+    renderer: {
+        footer: {
+            _: footer
+        },
+        header: {
+            _: header
+        },
+        layout: {
+            _: layout
+        },
+        pagingButton: {
+            _: pagingButton
+        },
+        pagingContainer: {
+            _: pagingContainer
+        }
+    },
+    /**
+     * Rendering helper function exposed for use by the styling integrations.
+     */
+    rendererDisplayRowCells: displayRowCells,
+    /**
+     * Ordering plug-ins - custom data source
+     *
+     * The extension options for ordering of data available here is
+     * complimentary to the default type based ordering that DataTables
+     * typically uses. It allows much greater control over the data that is
+     * being used to order a column, but is necessarily therefore more complex.
+     */
+    order: {},
+    /**
+     * Type based plug-ins.
+     *
+     * Each column in DataTables has a type assigned to it, either by automatic
+     * detection or by direct assignment using the `type` option for the column.
+     * The type of a column will effect how it is ordering and search (plug-ins
+     * can also make use of the column type if required).
+     */
+    type: store,
+    /**
+     * Unique DataTables instance counter
+     *
+     * @type int
+     * @private
+     */
+    _unique: 0,
+    //
+    // Depreciated
+    // The following properties are retained for backwards compatibility only.
+    // The should not be used in new projects and will be removed in a future
+    // version
+    //
+    /**
+     * Software version
+     *  @type string
+     */
+    version: '3.1.3'
+};
+//
+// Backwards compatibility. Alias to pre 1.10 Hungarian notation counter parts
+//
+Object.assign(ext, {
+    afnFiltering: ext.search,
+    aTypes: ext.type.detect,
+    ofnSearch: ext.type.search,
+    oSort: ext.type.order,
+    afnSortData: ext.order,
+    aoFeatures: ext.feature,
+    oStdClasses: ext.classes,
+    oPagination: ext.pager,
+    sVersion: ext.version,
+    fnVersionCheck: check$1
+});
 
 /**
  * Common run function for selector types
@@ -9141,9 +9272,6 @@ const properties = {};
 const classes = {
     Api
 };
-// TODO debug
-window.classes = classes;
-window.properties = properties;
 /**
  * Create a new API "class" (function), used for nested levels of the API - e.g.
  * `ApiRows` and `ApiColumn`.
@@ -9863,10 +9991,7 @@ function columnHeader(settings, column, row) {
         // backwards compatibility)
         for (var i = 0; i < header.length; i++) {
             if (header[i][column].unique &&
-                Dom
-                    .s(header[i][column].cell)
-                    .find('.dt-column-title')
-                    .text()) {
+                Dom.s(header[i][column].cell).find('.dt-column-title').text()) {
                 target = i;
             }
         }
@@ -9876,20 +10001,8 @@ function columnHeader(settings, column, row) {
     }
     return header[target][column].cell;
 }
-function columnHeaderCells(header) {
-    var out = [];
-    for (var i = 0; i < header.length; i++) {
-        for (var j = 0; j < header[i].length; j++) {
-            var cell = header[i][j].cell;
-            if (!out.includes(cell)) {
-                out.push(cell);
-            }
-        }
-    }
-    return out;
-}
 function selectColumns(settings, selector, opts) {
-    var columns = settings.columns, names, titles, nodes = columnHeaderCells(settings.header);
+    var columns = settings.columns, names, titles;
     var run = function (s) {
         var selInt = intVal(s);
         // Selector - all
@@ -9943,8 +10056,8 @@ function selectColumns(settings, selector, opts) {
                         }
                         // Selector
                         if (match && match[1]) {
-                            return Dom
-                                .s(nodes[mapIdx])
+                            let columnElements = columnCells(settings.header, null, col.idx).map(c => c.cell);
+                            return Dom.s(columnElements)
                                 .filter(match[1])
                                 .count() > 0
                                 ? mapIdx
@@ -9980,11 +10093,10 @@ function selectColumns(settings, selector, opts) {
             return [s._DT_CellIndex.column];
         }
         // Selector on the TH elements for the columns
-        var result = Dom
-            .s(nodes)
+        var result = Dom.s(columnCells(settings.header).map(c => c.cell))
             .filter(s)
             .mapTo(el => {
-            return columnsFromHeader(el); // `nodes` is column index complete and in order
+            return columnsFromHeader(el);
         })
             .flat()
             .sort(function (a, b) {
@@ -10121,9 +10233,7 @@ registerPlural('columns().titles()', 'column().title()', function (title, row) {
             row = title;
             title = undefined;
         }
-        var span = Dom
-            .s(this.column(column).header(row))
-            .find('.dt-column-title');
+        var span = Dom.s(this.column(column).header(row)).find('.dt-column-title');
         if (title !== undefined) {
             span.html(title);
             return this;
@@ -10193,13 +10303,14 @@ registerPlural('columns().widths()', 'column().width()', function () {
     // Injects a fake row into the table for just a moment so the widths can
     // be read, regardless of colspan in the header and rows being present
     // in the body
-    var columns = this.columns(':visible');
-    var row = Dom
-        .c('tr')
-        .html('<td>' + Array(columns.count()).join('</td><td>') + '</td>');
+    let columns = this.columns(':visible');
+    let row = Dom.c('tr');
+    for (let i = 0; i < columns.count(); i++) {
+        Dom.c('td').appendTo(row);
+    }
     Dom.s(this.table().body()).append(row);
-    var widths = [];
-    var indexes = columns.indexes();
+    let widths = [];
+    let indexes = columns.indexes();
     row.children().each((el, idx) => {
         widths[indexes[idx]] = Dom.s(el).width('outer');
     });
@@ -10379,7 +10490,7 @@ register('processing()', function (show) {
 });
 
 // Add the state event handler in time for the initial draw to save state
-Dom.s(document).on('preInit.dt', function (e, context) {
+Dom.on('preInit.dt', function (e, context) {
     var api = new Api(context);
     api.on('stateSaveParams.DT', function (ev, settings, d) {
         // This could be more compact with the API, but it is a lot faster as a
@@ -10402,7 +10513,7 @@ Dom.s(document).on('preInit.dt', function (e, context) {
     });
 });
 // But initial details can wait until the end
-Dom.s(document).on('plugin-init.dt', function (e, context) {
+Dom.on('plugin-init.dt', function (e, context) {
     var api = context.api;
     // And the initial load state
     detailsStateLoad(api, api.state.loaded());
@@ -10907,7 +11018,7 @@ register('search()', function (input, regex, smart, caseInsen) {
         }
         let target = ctx.searches['*'];
         if (!target) {
-            target = create$2();
+            target = create$1();
         }
         if (typeof regex === 'object') {
             // New style object of options
@@ -10942,7 +11053,7 @@ register('search.fixed()', function (name, search, options) {
         else {
             let target = fixed[name];
             if (!target || !util.is.plainObject(target)) {
-                target = create$2();
+                target = create$1();
             }
             if (options) {
                 assign(target, options);
@@ -10966,7 +11077,7 @@ register(['columns().search()', 'column().search()'], function (input, regex, sm
         let colIdxs = columns.join(',');
         let target = ctx.searches[colIdxs];
         if (!target) {
-            target = create$2();
+            target = create$1();
         }
         // Delete the search for custom grouping types if removing
         if ((input === '' || input === null) && columns.length > 1) {
@@ -11026,7 +11137,7 @@ register(['columns().search.fixed()', 'column().search.fixed()'], function (name
         else {
             let target = fixed[name];
             if (!target || !util.is.plainObject(target)) {
-                target = create$2();
+                target = create$1();
             }
             if (options) {
                 assign(target, options);
@@ -11215,7 +11326,7 @@ const _licenseInfo = {
     expires: null,
     valid: null
 };
-const _wm = Dom.c('div');
+let _wm;
 const _publicKey = 'BE1A9w9D9U/4s4/TogY+1sW/dLJ8IquzK1PmV70J93ZTIvXMZ0eV2NAb52ntpgwVFySSB2fOI7geLNO737rQAyo=';
 /**
  * Convert a base64 string to a binary array
@@ -11244,7 +11355,7 @@ function check(releaseDate, software) {
         noticeDisplay();
     }
     else if (_licenseInfo.valid === false) {
-        noticePrep('License key invalid');
+        noticePrep('Invalid license key');
         noticeDisplay();
     }
     else if (_licenseInfo.type === 'trial') {
@@ -11254,7 +11365,7 @@ function check(releaseDate, software) {
             : -1;
         if (remaining < 0) {
             // Trial expires
-            consoleMsg('Your trial has now expired - https://datatables.net/plus', 'warn');
+            consoleMsg('Your trial has now expired. Please visit https://datatables.net/plus to purchase a license', 'warn');
             noticePrep('Trial expired');
             noticeDisplay();
             return false;
@@ -11329,7 +11440,15 @@ const key = function (key) {
  * @returns
  */
 function noticePrep(text) {
+    // Already prep-ed. Rather than possibly showing multiple messages, just
+    // let the first one show.
+    if (_ready) {
+        return;
+    }
     if (!_ready) {
+        if (!_wm) {
+            _wm = Dom.c('div');
+        }
         let shadow = _wm[0].attachShadow({ mode: 'closed' });
         let notice = Dom.c('div').css({
             position: 'fixed',
@@ -11341,37 +11460,59 @@ function noticePrep(text) {
             padding: '0.5em 1em',
             'font-family': 'sans-serif',
             'font-size': '12px',
+            'line-height': '1.4em',
+            'text-align': 'center',
             'border-radius': '4px',
             'z-index': '10000',
-            'box-shadow': '0 2px 5px rgba(0,0,0,0.2)'
+            'box-shadow': '1px 3px 5px rgba(0, 0, 0, 0.333)'
         });
-        Dom.c('a')
-            .attr('href', 'https://datatables.net/tn/25')
-            .attr('target', '_blank')
-            .css({
-            color: 'inherit',
-            'text-decoration': 'none'
-        })
-            .appendTo(notice);
-        if (!text) {
-            text = 'License key required';
-        }
         shadow.appendChild(notice[0]);
         _notice = notice;
         _ready = true;
     }
+    _notice.empty();
     if (text) {
+        // Specific notice
         _notice
-            .find('a')
-            .html('DataTables Plus: ' + text + ' - learn more &#187;');
+            .append(Dom.c('span').text('DataTables Plus'))
+            .append(Dom.c('br'))
+            .append(Dom.c('span').text(text + ' - '))
+            .append(Dom.c('a')
+            .attr('href', 'https://datatables.net/tn/25')
+            .attr('target', '_blank')
+            .css({
+            color: 'inherit'
+        })
+            .html('learn more &#187;'));
+    }
+    else {
+        _notice
+            .append(Dom.c('span').text('DataTables Plus - Evaluation Mode'))
+            .append(Dom.c('br'))
+            .append(Dom.c('a')
+            .attr('href', 'https://datatables.net/plus/trial')
+            .attr('target', '_blank')
+            .css({
+            color: 'inherit'
+        })
+            .text('Start a Free Trial'))
+            .append(Dom.c('span').text(' - '))
+            .append(Dom.c('a')
+            .attr('href', 'https://datatables.net/plus')
+            .attr('target', '_blank')
+            .css({
+            color: 'inherit'
+        })
+            .text('Purchase a License'));
     }
 }
 /**
  * Display the license notice
  */
 function noticeDisplay() {
-    if (!_processingKey && document.body && !document.body.contains(_wm[0])) {
-        document.body.appendChild(_wm[0]);
+    let doc = external('doc');
+    if (!_processingKey && doc.body && !doc.body.contains(_wm[0])) {
+        doc.body.appendChild(_wm[0]);
     }
 }
 /**
@@ -11445,7 +11586,7 @@ function plus (DataTable) {
         value: function (releaseDate, software = '') {
             // Unsecure sites are only useful for development, so allow there
             // and on the site.
-            let host = window.location.hostname;
+            let host = external('win').location.hostname;
             let isDev = host === '192.168.234.234' ||
                 host.endsWith('.datatables.net') ||
                 host === 'datatables.net';
@@ -11469,7 +11610,8 @@ function plus (DataTable) {
 }
 function getSubtle() {
     // Backwards compat for old browsers
-    let cryptoObj = window.crypto || window.msCrypto;
+    let win = external('win');
+    let cryptoObj = win.crypto || win.msCrypto;
     let subtle = cryptoObj.subtle || cryptoObj.webkitSubtle;
     return subtle;
 }
@@ -11555,7 +11697,7 @@ function _divProp(el, prop, val) {
     }
 }
 register$2('div', function (settings, opts) {
-    var n = document.createElement('div');
+    var n = Dom.c('div').get(0);
     if (opts) {
         _divProp(n, 'className', opts.className);
         _divProp(n, 'id', opts.id);
@@ -11713,7 +11855,7 @@ function _pagingDraw(settings, host, opts) {
         buttonEls.push(btn.display);
     }
     let wrapped = renderer(settings, 'pagingContainer')(settings, buttonEls);
-    let activeEl = host.find(document.activeElement).attr('data-dt-idx');
+    let activeEl = host.find(external('doc').activeElement).attr('data-dt-idx');
     host.empty().append(wrapped);
     if (activeEl) {
         host.find('[data-dt-idx="' + activeEl + '"]').trigger('focus');
@@ -11958,7 +12100,7 @@ register$2('search', function (settings, optsIn) {
     let searchName = opts.columns === '*' ? '*' : indexes.join(',');
     let appliedSearch = settings.searches[searchName];
     if (!appliedSearch) {
-        appliedSearch = create$2();
+        appliedSearch = create$1();
         settings.searches[searchName] = appliedSearch;
     }
     appliedSearch.columns = indexes;
@@ -12206,8 +12348,8 @@ function create(parts = {}) {
 
 var models = {
     Column: Settings,
-    Row: create$1,
-    Search: create$2,
+    Row: create$2,
+    Search: create$1,
     Settings: create
 };
 
@@ -12220,7 +12362,7 @@ const defaults = {
     autoWidth: true,
     caption: '',
     classes: {},
-    column: defaults$4,
+    column: defaults$2,
     columnDefs: null,
     columns: null,
     createdRow: null,
@@ -12320,7 +12462,10 @@ const defaults = {
     stateDuration: 7200,
     stateLoadCallback: function (settings) {
         try {
-            const state = (settings.stateDuration === -1 ? sessionStorage : localStorage).getItem('DataTables_' + settings.unique + '_' + location.pathname);
+            const state = (settings.stateDuration === -1 ? sessionStorage : localStorage).getItem('DataTables_' +
+                settings.unique +
+                '_' +
+                external('win').location.pathname);
             return state ? JSON.parse(state) : {};
         }
         catch (e) {
@@ -12334,7 +12479,10 @@ const defaults = {
         try {
             (settings.stateDuration === -1
                 ? sessionStorage
-                : localStorage).setItem('DataTables_' + settings.unique + '_' + location.pathname, JSON.stringify(data));
+                : localStorage).setItem('DataTables_' +
+                settings.unique +
+                '_' +
+                external('win').location.pathname, JSON.stringify(data));
         }
         catch (e) {
             // noop
@@ -12390,10 +12538,12 @@ const DataTable = function (selector, options) {
         if (init.on && init.on.options) {
             listener(table, 'options', init.on.options);
         }
+        // Don't have the settings object here, so can't use `callbackFire`
+        Dom.trigger('options.dt', [init]);
         table.trigger('options.dt', true, [init]);
         // Backwards compatibility parameter mapping
-        compatOpts(defaults);
-        compatCols(defaults$4);
+        compatOpts(defaults, true);
+        compatCols(defaults$2);
         // Allow data properties on the table element to be used as
         // initialisation options
         util.object.assign(init, escapeObject(table.data()));
@@ -12522,7 +12672,7 @@ const DataTable = function (selector, options) {
         ]);
         map(settings.language, config, 'infoCallback');
         // Setup global search
-        settings.searches['*'] = create$2(config.search);
+        settings.searches['*'] = create$1(config.search);
         /* Callback functions which are array driven */
         callbackReg(settings, 'draw', config.drawCallback);
         callbackReg(settings, 'stateSaveParams', config.stateSaveParams);
@@ -12784,7 +12934,9 @@ DataTable.feature = {
 };
 // Register the libraries
 util.external(DataTable);
-if (window.jQuery) {
+// If jQuery is present on the global, let DataTables know about it. This is
+// required as it registers the plugin functions on the .fn object.
+if (typeof window !== 'undefined' && window.jQuery) {
     util.external(window.jQuery);
 }
 

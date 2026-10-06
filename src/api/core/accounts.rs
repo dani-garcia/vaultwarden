@@ -21,8 +21,9 @@ use crate::{
         DbConn, DbPool,
         models::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
-            EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, Membership, MembershipId,
-            OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId, UserKdfType,
+            EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, KeyId, Membership,
+            MembershipId, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId,
+            UserKdfType,
         },
     },
     mail,
@@ -31,7 +32,7 @@ use crate::{
 
 use super::{
     ciphers::{CipherData, update_cipher_from_data},
-    sends::{SendData, update_send_from_data},
+    sends::SendData,
 };
 
 pub fn routes() -> Vec<rocket::Route> {
@@ -41,11 +42,13 @@ pub fn routes() -> Vec<rocket::Route> {
         post_profile,
         put_avatar,
         get_public_keys,
+        get_keys,
         post_keys,
         post_password,
         post_set_password,
         post_kdf,
         post_rotatekey,
+        post_user_key,
         post_sstamp,
         post_email_token,
         post_email,
@@ -57,7 +60,6 @@ pub fn routes() -> Vec<rocket::Route> {
         delete_account,
         revision_date,
         password_hint,
-        post_prelogin,
         verify_password,
         post_api_key,
         rotate_api_key,
@@ -104,11 +106,8 @@ pub struct RegisterData {
 
     master_password_hint: Option<String>,
 
-    name: Option<String>,
-
     organization_user_id: Option<MembershipId>,
 
-    // Used only from the register/finish endpoint
     email_verification_token: Option<String>,
     accept_emergency_access_id: Option<EmergencyAccessId>,
     accept_emergency_access_invite_token: Option<String>,
@@ -161,7 +160,9 @@ struct RegisterDataOld {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RegisterDataCur {
+    #[serde(alias = "MasterPasswordAuthentication")]
     master_password_authentication: MasterPasswordAuthentication,
+    #[serde(alias = "MasterPasswordUnlock")]
     master_password_unlock: MasterPasswordUnlock,
 }
 
@@ -195,10 +196,12 @@ struct KeysData {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MasterPasswordAuthentication {
+    #[serde(alias = "Kdf")]
     kdf: KDFData,
+    #[serde(alias = "Salt")]
     salt: String,
 
-    #[serde(alias = "masterPasswordAuthenticationHash")]
+    #[serde(alias = "masterPasswordAuthenticationHash", alias = "MasterPasswordAuthenticationHash")]
     hash: String,
 }
 
@@ -255,12 +258,11 @@ async fn is_email_2fa_required(member_id: Option<MembershipId>, conn: &DbConn) -
     false
 }
 
-pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: DbConn) -> JsonResult {
-    let mut data: RegisterData = data.into_inner();
+pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
+    let data: RegisterData = data.into_inner();
     let email = data.email.to_lowercase();
 
-    let mut email_verified = false;
-
+    let mut name = None;
     let mut pending_emergency_access = None;
 
     if data.unprocessable() {
@@ -268,69 +270,65 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
     }
 
     // First, validate the provided verification tokens
-    if email_verification {
-        match (
-            &data.email_verification_token,
-            &data.accept_emergency_access_id,
-            &data.accept_emergency_access_invite_token,
-            &data.organization_user_id,
-            &data.org_invite_token,
-        ) {
-            // Normal user registration, when email verification is required
-            (Some(email_verification_token), None, None, None, None) => {
-                let claims = crate::auth::decode_register_verify(email_verification_token)?;
-                if claims.sub != data.email {
-                    err!("Email verification token does not match email");
-                }
-
-                // During this call we don't get the name, so extract it from the claims
-                if claims.name.is_some() {
-                    data.name = claims.name;
-                }
-                email_verified = claims.verified;
-            }
-            // Emergency access registration
-            (None, Some(accept_emergency_access_id), Some(accept_emergency_access_invite_token), None, None) => {
-                if !CONFIG.emergency_access_allowed() {
-                    err!("Emergency access is not enabled.")
-                }
-
-                let claims = crate::auth::decode_emergency_access_invite(accept_emergency_access_invite_token)?;
-
-                if claims.email != data.email {
-                    err!("Claim email does not match email")
-                }
-                if &claims.emer_id != accept_emergency_access_id {
-                    err!("Claim emer_id does not match accept_emergency_access_id")
-                }
-
-                pending_emergency_access = Some((accept_emergency_access_id, claims));
-                email_verified = true;
-            }
-            // Org invite
-            (None, None, None, Some(organization_user_id), Some(org_invite_token)) => {
-                let claims = decode_invite(org_invite_token)?;
-
-                if claims.email != data.email {
-                    err!("Claim email does not match email")
-                }
-
-                if &claims.member_id != organization_user_id {
-                    err!("Claim org_user_id does not match organization_user_id")
-                }
-
-                email_verified = true;
+    let mut email_verified = match (
+        &data.email_verification_token,
+        &data.accept_emergency_access_id,
+        &data.accept_emergency_access_invite_token,
+        &data.organization_user_id,
+        &data.org_invite_token,
+    ) {
+        // Normal user registration, when email verification is required
+        (Some(email_verification_token), None, None, None, None) => {
+            let claims = crate::auth::decode_register_verify(email_verification_token)?;
+            if claims.sub != data.email {
+                err!("Email verification token does not match email");
             }
 
-            _ => {
-                err!("Registration is missing required parameters")
-            }
+            // During this call we don't get the name, so extract it from the claims
+            name = claims.name;
+            claims.verified
         }
-    }
+        // Emergency access registration
+        (None, Some(accept_emergency_access_id), Some(accept_emergency_access_invite_token), None, None) => {
+            if !CONFIG.emergency_access_allowed() {
+                err!("Emergency access is not enabled.")
+            }
+
+            let claims = crate::auth::decode_emergency_access_invite(accept_emergency_access_invite_token)?;
+
+            if claims.email != data.email {
+                err!("Claim email does not match email")
+            }
+            if &claims.emer_id != accept_emergency_access_id {
+                err!("Claim emer_id does not match accept_emergency_access_id")
+            }
+
+            pending_emergency_access = Some((accept_emergency_access_id, claims));
+            true
+        }
+        // Org invite
+        (None, None, None, Some(organization_user_id), Some(org_invite_token)) => {
+            let claims = decode_invite(org_invite_token)?;
+
+            if claims.email != data.email {
+                err!("Claim email does not match email")
+            }
+
+            if &claims.member_id != organization_user_id {
+                err!("Claim org_user_id does not match organization_user_id")
+            }
+
+            true
+        }
+
+        _ => {
+            err!("Registration is missing required parameters")
+        }
+    };
 
     // Check if the length of the username exceeds 50 characters (Same is Upstream Bitwarden)
     // This also prevents issues with very long usernames causing to large JWT's. See #2419
-    if let Some(ref name) = data.name
+    if let Some(ref name) = name
         && name.len() > 50
     {
         err!("The field Name must be a string with a maximum length of 50.");
@@ -392,7 +390,7 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
     user.password_hint = password_hint;
 
     // Add extra fields if present
-    if let Some(name) = data.name {
+    if let Some(name) = name {
         user.name = name;
     }
 
@@ -430,8 +428,7 @@ pub async fn register(data: Json<RegisterData>, email_verification: bool, conn: 
     }
 
     Ok(Json(json!({
-      "object": "register",
-      "captchaBypassToken": "",
+      "object": "registerFinish",
     })))
 }
 
@@ -440,7 +437,7 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     let data: SetPasswordData = data.into_inner();
     let mut user = headers.user;
 
-    if user.private_key.is_some() {
+    if user.private_key.is_some() || !user.password_hash.is_empty() {
         err!("Account already initialized, cannot set password")
     }
 
@@ -494,7 +491,6 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
 
     Ok(Json(json!({
       "object": "set-password",
-      "captchaBypassToken": "",
     })))
 }
 
@@ -573,11 +569,33 @@ async fn get_public_keys(user_id: UserId, _headers: Headers, conn: DbConn) -> Js
     })))
 }
 
+#[get("/accounts/keys")]
+fn get_keys(headers: Headers) -> JsonResult {
+    let user = headers.user;
+
+    // The SDK reads a 404 as the user having no key pair yet
+    if user.private_key.is_none() || user.public_key.is_none() {
+        err_code!("User has no key pair", Status::NotFound.code)
+    }
+
+    Ok(Json(json!({
+        "key": (!user.akey.is_empty()).then_some(&user.akey),
+        "publicKey": user.public_key,
+        "privateKey": user.private_key,
+        "accountKeys": user.account_keys_json(),
+        "object": "keys",
+    })))
+}
+
 #[post("/accounts/keys", data = "<data>")]
 async fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: KeysData = data.into_inner();
 
     let mut user = headers.user;
+
+    if user.private_key.is_some() || user.public_key.is_some() {
+        err!("User has existing keypair")
+    }
 
     user.private_key = Some(data.encrypted_private_key);
     user.public_key = Some(data.public_key);
@@ -700,8 +718,11 @@ fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AuthenticationData {
+    #[serde(alias = "Salt")]
     salt: String,
+    #[serde(alias = "Kdf")]
     kdf: KDFData,
+    #[serde(alias = "MasterPasswordAuthenticationHash")]
     master_password_authentication_hash: String,
 }
 
@@ -980,17 +1001,20 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
 
     // Update send data
     for send_data in data.account_data.sends {
-        let Some(send) = existing_sends.iter_mut().find(|s| &s.uuid == send_data.id.as_ref().unwrap()) else {
+        let Some(send) = send_data.id.as_ref().and_then(|id| existing_sends.iter_mut().find(|s| &s.uuid == id)) else {
             err!("Send doesn't exist")
         };
 
-        update_send_from_data(send, send_data, &headers, &conn, &nt, UpdateType::None).await?;
+        // Like upstream, only the key changes on rotation
+        send.akey = send_data.key;
+        send.save(&conn).await?;
     }
 
     // Update cipher data
     for cipher_data in data.account_data.ciphers {
         if cipher_data.organization_id.is_none() {
-            let Some(saved_cipher) = existing_ciphers.iter_mut().find(|c| &c.uuid == cipher_data.id.as_ref().unwrap())
+            let Some(saved_cipher) =
+                cipher_data.id.as_ref().and_then(|id| existing_ciphers.iter_mut().find(|c| &c.uuid == id))
             else {
                 err!("Cipher doesn't exist")
             };
@@ -1023,6 +1047,23 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     nt.send_logout(&user, Some(&headers.device), &conn).await;
 
     save_result
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KeyIdData {
+    user_key_id: KeyId,
+}
+
+#[post("/accounts/key-management/user-key-id", data = "<data>")]
+async fn post_user_key(data: Json<KeyIdData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let mut user = headers.user;
+    if user.key_id.is_some() {
+        err_code!("Unexpected data", Status::UnprocessableEntity.code);
+    }
+
+    user.key_id = Some(data.into_inner().user_key_id);
+    user.save(&conn).await
 }
 
 #[post("/accounts/security-stamp", data = "<data>")]
@@ -1339,19 +1380,33 @@ pub struct PreloginData {
     email: String,
 }
 
-#[post("/accounts/prelogin", data = "<data>")]
-async fn post_prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
-    prelogin(data, ip, conn).await
+/// Like upstream, an unknown email gets KDF settings picked from a list of common ones by a keyed hash of the email,
+/// so they stay the same between requests. The salt stays null, as for existing users.
+fn unknown_email_kdf(email: &str) -> (i32, i32, Option<i32>, Option<i32>) {
+    const PBKDF2: i32 = UserKdfType::Pbkdf2 as i32;
+    const ARGON2ID: i32 = UserKdfType::Argon2id as i32;
+    // Same list as upstream, the default is in it twice to give it more weight
+    const KDF_SETTINGS: [(i32, i32, Option<i32>, Option<i32>); 6] = [
+        (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+        (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+        (PBKDF2, 100_000, None, None),
+        (PBKDF2, 5_000, None, None),
+        (ARGON2ID, 3, Some(64), Some(4)),
+        (ARGON2ID, 6, Some(32), Some(4)),
+    ];
+    KDF_SETTINGS[crate::auth::prelogin_kdf_index(email, KDF_SETTINGS.len())]
 }
 
 pub async fn prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
     crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
 
     let data: PreloginData = data.into_inner();
+    // Normalized once, so the lookup and the settings for an unknown email use the same value
+    let email = data.email.trim().to_lowercase();
 
-    let (kdf_type, kdf_iter, kdf_mem, kdf_para) = match User::find_by_mail(&data.email, &conn).await {
+    let (kdf_type, kdf_iter, kdf_mem, kdf_para) = match User::find_by_mail(&email, &conn).await {
         Some(user) => (user.client_kdf_type, user.client_kdf_iter, user.client_kdf_memory, user.client_kdf_parallelism),
-        None => (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+        None => unknown_email_kdf(&email),
     };
 
     Ok(Json(json!({
@@ -1833,5 +1888,64 @@ pub async fn purge_auth_requests(pool: DbPool) {
         AuthRequest::purge_expired_auth_requests(&conn).await;
     } else {
         error!("Failed to get DB connection while purging auth requests");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_register_data_current_format() {
+        // Web and iOS since the master password authentication/unlock split
+        let data: RegisterData = serde_json::from_str(
+            r#"{
+                "email": "user@example.com",
+                "emailVerificationToken": "token",
+                "userAsymmetricKeys": {"publicKey": "pub", "encryptedPrivateKey": "priv"},
+                "masterPasswordAuthentication": {
+                    "kdf": {"kdfType": 0, "iterations": 600000},
+                    "salt": "user@example.com",
+                    "masterPasswordAuthenticationHash": "hash"
+                },
+                "masterPasswordUnlock": {
+                    "kdf": {"kdfType": 0, "iterations": 600000},
+                    "salt": "user@example.com",
+                    "masterKeyWrappedUserKey": "key"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert!(!data.unprocessable());
+        assert_eq!(data.hash(), "hash");
+        assert_eq!(data.key(), "key");
+        assert_eq!(data.kdf().kdf_iterations, 600_000);
+        assert!(data.keys.is_some());
+        assert_eq!(data.email_verification_token.as_deref(), Some("token"));
+    }
+
+    #[test]
+    fn test_register_data_flat_format() {
+        // Android before 2026.9.0
+        let data: RegisterData = serde_json::from_str(
+            r#"{
+                "email": "user@example.com",
+                "emailVerificationToken": "token",
+                "masterPasswordHash": "hash",
+                "masterPasswordHint": null,
+                "userSymmetricKey": "key",
+                "userAsymmetricKeys": {"publicKey": "pub", "encryptedPrivateKey": "priv"},
+                "kdf": 0,
+                "kdfIterations": 600000
+            }"#,
+        )
+        .unwrap();
+
+        assert!(!data.unprocessable());
+        assert_eq!(data.hash(), "hash");
+        assert_eq!(data.key(), "key");
+        assert_eq!(data.kdf().kdf_iterations, 600_000);
+        assert!(data.keys.is_some());
     }
 }

@@ -65,7 +65,7 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
         let Some(user) = User::find_by_mail(email, &conn).await else {
             err!(
                 "Username or password is incorrect. Try again",
-                format!("IP: {}. Username: {email}.", client_headers.ip.ip)
+                format!("IP: {}. Username: {}.", client_headers.ip.ip, email.escape_debug())
             )
         };
 
@@ -74,7 +74,7 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
             if !user.check_valid_password(master_password_hash) {
                 err!(
                     "Username or password is incorrect. Try again",
-                    format!("IP: {}. Username: {email}.", client_headers.ip.ip)
+                    format!("IP: {}. Username: {}.", client_headers.ip.ip, email.escape_debug())
                 )
             }
         } else if let Some(auth_request_id) = auth_request_id {
@@ -188,7 +188,7 @@ async fn send_email(data: Json<SendEmailData>, headers: Headers, conn: DbConn) -
     }
 
     let generated_token = crypto::generate_email_token(CONFIG.email_token_size());
-    let twofactor_data = EmailTokenData::new(data.email, generated_token);
+    let twofactor_data = EmailTokenData::new(data.email, Some(generated_token));
 
     // Uses EmailVerificationChallenge as type to show that it's not verified yet.
     let twofactor = TwoFactor::new(user.uuid, TwoFactorType::EmailVerificationChallenge, twofactor_data.to_json());
@@ -322,10 +322,10 @@ pub struct EmailTokenData {
 }
 
 impl EmailTokenData {
-    pub fn new(email: String, token: String) -> EmailTokenData {
+    pub fn new(email: String, token: Option<String>) -> EmailTokenData {
         EmailTokenData {
             email,
-            last_token: Some(token),
+            last_token: token,
             token_sent: Utc::now().timestamp(),
             attempts: 0,
         }
@@ -363,7 +363,8 @@ pub async fn activate_email_2fa(user: &User, conn: &DbConn) -> EmptyResult {
     if user.verified_at.is_none() {
         err!("Auto-enabling of email 2FA failed because the users email address has not been verified!");
     }
-    let twofactor_data = EmailTokenData::new(user.email.clone(), String::new());
+    // The token is set when the first code is sent
+    let twofactor_data = EmailTokenData::new(user.email.clone(), None);
     let twofactor = TwoFactor::new(user.uuid.clone(), TwoFactorType::Email, twofactor_data.to_json());
     twofactor.save(conn).await
 }

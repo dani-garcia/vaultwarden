@@ -225,7 +225,7 @@ async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, co
     let (grantee_user, new_user) = match User::find_by_mail(&email, &conn).await {
         None => {
             if !CONFIG.invitations_allowed() {
-                err!(format!("Grantee user does not exist: {email}"))
+                err!(format!("Grantee user does not exist: {}", email.escape_debug()))
             }
 
             if !CONFIG.is_email_domain_allowed(&email) {
