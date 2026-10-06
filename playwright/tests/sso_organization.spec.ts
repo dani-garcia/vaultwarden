@@ -49,7 +49,7 @@ test('Organization is visible', async ({ page }) => {
     await expect(page.getByLabel('Filter: Default collection')).toBeVisible();
 });
 
-test('Enforce password policy', async ({ page }) => {
+test('Activate password policy', async ({ page }) => {
     await logUser(test, page, users.user1);
     await orgs.policies(test, page, '/Test');
 
@@ -61,16 +61,27 @@ test('Enforce password policy', async ({ page }) => {
         await page.getByRole('button', { name: 'Save' }).click();
         await utils.checkNotification(page, 'Edited policy Master password requirements.');
     });
+});
 
-    await utils.logout(test, page, users.user1);
+test('Unlock trigger policyy', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
 
-    await test.step(`Unlock trigger policy`, async () => {
-        await page.locator("input[type=email].vw-email-sso").fill(users.user1.email);
-        await page.getByRole('button', { name: 'Use single sign-on' }).click();
+    await page.locator("input[type=email].vw-email-sso").fill(users.user2.email);
+    await page.getByRole('button', { name: /Use single sign-on/ }).click();
 
-        await page.getByRole('textbox', { name: 'Master password (required)' }).fill(users.user1.password);
-        await page.getByRole('button', { name: 'Unlock' }).click();
-
-        await expect(page.getByRole('heading', { name: 'Update master password' })).toBeVisible();
+    await test.step('Keycloak login', async () => {
+        await expect(page.getByRole('heading', { name: 'Sign in to your account' })).toBeVisible();
+        await page.getByLabel(/Username/).fill(users.user2.name);
+        await page.getByLabel('Password', { exact: true }).fill(users.user2.password);
+        await page.getByRole('button', { name: 'Sign In' }).click();
     });
+
+    await test.step('Unlock vault', async () => {
+        await expect(page).toHaveTitle('Vaultwarden Web');
+        await expect(page.getByRole('heading', { name: 'Your vault is locked' })).toBeVisible();
+        await page.getByLabel('Master password').fill(users.user2.password);
+        await page.getByRole('button', { name: 'Unlock' }).click();
+    });
+
+    await expect(page.getByRole('heading', { name: 'Update master password' })).toBeVisible();
 });

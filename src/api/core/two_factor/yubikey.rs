@@ -1,23 +1,57 @@
 use rocket::{Route, serde::json::Json};
 use serde_json::Value;
-use yubico::{config::Config, verify_async};
+use yubico_ng::{
+    Verifier, YubicoError,
+    config::Config,
+    transport::{AsyncTransport, Response},
+};
 
 use crate::{
     CONFIG,
     api::{
         EmptyResult, JsonResult, PasswordOrOtpData,
-        core::{log_user_event, two_factor::generate_recover_code},
+        core::{
+            log_user_event,
+            two_factor::{VerificationTokenData, generate_recover_code},
+        },
     },
-    auth::Headers,
+    auth::{Headers, two_factor},
     db::{
         DbConn,
         models::{EventType, TwoFactor, TwoFactorType},
     },
     error::{Error, MapResult},
+    http_client,
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![generate_yubikey, activate_yubikey, activate_yubikey_put,]
+    routes![generate_yubikey, activate_yubikey, activate_yubikey_put, delete_yubikeys,]
+}
+
+struct HttpClientTransport {
+    client: reqwest::Client,
+}
+
+impl HttpClientTransport {
+    fn new() -> Result<Self, reqwest::Error> {
+        http_client::get_reqwest_client_builder(false).redirect(reqwest::redirect::Policy::none()).build().map(
+            |client| Self {
+                client,
+            },
+        )
+    }
+}
+
+impl AsyncTransport for HttpClientTransport {
+    type Error = YubicoError;
+
+    async fn yubico_get(&self, url: &str) -> Result<Response, Self::Error> {
+        let response = self.client.get(url).send().await.map_err(YubicoError::transport)?;
+        Ok(Response {
+            status: response.status().as_u16(),
+            body: response.text().await.map_err(YubicoError::transport)?,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,8 +63,7 @@ struct EnableYubikeyData {
     key4: Option<String>,
     key5: Option<String>,
     nfc: bool,
-    master_password_hash: Option<String>,
-    otp: Option<String>,
+    user_verification_token: String,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -44,8 +77,7 @@ pub struct YubikeyMetadata {
 
 fn parse_yubikeys(data: &EnableYubikeyData) -> Vec<String> {
     let data_keys = [&data.key1, &data.key2, &data.key3, &data.key4, &data.key5];
-
-    data_keys.into_iter().flatten().cloned().collect()
+    data_keys.into_iter().flatten().filter(|e| !e.is_empty()).cloned().collect()
 }
 
 fn jsonify_yubikeys(yubikeys: Vec<String>) -> Value {
@@ -73,13 +105,15 @@ fn get_yubico_credentials() -> Result<(String, String), Error> {
 async fn verify_yubikey_otp(otp: String) -> EmptyResult {
     let (yubico_id, yubico_secret) = get_yubico_credentials()?;
 
-    let config = Config::default().set_client_id(yubico_id).set_key(yubico_secret);
-
-    match CONFIG.yubico_server() {
-        Some(server) => verify_async(otp, config.set_api_hosts(vec![server])).await,
-        None => verify_async(otp, config).await,
+    let mut config = Config::default().set_client_id(yubico_id).set_key(yubico_secret)?;
+    if let Some(yubico_server) = CONFIG.yubico_server() {
+        config = config.set_api_host(yubico_server);
     }
-    .map_res("Failed to verify OTP")
+
+    let client = HttpClientTransport::new()?;
+    let verifier = Verifier::with_client(config, client)?;
+
+    verifier.verify(otp).await.map_res("Failed to verify OTP")
 }
 
 #[post("/two-factor/get-yubikey", data = "<data>")]
@@ -93,55 +127,46 @@ async fn generate_yubikey(data: Json<PasswordOrOtpData>, headers: Headers, conn:
     data.validate(&user, false, &conn).await?;
 
     let user_id = &user.uuid;
-    let yubikey_type = TwoFactorType::YubiKey as i32;
 
-    let r = TwoFactor::find_by_user_and_type(user_id, yubikey_type, &conn).await;
-
-    if let Some(r) = r {
-        let yubikey_metadata: YubikeyMetadata = serde_json::from_str(&r.data)?;
-
-        let mut result = jsonify_yubikeys(yubikey_metadata.keys);
-
-        result["enabled"] = Value::Bool(true);
-        result["nfc"] = Value::Bool(yubikey_metadata.nfc);
-        result["object"] = Value::String("twoFactorU2f".to_owned());
-
-        Ok(Json(result))
-    } else {
-        Ok(Json(json!({
-            "enabled": false,
-            "object": "twoFactorU2f",
-        })))
-    }
+    let (enabled, keys, yubikey_json) =
+        if let Some(r) = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::YubiKey, &conn).await {
+            let yubikey_metadata: YubikeyMetadata = serde_json::from_str(&r.data)?;
+            let enabled = !yubikey_metadata.keys.is_empty();
+            let mut result = jsonify_yubikeys(yubikey_metadata.keys.clone());
+            result["enabled"] = Value::Bool(enabled);
+            result["nfc"] = Value::Bool(yubikey_metadata.nfc);
+            (enabled, yubikey_metadata.keys, result)
+        } else {
+            (false, Vec::new(), json!({"enabled": false}))
+        };
+    Ok(Json(json!({
+        "yubiKey": yubikey_json,
+        "userVerificationToken": two_factor::yubikey_token(user.uuid, keys, enabled),
+    })))
 }
 
 #[post("/two-factor/yubikey", data = "<data>")]
 async fn activate_yubikey(data: Json<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableYubikeyData = data.into_inner();
+    let yubikeys = parse_yubikeys(&data);
     let mut user = headers.user;
 
-    PasswordOrOtpData {
-        master_password_hash: data.master_password_hash.clone(),
-        otp: data.otp.clone(),
+    if yubikeys.is_empty() {
+        // Return an error to prevent saving empty keys which would cause users not being able to login anymore.
+        // To remove all keys users should click the `Deactivate all keys` button
+        err!("A key is required.");
     }
-    .validate(&user, true, &conn)
-    .await?;
 
     // Check if we already have some data
     let mut yubikey_data =
-        match TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey as i32, &conn).await {
-            Some(data) => data,
-            None => TwoFactor::new(user.uuid.clone(), TwoFactorType::YubiKey, String::new()),
+        if let Some(yd) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey, &conn).await {
+            let ym: YubikeyMetadata = serde_json::from_str(&yd.data)?;
+            two_factor::validate_yubikey(&data.user_verification_token, &user.uuid, &ym.keys, !ym.keys.is_empty())?;
+            yd
+        } else {
+            two_factor::validate_yubikey(&data.user_verification_token, &user.uuid, &Vec::new(), false)?;
+            TwoFactor::new(user.uuid.clone(), TwoFactorType::YubiKey, String::new())
         };
-
-    let yubikeys = parse_yubikeys(&data);
-
-    if yubikeys.is_empty() {
-        return Ok(Json(json!({
-            "enabled": false,
-            "object": "twoFactorU2f",
-        })));
-    }
 
     // Ensure they are valid OTPs
     for yubikey in &yubikeys {
@@ -164,20 +189,34 @@ async fn activate_yubikey(data: Json<EnableYubikeyData>, headers: Headers, conn:
 
     generate_recover_code(&mut user, &conn).await;
 
-    log_user_event(EventType::UserUpdated2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+    log_user_event(EventType::UserUpdated2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     let mut result = jsonify_yubikeys(yubikey_metadata.keys);
-
     result["enabled"] = Value::Bool(true);
     result["nfc"] = Value::Bool(yubikey_metadata.nfc);
-    result["object"] = Value::String("twoFactorU2f".to_owned());
-
-    Ok(Json(result))
+    Ok(Json(json!({"yubiKey": result})))
 }
 
 #[put("/two-factor/yubikey", data = "<data>")]
 async fn activate_yubikey_put(data: Json<EnableYubikeyData>, headers: Headers, conn: DbConn) -> JsonResult {
     activate_yubikey(data, headers, conn).await
+}
+
+#[delete("/two-factor/yubikey", data = "<data>")]
+async fn delete_yubikeys(data: Json<VerificationTokenData>, headers: Headers, conn: DbConn) -> EmptyResult {
+    let user = headers.user;
+
+    if let Some(r) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::YubiKey, &conn).await {
+        let yubikey_metadata: YubikeyMetadata = serde_json::from_str(&r.data)?;
+        two_factor::validate_yubikey(&data.user_verification_token, &user.uuid, &yubikey_metadata.keys, true)?;
+
+        r.delete(&conn).await?;
+        log_user_event(EventType::UserDisabled2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
+    }
+
+    super::check_2fa_state(&user, headers.device.atype, &headers.ip.ip, &conn).await?;
+
+    Ok(())
 }
 
 pub async fn validate_yubikey_login(response: &str, twofactor_data: &str) -> EmptyResult {
@@ -186,7 +225,9 @@ pub async fn validate_yubikey_login(response: &str, twofactor_data: &str) -> Emp
     }
 
     let yubikey_metadata: YubikeyMetadata = serde_json::from_str(twofactor_data).expect("Can't parse Yubikey Metadata");
-    let response_id = &response[..12];
+    let Some(response_id) = response.get(..12) else {
+        err!("Invalid Yubikey OTP");
+    };
 
     if !yubikey_metadata.keys.contains(&response_id.to_owned()) {
         err!("Given Yubikey is not registered");

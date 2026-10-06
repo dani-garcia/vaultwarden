@@ -4,7 +4,7 @@ use diesel::prelude::*;
 use serde_json::Value;
 
 use crate::{
-    api::EmptyResult,
+    api::{ApiResult, EmptyResult},
     crypto::ct_eq,
     db::{DbConn, schema::auth_requests},
     error::MapResult,
@@ -82,31 +82,23 @@ impl AuthRequest {
 }
 
 impl AuthRequest {
-    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(auth_requests::table)
-                    .values(&*self)
-                    .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(auth_requests::table)
-                            .filter(auth_requests::uuid.eq(&self.uuid))
-                            .set(&*self)
-                            .execute(conn)
-                            .map_res("Error auth_request")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error auth_request")
-            }
-            postgresql {
+            mysql {
                 diesel::insert_into(auth_requests::table)
-                    .values(&*self)
+                    .values(self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(self)
+                    .execute(conn)
+                    .map_res("Error saving auth_request")
+            }
+            postgresql, sqlite {
+                diesel::insert_into(auth_requests::table)
+                    .values(self)
                     .on_conflict(auth_requests::uuid)
                     .do_update()
-                    .set(&*self)
+                    .set(self)
                     .execute(conn)
                     .map_res("Error saving auth_request")
             }
@@ -170,6 +162,21 @@ impl AuthRequest {
             diesel::delete(auth_requests::table.filter(auth_requests::uuid.eq(&self.uuid)))
                 .execute(conn)
                 .map_res("Error deleting auth request")
+        })
+        .await
+    }
+
+    /// Marks the request as used to log in. Returns false when it already was, so it only works once.
+    pub async fn set_authentication_date(uuid: &AuthRequestId, conn: &DbConn) -> ApiResult<bool> {
+        let now = Utc::now().naive_utc();
+        conn.run(move |conn| {
+            diesel::update(auth_requests::table)
+                .filter(auth_requests::uuid.eq(uuid))
+                .filter(auth_requests::authentication_date.is_null())
+                .set(auth_requests::authentication_date.eq(now))
+                .execute(conn)
+                .map(|updated| updated == 1)
+                .map_res("Error updating auth request")
         })
         .await
     }

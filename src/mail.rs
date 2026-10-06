@@ -307,9 +307,18 @@ pub async fn send_invite(
         if CONFIG.sso_enabled() && CONFIG.sso_only() {
             query_params.append_pair("orgSsoIdentifier", &org_id);
         }
-        if user.private_key.is_some() {
-            query_params.append_pair("orgUserHasExistingUser", "true");
-        }
+
+        // The web vault requires both of these parameters to be present.
+        // If either is missing it rejects the invite client-side, before any
+        // request reaches the server, showing only "Unable to accept invitation".
+        query_params.append_pair("initOrganization", "false");
+
+        let org_user_has_existing_user = if user.private_key.is_some() {
+            "true"
+        } else {
+            "false"
+        };
+        query_params.append_pair("orgUserHasExistingUser", org_user_has_existing_user);
     }
 
     let Some(query_string) = query.query() else {
@@ -522,6 +531,21 @@ pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTi
     send_email(address, &subject, body_html, body_text).await
 }
 
+pub async fn send_recover_twofactor(address: &str, ip: &str, dt: &NaiveDateTime) -> EmptyResult {
+    let fmt = "%A, %B %_d, %Y at %r %Z";
+    let (subject, body_html, body_text) = get_text(
+        "email/recover_twofactor",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "ip": ip,
+            "datetime": crate::util::format_naive_datetime_local(dt, fmt),
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_incomplete_2fa_login(
     address: &str,
     ip: &str,
@@ -624,14 +648,24 @@ pub async fn send_test(address: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_admin_reset_password(address: &str, user_name: &str, org_name: &str) -> EmptyResult {
+pub async fn send_admin_account_recovery(
+    address: &str,
+    user_name: &str,
+    org_name: &str,
+    reset_password: bool,
+    reset_2fa: bool,
+    fallback_2fa_email: bool,
+) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
-        "email/admin_reset_password",
+        "email/admin_account_recovery",
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
             "user_name": user_name,
             "org_name": org_name,
+            "reset_password": reset_password,
+            "reset_2fa": reset_2fa,
+            "fallback_2fa_email": fallback_2fa_email,
         }),
     )?;
     send_email(address, &subject, body_html, body_text).await

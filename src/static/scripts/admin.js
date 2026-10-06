@@ -1,6 +1,5 @@
 "use strict";
-/* eslint-env es2017, browser */
-/* exported BASE_URL, _post _delete */
+/* exported BASE_URL, _post, _delete */
 
 function getBaseUrl() {
     // If the base URL is `https://vaultwarden.example.com/base/path/admin/`,

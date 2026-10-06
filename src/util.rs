@@ -257,6 +257,44 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for Cache
     }
 }
 
+pub struct EtagCached<R> {
+    response: R,
+    etag: String,
+}
+
+impl<R> EtagCached<R> {
+    /// An `etag` response should always be quoted
+    pub fn new(response: R, etag: &str) -> Self {
+        Self {
+            response,
+            etag: format!("\"{etag}\""),
+        }
+    }
+}
+
+impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for EtagCached<R> {
+    fn respond_to(self, request: &'r Request<'_>) -> response::Result<'static> {
+        // Check and validate a `If-None-Match` ETag header
+        // Multiple tags could be returned for the same URI if the browser has multiple versions cached
+        // Also, weak tags are prefixed with `W/`, but ETags are always weak, so just strip it too before comparing
+        let etag_matches = request
+            .headers()
+            .get_one("If-None-Match")
+            .is_some_and(|v| v.split(',').any(|t| t.trim().trim_start_matches("W/") == self.etag));
+
+        let mut res = if etag_matches {
+            Response::build().status(Status::NotModified).ok()?
+        } else {
+            self.response.respond_to(request)?
+        };
+
+        // Both 200 (OK) and 304 (Not Modified) need to return the etag and cache-control
+        res.set_raw_header("Etag", self.etag);
+        res.set_raw_header("Cache-Control", "public, no-cache");
+        Ok(res)
+    }
+}
+
 // Log all the routes from the main paths list, and the attachments endpoint
 // Effectively ignores, any static file route, and the alive endpoint
 const LOGGED_ROUTES: [&str; 7] = ["/api", "/admin", "/identity", "/icons", "/attachments", "/events", "/notifications"];
@@ -342,7 +380,7 @@ pub fn get_display_size(size: i64) -> String {
     let mut unit_counter = 0;
 
     loop {
-        if size > 1024. {
+        if size > 1024. && unit_counter < UNITS.len() - 1 {
             size /= 1024.;
             unit_counter += 1;
         } else {
@@ -484,8 +522,8 @@ pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
     expiry_time.to_rfc2822().replace("+0000", "GMT")
 }
 
-pub fn parse_date(date: &str) -> NaiveDateTime {
-    DateTime::parse_from_rfc3339(date).unwrap().naive_utc()
+pub fn parse_date(date: &str) -> Option<NaiveDateTime> {
+    DateTime::parse_from_rfc3339(date).ok().map(|dt| dt.naive_utc())
 }
 
 /// Returns true or false if an email address is valid or not
@@ -499,10 +537,7 @@ pub fn is_valid_email(email: &str) -> bool {
     let Ok(email_url) = url::Url::parse(&format!("https://{}", email.domain())) else {
         return false;
     };
-    if email_url.path().ne("/") || email_url.domain().is_none() || email_url.query().is_some() {
-        return false;
-    }
-    true
+    email_url.domain().is_some() && email_url.path() == "/" && email_url.query().is_none()
 }
 
 //
@@ -908,15 +943,15 @@ mod tests {
     use std::net::IpAddr;
 
     #[test]
-    #[ignore]
+    #[ignore = "exhaustive IPv4 check is too slow for the regular test suite"]
     fn test_ipv4_global() {
         for a in 0..u8::MAX {
-            println!("Iter: {}/255", a);
+            println!("Iter: {a}/255");
             for b in 0..u8::MAX {
                 for c in 0..u8::MAX {
                     for d in 0..u8::MAX {
                         let ip = IpAddr::V4(std::net::Ipv4Addr::new(a, b, c, d));
-                        assert_eq!(ip.is_global(), is_global_hardcoded(ip), "IP mismatch: {}", ip)
+                        assert_eq!(ip.is_global(), is_global_hardcoded(ip), "IP mismatch: {ip}");
                     }
                 }
             }
@@ -924,15 +959,15 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "random IPv6 check is too slow for the regular test suite"]
     fn test_ipv6_global() {
-        use rand::Rng;
+        use rand::RngExt;
 
         std::thread::scope(|s| {
             for t in 0..16 {
-                let handle = s.spawn(move || {
+                let _handle = s.spawn(move || {
                     let mut v = [0u8; 16];
-                    let mut rng = rand::thread_rng();
+                    let mut rng = rand::rng();
 
                     for i in 0..20 {
                         println!("Thread {t} Iter: {i}/50");

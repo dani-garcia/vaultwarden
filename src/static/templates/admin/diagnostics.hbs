@@ -77,6 +77,16 @@
                         <span class="d-block"><b>No</b></span>
                     {{/unless}}
                     </dd>
+                    <dt class="col-sm-5">Uses custom templates</dt>
+                    <dd class="col-sm-7">
+                    {{#if page_data.template_overrides}}
+                        <span class="d-inline"><b>Yes</b></span>
+                        <span class="badge bg-info text-dark abbr-badge" title="Custom template files are used.&#013;&#010;{{page_data.template_overrides}}">Details</span>
+                    {{/if}}
+                    {{#unless page_data.template_overrides}}
+                        <span class="d-block"><b>No</b></span>
+                    {{/unless}}
+                    </dd>
                     <dt class="col-sm-5">Uses a reverse proxy</dt>
                     <dd class="col-sm-7">
                     {{#if page_data.ip_header_exists}}

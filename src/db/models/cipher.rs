@@ -440,24 +440,16 @@ impl Cipher {
         self.updated_at = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(ciphers::table)
+            mysql {
+                diesel::insert_into(ciphers::table)
                     .values(&*self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(&*self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(ciphers::table)
-                            .filter(ciphers::uuid.eq(&self.uuid))
-                            .set(&*self)
-                            .execute(conn)
-                            .map_res("Error saving cipher")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving cipher")
+                    .map_res("Error saving cipher")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(ciphers::table)
                     .values(&*self)
                     .on_conflict(ciphers::uuid)
@@ -665,16 +657,27 @@ impl Cipher {
     }
 
     async fn get_user_collections_access_flags(&self, user_uuid: &UserId, conn: &DbConn) -> Vec<(bool, bool, bool)> {
+        let user_uuid = user_uuid.to_string();
         conn.run(move |conn| {
             // Check whether this cipher is in any collections accessible to the
             // user. If so, retrieve the access flags for each collection.
+            // The user must have a confirmed membership in the cipher's
+            // organization, since users_collections rows are kept when a
+            // membership is revoked or not confirmed yet.
             ciphers::table
                 .filter(ciphers::uuid.eq(&self.uuid))
                 .inner_join(ciphers_collections::table.on(ciphers::uuid.eq(ciphers_collections::cipher_uuid)))
                 .inner_join(
+                    users_organizations::table.on(ciphers::organization_uuid
+                        .eq(users_organizations::org_uuid.nullable())
+                        .and(users_organizations::user_uuid.eq(user_uuid))
+                        .and(users_organizations::status.eq(MembershipStatus::Confirmed as i32))),
+                )
+                .inner_join(
                     users_collections::table.on(ciphers_collections::collection_uuid
                         .eq(users_collections::collection_uuid)
-                        .and(users_collections::user_uuid.eq(user_uuid))),
+                        // Only allow collection access via the confirmed membership.
+                        .and(users_organizations::user_uuid.eq(users_collections::user_uuid))),
                 )
                 .select((users_collections::read_only, users_collections::hide_passwords, users_collections::manage))
                 .load::<(bool, bool, bool)>(conn)
@@ -705,6 +708,10 @@ impl Cipher {
                         .and(groups::organizations_uuid.eq(users_organizations::org_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                // Only allow group access via a confirmed membership, since
+                // groups_users rows are kept when a membership is revoked.
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .filter(ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()))
                 .select((collections_groups::read_only, collections_groups::hide_passwords, collections_groups::manage))
                 .load::<(bool, bool, bool)>(conn)
                 .expect("Error getting group access restrictions")
@@ -997,6 +1004,7 @@ impl Cipher {
                             .eq(ciphers_collections::collection_uuid)
                             .and(collections_groups::groups_uuid.eq(groups::uuid))),
                     )
+                    .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
                         users_organizations::access_all
                             .eq(true) // User has access all
@@ -1028,6 +1036,7 @@ impl Cipher {
                             .eq(ciphers_collections::collection_uuid)
                             .and(users_collections::user_uuid.eq(user_uuid.clone()))),
                     )
+                    .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
                         users_organizations::access_all
                             .eq(true) // User has access all
@@ -1072,6 +1081,7 @@ impl Cipher {
                             .eq(ciphers_collections::collection_uuid)
                             .and(collections_groups::groups_uuid.eq(groups::uuid))),
                     )
+                    .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
                         users_organizations::access_all
                             .eq(true) // User has access all
@@ -1104,6 +1114,7 @@ impl Cipher {
                             .eq(ciphers_collections::collection_uuid)
                             .and(users_collections::user_uuid.eq(user_uuid.clone()))),
                     )
+                    .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
                         users_organizations::access_all
                             .eq(true) // User has access all
@@ -1155,6 +1166,7 @@ impl Cipher {
                 .or_filter(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
                 .or_filter(groups::access_all.eq(true)) //Access via group
                 .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .select(ciphers_collections::all_columns)
                 .distinct()
                 .load::<(CipherId, CollectionId)>(conn)

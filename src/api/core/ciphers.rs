@@ -6,6 +6,7 @@ use rocket::{
     Route,
     form::{Form, FromForm},
     fs::TempFile,
+    http::Status,
     serde::json::Json,
 };
 use serde_json::Value;
@@ -21,14 +22,14 @@ use crate::{
         DbConn, DbPool,
         models::{
             Archive, Attachment, AttachmentId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup,
-            CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, Membership,
-            MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
+            CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, KeyId,
+            Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
         },
     },
     util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
 };
 
-use super::folders::FolderData;
+use super::{folders::FolderData, sends::SIZE_525_MB};
 
 pub fn routes() -> Vec<Route> {
     // Note that many routes have an `admin` variant; this seems to be
@@ -161,13 +162,19 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     let policies_json: Vec<Value> =
         OrgPolicy::find_confirmed_by_user(&headers.user.uuid, &conn).await.iter().map(OrgPolicy::to_json).collect();
 
+    let policies_new_json: Vec<Value> = OrgPolicy::find_accepted_and_confirmed_by_user(&headers.user.uuid, &conn)
+        .await
+        .iter()
+        .map(OrgPolicy::to_json)
+        .collect();
+
     let domains_json = if data.exclude_domains {
         Value::Null
     } else {
         api::core::get_eq_domains(&headers, true).into_inner()
     };
 
-    // This is very similar to the the userDecryptionOptions sent in connect/token,
+    // This is very similar to the userDecryptionOptions sent in connect/token,
     // but as of 2025-12-19 they're both using different casing conventions.
     let has_master_password = !headers.user.password_hash.is_empty();
     let master_password_unlock = if has_master_password {
@@ -193,11 +200,13 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "folders": folders_json,
         "collections": collections_json,
         "policies": policies_json,
+        "policiesNew": policies_new_json,
         "ciphers": ciphers_json,
         "domains": domains_json,
         "sends": sends_json,
         "userDecryption": {
             "masterPasswordUnlock": master_password_unlock,
+            "userKeyId": headers.user.key_id,
         },
         "object": "sync"
     })))
@@ -260,12 +269,19 @@ pub struct CipherData {
 
     key: Option<String>,
 
+    pub encrypted_for: UserId, // Added in web-v2025.6.0
+    // Added in web-v2025.8.1, Optional for compat
+    pub encrypted_by_key_id: Option<KeyId>,
+
     /*
     Login = 1,
     SecureNote = 2,
     Card = 3,
     Identity = 4,
     SshKey = 5
+    BankAccount = 6
+    DriversLicense = 7
+    Passport = 8
     */
     pub r#type: i32,
     pub name: String,
@@ -278,6 +294,9 @@ pub struct CipherData {
     card: Option<Value>,
     identity: Option<Value>,
     ssh_key: Option<Value>,
+    bank_account: Option<Value>,
+    drivers_license: Option<Value>,
+    passport: Option<Value>,
 
     favorite: Option<bool>,
     reprompt: Option<i32>,
@@ -333,6 +352,10 @@ async fn post_ciphers_create(
 ) -> JsonResult {
     let mut data: ShareCipherData = data.into_inner();
 
+    if data.cipher.encrypted_for != headers.user.uuid {
+        err_code!("Invalid user cipher", Status::UnprocessableEntity.code);
+    }
+
     // This check is usually only needed in update_cipher_from_data(), but we
     // need it here as well to avoid creating an empty cipher in the call to
     // cipher.save() below.
@@ -361,6 +384,17 @@ async fn post_ciphers_create(
 #[post("/ciphers", data = "<data>")]
 async fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     let mut data: CipherData = data.into_inner();
+
+    if data.encrypted_for != headers.user.uuid {
+        err_code!("Invalid user cipher", Status::UnprocessableEntity.code);
+    }
+
+    if let Some(cipher_key_id) = &data.encrypted_by_key_id
+        && let Some(user_key_id) = &headers.user.key_id
+        && cipher_key_id != user_key_id
+    {
+        err_code!("Invalid key cipher", Status::UnprocessableEntity.code);
+    }
 
     // The web/browser clients set this field to null as expected, but the
     // mobile clients seem to set the invalid value `0001-01-01T00:00:00`,
@@ -407,10 +441,10 @@ pub async fn update_cipher_from_data(
     // We do not mind which data is in it, the keep our model more flexible when there are upstream changes.
     // But, we at least know we do not need to store and return this specific key.
     fn clean_cipher_data(mut json_data: Value) -> Value {
-        if json_data.is_array() {
-            json_data.as_array_mut().unwrap().iter_mut().for_each(|ref mut f| {
-                f.as_object_mut().unwrap().remove("response");
-            });
+        if let Some(items) = json_data.as_array_mut() {
+            for item in items.iter_mut().filter_map(Value::as_object_mut) {
+                item.remove("response");
+            }
         }
         json_data
     }
@@ -452,9 +486,10 @@ pub async fn update_cipher_from_data(
             Some(member) => {
                 // A non-empty list of collections implies the caller already validated the user's write
                 // access to them, so we can move the cipher into the organization on that basis.
+                // Write access to the cipher itself only counts when it already belongs to this organization.
                 if shared_to_collections.as_ref().is_some_and(|cols| !cols.is_empty())
                     || member.has_full_access()
-                    || cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await
+                    || (!transfer_cipher && cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await)
                 {
                     cipher.organization_uuid = Some(org_id);
                     // After some discussion in PR #1329 re-added the user_uuid = None again.
@@ -510,12 +545,17 @@ pub async fn update_cipher_from_data(
         3 => data.card,
         4 => data.identity,
         5 => data.ssh_key,
+        6 => data.bank_account,
+        7 => data.drivers_license,
+        8 => data.passport,
         _ => err!("Invalid type"),
     };
 
     let type_data = if let Some(mut data) = type_data_opt {
         // Remove the 'Response' key from the base object.
-        data.as_object_mut().unwrap().remove("response");
+        if let Some(data_obj) = data.as_object_mut() {
+            data_obj.remove("response");
+        }
         // Remove the 'Response' key from every Uri.
         if data["uris"].is_array() {
             data["uris"] = clean_cipher_data(data["uris"].clone());
@@ -537,11 +577,12 @@ pub async fn update_cipher_from_data(
     cipher.move_to_folder(data.folder_id, &headers.user.uuid, conn).await?;
     cipher.set_favorite(data.favorite, &headers.user.uuid, conn).await?;
 
-    if let Some(dt_str) = data.archived_date {
-        match NaiveDateTime::parse_from_str(&dt_str, "%+") {
+    match data.archived_date {
+        Some(dt_str) => match NaiveDateTime::parse_from_str(&dt_str, "%+") {
             Ok(dt) => cipher.set_archived_at(dt, &headers.user.uuid, conn).await?,
             Err(err) => warn!("Error parsing ArchivedDate '{dt_str}': {err}"),
-        }
+        },
+        None => cipher.unarchive(&headers.user.uuid, conn).await?,
     }
 
     if ut != UpdateType::None {
@@ -553,16 +594,8 @@ pub async fn update_cipher_from_data(
                 (_, _) => EventType::CipherUpdated,
             };
 
-            log_event(
-                event_type as i32,
-                &cipher.uuid,
-                org_id,
-                &headers.user.uuid,
-                headers.device.atype,
-                &headers.ip.ip,
-                conn,
-            )
-            .await;
+            log_event(event_type, &cipher.uuid, org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, conn)
+                .await;
         }
         nt.send_cipher_update(
             ut,
@@ -850,7 +883,7 @@ async fn post_collections_update(
     .await;
 
     log_event(
-        EventType::CipherUpdatedCollections as i32,
+        EventType::CipherUpdatedCollections,
         &cipher.uuid,
         org_uuid,
         &headers.user.uuid,
@@ -870,7 +903,7 @@ async fn put_collections_admin(
     headers: Headers,
     conn: DbConn,
     nt: Notify<'_>,
-) -> EmptyResult {
+) -> JsonResult {
     post_collections_admin(cipher_id, data, headers, conn, nt).await
 }
 
@@ -881,7 +914,7 @@ async fn post_collections_admin(
     headers: Headers,
     conn: DbConn,
     nt: Notify<'_>,
-) -> EmptyResult {
+) -> JsonResult {
     let data: CollectionsAdminData = data.into_inner();
 
     let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await else {
@@ -930,7 +963,7 @@ async fn post_collections_admin(
     .await;
 
     log_event(
-        EventType::CipherUpdatedCollections as i32,
+        EventType::CipherUpdatedCollections,
         &cipher.uuid,
         org_uuid,
         &headers.user.uuid,
@@ -940,7 +973,7 @@ async fn post_collections_admin(
     )
     .await;
 
-    Ok(())
+    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::Organization, &conn).await?))
 }
 
 #[derive(Deserialize)]
@@ -1152,6 +1185,10 @@ async fn post_attachment_v2(
     if file_size < 0 {
         err!("Attachment size can't be negative")
     }
+    // Matches the "file" upload limit in main.rs, nothing larger can be uploaded
+    if file_size > SIZE_525_MB {
+        err!("Max file size is 525 MB.")
+    }
     let attachment_id = crypto::generate_attachment_id();
     let attachment =
         Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.file_name, file_size, Some(data.key));
@@ -1335,7 +1372,7 @@ async fn save_attachment(
 
     if let Some(org_id) = &cipher.organization_uuid {
         log_event(
-            EventType::CipherAttachmentCreated as i32,
+            EventType::CipherAttachmentCreated,
             &cipher.uuid,
             org_id,
             &headers.user.uuid,
@@ -1696,7 +1733,7 @@ async fn purge_org_vault(
             nt.send_user_update(UpdateType::SyncVault, &user, headers.device.push_uuid.as_ref(), &conn).await;
 
             log_event(
-                EventType::OrganizationPurgedVault as i32,
+                EventType::OrganizationPurgedVault,
                 &organization.org_id,
                 &organization.org_id,
                 &user.uuid,
@@ -1824,9 +1861,9 @@ async fn delete_cipher_by_uuid(
         let event_type = if *delete_options == CipherDeleteOptions::SoftSingle
             || *delete_options == CipherDeleteOptions::SoftMulti
         {
-            EventType::CipherSoftDeleted as i32
+            EventType::CipherSoftDeleted
         } else {
-            EventType::CipherDeleted as i32
+            EventType::CipherDeleted
         };
 
         log_event(event_type, &cipher.uuid, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, conn)
@@ -1839,7 +1876,7 @@ async fn delete_cipher_by_uuid(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CipherIdsData {
-    ids: Vec<CipherId>,
+    ids: HashSet<CipherId>,
 }
 
 async fn delete_multiple_ciphers(
@@ -1895,7 +1932,7 @@ async fn restore_cipher_by_uuid(
 
     if let Some(org_id) = &cipher.organization_uuid {
         log_event(
-            EventType::CipherRestored as i32,
+            EventType::CipherRestored,
             &cipher.uuid.clone(),
             org_id,
             &headers.user.uuid,
@@ -1972,7 +2009,7 @@ async fn delete_cipher_attachment_by_id(
 
     if let Some(ref org_id) = cipher.organization_uuid {
         log_event(
-            EventType::CipherAttachmentDeleted as i32,
+            EventType::CipherAttachmentDeleted,
             &cipher.uuid,
             org_id,
             &headers.user.uuid,
@@ -2150,8 +2187,15 @@ impl CipherSyncData {
             }
         }
 
+        // Generate a HashMap with the Organization UUID as key and the Membership record
+        let members: HashMap<OrganizationId, Membership> = Membership::find_confirmed_by_user(user_id, conn)
+            .await
+            .into_iter()
+            .map(|m| (m.org_uuid.clone(), m))
+            .collect();
+
         // Generate a list of Cipher UUID's containing a Vec with one or more Attachment records
-        let orgs = Membership::get_orgs_by_user(user_id, conn).await;
+        let orgs: Vec<OrganizationId> = members.keys().cloned().collect();
         let attachments = Attachment::find_all_by_user_and_orgs(user_id, &orgs, conn).await;
         let mut cipher_attachments: HashMap<CipherId, Vec<Attachment>> = HashMap::with_capacity(attachments.len());
         for attachment in attachments {
@@ -2165,13 +2209,6 @@ impl CipherSyncData {
         for (cipher, collection) in user_cipher_collections {
             cipher_collections.entry(cipher).or_default().push(collection);
         }
-
-        // Generate a HashMap with the Organization UUID as key and the Membership record
-        let members: HashMap<OrganizationId, Membership> = Membership::find_confirmed_by_user(user_id, conn)
-            .await
-            .into_iter()
-            .map(|m| (m.org_uuid.clone(), m))
-            .collect();
 
         // Generate a HashMap with the User_Collections UUID as key and the CollectionUser record
         let user_collections: HashMap<CollectionId, CollectionUser> = CollectionUser::find_by_user(user_id, conn)

@@ -61,7 +61,7 @@ impl Attachment {
             let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
             Ok(format!("{host}/attachments/{}/{}?token={token}", self.cipher_uuid, self.id))
         } else {
-            Ok(operator.presign_read(&self.get_file_path(), Duration::from_mins(5)).await?.uri().to_string())
+            Ok(operator.presign_read(&self.get_file_path(), Duration::from_mins(1)).await?.uri().to_string())
         }
     }
 
@@ -82,24 +82,16 @@ impl Attachment {
 impl Attachment {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(attachments::table)
+            mysql {
+                diesel::insert_into(attachments::table)
                     .values(self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(attachments::table)
-                            .filter(attachments::id.eq(&self.id))
-                            .set(self)
-                            .execute(conn)
-                            .map_res("Error saving attachment")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving attachment")
+                    .map_res("Error saving attachment")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(attachments::table)
                     .values(self)
                     .on_conflict(attachments::id)
