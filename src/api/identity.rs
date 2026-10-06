@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::{
-        ApiResult, EmptyResult, JsonResult,
+        ApiResult, EmptyResult, JsonResult, Notify,
         core::{
             accounts::{PreloginData, RegisterData, kdf_upgrade, prelogin, register},
             log_user_event,
@@ -1097,9 +1097,9 @@ async fn register_verification_email(
 }
 
 #[post("/accounts/register/finish", data = "<data>")]
-async fn register_finish(data: Json<RegisterData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+async fn register_finish(data: Json<RegisterData>, ip: ClientIp, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
-    register(data, conn).await
+    register(data, conn, nt).await
 }
 
 // https://github.com/bitwarden/jslib/blob/master/common/src/models/request/tokenRequest.ts
