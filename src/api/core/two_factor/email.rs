@@ -14,7 +14,10 @@ use crate::{
     crypto,
     db::{
         DbConn,
-        models::{AuthRequest, AuthRequestId, DeviceId, EventType, TwoFactor, TwoFactorType, User, UserId},
+        models::{
+            AuthRequest, AuthRequestId, DeviceId, EventType, TwoFactor, TwoFactorIncomplete, TwoFactorType, User,
+            UserId,
+        },
     },
     error::{Error, MapResult},
     mail,
@@ -94,6 +97,20 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
             {
                 err!("AuthRequest doesn't exist", "Invalid device, IP or code")
             }
+        } else if let Some(device_identifier) = &data.device_identifier {
+            // iOS/Android SSO logins send the email and device id but no password hash,
+            // so accept a device that has a pending 2FA login for this user
+            if TwoFactorIncomplete::find_by_user_and_device(&user.uuid, device_identifier, &conn).await.is_none() {
+                err!(
+                    "Username or password is incorrect. Try again",
+                    format!("IP: {}. Username: {}.", client_headers.ip.ip, email.escape_debug())
+                )
+            }
+            debug!(
+                "Email 2FA fallback: pending login. Username: {}. Device: {}.",
+                user.email,
+                device_identifier.to_string().escape_debug()
+            );
         } else {
             err!("No password hash has been submitted.")
         }
@@ -107,7 +124,7 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
         let Some(user) = User::find_by_device_for_email2fa(device_identifier, &conn).await else {
             err!(
                 "Username or password is incorrect. Try again",
-                format!("IP: {}. Device: {device_identifier}.", client_headers.ip.ip)
+                format!("IP: {}. Device: {}.", client_headers.ip.ip, device_identifier.to_string().escape_debug())
             )
         };
 
