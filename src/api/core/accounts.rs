@@ -74,7 +74,6 @@ pub fn routes() -> Vec<rocket::Route> {
         put_device_keys,
         post_device_keys,
         post_device_retrieve_keys,
-        post_devices_update_trust,
         post_devices_untrust,
         post_devices_lost_trust,
         get_tasks,
@@ -935,11 +934,7 @@ struct RotateAccountUnlockData {
     master_password_unlock_data: MasterPasswordUnlockData,
     organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
     /// The user key, re-wrapped for every device that unlocks the vault without a master password.
-    ///
-    /// Absent rather than empty tells the two generations of clients apart: one that sends this rotates
-    /// the trust of its devices right here, an older one does it afterwards through
-    /// `POST /devices/update-trust` and leaves this out entirely. See `post_rotatekey`.
-    device_key_unlock_data: Option<Vec<UpdateDeviceKeysData>>,
+    device_key_unlock_data: Vec<UpdateDeviceKeysData>,
 }
 
 #[derive(Deserialize)]
@@ -1139,10 +1134,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         &headers.user,
     )?;
 
-    let rotated_devices = match data.account_unlock_data.device_key_unlock_data.as_deref() {
-        Some(updates) => Some(validate_device_keydata(updates, &existing_devices)?),
-        None => None,
-    };
+    let rotated_devices = validate_device_keydata(&data.account_unlock_data.device_key_unlock_data, &existing_devices)?;
 
     // Update folder data
     for folder_data in data.account_data.folders {
@@ -1212,15 +1204,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // Every device holds the previous user key wrapped for itself, which unlocks nothing anymore. Settle
     // that here rather than after the account itself: the ciphers have already been rewritten under the
     // new user key, so a device holding the new one is the half that still works if what follows fails.
-    match rotated_devices {
-        // The current clients send the re-wrapped user key for every trusted device along with the
-        // rotation, so their trust survives it. Anything they left out is untrusted here.
-        Some(rotated) => Device::replace_trust(&headers.user.uuid, rotated, &conn).await?,
-        // A client old enough to leave the field out does this afterwards through
-        // `POST /devices/update-trust`. Until it does, no device counts as trusted, so the worst it
-        // costs its owner is another login rather than an unlock that fails.
-        None => Device::invalidate_wrapped_user_keys(&headers.user.uuid, &conn).await?,
-    }
+    Device::replace_trust(&headers.user.uuid, rotated_devices, &conn).await?;
 
     // Update user data
     let mut user = headers.user;
@@ -1905,126 +1889,6 @@ async fn post_device_retrieve_keys(device_id: DeviceId, headers: Headers, conn: 
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DeviceTrustUpdateData {
-    encrypted_user_key: String,
-    encrypted_public_key: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OtherDeviceTrustUpdateData {
-    device_id: DeviceId,
-    #[serde(flatten)]
-    keys: DeviceTrustUpdateData,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct UpdateDevicesTrustData {
-    #[serde(flatten)]
-    secret: PasswordOrOtpData,
-    current_device: DeviceTrustUpdateData,
-    #[serde(default)]
-    other_devices: Vec<OtherDeviceTrustUpdateData>,
-}
-
-/// What `POST /devices/update-trust` has to write.
-///
-/// `rewrapped` holds the user key freshly wrapped for each device that is to keep or regain its trust,
-/// `untrusted` the trusted devices that were left out and therefore lose theirs. A device in neither
-/// list keeps whatever it holds.
-struct DeviceTrustUpdate {
-    rewrapped: Vec<(DeviceId, String, String)>,
-    untrusted: Vec<DeviceId>,
-}
-
-/// Works out what `POST /devices/update-trust` has to write.
-///
-/// Only a device that can unlock right now loses anything by being left out; one that cannot is left
-/// alone rather than wiped. After a key rotation by a client too old to send `deviceKeyUnlockData` that
-/// is a device still holding its own key pair, which is the only thing a later call could restore its
-/// trust from, so clearing it here would strand it for good. Mirrors `UpdateDevicesTrustAsync` upstream,
-/// which skips every device that is not trusted.
-/// https://github.com/bitwarden/server/blob/main/src/Core/Services/Implementations/DeviceService.cs
-///
-/// Everything is checked before any of it is used, so a request that names a device the user does not
-/// own is refused as a whole rather than applied in part.
-fn validate_device_trust_update(
-    current_device_id: &DeviceId,
-    current_device: DeviceTrustUpdateData,
-    other_devices: Vec<OtherDeviceTrustUpdateData>,
-    existing_devices: &[Device],
-) -> ApiResult<DeviceTrustUpdate> {
-    validate_enc_strings(&[
-        ("encryptedUserKey", &current_device.encrypted_user_key),
-        ("encryptedPublicKey", &current_device.encrypted_public_key),
-    ])?;
-
-    if !existing_devices.iter().any(|device| &device.uuid == current_device_id) {
-        err!("No device found")
-    }
-
-    // The current device is written whatever it holds now, as upstream does: it is the one the
-    // caller is speaking from and just proved it can unlock.
-    let mut rewrapped =
-        vec![(current_device_id.clone(), current_device.encrypted_user_key, current_device.encrypted_public_key)];
-    let mut listed: HashSet<DeviceId> = HashSet::from([current_device_id.clone()]);
-
-    for other in other_devices {
-        if !listed.insert(other.device_id.clone()) {
-            if &other.device_id == current_device_id {
-                err!("The current device cannot also be part of the optional rotation")
-            }
-            err!("A device was listed more than once in the rotation")
-        }
-
-        let Some(device) = existing_devices.iter().find(|device| device.uuid == other.device_id) else {
-            err!(format!("Device {} does not belong to this user", other.device_id))
-        };
-
-        validate_enc_strings(&[
-            ("encryptedUserKey", &other.keys.encrypted_user_key),
-            ("encryptedPublicKey", &other.keys.encrypted_public_key),
-        ])?;
-
-        // The two keys are wrapped for the device's key pair, so without it there is nothing they
-        // could belong to. Such a device is passed over rather than written.
-        if device.holds_private_key() {
-            rewrapped.push((other.device_id, other.keys.encrypted_user_key, other.keys.encrypted_public_key));
-        }
-    }
-
-    let untrusted = existing_devices
-        .iter()
-        .filter(|device| device.is_trusted() && !listed.contains(&device.uuid))
-        .map(|device| device.uuid.clone())
-        .collect();
-
-    Ok(DeviceTrustUpdate {
-        rewrapped,
-        untrusted,
-    })
-}
-
-/// Re-wraps the user key for the trusted devices after it was replaced by a key rotation.
-///
-/// Every trusted device that is not listed loses its trust: its stored copy of the user key is the old
-/// one. The current clients do this as part of the rotation itself and never come here; this is the route
-/// the older ones take, and the only one that can rotate a single device's trust. See `post_rotatekey`.
-#[post("/devices/update-trust", data = "<data>")]
-async fn post_devices_update_trust(data: Json<UpdateDevicesTrustData>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let data = data.into_inner();
-
-    data.secret.validate(&headers.user, true, &conn).await?;
-
-    let devices = Device::find_by_user(&headers.user.uuid, &conn).await;
-    let update = validate_device_trust_update(&headers.device.uuid, data.current_device, data.other_devices, &devices)?;
-
-    Device::update_trust(&headers.user.uuid, update.rewrapped, update.untrusted, &conn).await
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct UntrustDevicesData {
     devices: Vec<DeviceId>,
 }
@@ -2517,8 +2381,7 @@ mod tests {
         device
     }
 
-    /// A device left holding nothing but its own key pair, which is what a rotation by a client too old
-    /// to send `deviceKeyUnlockData` leaves behind. It does not unlock anything as it stands.
+    /// A device with an incomplete set of trust keys cannot unlock the vault.
     fn half_trusted(id: &str) -> Device {
         let mut device = device(id, true);
         device.encrypted_user_key = None;
@@ -2578,6 +2441,28 @@ mod tests {
             let err = validate_device_keydata(&updates, &devices).unwrap_err();
             assert!(format!("{err}").contains(expected), "expected {expected:?}, got {err}");
         }
+    }
+
+    #[test]
+    fn rotation_requires_device_key_unlock_data() {
+        let mut unlock_data = serde_json::json!({
+            "emergencyAccessUnlockData": [],
+            "masterPasswordUnlockData": {
+                "kdfType": 0,
+                "kdfIterations": 600_000,
+                "email": "user@example.com",
+                "masterKeyAuthenticationHash": "hash",
+                "masterKeyEncryptedUserKey": "key"
+            },
+            "organizationAccountRecoveryUnlockData": [],
+            "deviceKeyUnlockData": []
+        });
+
+        let data: RotateAccountUnlockData = serde_json::from_value(unlock_data.clone()).unwrap();
+        assert!(data.device_key_unlock_data.is_empty());
+
+        unlock_data.as_object_mut().unwrap().remove("deviceKeyUnlockData");
+        assert!(serde_json::from_value::<RotateAccountUnlockData>(unlock_data).is_err());
     }
 
     #[test]
