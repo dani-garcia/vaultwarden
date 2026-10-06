@@ -69,7 +69,7 @@ export async function logUser(
                     timestamp = timestamp + (totp.period - (Math.floor(timestamp / 1000) % totp.period) + 1) * 1000;
                     code = totp.generate({timestamp});
                 } else if( options.mail2fa ){
-                    code = await retrieveEmailCode(test, page, mailBuffer);
+                    code = await retrieveEmailCode(test, page, options.mailBuffer);
                 }
 
                 await page.getByLabel(/Verification code/).fill(code);

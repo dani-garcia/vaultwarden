@@ -28,24 +28,28 @@ pub struct TwoFactorClaims<T> {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuthenticatorClaims {
     #[serde(rename = "authenticator_key")]
     pub key: String,
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DuoClaims {
     #[serde(rename = "duo_data")]
     pub data: Option<DuoData>,
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WebauthnClaims {
     #[serde(rename = "webauthn_keys")]
     pub keys: Vec<i32>,
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct YubikeyClaims {
     #[serde(rename = "yubi_keys")]
     pub keys: Vec<String>,
@@ -100,6 +104,7 @@ impl DuoData {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EmailClaims {
     pub email: Option<String>,
 }
@@ -222,4 +227,55 @@ pub fn validate_yubikey(token: &str, user_id: &UserId, keys: &Vec<String>, enabl
         err!("Invalid verification token: Invalid keys");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, from_value, to_value};
+
+    fn token<T: Serialize>(claims: T) -> Value {
+        to_value(TwoFactorClaims {
+            nbf: 0,
+            exp: 0,
+            iss: String::new(),
+            sub: UserId::from(String::from("4ff0f0a4-0aa4-4c1d-9d43-1f2bd4d5e8b1")),
+            enabled: false,
+            claims,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn claims_only_parse_as_their_own_provider() {
+        let tokens = [
+            token(AuthenticatorClaims {
+                key: String::from("JBSWY3DPEHPK3PXP"),
+            }),
+            token(DuoClaims {
+                data: None,
+            }),
+            token(WebauthnClaims {
+                keys: vec![1],
+            }),
+            token(YubikeyClaims {
+                keys: Vec::new(),
+            }),
+            token(EmailClaims {
+                email: None,
+            }),
+        ];
+        for (issued, token) in tokens.iter().enumerate() {
+            let parsed = [
+                from_value::<TwoFactorClaims<AuthenticatorClaims>>(token.clone()).is_ok(),
+                from_value::<TwoFactorClaims<DuoClaims>>(token.clone()).is_ok(),
+                from_value::<TwoFactorClaims<WebauthnClaims>>(token.clone()).is_ok(),
+                from_value::<TwoFactorClaims<YubikeyClaims>>(token.clone()).is_ok(),
+                from_value::<TwoFactorClaims<EmailClaims>>(token.clone()).is_ok(),
+            ];
+            for (checked, ok) in parsed.into_iter().enumerate() {
+                assert_eq!(ok, issued == checked, "token {issued} parsed as {checked}");
+            }
+        }
+    }
 }
