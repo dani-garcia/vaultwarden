@@ -257,6 +257,29 @@ impl User {
 
 /// Database methods
 impl User {
+    pub fn verified(&self) -> bool {
+        !CONFIG.mail_enabled() || self.verified_at.is_some()
+    }
+
+    /// The `accountKeys` object (upstream's `PrivateKeysResponseModel`), null without a key pair
+    pub fn account_keys_json(&self) -> Value {
+        if self.private_key.is_some() {
+            json!({
+                "publicKeyEncryptionKeyPair": {
+                    "wrappedPrivateKey": self.private_key,
+                    "publicKey": self.public_key,
+                    "signedPublicKey": null,
+                    "object": "publicKeyEncryptionKeyPair",
+                },
+                "securityState": null,
+                "signatureKeyPair": null,
+                "object": "privateKeys"
+            })
+        } else {
+            Value::Null
+        }
+    }
+
     pub async fn to_json(&self, conn: &DbConn) -> Value {
         let mut orgs_json = Vec::new();
         for c in Membership::find_confirmed_by_user(&self.uuid, conn).await {
@@ -277,21 +300,7 @@ impl User {
             UserStatus::Enabled
         };
 
-        let account_keys = if self.private_key.is_some() {
-            json!({
-                "publicKeyEncryptionKeyPair": {
-                    "wrappedPrivateKey": self.private_key,
-                    "publicKey": self.public_key,
-                    "signedPublicKey": null,
-                    "object": "publicKeyEncryptionKeyPair",
-                },
-                "securityState": null,
-                "signatureKeyPair": null,
-                "object": "privateKeys"
-            })
-        } else {
-            Value::Null
-        };
+        let account_keys = self.account_keys_json();
 
         json!({
             "_status": status as i32,
@@ -299,7 +308,7 @@ impl User {
             "id": self.uuid,
             "name": self.name,
             "email": self.email,
-            "emailVerified": !CONFIG.mail_enabled() || self.verified_at.is_some(),
+            "emailVerified": self.verified(),
             "premium": true,
             "premiumFromOrganization": false,
             "culture": "en-US",
@@ -321,7 +330,7 @@ impl User {
 
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         if !crate::util::is_valid_email(&self.email) {
-            err!(format!("User email {} is not a valid email address", self.email))
+            err!(format!("User email {} is not a valid email address", self.email.escape_debug()))
         }
 
         self.updated_at = Utc::now().naive_utc();
@@ -469,7 +478,7 @@ impl Invitation {
 
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         if !crate::util::is_valid_email(&self.email) {
-            err!(format!("Invitation email {} is not a valid email address", self.email))
+            err!(format!("Invitation email {} is not a valid email address", self.email.escape_debug()))
         }
 
         db_run! { conn:

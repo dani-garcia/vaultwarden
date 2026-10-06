@@ -61,7 +61,7 @@ impl Attachment {
             let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
             Ok(format!("{host}/attachments/{}/{}?token={token}", self.cipher_uuid, self.id))
         } else {
-            Ok(operator.presign_read(&self.get_file_path(), Duration::from_mins(5)).await?.uri().to_string())
+            Ok(operator.presign_read(&self.get_file_path(), Duration::from_mins(1)).await?.uri().to_string())
         }
     }
 
