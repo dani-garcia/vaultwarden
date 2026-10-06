@@ -675,7 +675,8 @@ make_config! {
         /// other address use the remote IP instead, so a client can't spoof the header.
         /// Either the string "local" (the default, any non-global address, which covers a reverse proxy
         /// running on the same host or container network), the string "all" to accept it from anywhere,
-        /// or a comma separated list of IPs and CIDR ranges.
+        /// or a comma separated list of IPs and CIDR ranges. For a list header like X-Forwarded-For, the
+        /// client IP is the rightmost address that isn't a trusted proxy, so list every proxy in the chain.
         ip_header_trusted_proxies: String, true, def,    "local".to_owned();
         /// Icon service |> The predefined icon services are: internal, bitwarden, duckduckgo, google.
         /// To specify a custom icon service, set a URL template with exactly one instance of `{}`,
@@ -1265,6 +1266,14 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         err!("`AUTH_REQUEST_PURGE_SCHEDULE` is not a valid cron expression")
     }
 
+    if !cfg.duo_context_purge_schedule.is_empty() && cfg.duo_context_purge_schedule.parse::<Schedule>().is_err() {
+        err!("`DUO_CONTEXT_PURGE_SCHEDULE` is not a valid cron expression")
+    }
+
+    if !cfg.purge_incomplete_sso_auth.is_empty() && cfg.purge_incomplete_sso_auth.parse::<Schedule>().is_err() {
+        err!("`PURGE_INCOMPLETE_SSO_AUTH` is not a valid cron expression")
+    }
+
     if !cfg.disable_admin_token {
         match cfg.admin_token.as_ref() {
             Some(t) if t.starts_with("$argon2") => {
@@ -1726,6 +1735,7 @@ where
     reg!("email/protected_action", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
+    reg!("email/recover_twofactor", ".html");
     reg!("email/register_verify_email", ".html");
     reg!("email/send_2fa_removed_from_org", ".html");
     reg!("email/send_emergency_access_invite", ".html");
