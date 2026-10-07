@@ -16,9 +16,9 @@ use crate::{
         DbConn,
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, Device,
-            EventType, Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus,
-            MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, TwoFactor,
-            TwoFactorType, User, UserId,
+            EventType, Group, GroupId, GroupUser, Invitation, MaximumVaultTimeoutPolicyData, Membership, MembershipId,
+            MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
+            OrganizationId, TwoFactor, TwoFactorType, User, UserId,
         },
     },
     mail,
@@ -2033,11 +2033,33 @@ async fn put_policy(
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let data: PolicyData = data.into_inner().policy;
+    let mut data: PolicyData = data.into_inner().policy;
 
     let Some(pol_type_enum) = OrgPolicyType::from_i32(pol_type) else {
         err!("Invalid or unsupported policy type")
     };
+
+    if pol_type_enum == OrgPolicyType::MaximumVaultTimeout && data.enabled {
+        if !OrgPolicy::is_enabled(&org_id, OrgPolicyType::SingleOrg, &conn).await {
+            err!("Single Organization policy is not enabled. It is mandatory for this policy to be enabled.")
+        }
+
+        let Some(timeout_data) = data.data.take() else {
+            err!("Vault Timeout policy data is required.")
+        };
+        let mut timeout_data: MaximumVaultTimeoutPolicyData = serde_json::from_value(timeout_data)?;
+        if let Err(message) = timeout_data.validate_and_normalize() {
+            err!(message)
+        }
+        data.data = Some(serde_json::to_value(timeout_data)?);
+    }
+
+    if pol_type_enum == OrgPolicyType::SingleOrg
+        && !data.enabled
+        && OrgPolicy::is_enabled(&org_id, OrgPolicyType::MaximumVaultTimeout, &conn).await
+    {
+        err!("Vault Timeout policy is enabled. It is not allowed to disable this policy.")
+    }
 
     // Bitwarden only allows the Reset Password policy when Single Org policy is enabled
     // Vaultwarden encouraged to use multiple orgs instead of groups because groups were not available in the past
@@ -2045,29 +2067,19 @@ async fn put_policy(
     // We put this behind a config option to prevent breaking current installation.
     // Maybe we want to enable this by default in the future, but currently it is disabled by default.
     if CONFIG.enforce_single_org_with_reset_pw_policy() {
-        if pol_type_enum == OrgPolicyType::ResetPassword && data.enabled {
-            let single_org_policy_enabled =
-                match OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::SingleOrg, &conn).await {
-                    Some(p) => p.enabled,
-                    None => false,
-                };
-
-            if !single_org_policy_enabled {
-                err!("Single Organization policy is not enabled. It is mandatory for this policy to be enabled.")
-            }
+        if pol_type_enum == OrgPolicyType::ResetPassword
+            && data.enabled
+            && !OrgPolicy::is_enabled(&org_id, OrgPolicyType::SingleOrg, &conn).await
+        {
+            err!("Single Organization policy is not enabled. It is mandatory for this policy to be enabled.")
         }
 
         // Also prevent the Single Org Policy to be disabled if the Reset Password policy is enabled
-        if pol_type_enum == OrgPolicyType::SingleOrg && !data.enabled {
-            let reset_pw_policy_enabled =
-                match OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::ResetPassword, &conn).await {
-                    Some(p) => p.enabled,
-                    None => false,
-                };
-
-            if reset_pw_policy_enabled {
-                err!("Account recovery policy is enabled. It is not allowed to disable this policy.")
-            }
+        if pol_type_enum == OrgPolicyType::SingleOrg
+            && !data.enabled
+            && OrgPolicy::is_enabled(&org_id, OrgPolicyType::ResetPassword, &conn).await
+        {
+            err!("Account recovery policy is enabled. It is not allowed to disable this policy.")
         }
     }
 

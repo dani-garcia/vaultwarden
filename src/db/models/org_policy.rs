@@ -38,8 +38,8 @@ pub enum OrgPolicyType {
     DisableSend = 6,
     SendOptions = 7,
     ResetPassword = 8,
-    // MaximumVaultTimeout = 9, // Not supported (Not AGPLv3 Licensed)
-    // DisablePersonalVaultExport = 10, // Not supported (Not AGPLv3 Licensed)
+    MaximumVaultTimeout = 9,
+    DisablePersonalVaultExport = 10,
     // ActivateAutofill = 11,
     // AutomaticAppLogIn = 12,
     // FreeFamiliesSponsorshipPolicy = 13,
@@ -50,6 +50,60 @@ pub enum OrgPolicyType {
     // AutoConfirm = 18, // Not supported (not implemented yet)
     // BlockClaimedDomainAccountCreation = 19, // Not supported (Not AGPLv3 Licensed)
     OrganizationUserNotification = 20,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum MaximumVaultTimeoutType {
+    Immediately,
+    Custom,
+    OnSystemLock,
+    OnAppRestart,
+    Never,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum MaximumVaultTimeoutAction {
+    Lock,
+    LogOut,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MaximumVaultTimeoutPolicyData {
+    #[serde(rename = "type")]
+    pub timeout_type: Option<MaximumVaultTimeoutType>,
+    pub minutes: u32,
+    pub action: Option<MaximumVaultTimeoutAction>,
+}
+
+impl Default for MaximumVaultTimeoutPolicyData {
+    fn default() -> Self {
+        Self {
+            timeout_type: Some(MaximumVaultTimeoutType::Custom),
+            minutes: 8 * 60,
+            action: None,
+        }
+    }
+}
+
+impl MaximumVaultTimeoutPolicyData {
+    /// Validate admin-supplied data and normalize the fallback expected by clients predating the type field.
+    pub fn validate_and_normalize(&mut self) -> Result<(), &'static str> {
+        let timeout_type = self.timeout_type.unwrap_or(MaximumVaultTimeoutType::Custom);
+        self.timeout_type = Some(timeout_type);
+
+        if timeout_type == MaximumVaultTimeoutType::Custom && self.minutes == 0 {
+            return Err("The custom vault timeout must be at least one minute.");
+        }
+        if timeout_type != MaximumVaultTimeoutType::Custom {
+            // Bitwarden writes an eight-hour fallback for non-custom types so older clients stay safe.
+            self.minutes = 8 * 60;
+        }
+
+        Ok(())
+    }
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Models/Data/Organizations/Policies/SendOptionsPolicyData.cs#L5
@@ -220,6 +274,10 @@ impl OrgPolicy {
                 .ok()
         })
         .await
+    }
+
+    pub async fn is_enabled(org_uuid: &OrganizationId, policy_type: OrgPolicyType, conn: &DbConn) -> bool {
+        Self::find_by_org_and_type(org_uuid, policy_type, conn).await.is_some_and(|policy| policy.enabled)
     }
 
     pub async fn delete_all_by_organization(org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
