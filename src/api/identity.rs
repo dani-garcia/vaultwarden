@@ -545,7 +545,7 @@ async fn authenticated_response(
             // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "MasterKeyEncryptedUserKey": user.akey,
             "MasterKeyWrappedUserKey": user.akey,
-            "Salt": user.email
+            "Salt": user.master_password_salt()
         })
     } else {
         Value::Null
@@ -691,7 +691,7 @@ async fn user_api_key_login(
             // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "MasterKeyEncryptedUserKey": user.akey,
             "MasterKeyWrappedUserKey": user.akey,
-            "Salt": user.email
+            "Salt": user.master_password_salt()
         })
     } else {
         Value::Null
