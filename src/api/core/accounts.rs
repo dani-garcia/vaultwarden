@@ -22,8 +22,8 @@ use crate::{
         models::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
             EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, KeyId, Membership,
-            MembershipId, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, User, UserId,
-            UserKdfType,
+            MembershipId, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, SignatureAlgorithm,
+            User, UserId, UserKdfType, UserSignatureKeyPair,
         },
     },
     mail,
@@ -42,6 +42,7 @@ pub fn routes() -> Vec<rocket::Route> {
         post_profile,
         put_avatar,
         get_public_keys,
+        get_account_public_keys,
         get_keys,
         post_keys,
         post_password,
@@ -113,6 +114,9 @@ pub struct RegisterData {
     #[serde(alias = "userAsymmetricKeys")]
     keys: Option<KeysData>,
 
+    // Supersedes `keys`, and the only way a v2 account can be registered.
+    account_keys: Option<AccountKeysData>,
+
     master_password_hint: Option<String>,
 
     organization_user_id: Option<MembershipId>,
@@ -122,36 +126,6 @@ pub struct RegisterData {
     accept_emergency_access_invite_token: Option<String>,
     #[serde(alias = "token")]
     org_invite_token: Option<String>,
-}
-
-impl RegisterData {
-    fn hash(&self) -> String {
-        self.compat.fold(|rdc| &rdc.master_password_hash, |rdcu| &rdcu.master_password_authentication.hash).to_owned()
-    }
-
-    fn kdf(&self) -> &KDFData {
-        self.compat.fold(|rdc| &rdc.kdf, |rdcu| &rdcu.master_password_authentication.kdf)
-    }
-
-    fn key(&self) -> String {
-        self.compat.fold(|rdc| &rdc.key, |rdcu| &rdcu.master_password_unlock.key).to_owned()
-    }
-
-    // When comparing with salt, email need to be normalized:
-    //  - https://github.com/bitwarden/clients/blob/web-v2026.5.0/libs/common/src/key-management/master-password/services/master-password.service.ts#L171
-    fn unprocessable(&self) -> bool {
-        let mut unprocessable = false;
-        *self.compat.fold(
-            |_| &false,
-            |rdcu| {
-                let email = self.email.trim().to_lowercase();
-                unprocessable = rdcu.master_password_authentication.kdf != rdcu.master_password_unlock.kdf
-                    || rdcu.master_password_authentication.salt != email
-                    || rdcu.master_password_unlock.salt != email;
-                &unprocessable
-            },
-        )
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -193,6 +167,42 @@ impl RegisterDataCompat {
             RegisterDataCompat::RegisterDataCur(rdcu) => fcu(rdcu),
         }
     }
+
+    fn hash(&self) -> String {
+        self.fold(|rdc| &rdc.master_password_hash, |rdcu| &rdcu.master_password_authentication.hash).to_owned()
+    }
+
+    fn kdf(&self) -> &KDFData {
+        self.fold(|rdc| &rdc.kdf, |rdcu| &rdcu.master_password_authentication.kdf)
+    }
+
+    fn key(&self) -> String {
+        self.fold(|rdc| &rdc.key, |rdcu| &rdcu.master_password_unlock.key).to_owned()
+    }
+
+    /// The id of the user key, which only the current format carries.
+    fn key_id(&self) -> Option<KeyId> {
+        match self {
+            RegisterDataCompat::RegisterDataOld(_) => None,
+            RegisterDataCompat::RegisterDataCur(rdcu) => rdcu.master_password_unlock.contained_key_id.clone(),
+        }
+    }
+
+    // When comparing with salt, email need to be normalized:
+    //  - https://github.com/bitwarden/clients/blob/web-v2026.5.0/libs/common/src/key-management/master-password/services/master-password.service.ts#L171
+    fn unprocessable(&self, email: &str) -> bool {
+        let mut unprocessable = false;
+        *self.fold(
+            |_| &false,
+            |rdcu| {
+                let email = email.trim().to_lowercase();
+                unprocessable = rdcu.master_password_authentication.kdf != rdcu.master_password_unlock.kdf
+                    || rdcu.master_password_authentication.salt != email
+                    || rdcu.master_password_unlock.salt != email;
+                &unprocessable
+            },
+        )
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -200,6 +210,198 @@ impl RegisterDataCompat {
 struct KeysData {
     encrypted_private_key: String,
     public_key: String,
+}
+
+/// Upstream's implicit `[Required]` on a non-nullable string: present and not blank.
+fn required(value: Option<String>, field: &str) -> ApiResult<String> {
+    match value {
+        Some(value) if !value.trim().is_empty() => Ok(value),
+        _ => err!(format!("The {field} field is required.")),
+    }
+}
+
+/// The `accountKeys` payload: a v1 key pair, or v2 with a signature key pair and security state.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Core/KeyManagement/Models/Api/Request/AccountKeysRequestModel.cs#L6-L50>
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountKeysData {
+    // Required like upstream, but only used without `public_key_encryption_key_pair`
+    user_key_encrypted_account_private_key: Option<String>,
+    account_public_key: Option<String>,
+
+    public_key_encryption_key_pair: Option<PublicKeyEncryptionKeyPairData>,
+    signature_key_pair: Option<SignatureKeyPairData>,
+    security_state: Option<SecurityStateData>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicKeyEncryptionKeyPairData {
+    wrapped_private_key: String,
+    public_key: String,
+    signed_public_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SignatureKeyPairData {
+    signature_algorithm: String,
+    wrapped_signing_key: String,
+    verifying_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SecurityStateData {
+    security_state: String,
+    security_version: i32,
+}
+
+struct ValidatedAccountKeys {
+    private_key: String,
+    public_key: String,
+    v2: Option<ValidatedV2AccountKeys>,
+}
+
+struct ValidatedV2AccountKeys {
+    signed_public_key: String,
+    signing_key: String,
+    verifying_key: String,
+    signature_algorithm: SignatureAlgorithm,
+    security_state: String,
+    security_version: i32,
+}
+
+impl AccountKeysData {
+    /// Upstream's model checks, plus the v2 fields all or none: no client can unlock a partial v2 state.
+    fn validate(self) -> ApiResult<ValidatedAccountKeys> {
+        let top_private_key =
+            required(self.user_key_encrypted_account_private_key, "UserKeyEncryptedAccountPrivateKey")?;
+        let top_public_key = required(self.account_public_key, "AccountPublicKey")?;
+        let (private_key, public_key, signed_public_key) = match self.public_key_encryption_key_pair {
+            Some(key_pair) => (
+                required(Some(key_pair.wrapped_private_key), "WrappedPrivateKey")?,
+                required(Some(key_pair.public_key), "PublicKey")?,
+                key_pair.signed_public_key,
+            ),
+            // Older clients only send the top-level fields, which are always v1
+            None => (top_private_key, top_public_key, None),
+        };
+
+        if let Some(signature_key_pair) = &self.signature_key_pair {
+            required(Some(signature_key_pair.signature_algorithm.clone()), "SignatureAlgorithm")?;
+            required(Some(signature_key_pair.wrapped_signing_key.clone()), "WrappedSigningKey")?;
+            required(Some(signature_key_pair.verifying_key.clone()), "VerifyingKey")?;
+        }
+        if let Some(security_state) = &self.security_state {
+            required(Some(security_state.security_state.clone()), "SecurityState")?;
+            if security_state.security_state.encode_utf16().count() > 10_000 {
+                err!("The field SecurityState must be a string with a maximum length of 10000.")
+            }
+        }
+
+        let v2 = match (signed_public_key, self.signature_key_pair, self.security_state) {
+            (Some(signed_public_key), Some(signature_key_pair), Some(security_state)) => {
+                // Upstream fails on a null one, but takes an empty one that no client can unlock with
+                let signed_public_key = required(Some(signed_public_key), "SignedPublicKey")?;
+                let Some(signature_algorithm) = SignatureAlgorithm::parse(&signature_key_pair.signature_algorithm)
+                else {
+                    err!(format!(
+                        "Unsupported signature algorithm: {}",
+                        signature_key_pair.signature_algorithm.escape_debug()
+                    ))
+                };
+
+                Some(ValidatedV2AccountKeys {
+                    signed_public_key,
+                    signing_key: signature_key_pair.wrapped_signing_key,
+                    verifying_key: signature_key_pair.verifying_key,
+                    signature_algorithm,
+                    security_state: security_state.security_state,
+                    security_version: security_state.security_version,
+                })
+            }
+            (None, None, None) => None,
+            _ => err!(
+                "Invalid account keys: the signed public key, signature key pair and security state must either all be present or all be absent"
+            ),
+        };
+
+        Ok(ValidatedAccountKeys {
+            private_key,
+            public_key,
+            v2,
+        })
+    }
+}
+
+impl From<KeysData> for ValidatedAccountKeys {
+    fn from(keys: KeysData) -> Self {
+        Self {
+            private_key: keys.encrypted_private_key,
+            public_key: keys.public_key,
+            v2: None,
+        }
+    }
+}
+
+impl ValidatedAccountKeys {
+    /// The keys of a registration: `accountKeys` only for a v2 account, like upstream.
+    ///
+    /// Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Core/Auth/Models/Api/Request/Accounts/RegisterFinishRequestModel.cs#L77-L100>
+    fn for_registration(account_keys: Option<AccountKeysData>, keys: Option<KeysData>) -> ApiResult<Self> {
+        if let Some(account_keys) = account_keys {
+            let account_keys = account_keys.validate()?;
+            if account_keys.is_v2() {
+                return Ok(account_keys);
+            }
+        }
+        let Some(keys) = keys else {
+            err!("PublicKey and WrappedPrivateKey not found in RequestModel")
+        };
+        Ok(keys.into())
+    }
+
+    fn is_v2(&self) -> bool {
+        self.v2.is_some()
+    }
+
+    /// Sets the keys on the user, which then needs saving before [`Self::save_signature_key_pair`].
+    fn apply(&self, user: &mut User) -> EmptyResult {
+        user.private_key = Some(self.private_key.clone());
+        user.public_key = Some(self.public_key.clone());
+
+        user.signed_public_key = self.v2.as_ref().map(|v2| v2.signed_public_key.clone());
+        user.security_state = self.v2.as_ref().map(|v2| v2.security_state.clone());
+        user.security_version = self.v2.as_ref().map(|v2| v2.security_version);
+
+        Ok(())
+    }
+
+    /// Saves the signature key pair, which needs the user to exist for its foreign key.
+    async fn save_signature_key_pair(&self, user_id: &UserId, conn: &DbConn) -> EmptyResult {
+        // Skip if the account is v1, since v1 accounts don't have a signature key pair.
+        let Some(v2) = &self.v2 else {
+            return Ok(());
+        };
+
+        let mut key_pair = match UserSignatureKeyPair::find_by_user(user_id, conn).await {
+            Some(mut key_pair) => {
+                key_pair.signature_algorithm = v2.signature_algorithm as i32;
+                key_pair.signing_key.clone_from(&v2.signing_key);
+                key_pair.verifying_key.clone_from(&v2.verifying_key);
+                key_pair
+            }
+            None => UserSignatureKeyPair::new(
+                user_id.clone(),
+                v2.signature_algorithm,
+                v2.signing_key.clone(),
+                v2.verifying_key.clone(),
+            ),
+        };
+        key_pair.save(conn).await
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -222,17 +424,19 @@ pub struct MasterPasswordUnlock {
 
     #[serde(alias = "masterKeyWrappedUserKey")]
     key: String,
+    contained_key_id: Option<KeyId>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetPasswordData {
     #[serde(flatten)]
-    kdf: KDFData,
+    compat: RegisterDataCompat,
 
-    key: String,
     keys: Option<KeysData>,
-    master_password_hash: String,
+    // Supersedes `keys`, and the only way a v2 account can be initialized here.
+    account_keys: Option<AccountKeysData>,
+
     master_password_hint: Option<String>,
     org_identifier: Option<String>,
 }
@@ -274,7 +478,7 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
     let mut name = None;
     let mut pending_emergency_access = None;
 
-    if data.unprocessable() {
+    if data.compat.unprocessable(&data.email) {
         err_code!("Unexpected RegisterData format", Status::UnprocessableEntity.code);
     }
 
@@ -343,10 +547,11 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
         err!("The field Name must be a string with a maximum length of 50.");
     }
 
-    // Check against the password hint setting here so if it fails, the user
-    // can retry without losing their invitation below.
+    // Check against the password hint setting and the keys here so if they fail,
+    // the user can retry without losing their invitation below.
     let password_hint = clean_password_hint(data.master_password_hint.as_ref());
     enforce_password_hint_setting(password_hint.as_ref())?;
+    let account_keys = ValidatedAccountKeys::for_registration(data.account_keys, data.keys)?;
 
     let mut user = match User::find_by_mail(&email, &conn).await {
         Some(user) => {
@@ -393,9 +598,9 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
     // Make sure we don't leave a lingering invitation.
     Invitation::take(&email, &conn).await;
 
-    set_kdf_data(&mut user, data.kdf())?;
+    set_kdf_data(&mut user, data.compat.kdf())?;
 
-    user.set_password(&data.hash(), Some(data.key()), true, None, &conn).await?;
+    user.set_password(&data.compat.hash(), Some(data.compat.key()), true, None, &conn).await?;
     user.password_hint = password_hint;
 
     // Add extra fields if present
@@ -403,9 +608,10 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
         user.name = name;
     }
 
-    if let Some(keys) = data.keys {
-        user.private_key = Some(keys.encrypted_private_key);
-        user.public_key = Some(keys.public_key);
+    account_keys.apply(&mut user)?;
+    // Like upstream, only a v2 registration records the key id; v1 accounts report it through `user-key-id`
+    if account_keys.is_v2() {
+        user.key_id = data.compat.key_id();
     }
 
     if email_verified {
@@ -428,6 +634,7 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
     }
 
     user.save(&conn).await?;
+    account_keys.save_signature_key_pair(&user.uuid, &conn).await?;
 
     // accept any open emergency access invitations
     if !CONFIG.mail_enabled() && CONFIG.emergency_access_allowed() {
@@ -441,13 +648,49 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
     })))
 }
 
+/// Upstream's shape checks of the set-password body, on the raw JSON that the untagged compat would hide.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Api/Auth/Models/Request/Accounts/SetInitialPasswordRequestModel.cs#L75-L106>
+fn validate_set_password_shape(body: &Value) -> EmptyResult {
+    let has = |name: &str| {
+        body.as_object().is_some_and(|o| o.iter().any(|(k, v)| k.eq_ignore_ascii_case(name) && !v.is_null()))
+    };
+
+    if has("accountKeys") && has("keys") {
+        err!("Cannot specify both AccountKeys and Keys. Provide exactly one keypair.")
+    }
+    let (authentication, unlock) = (has("masterPasswordAuthentication"), has("masterPasswordUnlock"));
+    if authentication != unlock {
+        err!(
+            "Must provide both MasterPasswordAuthentication and MasterPasswordUnlock together. Cannot provide one without the other."
+        )
+    }
+    if authentication && (has("masterPasswordHash") || has("key") || has("kdf")) {
+        err!(
+            "Cannot mix modern (MasterPasswordAuthentication/MasterPasswordUnlock) and legacy (MasterPasswordHash/Key/Kdf) fields. Provide one shape or the other."
+        )
+    }
+    Ok(())
+}
+
 #[post("/accounts/set-password", data = "<data>")]
-async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: SetPasswordData = data.into_inner();
+async fn post_set_password(data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data = data.into_inner();
+    validate_set_password_shape(&data)?;
+    let Ok(data) = serde_json::from_value::<SetPasswordData>(data) else {
+        err_code!("Unexpected SetPasswordData format", Status::UnprocessableEntity.code)
+    };
+    if data.master_password_hint.as_ref().is_some_and(|h| h.encode_utf16().count() > 50) {
+        err!("The field MasterPasswordHint must be a string with a maximum length of 50.")
+    }
     let mut user = headers.user;
 
     if user.private_key.is_some() || !user.password_hash.is_empty() {
         err!("Account already initialized, cannot set password")
+    }
+
+    if data.compat.unprocessable(&user.email) {
+        err_code!("Unexpected SetPasswordData format", Status::UnprocessableEntity.code);
     }
 
     // Check against the password hint setting here so if it fails,
@@ -455,11 +698,31 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     let password_hint = clean_password_hint(data.master_password_hint.as_ref());
     enforce_password_hint_setting(password_hint.as_ref())?;
 
-    set_kdf_data(&mut user, &data.kdf)?;
+    // Like upstream, `accountKeys` only through the v2 JIT flow
+    // Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Api/Auth/Controllers/AccountsController.cs#L314-L359>
+    let account_keys = match data.account_keys {
+        Some(account_keys) => {
+            if !matches!(data.compat, RegisterDataCompat::RegisterDataCur(_))
+                || !crate::util::is_client_feature_flag_enabled(
+                    "enable-account-encryption-v2-jit-password-registration",
+                )
+            {
+                err!("Request includes V2 AccountKeys but V2 encryption is not enabled.")
+            }
+            let account_keys = account_keys.validate()?;
+            if !account_keys.is_v2() {
+                err!("AccountKeys are only supported for V2 encryption.")
+            }
+            Some(account_keys)
+        }
+        None => data.keys.map(ValidatedAccountKeys::from),
+    };
+
+    set_kdf_data(&mut user, data.compat.kdf())?;
 
     user.set_password(
-        &data.master_password_hash,
-        Some(data.key),
+        &data.compat.hash(),
+        Some(data.compat.key()),
         false,
         Some(vec![String::from("revision_date")]), // We need to allow revision-date to use the old security_timestamp
         &conn,
@@ -467,9 +730,12 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     .await?;
     user.password_hint = password_hint;
 
-    if let Some(keys) = data.keys {
-        user.private_key = Some(keys.encrypted_private_key);
-        user.public_key = Some(keys.public_key);
+    if let Some(ref account_keys) = account_keys {
+        account_keys.apply(&mut user)?;
+        // As in `register`, only a v2 account records the user key id here
+        if account_keys.is_v2() {
+            user.key_id = data.compat.key_id();
+        }
     }
 
     if let Some(identifier) = data.org_identifier
@@ -496,6 +762,10 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
     log_user_event(EventType::UserChangedPassword, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     user.save(&conn).await?;
+
+    if let Some(account_keys) = account_keys {
+        account_keys.save_signature_key_pair(&user.uuid, &conn).await?;
+    }
 
     Ok(Json(json!({
       "object": "set-password",
@@ -577,8 +847,19 @@ async fn get_public_keys(user_id: UserId, _headers: Headers, conn: DbConn) -> Js
     })))
 }
 
+#[get("/users/<user_id>/keys")]
+async fn get_account_public_keys(user_id: UserId, _headers: Headers, conn: DbConn) -> JsonResult {
+    let user = match User::find_by_uuid(&user_id, &conn).await {
+        Some(user) if user.public_key.is_some() => user,
+        Some(_) => err_code!("User has no public_key", Status::NotFound.code),
+        None => err_code!("User doesn't exist", Status::NotFound.code),
+    };
+
+    Ok(Json(user.public_keys_json(&conn).await))
+}
+
 #[get("/accounts/keys")]
-fn get_keys(headers: Headers) -> JsonResult {
+async fn get_keys(headers: Headers, conn: DbConn) -> JsonResult {
     let user = headers.user;
 
     // The SDK reads a 404 as the user having no key pair yet
@@ -590,29 +871,66 @@ fn get_keys(headers: Headers) -> JsonResult {
         "key": (!user.akey.is_empty()).then_some(&user.akey),
         "publicKey": user.public_key,
         "privateKey": user.private_key,
-        "accountKeys": user.account_keys_json(),
+        "accountKeys": user.account_keys_json(&conn).await,
         "object": "keys",
     })))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PostKeysData {
+    // Required like upstream, even next to `accountKeys`
+    public_key: Option<String>,
+    encrypted_private_key: Option<String>,
+    account_keys: Option<AccountKeysData>,
+    // The id of the user key these account keys belong to, only honored for v2 `accountKeys`
+    user_key_id: Option<KeyId>,
+}
+
 #[post("/accounts/keys", data = "<data>")]
-async fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: KeysData = data.into_inner();
+async fn post_keys(data: Json<PostKeysData>, headers: Headers, conn: DbConn) -> JsonResult {
+    let data: PostKeysData = data.into_inner();
 
     let mut user = headers.user;
 
+    // Only for an account without keys, replacing them is what a key rotation does
     if user.private_key.is_some() || user.public_key.is_some() {
         err!("User has existing keypair")
     }
 
-    user.private_key = Some(data.encrypted_private_key);
-    user.public_key = Some(data.public_key);
+    // Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Core/Auth/Models/Api/Request/Accounts/KeysRequestModel.cs#L11-L19>
+    let public_key = required(data.public_key, "PublicKey")?;
+    let encrypted_private_key = required(data.encrypted_private_key, "EncryptedPrivateKey")?;
 
+    // `accountKeys` supersedes the flat keys when both are sent
+    let account_keys = match data.account_keys {
+        Some(account_keys) => {
+            let account_keys = account_keys.validate()?;
+            if !account_keys.is_v2() {
+                err!("AccountKeys are only supported for V2 encryption.")
+            }
+            // A client that predates key ids sends none, and reports it later through `user-key-id`
+            if data.user_key_id.is_some() {
+                user.key_id = data.user_key_id;
+            }
+            account_keys
+        }
+        None => KeysData {
+            encrypted_private_key,
+            public_key,
+        }
+        .into(),
+    };
+
+    account_keys.apply(&mut user)?;
     user.save(&conn).await?;
+    account_keys.save_signature_key_pair(&user.uuid, &conn).await?;
 
     Ok(Json(json!({
+        "key": (!user.akey.is_empty()).then_some(&user.akey),
         "privateKey": user.private_key,
         "publicKey": user.public_key,
+        "accountKeys": user.account_keys_json(&conn).await,
         "object":"keys"
     })))
 }
@@ -963,6 +1281,14 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
 
     if !headers.user.check_valid_password(&data.old_master_key_authentication_hash) {
         err!("Invalid password")
+    }
+
+    // Rotating v2 keys, or upgrading to them, would leave an account that can't be unlocked here
+    if headers.user.is_v2() {
+        err!("Key rotation is not supported for v2 accounts")
+    }
+    if !data.account_keys.user_key_encrypted_account_private_key.starts_with("2.") {
+        err!("The provided account private key was not wrapped with AES-256-CBC-HMAC")
     }
 
     // Validate the import before continuing
@@ -1950,10 +2276,10 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!data.unprocessable());
-        assert_eq!(data.hash(), "hash");
-        assert_eq!(data.key(), "key");
-        assert_eq!(data.kdf().kdf_iterations, 600_000);
+        assert!(!data.compat.unprocessable(&data.email));
+        assert_eq!(data.compat.hash(), "hash");
+        assert_eq!(data.compat.key(), "key");
+        assert_eq!(data.compat.kdf().kdf_iterations, 600_000);
         assert!(data.keys.is_some());
         assert_eq!(data.email_verification_token.as_deref(), Some("token"));
     }
@@ -1975,10 +2301,10 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!data.unprocessable());
-        assert_eq!(data.hash(), "hash");
-        assert_eq!(data.key(), "key");
-        assert_eq!(data.kdf().kdf_iterations, 600_000);
+        assert!(!data.compat.unprocessable(&data.email));
+        assert_eq!(data.compat.hash(), "hash");
+        assert_eq!(data.compat.key(), "key");
+        assert_eq!(data.compat.kdf().kdf_iterations, 600_000);
         assert!(data.keys.is_some());
     }
 }
