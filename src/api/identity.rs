@@ -105,6 +105,8 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
             let tokens = auth::SendTokens::generate_tokens(
                 data.send_id.as_ref().unwrap(),
                 data.password_hash_b64,
+                data.email,
+                data.otp,
                 &client_header.ip,
                 &conn,
             )
@@ -1165,6 +1167,9 @@ struct ConnectData {
     // Needed for send access
     send_id: Option<SendId>,
     password_hash_b64: Option<String>,
+    // Needed for email verified send access
+    email: Option<String>,
+    otp: Option<String>,
 }
 fn check_is_some<T>(value: Option<&T>, msg: &str) -> EmptyResult {
     if value.is_none() {

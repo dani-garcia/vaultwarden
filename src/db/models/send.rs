@@ -55,16 +55,34 @@ pub struct Send {
 pub enum SendType {
     Text = 0,
     File = 1,
+    // A shared vault item, encrypted client side as a single blob (temporary item sharing)
+    Item = 2,
 }
 
-enum SendAuthType {
-    #[allow(dead_code)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, num_derive::FromPrimitive)]
+pub enum SendAuthType {
     // Send requires email OTP verification
-    Email = 0, // Not yet supported by Vaultwarden
+    Email = 0,
     // Send requires a password
     Password = 1,
     // Send requires no auth
     None = 2,
+}
+
+/// Key inside `sends.data` holding the normalized, comma separated list of emails allowed to
+/// access an email verified Send. It lives inside `data` instead of a new column so the feature
+/// needs no schema change, and it is stripped before `data` is sent to any client.
+const AUTH_EMAILS_KEY: &str = "vwAuthEmails";
+
+/// Normalizes a comma separated email list: trimmed, lowercased, deduplicated, empty entries dropped.
+pub fn normalize_emails(emails: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for e in emails.split(',').map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()) {
+        if !out.contains(&e) {
+            out.push(e);
+        }
+    }
+    out
 }
 
 impl Send {
@@ -144,13 +162,58 @@ impl Send {
         BASE64URL_NOPAD.encode(Uuid::parse_str(&self.uuid).unwrap_or_default().as_bytes())
     }
 
-    pub fn to_json(&self) -> Value {
+    /// The emails allowed to access this Send through email OTP verification, if any.
+    pub fn auth_emails(&self) -> Option<Vec<String>> {
+        let data = serde_json::from_str::<Value>(&self.data).ok()?;
+        let emails = normalize_emails(data.get(AUTH_EMAILS_KEY)?.as_str()?);
+        (!emails.is_empty()).then_some(emails)
+    }
+
+    /// Stores (or removes, with `None` or an empty list) the emails allowed to access this Send.
+    /// Setting emails clears the password: the two auth methods are mutually exclusive.
+    pub fn set_auth_emails(&mut self, emails: Option<&str>) -> EmptyResult {
+        let mut data = serde_json::from_str::<Value>(&self.data).unwrap_or_else(|_| json!({}));
+        let Some(obj) = data.as_object_mut() else {
+            err!("Invalid Send data")
+        };
+        let emails = emails.map(normalize_emails).unwrap_or_default();
+        if emails.is_empty() {
+            obj.remove(AUTH_EMAILS_KEY);
+        } else {
+            obj.insert(AUTH_EMAILS_KEY.to_owned(), Value::String(emails.join(",")));
+            self.set_password(None);
+        }
+        self.data = serde_json::to_string(&data)?;
+        Ok(())
+    }
+
+    pub fn auth_type(&self) -> SendAuthType {
+        // Item Sends are always email verified, matching the Bitwarden server
+        if self.atype == SendType::Item as i32 || self.auth_emails().is_some() {
+            SendAuthType::Email
+        } else if self.password_hash.is_some() {
+            SendAuthType::Password
+        } else {
+            SendAuthType::None
+        }
+    }
+
+    /// The `data` column as sent to clients: keys lowercased and the server side auth list removed.
+    fn client_data(&self) -> Value {
         let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+        if let Some(obj) = data.as_object_mut() {
+            obj.remove(AUTH_EMAILS_KEY);
+        }
 
         // Mobile clients expect size to be a string instead of a number
         if let Some(size) = data.get("size").and_then(Value::as_i64) {
             data["size"] = Value::String(size.to_string());
         }
+        data
+    }
+
+    pub fn to_json(&self) -> Value {
+        let data = self.client_data();
 
         json!({
             "id": self.uuid,
@@ -161,12 +224,14 @@ impl Send {
             "notes": self.notes,
             "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
             "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "data": if self.atype == SendType::Item as i32 { Some(&data) } else { None },
 
             "key": self.akey,
             "maxAccessCount": self.max_access_count,
             "accessCount": self.access_count,
             "password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
-            "authType": if self.password_hash.is_some() { SendAuthType::Password as i32 } else { SendAuthType::None as i32 },
+            "emails": self.auth_emails().map(|e| e.join(",")),
+            "authType": self.auth_type() as i32,
             "disabled": self.disabled,
             "hideEmail": self.hide_email.unwrap_or(false),
 
@@ -178,20 +243,17 @@ impl Send {
     }
 
     pub async fn to_json_access(&self, conn: &DbConn) -> Value {
-        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
-
-        // Mobile clients expect size to be a string instead of a number
-        if let Some(size) = data.get("size").and_then(Value::as_i64) {
-            data["size"] = Value::String(size.to_string());
-        }
+        let data = self.client_data();
 
         json!({
             "id": self.access_id(),
             "type": self.atype,
+            "authType": self.auth_type() as i32,
 
             "name": self.name,
             "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
             "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "data": if self.atype == SendType::Item as i32 { Some(&data) } else { None },
 
             "expirationDate": self.expiration_date.as_ref().map(format_date),
             "creatorIdentifier": self.creator_identifier(conn).await,
@@ -395,5 +457,69 @@ impl AsRef<Path> for SendFileId {
     #[inline]
     fn as_ref(&self) -> &Path {
         Path::new(&self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_send(atype: SendType, data: &str) -> Send {
+        let deletion = Utc::now().naive_utc() + chrono::TimeDelta::try_days(1).unwrap();
+        Send::new(atype as i32, "2.name".into(), data.into(), "2.key".into(), deletion)
+    }
+
+    #[test]
+    fn normalize_emails_trims_lowercases_and_dedups() {
+        assert_eq!(normalize_emails(" A@x.com, b@Y.com,,a@x.com , "), vec!["a@x.com", "b@y.com"]);
+        assert!(normalize_emails(" , ").is_empty());
+    }
+
+    #[test]
+    fn auth_emails_round_trip_and_clear_password() {
+        let mut send = new_send(SendType::Text, r#"{"text":"2.t","hidden":false}"#);
+        send.set_password(Some("hash"));
+        send.set_auth_emails(Some("B@y.com, a@x.com")).unwrap();
+
+        assert_eq!(send.auth_emails(), Some(vec!["b@y.com".to_string(), "a@x.com".to_string()]));
+        assert!(send.password_hash.is_none(), "email and password auth are exclusive");
+        assert_eq!(send.auth_type(), SendAuthType::Email);
+
+        send.set_auth_emails(None).unwrap();
+        assert_eq!(send.auth_emails(), None);
+        assert_eq!(send.auth_type(), SendAuthType::None);
+        assert!(!send.data.contains(AUTH_EMAILS_KEY));
+    }
+
+    #[test]
+    fn email_list_never_reaches_clients() {
+        let mut send = new_send(SendType::Text, r#"{"text":"2.t","hidden":false}"#);
+        send.set_auth_emails(Some("a@x.com")).unwrap();
+
+        let json = send.to_json();
+        assert_eq!(json["emails"], "a@x.com");
+        assert_eq!(json["authType"], SendAuthType::Email as i32);
+        assert!(json["text"].get(AUTH_EMAILS_KEY).is_none());
+        assert_eq!(json["text"]["text"], "2.t");
+    }
+
+    #[test]
+    fn item_send_json_carries_data_and_is_email_verified() {
+        let send = new_send(SendType::Item, r#"{"encryptionVersion":1,"data":"{\"id\":\"c\"}"}"#);
+
+        let json = send.to_json();
+        assert_eq!(json["type"], 2);
+        assert!(json["text"].is_null() && json["file"].is_null());
+        assert_eq!(json["data"]["encryptionVersion"], 1);
+        assert_eq!(json["data"]["data"], "{\"id\":\"c\"}");
+        assert_eq!(send.auth_type(), SendAuthType::Email, "Item Sends are always email verified");
+    }
+
+    #[test]
+    fn password_auth_type() {
+        let mut send = new_send(SendType::Text, r#"{"text":"2.t"}"#);
+        assert_eq!(send.auth_type(), SendAuthType::None);
+        send.set_password(Some("hash"));
+        assert_eq!(send.auth_type(), SendAuthType::Password);
     }
 }

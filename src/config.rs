@@ -725,6 +725,11 @@ make_config! {
         /// Customize the enabled feature flags on the clients |> This is a comma separated list of feature flags to enable.
         experimental_client_feature_flags: String, false, def, String::new();
 
+        /// Minimum client version for temporary item sharing |> Item Sends and the `pm-34203-temporary-item-sharing`
+        /// and `pm-30110-sdk-sends-api` flags are only served to clients at or above this version. Older clients and
+        /// the mobile apps can not parse Item Sends, and an unknown Send type fails their whole sync.
+        item_sharing_min_client_version: String, false, def, "2026.10.0".to_owned();
+
         /// Require new device emails |> When a user logs in an email is required to be sent.
         /// If sending the email fails the login attempt will fail.
         require_device_email:   bool,   true,   def,     false;
@@ -1073,6 +1078,10 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
             err!(feature_flags_error);
         }
         println!("[WARNING] {feature_flags_error}");
+    }
+
+    if semver::Version::parse(&cfg.item_sharing_min_client_version).is_err() {
+        err!("`ITEM_SHARING_MIN_CLIENT_VERSION` must be a version like `2026.10.0`")
     }
 
     #[expect(clippy::items_after_statements, reason = "Keep this close to where it is used")]
@@ -1439,9 +1448,17 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "pm-34171-card-scanner",
     // Platform Team
     "pm-30529-webauthn-related-origins",
+    // Tools Team
+    // Both are needed for temporary item sharing: Item Sends are only decrypted through the SDK
+    "pm-30110-sdk-sends-api",
+    "pm-34203-temporary-item-sharing",
     // Vault Team
     "pm-32009-new-item-types",
 ];
+
+/// Flags that change how clients handle Sends. They are only served to clients at or above
+/// `ITEM_SHARING_MIN_CLIENT_VERSION`, see `api::core::sends::client_supports_item_sharing`.
+pub const ITEM_SHARING_FEATURE_FLAGS: &[&str] = &["pm-30110-sdk-sends-api", "pm-34203-temporary-item-sharing"];
 
 impl Config {
     pub async fn load() -> Result<Self, Error> {
@@ -1743,6 +1760,7 @@ where
     reg!("email/send_2fa_removed_from_org", ".html");
     reg!("email/send_emergency_access_invite", ".html");
     reg!("email/send_org_invite", ".html");
+    reg!("email/send_otp", ".html");
     reg!("email/send_single_org_removed_from_org", ".html");
     reg!("email/smtp_test", ".html");
     reg!("email/sso_change_email", ".html");
