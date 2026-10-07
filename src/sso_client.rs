@@ -4,8 +4,8 @@ use openidconnect::{
     AccessToken, AsyncHttpClient, AuthDisplay, AuthPrompt, AuthType, AuthenticationFlow, AuthorizationCode,
     AuthorizationRequest, ClientId, ClientSecret, CsrfToken, EmptyAdditionalClaims, EmptyExtraTokenFields,
     EndpointNotSet, EndpointSet, HttpClientError, HttpRequest, HttpResponse, IdTokenClaims, IdTokenFields, Nonce,
-    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RefreshToken, ResponseType, Scope, StandardErrorResponse,
-    StandardTokenResponse,
+    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RefreshToken, RequestTokenError, ResponseType, Scope,
+    StandardErrorResponse, StandardTokenResponse, UserInfoError,
     core::{
         CoreAuthDisplay, CoreAuthPrompt, CoreClient, CoreClientAuthMethod, CoreErrorResponseType, CoreGenderClaim,
         CoreIdTokenVerifier, CoreJsonWebKey, CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm,
@@ -21,6 +21,7 @@ use crate::{
     CONFIG,
     api::{ApiResult, EmptyResult},
     db::models::SsoAuth,
+    error::Error,
     http_client::get_reqwest_client_builder,
     sso::{OIDCCode, OIDCCodeChallenge, OIDCCodeVerifier, OIDCState},
 };
@@ -32,7 +33,7 @@ static CLIENT_CACHE: LazyLock<moka::sync::Cache<String, Client>> = LazyLock::new
         .time_to_live(Duration::from_secs(CONFIG.sso_client_cache_expiration()))
         .build()
 });
-static REFRESH_CACHE: LazyLock<moka::future::Cache<String, Result<RefreshTokenResponse, String>>> =
+static REFRESH_CACHE: LazyLock<moka::future::Cache<String, RefreshResult>> =
     LazyLock::new(|| moka::future::Cache::builder().max_capacity(1000).time_to_live(Duration::from_secs(30)).build());
 
 /// OpenID Connect Core client.
@@ -57,6 +58,8 @@ pub type CustomClient = openidconnect::Client<
 >;
 
 pub type RefreshTokenResponse = (Option<String>, String, Option<Duration>);
+// The error carries the HTTP status to answer with, see `refresh_error_status`.
+type RefreshResult = Result<RefreshTokenResponse, (u16, String)>;
 
 #[derive(Clone)]
 pub struct Client {
@@ -117,7 +120,7 @@ impl Client {
         };
 
         let provider_metadata = match CoreProviderMetadata::discover_async(issuer_url, &http_client).await {
-            Err(err) => err!(format!("Failed to discover OpenID provider: {err}")),
+            Err(err) => err_code!(format!("Failed to discover OpenID provider: {err}"), 503),
             Ok(metadata) => metadata,
         };
 
@@ -281,7 +284,10 @@ impl Client {
 
     pub async fn user_info(&self, access_token: AccessToken) -> ApiResult<CoreUserInfoClaims> {
         match self.core_client.user_info(access_token, None).request_async(&self.http_client).await {
-            Err(err) => err!(format!("Request to user_info endpoint failed: {err}")),
+            Err(err) => {
+                let code = user_info_error_status(&err);
+                err_code!(format!("Request to user_info endpoint failed: {err}"), code)
+            }
             Ok(user_info) => Ok(user_info),
         }
     }
@@ -290,7 +296,8 @@ impl Client {
         let client = Client::cached().await?;
         match client.user_info(AccessToken::new(access_token)).await {
             Err(err) => {
-                err_silent!(format!("Failed to retrieve user info, token has probably been invalidated: {err}"))
+                Err(Error::new_msg(format!("Failed to retrieve user info, token has probably been invalidated: {err}"))
+                    .with_code(err.get_code()))
             }
             Ok(_) => Ok(()),
         }
@@ -317,16 +324,17 @@ impl Client {
         REFRESH_CACHE
             .get_with(refresh_token.clone(), async move { client.exchange_refresh_token_impl(refresh_token).await })
             .await
-            .map_err(Into::into)
+            .map_err(|(code, msg)| Error::new_msg(msg).with_code(code))
     }
 
-    async fn exchange_refresh_token_impl(&self, refresh_token: String) -> Result<RefreshTokenResponse, String> {
+    async fn exchange_refresh_token_impl(&self, refresh_token: String) -> RefreshResult {
         let rt = RefreshToken::new(refresh_token);
 
         match self.core_client.exchange_refresh_token(&rt).request_async(&self.http_client).await {
             Err(err) => {
                 error!("Request to exchange_refresh_token endpoint failed: {err}");
-                Err(format!("Request to exchange_refresh_token endpoint failed: {err}"))
+                let code = refresh_error_status(&err);
+                Err((code, format!("Request to exchange_refresh_token endpoint failed: {err}")))
             }
             Ok(token_response) => Ok((
                 token_response.refresh_token().map(|token| token.secret().clone()),
@@ -349,5 +357,83 @@ impl<'a, AD: AuthDisplay, P: AuthPrompt, RT: ResponseType> AuthorizationRequestE
             self = self.add_extra_param(key, value);
         }
         self
+    }
+}
+
+fn refresh_error_status<RE>(err: &RequestTokenError<RE, StandardErrorResponse<CoreErrorResponseType>>) -> u16
+where
+    RE: std::error::Error + 'static,
+{
+    match err {
+        RequestTokenError::ServerResponse(resp) => match resp.error() {
+            CoreErrorResponseType::Extension(code) if code == "temporarily_unavailable" || code == "server_error" => {
+                503
+            }
+            _ => 400,
+        },
+        RequestTokenError::Request(_) | RequestTokenError::Parse(..) | RequestTokenError::Other(_) => 503,
+    }
+}
+
+fn user_info_error_status<RE>(err: &UserInfoError<RE>) -> u16
+where
+    RE: std::error::Error + 'static,
+{
+    match err {
+        UserInfoError::Request(_) => 503,
+        UserInfoError::Response(status, ..) if status.is_server_error() => 503,
+        _ => 400,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type TokenErr = RequestTokenError<HttpClientError<reqwest::Error>, StandardErrorResponse<CoreErrorResponseType>>;
+
+    #[test]
+    fn test_refresh_error_status_invalid_grant() {
+        let err = TokenErr::ServerResponse(StandardErrorResponse::new(CoreErrorResponseType::InvalidGrant, None, None));
+        assert_eq!(refresh_error_status(&err), 400);
+    }
+
+    #[test]
+    fn test_refresh_error_status_temporarily_unavailable() {
+        let err = TokenErr::ServerResponse(StandardErrorResponse::new(
+            CoreErrorResponseType::Extension("temporarily_unavailable".to_owned()),
+            None,
+            None,
+        ));
+        assert_eq!(refresh_error_status(&err), 503);
+    }
+
+    #[test]
+    fn test_refresh_error_status_other() {
+        let err = TokenErr::Other("unexpected response from the token endpoint".to_owned());
+        assert_eq!(refresh_error_status(&err), 503);
+    }
+
+    #[test]
+    fn test_refresh_error_status_request() {
+        let err = TokenErr::Request(HttpClientError::Io(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "connection refused",
+        )));
+        assert_eq!(refresh_error_status(&err), 503);
+    }
+
+    type UserInfoErr = UserInfoError<HttpClientError<reqwest::Error>>;
+
+    #[test]
+    fn test_user_info_error_status_unauthorized() {
+        let err = UserInfoErr::Response(http::StatusCode::UNAUTHORIZED, Vec::new(), "invalid_token".to_owned());
+        assert_eq!(user_info_error_status(&err), 400);
+    }
+
+    #[test]
+    fn test_user_info_error_status_unavailable() {
+        let err = UserInfoErr::Response(http::StatusCode::SERVICE_UNAVAILABLE, Vec::new(), "down".to_owned());
+        assert_eq!(user_info_error_status(&err), 503);
     }
 }

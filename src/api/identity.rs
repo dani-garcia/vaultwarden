@@ -154,6 +154,8 @@ async fn refresh_login(data: ConnectData, conn: &DbConn, ip: &ClientIp) -> JsonR
     // ---
     // let members = Membership::find_confirmed_by_user(&user.uuid, conn).await;
     match auth::refresh_tokens(ip, &refresh_token, data.client_id, conn).await {
+        // Clients log out on 400 invalid_grant, so a provider outage is returned as-is (503).
+        Err(err) if err.get_code() == 503 => Err(err),
         Err(err) => {
             err_json!(
                 json!({"error": "invalid_grant"}),
