@@ -19,7 +19,8 @@ use crate::{
 use macros::UuidFromParam;
 
 use super::{
-    Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
+    AuthRequest, Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor,
+    TwoFactorIncomplete,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
@@ -377,6 +378,7 @@ impl User {
         Cipher::delete_all_by_user(&self.uuid, conn).await?;
         Favorite::delete_all_by_user(&self.uuid, conn).await?;
         Folder::delete_all_by_user(&self.uuid, conn).await?;
+        AuthRequest::delete_all_by_user(&self.uuid, conn).await?;
         Device::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactor::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn).await?;
