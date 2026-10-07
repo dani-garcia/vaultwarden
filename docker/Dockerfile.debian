@@ -19,15 +19,15 @@
 # - From https://hub.docker.com/r/vaultwarden/web-vault/tags,
 #   click the tag name to view the digest of the image it currently points to.
 # - From the command line:
-#     $ docker pull docker.io/vaultwarden/web-vault:v2026.7.0
-#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2026.7.0
-#     [docker.io/vaultwarden/web-vault@sha256:ba8bab66d4330ab9dbafa8f245bcbe99cf6ee3f2c8ce9b5fbb10e9c49658451c]
+#     $ docker pull docker.io/vaultwarden/web-vault:v2026.8.0
+#     $ docker image inspect --format "{{.RepoDigests}}" docker.io/vaultwarden/web-vault:v2026.8.0
+#     [docker.io/vaultwarden/web-vault@sha256:632375471c7c06a799335cd74dfeaef63f92f45f9cd322c337ae7ad70081e48a]
 #
 # - Conversely, to get the tag name from the digest:
-#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:ba8bab66d4330ab9dbafa8f245bcbe99cf6ee3f2c8ce9b5fbb10e9c49658451c
-#     [docker.io/vaultwarden/web-vault:v2026.7.0]
+#     $ docker image inspect --format "{{.RepoTags}}" docker.io/vaultwarden/web-vault@sha256:632375471c7c06a799335cd74dfeaef63f92f45f9cd322c337ae7ad70081e48a
+#     [docker.io/vaultwarden/web-vault:v2026.8.0]
 #
-FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:ba8bab66d4330ab9dbafa8f245bcbe99cf6ee3f2c8ce9b5fbb10e9c49658451c AS vault
+FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@sha256:632375471c7c06a799335cd74dfeaef63f92f45f9cd322c337ae7ad70081e48a AS vault
 
 ########################## Cross Compile Docker Helper Scripts ##########################
 ## We use the linux/amd64 no matter which Build Platform, since these are all bash scripts
@@ -36,7 +36,7 @@ FROM --platform=linux/amd64 docker.io/tonistiigi/xx@sha256:c64defb9ed5a91eacb37f
 
 ########################## BUILD IMAGE ##########################
 # hadolint ignore=DL3006
-FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.98.1-slim-trixie AS build
+FROM --platform=$BUILDPLATFORM docker.io/library/rust:1.99.0-slim-trixie AS build
 # hadolint ignore=DL3067
 COPY --from=xx / /
 ARG TARGETARCH
@@ -101,9 +101,17 @@ RUN . /env-cargo && \
     # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
     # https://github.com/dani-garcia/vaultwarden/discussions/7522
     if xx-info is-cross; then \
-        XX_RUSTFLAGS="-C link-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
-        export XX_RUSTFLAGS; \
+        XX_RUSTFLAGS="-Clink-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
     fi && \
+    # Debian's GCC adds a special fix for cortex-a53 arch's which gets losts when using xx-cargo, which uses clang
+    # Checking if the arch is arm64 and adding this extra link-arg should cause this fix to be applied
+    # This should fix issues reported when running on a RPi3 which is a Cortex-A35 chip
+    # See: https://salsa.debian.org/toolchain-team/gcc/-/blob/master/debian/rules2?pow_referer=#L543-548
+    # See: https://github.com/dani-garcia/vaultwarden/issues/7754
+    if [ "$(xx-info arch)" = "arm64" ]; then \
+        XX_RUSTFLAGS="${XX_RUSTFLAGS} -Clink-arg=-Wl,--fix-cortex-a53-843419"; \
+    fi && \
+    export XX_RUSTFLAGS && \
     PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}" && \
     find . -not -path "./target*" -delete
 
@@ -123,9 +131,17 @@ RUN . /env-cargo && \
     # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
     # https://github.com/dani-garcia/vaultwarden/discussions/7522
     if xx-info is-cross; then \
-        XX_RUSTFLAGS="-C link-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
-        export XX_RUSTFLAGS; \
+        XX_RUSTFLAGS="-Clink-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
     fi && \
+    # Debian's GCC adds a special fix for cortex-a53 arch's which gets losts when using xx-cargo, which uses clang
+    # Checking if the arch is arm64 and adding this extra link-arg should cause this fix to be applied
+    # This should fix issues reported when running on a RPi3 which is a Cortex-A35 chip
+    # See: https://salsa.debian.org/toolchain-team/gcc/-/blob/master/debian/rules2?pow_referer=#L543-548
+    # See: https://github.com/dani-garcia/vaultwarden/issues/7754
+    if [ "$(xx-info arch)" = "arm64" ]; then \
+        XX_RUSTFLAGS="${XX_RUSTFLAGS} -Clink-arg=-Wl,--fix-cortex-a53-843419"; \
+    fi && \
+    export XX_RUSTFLAGS && \
     PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}" && \
     if [ "${CARGO_PROFILE}" = "dev" ] ; then \
         ln -vfsr "/app/target/${CARGO_TARGET}/debug" /app/target/final ; \
