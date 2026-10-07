@@ -247,6 +247,7 @@ fn config() -> Json<Value> {
           "notifications": format!("{domain}/notifications"),
           "sso": "",
           "cloudRegion": null,
+          "fillAssistRules": "https://fillassist.bitwarden.com",
         },
         // Bitwarden uses this for the self-hosted servers to indicate the default push technology
         "push": {

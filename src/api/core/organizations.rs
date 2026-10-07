@@ -16,9 +16,9 @@ use crate::{
         DbConn,
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, Device,
-            EventType, Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus,
-            MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, TwoFactor,
-            TwoFactorType, User, UserId,
+            EventType, FillAssistPolicyData, Group, GroupId, GroupUser, Invitation, Membership, MembershipId,
+            MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
+            OrganizationId, TwoFactor, TwoFactorType, User, UserId,
         },
     },
     mail,
@@ -2039,6 +2039,29 @@ async fn put_policy(
         err!("Invalid or unsupported policy type")
     };
 
+    let current_policy = OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await;
+    let is_currently_enabled = current_policy.as_ref().is_some_and(|policy| policy.enabled);
+
+    // Fill Assist depends on Single Organization. Match Bitwarden's dependency checks by only checking when the
+    // policy changes state.
+    if pol_type_enum == OrgPolicyType::FillAssist && data.enabled && !is_currently_enabled {
+        let single_org_policy_enabled =
+            OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::SingleOrg, &conn).await.is_some_and(|p| p.enabled);
+
+        if !single_org_policy_enabled {
+            err!("Turn on the Single organization policy because it is required for the Activate fill assist policy.")
+        }
+    }
+
+    if pol_type_enum == OrgPolicyType::SingleOrg && !data.enabled && is_currently_enabled {
+        let fill_assist_policy_enabled =
+            OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::FillAssist, &conn).await.is_some_and(|p| p.enabled);
+
+        if fill_assist_policy_enabled {
+            err!("Turn off the Activate fill assist policy because it requires the Single organization policy.")
+        }
+    }
+
     // Bitwarden only allows the Reset Password policy when Single Org policy is enabled
     // Vaultwarden encouraged to use multiple orgs instead of groups because groups were not available in the past
     // Now that groups are available we can enforce this option when wanted.
@@ -2067,6 +2090,37 @@ async fn put_policy(
 
             if reset_pw_policy_enabled {
                 err!("Account recovery policy is enabled. It is not allowed to disable this policy.")
+            }
+        }
+    }
+
+    if pol_type_enum == OrgPolicyType::FillAssist {
+        let fill_assist_data = match data.data.as_ref() {
+            None | Some(Value::Null) => FillAssistPolicyData {
+                rules_url: None,
+            },
+            Some(data) => {
+                let Ok(data) = serde_json::from_value::<FillAssistPolicyData>(data.clone()) else {
+                    err!("Invalid data for FillAssist policy: rulesUrl has an invalid value.")
+                };
+                data
+            }
+        };
+
+        if data.enabled {
+            let Some(rules_url) = fill_assist_data.rules_url.filter(|url| !url.trim().is_empty()) else {
+                err!("The RulesUrl field is required.")
+            };
+            let Ok(rules_url) = url::Url::parse(&rules_url) else {
+                err!("The RulesUrl field is not a valid fully-qualified http, https, or ftp URL.")
+            };
+
+            if !rules_url.has_host() || !matches!(rules_url.scheme(), "http" | "https" | "ftp") {
+                err!("The RulesUrl field is not a valid fully-qualified http, https, or ftp URL.")
+            }
+
+            if rules_url.scheme() != "https" {
+                err!("RulesUrl must use HTTPS.")
             }
         }
     }
@@ -2118,7 +2172,7 @@ async fn put_policy(
         }
     }
 
-    let mut policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await {
+    let mut policy = match current_policy {
         Some(p) => p,
         None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "{}".to_owned()),
     };

@@ -1429,6 +1429,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     // Autofill Team
     "undetermined-cipher-scenario-logic",
     "enable-basic-auth-response",
+    "fill-assist-targeting-rules",
     "ssh-agent-v2",
     "windows-desktop-autotype",
     "windows-desktop-autotype-ga",
