@@ -17,7 +17,7 @@ use crate::{
         encode_jwt, generate_delete_claims, generate_emergency_access_invite_claims, generate_invite_claims,
         generate_verify_email_claims,
     },
-    db::models::{Device, DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId},
+    db::models::{DeviceType, EmergencyAccessId, MembershipId, OrganizationId, User, UserId},
     error::Error,
     util::upcase_first,
 };
@@ -514,7 +514,13 @@ pub async fn send_invite_confirmed(address: &str, org_name: &str) -> EmptyResult
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTime, device: &Device) -> EmptyResult {
+pub async fn send_new_device_logged_in(
+    address: &str,
+    ip: &str,
+    dt: &NaiveDateTime,
+    device_name: &str,
+    device_type: DeviceType,
+) -> EmptyResult {
     let fmt = "%A, %B %_d, %Y at %r %Z";
     let (subject, body_html, body_text) = get_text(
         "email/new_device_logged_in",
@@ -522,8 +528,8 @@ pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTi
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
             "ip": ip,
-            "device_name": upcase_first(&device.name),
-            "device_type": DeviceType::from_i32(device.atype).to_string(),
+            "device_name": upcase_first(device_name),
+            "device_type": device_type.to_string(),
             "datetime": crate::util::format_naive_datetime_local(dt, fmt),
         }),
     )?;
