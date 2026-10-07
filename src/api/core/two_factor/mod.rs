@@ -7,21 +7,17 @@ use serde_json::Value;
 
 use crate::{
     CONFIG,
-    api::{
-        EmptyResult, JsonResult, PasswordOrOtpData,
-        core::{log_event, log_user_event},
-    },
+    api::{EmptyResult, JsonResult, PasswordOrOtpData, core::log_event},
     auth::Headers,
     crypto,
     db::{
         DbConn, DbPool,
         models::{
-            DeviceType, EventType, Membership, MembershipType, OrgPolicyType, Organization, OrganizationId, TwoFactor,
-            TwoFactorIncomplete, TwoFactorType, User, UserId,
+            Device, DeviceType, EventType, Membership, MembershipType, OrgPolicyType, Organization, OrganizationId,
+            TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
     },
     mail,
-    util::NumberOrString,
 };
 
 pub mod authenticator;
@@ -69,13 +65,7 @@ pub fn is_twofactor_provider_usable(provider_type: &TwoFactorType, provider_data
 }
 
 pub fn routes() -> Vec<Route> {
-    let mut routes = routes![
-        get_twofactor,
-        get_recover,
-        disable_twofactor,
-        disable_twofactor_put,
-        get_device_verification_settings,
-    ];
+    let mut routes = routes![get_twofactor, get_recover, get_device_verification_settings];
 
     routes.append(&mut authenticator::routes());
     routes.append(&mut duo::routes());
@@ -85,6 +75,12 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut protected_actions::routes());
 
     routes
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VerificationTokenData {
+    user_verification_token: String,
 }
 
 #[get("/two-factor")]
@@ -126,49 +122,14 @@ async fn generate_recover_code(user: &mut User, conn: &DbConn) {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DisableTwoFactorData {
-    master_password_hash: Option<String>,
-    otp: Option<String>,
-    r#type: NumberOrString,
-}
-
-#[post("/two-factor/disable", data = "<data>")]
-async fn disable_twofactor(data: Json<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: DisableTwoFactorData = data.into_inner();
-    let user = headers.user;
-
-    // Delete directly after a valid token has been provided
-    PasswordOrOtpData {
-        master_password_hash: data.master_password_hash,
-        otp: data.otp,
+/// Call after a 2FA provider, or one of its keys, was removed. No remembered device may keep skipping
+/// the providers that are left, and once every provider is gone the 2FA policy applies.
+pub async fn check_2fa_state(user: &User, device_type: i32, ip: &std::net::IpAddr, conn: &DbConn) -> EmptyResult {
+    Device::clear_twofactor_remember_by_user(&user.uuid, conn).await?;
+    if TwoFactor::find_by_user(&user.uuid, conn).await.is_empty() {
+        enforce_2fa_policy(user, &user.uuid, device_type, ip, conn).await?;
     }
-    .validate(&user, true, &conn)
-    .await?;
-
-    let type_ = data.r#type.into_i32()?;
-
-    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
-        twofactor.delete(&conn).await?;
-        log_user_event(EventType::UserDisabled2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-            .await;
-    }
-
-    if TwoFactor::find_by_user(&user.uuid, &conn).await.is_empty() {
-        enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await?;
-    }
-
-    Ok(Json(json!({
-        "enabled": false,
-        "type": type_,
-        "object": "twoFactorProvider"
-    })))
-}
-
-#[put("/two-factor/disable", data = "<data>")]
-async fn disable_twofactor_put(data: Json<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
-    disable_twofactor(data, headers, conn).await
+    Ok(())
 }
 
 pub async fn enforce_2fa_policy(
@@ -190,7 +151,7 @@ pub async fn enforce_2fa_policy(
             member.save(conn).await?;
 
             log_event(
-                EventType::OrganizationUserRevoked as i32,
+                EventType::OrganizationUserRevoked,
                 &member.uuid,
                 &member.org_uuid,
                 act_user_id,
@@ -224,16 +185,8 @@ pub async fn enforce_2fa_policy_for_org(
             member.revoke();
             member.save(conn).await?;
 
-            log_event(
-                EventType::OrganizationUserRevoked as i32,
-                &member.uuid,
-                org_id,
-                act_user_id,
-                device_type,
-                ip,
-                conn,
-            )
-            .await;
+            log_event(EventType::OrganizationUserRevoked, &member.uuid, org_id, act_user_id, device_type, ip, conn)
+                .await;
         }
     }
 

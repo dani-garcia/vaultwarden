@@ -531,6 +531,21 @@ pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTi
     send_email(address, &subject, body_html, body_text).await
 }
 
+pub async fn send_recover_twofactor(address: &str, ip: &str, dt: &NaiveDateTime) -> EmptyResult {
+    let fmt = "%A, %B %_d, %Y at %r %Z";
+    let (subject, body_html, body_text) = get_text(
+        "email/recover_twofactor",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "ip": ip,
+            "datetime": crate::util::format_naive_datetime_local(dt, fmt),
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_incomplete_2fa_login(
     address: &str,
     ip: &str,
@@ -633,14 +648,24 @@ pub async fn send_test(address: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_admin_reset_password(address: &str, user_name: &str, org_name: &str) -> EmptyResult {
+pub async fn send_admin_account_recovery(
+    address: &str,
+    user_name: &str,
+    org_name: &str,
+    reset_password: bool,
+    reset_2fa: bool,
+    fallback_2fa_email: bool,
+) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
-        "email/admin_reset_password",
+        "email/admin_account_recovery",
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
             "user_name": user_name,
             "org_name": org_name,
+            "reset_password": reset_password,
+            "reset_2fa": reset_2fa,
+            "fallback_2fa_email": fallback_2fa_email,
         }),
     )?;
     send_email(address, &subject, body_html, body_text).await

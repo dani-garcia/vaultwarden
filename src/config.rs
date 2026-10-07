@@ -561,7 +561,7 @@ make_config! {
         /// Auth Request cleanup schedule |> Cron schedule of the job that cleans old auth requests from the auth request.
         /// Defaults to every minute. Set blank to disable this job.
         auth_request_purge_schedule:   String, false,  def,    "30 * * * * *".to_owned();
-        /// Duo Auth context cleanup schedule |> Cron schedule of the job that cleans expired Duo contexts from the database. Does nothing if Duo MFA is disabled or set to use the legacy iframe prompt.
+        /// Duo Auth context cleanup schedule |> Cron schedule of the job that cleans expired Duo contexts from the database. Does nothing if Duo MFA is disabled.
         /// Defaults to once every minute. Set blank to disable this job.
         duo_context_purge_schedule:   String, false,  def,    "30 * * * * *".to_owned();
         /// Purge incomplete SSO auth. |> Cron schedule of the job that cleans leftover auth in db due to incomplete SSO login.
@@ -675,7 +675,8 @@ make_config! {
         /// other address use the remote IP instead, so a client can't spoof the header.
         /// Either the string "local" (the default, any non-global address, which covers a reverse proxy
         /// running on the same host or container network), the string "all" to accept it from anywhere,
-        /// or a comma separated list of IPs and CIDR ranges.
+        /// or a comma separated list of IPs and CIDR ranges. For a list header like X-Forwarded-For, the
+        /// client IP is the rightmost address that isn't a trusted proxy, so list every proxy in the chain.
         ip_header_trusted_proxies: String, true, def,    "local".to_owned();
         /// Icon service |> The predefined icon services are: internal, bitwarden, duckduckgo, google.
         /// To specify a custom icon service, set a URL template with exactly one instance of `{}`,
@@ -817,6 +818,8 @@ make_config! {
         sso_enabled:                    bool,   true,   def,    false;
         /// Only SSO login |> Disable Email+Master Password login
         sso_only:                       bool,   true,   def,    false;
+        /// Allow SSO flow to create account |> You probably want to disable it when using a public provider
+        sso_signups_allowed:            bool,   true,   def,    true;
         /// Allow email association |> Associate existing non-SSO user based on email
         sso_signups_match_email:        bool,   true,   def,    true;
         /// Allow unknown email verification status |> Allowing this with `SSO_SIGNUPS_MATCH_EMAIL=true` open potential account takeover.
@@ -863,16 +866,12 @@ make_config! {
     duo: _enable_duo {
         /// Enabled
         _enable_duo:            bool,   true,   def,     true;
-        /// Attempt to use deprecated iframe-based Traditional Prompt (Duo WebSDK 2)
-        duo_use_iframe:         bool,   false,  def,     false;
         /// Client Id
         duo_ikey:               String, true,   option;
         /// Client Secret
         duo_skey:               Pass,   true,   option;
         /// Host
         duo_host:               String, true,   option;
-        /// Application Key (generated automatically)
-        _duo_akey:              Pass,   false,  option;
     },
 
     /// SMTP Email Settings
@@ -1162,11 +1161,8 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                     }
 
                     #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        if !metadata.permissions().mode() & 0o111 != 0 {
-                            err!(format!("sendmail command at `{path:?}` isn't executable"));
-                        }
+                    if nix::unistd::access(&path, nix::unistd::AccessFlags::X_OK).is_err() {
+                        err!(format!("sendmail command at `{path:?}` isn't executable"));
                     }
                 }
             }
@@ -1270,10 +1266,18 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         err!("`AUTH_REQUEST_PURGE_SCHEDULE` is not a valid cron expression")
     }
 
+    if !cfg.duo_context_purge_schedule.is_empty() && cfg.duo_context_purge_schedule.parse::<Schedule>().is_err() {
+        err!("`DUO_CONTEXT_PURGE_SCHEDULE` is not a valid cron expression")
+    }
+
+    if !cfg.purge_incomplete_sso_auth.is_empty() && cfg.purge_incomplete_sso_auth.parse::<Schedule>().is_err() {
+        err!("`PURGE_INCOMPLETE_SSO_AUTH` is not a valid cron expression")
+    }
+
     if !cfg.disable_admin_token {
         match cfg.admin_token.as_ref() {
             Some(t) if t.starts_with("$argon2") => {
-                if let Err(e) = argon2::password_hash::PasswordHash::new(t) {
+                if let Err(e) = argon2::password_hash::phc::PasswordHash::new(t) {
                     err!(format!("The configured Argon2 PHC in `ADMIN_TOKEN` is invalid: '{e}'"))
                 }
             }
@@ -1419,28 +1423,21 @@ pub enum PathType {
 // Android (v2026.2.1): https://github.com/bitwarden/android/blob/6902c19c0093fa476bbf74ccaa70c9f14afbb82f/core/src/main/kotlin/com/bitwarden/core/data/manager/model/FlagKey.kt#L31
 // iOS (v2026.2.1): https://github.com/bitwarden/ios/blob/cdd9ba1770ca2ffc098d02d12cc3208e3a830454/BitwardenShared/Core/Platform/Models/Enum/FeatureFlag.swift#L7
 pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
-    // Architecture
-    "desktop-ui-migration-milestone-1",
-    "desktop-ui-migration-milestone-2",
-    "desktop-ui-migration-milestone-3",
-    "desktop-ui-migration-milestone-4",
     // Auth Team
     "pm-5594-safari-account-switching",
+    "pm-32413-multi-client-password-management",
     // Autofill Team
-    "ssh-agent",
+    "undetermined-cipher-scenario-logic",
+    "enable-basic-auth-response",
     "ssh-agent-v2",
     // Key Management Team
-    "ssh-key-vault-item",
-    "pm-25373-windows-biometrics-v2",
-    "pm-26340-linux-biometrics-v2",
+    "windows-native-credential-sync",
     // Mobile Team
-    "anon-addy-self-host-alias",
-    "simple-login-self-host-alias",
-    "mutual-tls",
-    "cxp-import-mobile",
-    "cxp-export-mobile",
+    "pm-34171-card-scanner",
     // Platform Team
     "pm-30529-webauthn-related-origins",
+    // Vault Team
+    "pm-32009-new-item-types",
 ];
 
 impl Config {
@@ -1512,15 +1509,6 @@ impl Config {
         Ok(())
     }
 
-    async fn update_config_partial(&self, other: ConfigBuilder) -> Result<(), Error> {
-        let builder = {
-            let usr = &self.inner.read().unwrap()._usr;
-            let mut overrides = Vec::new();
-            usr.merge(&other, false, &mut overrides)
-        };
-        self.update_config(builder, false).await
-    }
-
     /// Tests whether an email's domain is allowed. A domain is allowed if it
     /// is in signups_domains_whitelist, or if no whitelist is set (so there
     /// are no domain restrictions in effect).
@@ -1541,6 +1529,17 @@ impl Config {
     pub fn is_signup_allowed(&self, email: &str) -> bool {
         if self.signups_domains_whitelist().is_empty() {
             self.signups_allowed()
+        } else {
+            // The whitelist setting overrides the signups_allowed setting.
+            self.is_email_domain_allowed(email)
+        }
+    }
+
+    /// Tests whether SSO signup is allowed for an email address, taking into
+    /// account the sso_signups_allowed and signups_domains_whitelist settings.
+    pub fn is_sso_signup_allowed(&self, email: &str) -> bool {
+        if self.signups_domains_whitelist().is_empty() {
+            self.sso_signups_allowed()
         } else {
             // The whitelist setting overrides the signups_allowed setting.
             self.is_email_domain_allowed(email)
@@ -1603,23 +1602,6 @@ impl Config {
     pub fn mail_enabled(&self) -> bool {
         let inner = &self.inner.read().unwrap().config;
         inner._enable_smtp && (inner.smtp_host.is_some() || inner.use_sendmail)
-    }
-
-    pub async fn get_duo_akey(&self) -> String {
-        if let Some(akey) = self._duo_akey() {
-            akey
-        } else {
-            let akey_s = crate::crypto::encode_random_bytes::<64>(&data_encoding::BASE64);
-
-            // Save the new value
-            let builder = ConfigBuilder {
-                _duo_akey: Some(akey_s.clone()),
-                ..Default::default()
-            };
-            self.update_config_partial(builder).await.ok();
-
-            akey_s
-        }
     }
 
     pub fn is_webauthn_2fa_supported(&self) -> bool {
@@ -1734,7 +1716,7 @@ where
     reg!("email/email_footer");
     reg!("email/email_footer_text");
 
-    reg!("email/admin_reset_password", ".html");
+    reg!("email/admin_account_recovery", ".html");
     reg!("email/change_email_existing", ".html");
     reg!("email/change_email_invited", ".html");
     reg!("email/change_email", ".html");
@@ -1753,6 +1735,7 @@ where
     reg!("email/protected_action", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
+    reg!("email/recover_twofactor", ".html");
     reg!("email/register_verify_email", ".html");
     reg!("email/send_2fa_removed_from_org", ".html");
     reg!("email/send_emergency_access_invite", ".html");
