@@ -8,7 +8,7 @@ use crate::{
     CONFIG,
     api::admin::FAKE_ADMIN_UUID,
     api::{
-        EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
+        ApiResult, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
     auth::{AdminHeaders, Headers, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite},
@@ -50,6 +50,7 @@ pub fn routes() -> Vec<Route> {
         get_org_domain_sso_verified,
         get_members,
         send_invite,
+        send_invite_to_staged_members,
         reinvite_member,
         bulk_reinvite_members,
         confirm_invite,
@@ -1024,9 +1025,14 @@ async fn send_invite(
             && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
             && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
-    let mut user_created: bool;
+    let mut invited_emails = HashSet::new();
     for email in &data.emails {
+        if !invited_emails.insert(email.to_lowercase()) {
+            continue;
+        }
         let mut member_status = MembershipStatus::Invited as i32;
+        let mut staged_member = None;
+        let user_created;
         let user = match User::find_by_mail(email, &conn).await {
             None => {
                 if !CONFIG.invitations_allowed() {
@@ -1047,8 +1053,14 @@ async fn send_invite(
                 new_user
             }
             Some(user) => {
-                if Membership::find_by_user_and_org(&user.uuid, &org_id, &conn).await.is_some() {
-                    err!(format!("User already in organization: {}", email.escape_debug()))
+                if let Some(member) = Membership::find_by_user_and_org(&user.uuid, &org_id, &conn).await {
+                    if member.status != MembershipStatus::Staged as i32 {
+                        err!(format!("User already in organization: {}", email.escape_debug()))
+                    }
+                    if !CONFIG.invitations_allowed() && user.password_hash.is_empty() {
+                        err!("Invitations are not allowed")
+                    }
+                    staged_member = Some(member);
                 }
 
                 if !CONFIG.mail_enabled() {
@@ -1064,7 +1076,12 @@ async fn send_invite(
             }
         };
 
-        let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), Some(headers.user.email.clone()));
+        let was_staged = staged_member.is_some();
+        let mut new_member = staged_member
+            .unwrap_or_else(|| Membership::new(user.uuid.clone(), org_id.clone(), Some(headers.user.email.clone())));
+        let previous_membership =
+            (new_member.status, new_member.atype, new_member.access_all, new_member.invited_by_email.clone());
+        new_member.invited_by_email = Some(headers.user.email.clone());
         new_member.access_all = access_all;
         new_member.atype = new_type;
         new_member.status = member_status;
@@ -1087,7 +1104,13 @@ async fn send_invite(
             .await
             {
                 // Upon error delete the user, invite and org member records when needed
-                if user_created {
+                if was_staged {
+                    new_member.status = previous_membership.0;
+                    new_member.atype = previous_membership.1;
+                    new_member.access_all = previous_membership.2;
+                    new_member.invited_by_email = previous_membership.3;
+                    new_member.save(&conn).await?;
+                } else if user_created {
                     user.delete(&conn).await?;
                 } else {
                     new_member.delete(&conn).await?;
@@ -1107,6 +1130,13 @@ async fn send_invite(
             &conn,
         )
         .await;
+
+        if was_staged && data.collections.as_ref().is_some_and(|collections| !collections.is_empty()) {
+            CollectionUser::delete_all_by_user_and_org(&user.uuid, &org_id, &conn).await?;
+        }
+        if was_staged && !data.groups.is_empty() {
+            GroupUser::delete_all_by_member(&new_member.uuid, &conn).await?;
+        }
 
         // If no accessAll, add the collections received
         if !access_all {
@@ -1138,6 +1168,143 @@ async fn send_invite(
     }
 
     Ok(())
+}
+
+#[post("/organizations/<org_id>/users/send-invite", data = "<data>")]
+async fn send_invite_to_staged_members(
+    org_id: OrganizationId,
+    data: Json<BulkMembershipIds>,
+    headers: AdminHeaders,
+    conn: DbConn,
+) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+
+    let mut requested = Vec::new();
+    let mut eligible = Vec::new();
+    let mut seen = HashSet::new();
+    for member_id in data.into_inner().ids {
+        if !seen.insert(member_id.clone()) {
+            continue;
+        }
+        let error = match Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await {
+            None => "Member not found.",
+            Some(member) if member.status != MembershipStatus::Staged as i32 => {
+                "Only staged members can be sent an invitation."
+            }
+            Some(_) => {
+                eligible.push(member_id.clone());
+                ""
+            }
+        };
+        requested.push((member_id, error));
+    }
+
+    let mut promoted = Vec::new();
+    for member_id in eligible {
+        match invite_staged_member_impl(&org_id, &member_id, &headers, &conn).await {
+            Ok(previous_inviter) => promoted.push((member_id, previous_inviter)),
+            Err(e) => {
+                if CONFIG.mail_enabled() {
+                    for (promoted_id, previous_inviter) in promoted {
+                        if let Some(mut member) = Membership::find_by_uuid_and_org(&promoted_id, &org_id, &conn).await {
+                            member.status = MembershipStatus::Staged as i32;
+                            member.invited_by_email = previous_inviter;
+                            member.save(&conn).await?;
+                        }
+                    }
+                }
+                return Err(e);
+            }
+        }
+    }
+
+    for (member_id, _) in &promoted {
+        log_event(
+            EventType::OrganizationUserInvited,
+            member_id,
+            &org_id,
+            &headers.user.uuid,
+            headers.device.atype,
+            &headers.ip.ip,
+            &conn,
+        )
+        .await;
+    }
+
+    let results: Vec<Value> = requested
+        .into_iter()
+        .map(|(member_id, error)| {
+            json!({
+                "object": "OrganizationBulkConfirmResponseModel",
+                "id": member_id,
+                "error": error,
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "data": results,
+        "object": "list",
+        "continuationToken": null,
+    })))
+}
+
+async fn invite_staged_member_impl(
+    org_id: &OrganizationId,
+    member_id: &MembershipId,
+    headers: &AdminHeaders,
+    conn: &DbConn,
+) -> ApiResult<Option<String>> {
+    let Some(mut member) = Membership::find_by_uuid_and_org(member_id, org_id, conn).await else {
+        err!("Member not found.")
+    };
+    if member.status != MembershipStatus::Staged as i32 {
+        err!("Only staged members can be sent an invitation.")
+    }
+
+    let Some(user) = User::find_by_uuid(&member.user_uuid, conn).await else {
+        err!("User not found")
+    };
+    if !CONFIG.invitations_allowed() && user.password_hash.is_empty() {
+        err!("Invitations are not allowed")
+    }
+
+    let invited_status = if !CONFIG.mail_enabled() && !user.password_hash.is_empty() {
+        MembershipStatus::Accepted as i32
+    } else {
+        MembershipStatus::Invited as i32
+    };
+
+    let previous_inviter = member.invited_by_email.clone();
+
+    if CONFIG.mail_enabled() {
+        let Some(org) = Organization::find_by_uuid(org_id, conn).await else {
+            err!("Organization not found")
+        };
+        member.status = invited_status;
+        member.invited_by_email = Some(headers.user.email.clone());
+        member.save(conn).await?;
+        if let Err(e) =
+            mail::send_invite(&user, org_id.clone(), member.uuid.clone(), &org.name, Some(headers.user.email.clone()))
+                .await
+        {
+            member.status = MembershipStatus::Staged as i32;
+            member.invited_by_email = previous_inviter;
+            member.save(conn).await?;
+            err!(format!("Error sending invite: {e:?}"))
+        }
+    } else {
+        if user.password_hash.is_empty() {
+            Invitation::new(&user.email).save(conn).await?;
+        }
+        member.status = invited_status;
+        member.invited_by_email = Some(headers.user.email.clone());
+        member.save(conn).await?;
+    }
+
+    Ok(previous_inviter)
 }
 
 #[post("/organizations/<org_id>/users/reinvite", data = "<data>")]
@@ -1690,7 +1857,7 @@ async fn delete_member_impl(
         }
     }
 
-    member_to_delete.delete(conn).await
+    member_to_delete.delete_with_staged_user_cleanup(conn).await
 }
 
 #[post("/organizations/<org_id>/users/public-keys", data = "<data>")]
@@ -2090,7 +2257,8 @@ async fn put_policy(
             // Exclude invited and revoked users when checking for this policy.
             // Those users will not be allowed to accept or be activated because of the policy checks done there.
             if member.atype < MembershipType::Admin
-                && member.status != MembershipStatus::Invited as i32
+                && (member.status == MembershipStatus::Accepted as i32
+                    || member.status == MembershipStatus::Confirmed as i32)
                 && Membership::count_accepted_and_confirmed_by_user(&member.user_uuid, &member.org_uuid, &conn).await
                     > 0
             {
@@ -2262,6 +2430,7 @@ async fn revoke_member_impl(
                 err!("Only owners can revoke other owners")
             }
             if member.atype == MembershipType::Owner
+                && member.status == MembershipStatus::Confirmed as i32
                 && Membership::count_confirmed_by_org_and_type(org_id, MembershipType::Owner, conn).await <= 1
             {
                 err!("Organization must have at least one confirmed owner")
@@ -2354,7 +2523,7 @@ async fn restore_member_impl(
         err!("Organization not found", "Organization id's do not match");
     }
     match Membership::find_by_uuid_and_org(member_id, org_id, conn).await {
-        Some(mut member) if member.status < MembershipStatus::Accepted as i32 => {
+        Some(mut member) if member.status <= MembershipStatus::Revoked as i32 => {
             if member.user_uuid == headers.user.uuid {
                 err!("You cannot restore yourself")
             }
@@ -2960,6 +3129,10 @@ async fn check_reset_password_applicable_and_permissions(
     let Some(target_user) = Membership::find_by_uuid_and_org(member_id, org_id, conn).await else {
         err!("Reset target user not found")
     };
+
+    if target_user.status != MembershipStatus::Confirmed as i32 {
+        err!("Organization user must be confirmed for password reset functionality")
+    }
 
     // Resetting user must be higher/equal to user to reset
     match headers.membership_type {
