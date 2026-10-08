@@ -551,6 +551,7 @@ pub async fn update_cipher_from_data(
         _ => err!("Invalid type"),
     };
 
+    let cipher_type = data.r#type;
     let type_data = if let Some(mut data) = type_data_opt {
         // Remove the 'Response' key from the base object.
         if let Some(data_obj) = data.as_object_mut() {
@@ -559,6 +560,18 @@ pub async fn update_cipher_from_data(
         // Remove the 'Response' key from every Uri.
         if data["uris"].is_array() {
             data["uris"] = clean_cipher_data(data["uris"].clone());
+        }
+        // Validate SSH key required fields. Bitwarden cloud rejects ciphers where
+        // privateKey, publicKey, or keyFingerprint is null or empty; matching that
+        // validation here prevents silent data loss on the round-trip (the read
+        // path nullifies invalid SSH keys, so an invalid write would look like it
+        // succeeded but the data would disappear on reload).
+        if cipher_type == 5
+            && (data["keyFingerprint"].as_str().is_none_or(str::is_empty)
+                || data["privateKey"].as_str().is_none_or(str::is_empty)
+                || data["publicKey"].as_str().is_none_or(str::is_empty))
+        {
+            err!("SSH Key must provide non-empty privateKey, publicKey, and keyFingerprint")
         }
         data
     } else {
