@@ -280,7 +280,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
     // These replace the Rocket underscore `_` logs. Rkt logs some of them as Info.
     // Else this will bloat the log output with useless messages.
     let rkt_debug_level = if level >= log::LevelFilter::Debug {
-        log::LevelFilter::Warn
+        log::LevelFilter::Info
     } else {
         log::LevelFilter::Off
     };
@@ -312,6 +312,8 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         ("rkt::codegen", rkt_debug_level),
         // Rkt per-connection warnings, like client header read timeouts (15s) on idle keep-alive connections and connections cancelled during shutdown
         ("rkt::error", log::LevelFilter::Error),
+        // Hide the "incoming request URI normalized for compatibility" warning logged by `AdHoc::uri_normalizer()`
+        ("rkt::fairing::ad_hoc", log::LevelFilter::Error),
         ("hyper::proto", log::LevelFilter::Off),
         ("hyper::client", log::LevelFilter::Off),
         // Filter handlebars logs
@@ -560,6 +562,14 @@ async fn create_db_pool() -> db::DbPool {
 
 async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error> {
     let basepath = &CONFIG.domain_path();
+    // With Rkt and using the `uri_normalizer()` fairing below it will cause collisions when there is a basepath and we append a `/`
+    // The fairing will add the same path with a `/` too which will break.
+    // This only needs to be done for the main routes and not the others
+    let webpath = if basepath.is_empty() {
+        "/"
+    } else {
+        basepath
+    };
 
     let limits = Limits::new()
         .limit("json", 20.megabytes()) // 20MB should be enough for very large imports, something like 5000+ vault entries
@@ -584,19 +594,21 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
     // If adding more paths here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
     let instance = rocket::custom(config)
-        .mount([basepath, "/"].concat(), api::web_routes())
+        .mount(webpath, api::web_routes())
         .mount([basepath, "/api"].concat(), api::core_routes())
         .mount([basepath, "/admin"].concat(), api::admin_routes())
         .mount([basepath, "/events"].concat(), api::core_events_routes())
         .mount([basepath, "/identity"].concat(), api::identity_routes())
         .mount([basepath, "/icons"].concat(), api::icons_routes())
         .mount([basepath, "/notifications"].concat(), api::notifications_routes())
-        .register([basepath, "/"].concat(), api::web_catchers())
+        .register(webpath, api::web_catchers())
         .register([basepath, "/api"].concat(), api::core_catchers())
         .register([basepath, "/admin"].concat(), api::admin_catchers())
         .manage(pool)
         .manage(Arc::clone(&WS_USERS))
         .manage(Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS))
+        // Rkt no longer ignores trailing slashes and empty path segments like Rocket 0.5 did, this restores that
+        .attach(rocket::fairing::AdHoc::uri_normalizer())
         .attach(util::AppHeaders())
         .attach(util::Cors())
         .attach(util::BetterLogging::new(extra_debug, basepath.clone()))
