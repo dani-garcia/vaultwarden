@@ -79,9 +79,9 @@ num-traits = "0.2.19"
 num-derive = "0.5.1"
 bigdecimal = "0.4.11"
 
-# Web framework
-rocket = { version = "0.5.1", default-features = false, features = ["json", "tls"] }
-rocket_ws = { version = "0.1.1" }
+# Web framework fork from Rocket https://github.com/rustfoo/rkt
+rocket = { package = "rkt", version = "1.2.0", default-features = false, features = ["json", "tls"] }
+rocket_ws = { package = "rkt_ws", version = "1.2.0" }
 
 # WebSockets libraries
 rmpv = "1.3.1" # MessagePack library

@@ -77,7 +77,7 @@ pub async fn initialize_keys() -> Result<(), Error> {
     let rsa_key_filename = crate::storage::file_name(&CONFIG.private_rsa_key())
         .ok_or_else(|| IoError::other("Private RSA key path missing filename"))?;
 
-    let operator = CONFIG.opendal_operator_for_path_type(&PathType::RsaKey).map_err(IoError::other)?;
+    let operator = CONFIG.opendal_operator_for_path_type(&PathType::RsaKey)?;
 
     let priv_key_buffer = match operator.read(&rsa_key_filename).await {
         Ok(buffer) => Some(buffer),
@@ -1139,7 +1139,7 @@ impl<'r> FromRequest<'r> for ClientIp {
     type Error = ();
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let remote = req.remote().map(|r| r.ip());
+        let remote = req.remote().and_then(rocket::listener::Endpoint::ip);
 
         let ip = if CONFIG._ip_header_enabled() && ip_header_is_trusted(remote) {
             client_ip_from_header(req, &CONFIG.ip_header(), |ip| ip_header_is_trusted(Some(ip)))
