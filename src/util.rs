@@ -393,8 +393,11 @@ impl Fairing for BetterLogging {
         }
         let path = uri_path.url_decode_lossy();
         match uri.query() {
-            Some(q) => info!(target: "request", "{method} {path}?{}", &q[..q.len().min(30)]),
-            None => info!(target: "request", "{method} {path}"),
+            Some(q) => {
+                let q = q.as_str();
+                info!(target: "request", "{method} {}?{}", path.escape_debug(), q[..q.floor_char_boundary(30)].escape_debug());
+            }
+            None => info!(target: "request", "{method} {}", path.escape_debug()),
         }
     }
 
