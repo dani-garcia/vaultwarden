@@ -166,6 +166,15 @@ impl AuthRequest {
         .await
     }
 
+    pub async fn delete_all_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+        conn.run(move |conn| {
+            diesel::delete(auth_requests::table.filter(auth_requests::user_uuid.eq(user_uuid)))
+                .execute(conn)
+                .map_res("Error deleting auth requests for user")
+        })
+        .await
+    }
+
     /// Marks the request as used to log in. Returns false when it already was, so it only works once.
     pub async fn set_authentication_date(uuid: &AuthRequestId, conn: &DbConn) -> ApiResult<bool> {
         let now = Utc::now().naive_utc();
