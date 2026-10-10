@@ -13,7 +13,7 @@ use crate::{
     api::{
         AnonymousNotify, ApiResult, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
         core::{accept_org_invite, log_user_event, two_factor::email},
-        master_password_policy, register_push_device, unregister_push_device,
+        master_password_policy, push_logout_to_relay, register_push_device, unregister_push_device,
     },
     auth::{ClientHeaders, ClientIp, Headers, decode_delete, decode_invite, decode_verify_email},
     crypto,
@@ -1301,7 +1301,7 @@ struct DeleteRecoverTokenData {
 }
 
 #[post("/accounts/delete-recover-token", data = "<data>")]
-async fn post_delete_recover_token(data: Json<DeleteRecoverTokenData>, conn: DbConn) -> EmptyResult {
+async fn post_delete_recover_token(data: Json<DeleteRecoverTokenData>, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let data: DeleteRecoverTokenData = data.into_inner();
 
     let Ok(claims) = decode_delete(&data.token) else {
@@ -1315,22 +1315,44 @@ async fn post_delete_recover_token(data: Json<DeleteRecoverTokenData>, conn: DbC
     if claims.sub != *user.uuid {
         err!("Invalid claim");
     }
-    user.delete(&conn).await
+
+    // The devices are deleted together with the user, so check for push devices beforehand
+    let has_push_device = CONFIG.push_enabled() && Device::check_user_has_push_device(&user.uuid, &conn).await;
+    user.delete(&conn).await?;
+
+    nt.send_logout(&user, None, &conn).await;
+    if has_push_device {
+        push_logout_to_relay(&user, None);
+    }
+    Ok(())
 }
 
 #[post("/accounts/delete", data = "<data>")]
-async fn post_delete_account(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> EmptyResult {
-    delete_account(data, headers, conn).await
+async fn post_delete_account(
+    data: Json<PasswordOrOtpData>,
+    headers: Headers,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> EmptyResult {
+    delete_account(data, headers, conn, nt).await
 }
 
 #[delete("/accounts", data = "<data>")]
-async fn delete_account(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> EmptyResult {
+async fn delete_account(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;
 
     data.validate(&user, true, &conn).await?;
 
-    user.delete(&conn).await
+    // The devices are deleted together with the user, so check for push devices beforehand
+    let has_push_device = CONFIG.push_enabled() && Device::check_user_has_push_device(&user.uuid, &conn).await;
+    user.delete(&conn).await?;
+
+    nt.send_logout(&user, None, &conn).await;
+    if has_push_device {
+        push_logout_to_relay(&user, None);
+    }
+    Ok(())
 }
 
 #[expect(clippy::needless_pass_by_value, reason = "Not beneficial for Headers")]

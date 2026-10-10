@@ -17,7 +17,7 @@ use crate::{
     api::{
         ApiResult, EmptyResult, JsonResult, Notify,
         core::{log_event, two_factor},
-        unregister_push_device,
+        push_logout_to_relay, unregister_push_device,
     },
     auth::{ClientIp, Secure, decode_admin, encode_jwt, generate_admin_claims},
     config::ConfigBuilder,
@@ -416,12 +416,20 @@ async fn get_user_json(user_id: UserId, _token: AdminToken, conn: DbConn) -> Jso
 }
 
 #[post("/users/<user_id>/delete", format = "application/json")]
-async fn delete_user(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyResult {
+async fn delete_user(user_id: UserId, token: AdminToken, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let user = get_user_or_404(&user_id, &conn).await?;
 
-    // Get the membership records before deleting the actual user
+    // Get the membership records and push devices before deleting the actual user
     let memberships = Membership::find_any_state_by_user(&user_id, &conn).await;
+    let has_push_device = CONFIG.push_enabled() && Device::check_user_has_push_device(&user_id, &conn).await;
     let res = user.delete(&conn).await;
+
+    if res.is_ok() {
+        nt.send_logout(&user, None, &conn).await;
+        if has_push_device {
+            push_logout_to_relay(&user, None);
+        }
+    }
 
     for membership in memberships {
         log_event(
