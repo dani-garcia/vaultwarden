@@ -23,7 +23,8 @@ use crate::{
         models::{
             Archive, Attachment, AttachmentId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup,
             CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, KeyId,
-            Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
+            Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, User, UserId,
+            is_data_blob_encrypted,
         },
     },
     util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
@@ -189,11 +190,18 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
             // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "masterKeyEncryptedUserKey": headers.user.akey,
             "masterKeyWrappedUserKey": headers.user.akey,
-            "salt": headers.user.email
+            "salt": headers.user.email,
+            "containedKeyId": headers.user.key_id,
         })
     } else {
         Value::Null
     };
+
+    // Upstream omits these when unset rather than sending null
+    let mut user_decryption = json!({ "masterPasswordUnlock": master_password_unlock });
+    if let Some(key_id) = &headers.user.key_id {
+        user_decryption["userKeyId"] = json!(key_id);
+    }
 
     Ok(Json(json!({
         "profile": user_json,
@@ -204,10 +212,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
         "ciphers": ciphers_json,
         "domains": domains_json,
         "sends": sends_json,
-        "userDecryption": {
-            "masterPasswordUnlock": master_password_unlock,
-            "userKeyId": headers.user.key_id,
-        },
+        "userDecryption": user_decryption,
         "object": "sync"
     })))
 }
@@ -269,7 +274,8 @@ pub struct CipherData {
 
     key: Option<String>,
 
-    pub encrypted_for: UserId, // Added in web-v2025.6.0
+    // Added in web-v2025.6.0. Deprecated upstream for `encrypted_by_key_id`, but still checked when sent
+    pub encrypted_for: Option<UserId>,
     // Added in web-v2025.8.1, Optional for compat
     pub encrypted_by_key_id: Option<KeyId>,
 
@@ -284,7 +290,8 @@ pub struct CipherData {
     Passport = 8
     */
     pub r#type: i32,
-    pub name: String,
+    // Absent on a blob-encrypted cipher, whose name is sealed inside `data`
+    pub name: Option<String>,
     pub notes: Option<String>,
     fields: Option<Value>,
 
@@ -297,6 +304,9 @@ pub struct CipherData {
     bank_account: Option<Value>,
     drivers_license: Option<Value>,
     passport: Option<Value>,
+
+    // The sealed blob of a v2 account's cipher, which replaces all of the fields above
+    data: Option<String>,
 
     favorite: Option<bool>,
     reprompt: Option<i32>,
@@ -317,6 +327,79 @@ pub struct CipherData {
     // updating an existing cipher.
     last_known_revision_date: Option<String>,
     archived_date: Option<String>,
+}
+
+/// A field of a [`CipherData`] that fails upstream's model validation.
+#[derive(Debug)]
+pub struct CipherValidationError {
+    pub field: &'static str,
+    pub message: String,
+}
+
+impl From<CipherValidationError> for crate::Error {
+    fn from(e: CipherValidationError) -> Self {
+        Self::new_msg(e.message)
+    }
+}
+
+/// The cipher must have been encrypted for the acting user. Only checked when the client sends the field.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Api/Vault/Controllers/CiphersController.cs#L1857-L1870>
+fn validate_encrypted_for_user(data: &CipherData, user_id: &UserId) -> EmptyResult {
+    if data.encrypted_for.as_ref().is_some_and(|encrypted_for| encrypted_for != user_id) {
+        err!("Cipher was not encrypted for the current user. Please try again.")
+    }
+    Ok(())
+}
+
+/// [`validate_encrypted_for_user`], plus the key id of a user-owned cipher, when both ids are known.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Api/Vault/Controllers/CiphersController.cs#L1886-L1911>
+fn validate_encrypted_by_user(data: &CipherData, user: &User, is_org_cipher: bool) -> EmptyResult {
+    validate_encrypted_for_user(data, &user.uuid)?;
+
+    if !is_org_cipher
+        && let (Some(cipher_key_id), Some(user_key_id)) = (&data.encrypted_by_key_id, &user.key_id)
+        && cipher_key_id != user_key_id
+    {
+        err!("Cipher was not encrypted with the current user key. Please try again.")
+    }
+    Ok(())
+}
+
+/// Upstream's `[StringLength(500000)]` on `CipherRequestModel.Data`
+const MAX_CIPHER_DATA_LENGTH: usize = 500_000;
+
+impl CipherData {
+    /// Whether `data` is a blob rather than the per-type fields. Parses `data`, so keep the result.
+    pub fn is_blob(&self) -> bool {
+        self.data.as_deref().is_some_and(is_data_blob_encrypted)
+    }
+
+    /// Upstream's model checks that depend on the format: the size of `data`, and a name unless it's a blob.
+    ///
+    /// Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Api/Vault/Models/Request/CipherRequestModel.cs#L76-L77>
+    /// and <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Api/Vault/Models/Request/CipherRequestModel.cs#L91-L99>
+    pub fn validate_content(&self, is_blob: bool) -> Result<(), CipherValidationError> {
+        if let Some(data) = &self.data
+            && data.len() > MAX_CIPHER_DATA_LENGTH
+        {
+            return Err(CipherValidationError {
+                field: "Data",
+                message: format!("The field Data must be a string with a maximum length of {MAX_CIPHER_DATA_LENGTH}."),
+            });
+        }
+
+        // A blob carries the name inside it, so only the other formats need one
+        if !is_blob && self.name.as_deref().is_none_or(|n| n.trim().is_empty()) {
+            return Err(CipherValidationError {
+                field: "Name",
+                message: String::from("The Name field is required."),
+            });
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -352,16 +435,14 @@ async fn post_ciphers_create(
 ) -> JsonResult {
     let mut data: ShareCipherData = data.into_inner();
 
-    if data.cipher.encrypted_for != headers.user.uuid {
-        err_code!("Invalid user cipher", Status::UnprocessableEntity.code);
-    }
+    validate_encrypted_by_user(&data.cipher, &headers.user, data.cipher.organization_id.is_some())?;
 
     // This check is usually only needed in update_cipher_from_data(), but we
     // need it here as well to avoid creating an empty cipher in the call to
     // cipher.save() below.
     enforce_personal_ownership_policy(Some(&data.cipher), &headers, &conn).await?;
 
-    let mut cipher = Cipher::new(data.cipher.r#type, data.cipher.name.clone());
+    let mut cipher = Cipher::new(data.cipher.r#type);
     cipher.user_uuid = Some(headers.user.uuid.clone());
     cipher.save(&conn).await?;
 
@@ -385,16 +466,7 @@ async fn post_ciphers_create(
 async fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     let mut data: CipherData = data.into_inner();
 
-    if data.encrypted_for != headers.user.uuid {
-        err_code!("Invalid user cipher", Status::UnprocessableEntity.code);
-    }
-
-    if let Some(cipher_key_id) = &data.encrypted_by_key_id
-        && let Some(user_key_id) = &headers.user.key_id
-        && cipher_key_id != user_key_id
-    {
-        err_code!("Invalid key cipher", Status::UnprocessableEntity.code);
-    }
+    validate_encrypted_by_user(&data, &headers.user, data.organization_id.is_some())?;
 
     // The web/browser clients set this field to null as expected, but the
     // mobile clients seem to set the invalid value `0001-01-01T00:00:00`,
@@ -402,7 +474,7 @@ async fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn, nt
     // needed when creating a new cipher, so just ignore it unconditionally.
     data.last_known_revision_date = None;
 
-    let mut cipher = Cipher::new(data.r#type, data.name.clone());
+    let mut cipher = Cipher::new(data.r#type);
     update_cipher_from_data(&mut cipher, data, &headers, None, &conn, &nt, UpdateType::SyncCipherCreate).await?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &conn).await?))
@@ -422,6 +494,44 @@ async fn enforce_personal_ownership_policy(data: Option<&CipherData>, headers: &
         if OrgPolicy::is_applicable_to_user(user_id, policy_type, None, conn).await {
             err!("Due to an Enterprise Policy, you are restricted from saving items to your personal vault.")
         }
+    }
+    Ok(())
+}
+
+/// The checks of saving a cipher, for callers that run them before writing anything else
+async fn validate_cipher_update(
+    cipher: &Cipher,
+    data: &CipherData,
+    headers: &Headers,
+    conn: &DbConn,
+    ut: UpdateType,
+) -> EmptyResult {
+    // Check that the client isn't updating an existing cipher with stale data.
+    // And only perform this check when not importing ciphers, else the date/time check will fail.
+    if ut != UpdateType::None
+        && let Some(dt) = &data.last_known_revision_date
+    {
+        match NaiveDateTime::parse_from_str(dt, "%+") {
+            // ISO 8601 format
+            Err(err) => warn!("Error parsing LastKnownRevisionDate '{dt}': {err}"),
+            Ok(dt) if cipher.updated_at.signed_duration_since(dt).num_seconds() > 1 => {
+                err!("The client copy of this cipher is out of date. Resync the client and try again.")
+            }
+            Ok(_) => (),
+        }
+    }
+
+    if let Some(note) = &data.notes {
+        let max_note_size = CONFIG._max_note_size();
+        if note.len() > max_note_size {
+            err!(format!("The field Notes exceeds the maximum encrypted value length of {max_note_size} characters."))
+        }
+    }
+
+    if let Some(folder_id) = &data.folder_id
+        && Folder::find_by_uuid_and_user(folder_id, &headers.user.uuid, conn).await.is_none()
+    {
+        err!("Invalid folder", "Folder does not exist or belongs to another user");
     }
     Ok(())
 }
@@ -451,30 +561,12 @@ pub async fn update_cipher_from_data(
 
     enforce_personal_ownership_policy(Some(&data), headers, conn).await?;
 
-    // Check that the client isn't updating an existing cipher with stale data.
-    // And only perform this check when not importing ciphers, else the date/time check will fail.
-    if ut != UpdateType::None
-        && let Some(dt) = data.last_known_revision_date
-    {
-        match NaiveDateTime::parse_from_str(&dt, "%+") {
-            // ISO 8601 format
-            Err(err) => warn!("Error parsing LastKnownRevisionDate '{dt}': {err}"),
-            Ok(dt) if cipher.updated_at.signed_duration_since(dt).num_seconds() > 1 => {
-                err!("The client copy of this cipher is out of date. Resync the client and try again.")
-            }
-            Ok(_) => (),
-        }
-    }
+    let is_blob = data.is_blob();
+    data.validate_content(is_blob)?;
+    validate_cipher_update(cipher, &data, headers, conn, ut).await?;
 
     if cipher.organization_uuid.is_some() && cipher.organization_uuid != data.organization_id {
         err!("Organization mismatch. Please resync the client before updating the cipher")
-    }
-
-    if let Some(note) = &data.notes {
-        let max_note_size = CONFIG._max_note_size();
-        if note.len() > max_note_size {
-            err!(format!("The field Notes exceeds the maximum encrypted value length of {max_note_size} characters."))
-        }
     }
 
     // Check if this cipher is being transferred from a personal to an organization vault
@@ -505,12 +597,6 @@ pub async fn update_cipher_from_data(
         }
     } else {
         cipher.user_uuid = Some(headers.user.uuid.clone());
-    }
-
-    if let Some(ref folder_id) = data.folder_id
-        && Folder::find_by_uuid_and_user(folder_id, &headers.user.uuid, conn).await.is_none()
-    {
-        err!("Invalid folder", "Folder does not exist or belongs to another user");
     }
 
     // Modify attachments name and keys when rotating
@@ -551,26 +637,36 @@ pub async fn update_cipher_from_data(
         _ => err!("Invalid type"),
     };
 
-    let type_data = if let Some(mut data) = type_data_opt {
+    if let Some(blob) = data.data.filter(|_| is_blob) {
+        // A blob holds everything, the name included; the column can't be null, so it's left empty
+        // TODO: Make `ciphers.name` nullable and store `None` here instead.
+        cipher.name = String::new();
+        cipher.notes = None;
+        cipher.fields = None;
+        cipher.password_history = None;
+        cipher.data = blob;
+    } else {
+        let Some(mut type_data) = type_data_opt else {
+            err!("Data missing")
+        };
         // Remove the 'Response' key from the base object.
-        if let Some(data_obj) = data.as_object_mut() {
+        if let Some(data_obj) = type_data.as_object_mut() {
             data_obj.remove("response");
         }
         // Remove the 'Response' key from every Uri.
-        if data["uris"].is_array() {
-            data["uris"] = clean_cipher_data(data["uris"].clone());
+        if type_data["uris"].is_array() {
+            type_data["uris"] = clean_cipher_data(type_data["uris"].clone());
         }
-        data
-    } else {
-        err!("Data missing")
-    };
+
+        // `validate_content` made sure there is a name
+        cipher.name = data.name.unwrap_or_default();
+        cipher.notes = data.notes;
+        cipher.fields = data.fields.map(|f| clean_cipher_data(f).to_string());
+        cipher.password_history = data.password_history.map(|f| f.to_string());
+        cipher.data = type_data.to_string();
+    }
 
     cipher.key = data.key;
-    cipher.name = data.name;
-    cipher.notes = data.notes;
-    cipher.fields = data.fields.map(|f| clean_cipher_data(f).to_string());
-    cipher.data = type_data.to_string();
-    cipher.password_history = data.password_history.map(|f| f.to_string());
     cipher.reprompt = data.reprompt.filter(|r| *r == RepromptType::None as i32 || *r == RepromptType::Password as i32);
 
     cipher.save(conn).await?;
@@ -667,7 +763,7 @@ async fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbC
         let folder_id = relations_map.get(&index).and_then(|i| folders.get(*i).cloned());
         cipher_data.folder_id = folder_id;
 
-        let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
+        let mut cipher = Cipher::new(cipher_data.r#type);
         update_cipher_from_data(&mut cipher, cipher_data, &headers, None, &conn, &nt, UpdateType::None).await?;
     }
 
@@ -734,6 +830,9 @@ async fn put_cipher(
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn).await {
         err!("Cipher is not write accessible")
     }
+
+    // Against the cipher we hold rather than the organization the client claims, like upstream
+    validate_encrypted_by_user(&data, &headers.user, cipher.organization_uuid.is_some())?;
 
     update_cipher_from_data(&mut cipher, data, &headers, None, &conn, &nt, UpdateType::SyncCipherUpdate).await?;
 
@@ -993,9 +1092,7 @@ async fn post_cipher_share(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    let data: ShareCipherData = data.into_inner();
-
-    share_cipher_by_uuid(&cipher_id, data, &headers, &conn, &nt, None).await
+    put_cipher_share(cipher_id, data, headers, conn, nt).await
 }
 
 #[put("/ciphers/<cipher_id>/share", data = "<data>")]
@@ -1007,6 +1104,21 @@ async fn put_cipher_share(
     nt: Notify<'_>,
 ) -> JsonResult {
     let data: ShareCipherData = data.into_inner();
+
+    // Upstream's `PutShare` checks, before anything is written.
+    // Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Api/Vault/Controllers/CiphersController.cs#L899-L912>
+    // and <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Api/Vault/Models/Request/CipherRequestModel.cs#L498-L519>
+    if data.cipher.organization_id.is_none() {
+        err!("Cipher OrganizationId is required.")
+    }
+    if data.collection_ids.is_empty() {
+        err!("You must select at least one collection.")
+    }
+    if !Cipher::find_by_uuid(&cipher_id, &conn).await.is_some_and(|c| c.user_uuid.as_ref() == Some(&headers.user.uuid))
+    {
+        err_code!("Cipher doesn't exist", Status::NotFound.code)
+    }
+    validate_encrypted_for_user(&data.cipher, &headers.user.uuid)?;
 
     share_cipher_by_uuid(&cipher_id, data, &headers, &conn, &nt, None).await
 }
@@ -1027,18 +1139,33 @@ async fn put_cipher_share_selected(
 ) -> EmptyResult {
     let mut data: ShareSelectedCipherData = data.into_inner();
 
+    // Upstream's `PutShareMany` checks, before anything is written.
+    // Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Api/Vault/Controllers/CiphersController.cs#L1395-L1421>
+    // and <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Api/Vault/Models/Request/CipherRequestModel.cs#L560-L604>
     if data.ciphers.is_empty() {
         err!("You must select at least one cipher.")
     }
-
+    if data.ciphers.iter().any(|c| c.id.is_none() || c.organization_id.is_none()) {
+        err!("All Ciphers must have an Id and OrganizationId.")
+    }
+    if data.ciphers.iter().map(|c| &c.organization_id).collect::<HashSet<_>>().len() != 1 {
+        err!("All ciphers must be for the same organization.")
+    }
     if data.collection_ids.is_empty() {
         err!("You must select at least one collection.")
     }
-
     for cipher in &data.ciphers {
-        if cipher.id.is_none() {
-            err!("Request missing ids field")
-        }
+        cipher.validate_content(cipher.is_blob())?;
+    }
+    for cipher in &data.ciphers {
+        validate_encrypted_for_user(cipher, &headers.user.uuid)?;
+    }
+    let owned_ciphers = Cipher::find_owned_by_user(&headers.user.uuid, &conn).await;
+    for cipher_data in &data.ciphers {
+        let Some(cipher) = owned_ciphers.iter().find(|c| cipher_data.id.as_ref() == Some(&c.uuid)) else {
+            err!("Trying to share ciphers that you do not own.")
+        };
+        validate_cipher_update(cipher, cipher_data, &headers, &conn, UpdateType::None).await?;
     }
 
     while let Some(cipher) = data.ciphers.pop() {
@@ -1085,6 +1212,20 @@ async fn share_cipher_by_uuid(
         err!("Organization mismatch. Please resync the client before updating the cipher")
     }
 
+    // When LastKnownRevisionDate is None, it is a new cipher, so send CipherCreate.
+    // If there is an override, like when handling multiple items, we want to prevent a push notification for every single item
+    let ut = if let Some(ut) = override_ut {
+        ut
+    } else if data.cipher.last_known_revision_date.is_some() {
+        UpdateType::SyncCipherUpdate
+    } else {
+        UpdateType::SyncCipherCreate
+    };
+
+    // For the same reason, the other checks of saving
+    data.cipher.validate_content(data.cipher.is_blob())?;
+    validate_cipher_update(&cipher, &data.cipher, headers, conn, ut).await?;
+
     let mut shared_to_collections = vec![];
 
     if let Some(organization_id) = &data.cipher.organization_id {
@@ -1102,16 +1243,6 @@ async fn share_cipher_by_uuid(
             }
         }
     }
-
-    // When LastKnownRevisionDate is None, it is a new cipher, so send CipherCreate.
-    // If there is an override, like when handling multiple items, we want to prevent a push notification for every single item
-    let ut = if let Some(ut) = override_ut {
-        ut
-    } else if data.cipher.last_known_revision_date.is_some() {
-        UpdateType::SyncCipherUpdate
-    } else {
-        UpdateType::SyncCipherCreate
-    };
 
     update_cipher_from_data(&mut cipher, data.cipher, headers, Some(shared_to_collections), conn, nt, ut).await?;
 
