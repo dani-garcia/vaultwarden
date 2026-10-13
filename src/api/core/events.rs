@@ -348,13 +348,16 @@ async fn log_event_impl(
 pub async fn event_cleanup_job(pool: DbPool) {
     debug!("Start events cleanup job");
     if CONFIG.events_days_retain().is_none() {
-        debug!("events_days_retain is not configured, abort");
+        debug!("events_days_retain is not configured, skipping");
         return;
     }
 
-    if let Ok(conn) = pool.get().await {
-        Event::clean_events(&conn).await.ok();
-    } else {
+    let Ok(conn) = pool.get().await else {
         error!("Failed to get DB connection while trying to cleanup the events table");
+        return;
+    };
+
+    if let Err(e) = Event::clean_events(&conn).await {
+        error!("Failed to cleanup the events table: {e}");
     }
 }
