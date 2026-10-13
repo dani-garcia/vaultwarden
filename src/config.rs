@@ -1274,6 +1274,24 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         err!("`PURGE_INCOMPLETE_SSO_AUTH` is not a valid cron expression")
     }
 
+    if cfg.trash_auto_delete_days.is_some_and(|d| d < 0) {
+        err!(
+            "`TRASH_AUTO_DELETE_DAYS` is less than 0 days, negative values are not allowed, unset to disable this feature"
+        );
+    }
+
+    if cfg.incomplete_2fa_time_limit < 0 {
+        err!(
+            "`INCOMPLETE_2FA_TIME_LIMIT` is less than 0 minutes, negative values are not allowed, use 0 to disable this feature"
+        );
+    }
+
+    if cfg.events_days_retain.is_some_and(|d| d < 0) {
+        err!(
+            "`EVENTS_DAYS_RETAIN` is less than 0 days, negative values are not allowed, unset to disable this feature"
+        );
+    }
+
     if !cfg.disable_admin_token {
         match cfg.admin_token.as_ref() {
             Some(t) if t.starts_with("$argon2") => {
