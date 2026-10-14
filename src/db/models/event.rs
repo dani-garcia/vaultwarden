@@ -347,11 +347,11 @@ impl Event {
     }
 
     pub async fn clean_events(conn: &DbConn) -> EmptyResult {
-        let Some(days_to_retain) = CONFIG.events_days_retain() else {
+        let Some(days_to_retain) = CONFIG.events_days_retain().filter(|&d| d != 0) else {
             return Ok(());
         };
 
-        let Some(days_to_retain) = TimeDelta::try_days(days_to_retain) else {
+        let Some(days_to_retain) = TimeDelta::try_days(i64::from(days_to_retain)) else {
             err!("Unable to calculate the event retention date, check 'EVENTS_DAYS_RETAIN'")
         };
 
