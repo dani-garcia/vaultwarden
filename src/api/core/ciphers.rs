@@ -1021,9 +1021,8 @@ struct ShareSelectedCipherData {
 // A bulk share returns cipherMini models, not the cipherDetails models used by
 // the single-share route. Keep the encrypted legacy fields and a future v2
 // `data` blob, but do not expose details-only fields in this response.
-fn cipher_mini_from_json(cipher: &Value) -> Value {
-    let mut mini = json!({ "object": "cipherMini" });
-    for field in [
+fn cipher_mini_from_json(mut cipher: Value) -> Value {
+    const FIELDS: &[&str] = &[
         "id",
         "organizationId",
         "type",
@@ -1048,12 +1047,14 @@ fn cipher_mini_from_json(cipher: &Value) -> Value {
         "deletedDate",
         "reprompt",
         "key",
-    ] {
-        if let Some(value) = cipher.get(field) {
-            mini[field] = value.clone();
-        }
-    }
-    mini
+    ];
+
+    let Some(object) = cipher.as_object_mut() else {
+        return json!({ "object": "cipherMini" });
+    };
+    object.retain(|field, _| FIELDS.contains(&field.as_str()));
+    object.insert("object".into(), "cipherMini".into());
+    cipher
 }
 
 #[put("/ciphers/share", data = "<data>")]
@@ -1063,7 +1064,7 @@ async fn put_cipher_share_selected(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    let mut data: ShareSelectedCipherData = data.into_inner();
+    let data: ShareSelectedCipherData = data.into_inner();
 
     if data.ciphers.is_empty() {
         err!("You must select at least one cipher.")
@@ -1080,7 +1081,7 @@ async fn put_cipher_share_selected(
     }
 
     let mut responses = Vec::with_capacity(data.ciphers.len());
-    while let Some(cipher) = data.ciphers.pop() {
+    for cipher in data.ciphers {
         let mut shared_cipher_data = ShareCipherData {
             cipher,
             collection_ids: data.collection_ids.clone(),
@@ -1094,18 +1095,14 @@ async fn put_cipher_share_selected(
             // removed the user's access to it. Only then include its encrypted
             // mini response; the full single-share response stays internal.
             if let Some(shared_cipher) = Cipher::find_by_uuid(&id, &conn).await
-                && shared_cipher.get_access_restrictions(&headers.user.uuid, None, &conn).await.is_some()
+                && shared_cipher.is_accessible_to_user(&headers.user.uuid, &conn).await
             {
-                responses.push(cipher_mini_from_json(&response.into_inner()));
+                responses.push(cipher_mini_from_json(response.into_inner()));
             }
         } else {
             err!("Request missing ids field")
         }
     }
-
-    // The existing loop processes the request from the end; upstream returns
-    // the visible ciphers in request order.
-    responses.reverse();
 
     // Multi share actions do not send out a push for each cipher, we need to send a general sync here
     nt.send_user_update(UpdateType::SyncCiphers, &headers.user, headers.device.push_uuid.as_ref(), &conn).await;
