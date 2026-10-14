@@ -347,8 +347,8 @@ async fn log_event_impl(
 
 pub async fn event_cleanup_job(pool: DbPool) {
     debug!("Start events cleanup job");
-    if CONFIG.events_days_retain().is_none() {
-        debug!("events_days_retain is not configured, skipping");
+    if CONFIG.events_days_retain().is_none_or(|d| d == 0) {
+        debug!("events_days_retain is not configured or set to 0, skipping");
         return;
     }
 

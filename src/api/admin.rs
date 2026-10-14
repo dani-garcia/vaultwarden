@@ -201,12 +201,15 @@ fn post_admin_login(
     // If the token is invalid, redirect to login page
     if validate_token(&data.token) {
         // If the token received is valid, generate JWT and save it as a cookie
-        let claims = generate_admin_claims();
+        let claims = match generate_admin_claims() {
+            Ok(claims) => claims,
+            Err(e) => return Err(AdminResponse::Ok(render_admin_login(Some(e.message()), redirect.as_deref()))),
+        };
         let jwt = encode_jwt(&claims);
 
         let cookie = Cookie::build((COOKIE_NAME, jwt))
             .path(admin_path())
-            .max_age(time::Duration::minutes(CONFIG.admin_session_lifetime()))
+            .max_age(time::Duration::minutes(i64::from(CONFIG.admin_session_lifetime())))
             .same_site(SameSite::Strict)
             .http_only(true)
             .secure(secure.https);

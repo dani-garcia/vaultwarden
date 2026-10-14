@@ -206,7 +206,7 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
     };
 
     let now = Utc::now().naive_utc();
-    let Some(time_limit) = TimeDelta::try_minutes(CONFIG.incomplete_2fa_time_limit()) else {
+    let Some(time_limit) = TimeDelta::try_minutes(i64::from(CONFIG.incomplete_2fa_time_limit())) else {
         error!("Failed to calculate the time limit for sending incomplete 2fa attempts");
         return;
     };
