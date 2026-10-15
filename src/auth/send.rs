@@ -104,8 +104,8 @@ impl SendTokens {
 
         if let Some(mut split) = send.emails.as_ref().map(|s| s.split(',')) {
             let now = Utc::now().naive_utc();
-            match email.as_ref() {
-                Some(e) if split.any(|s| s == e) => {
+            match email.map(|e| e.trim().to_lowercase()) {
+                Some(e) if split.any(|s| s.trim() == e) => {
                     if let Some(code) = otp {
                         if let Some(db_otp) = o_otp {
                             if crypto::ct_eq(&code, &db_otp.code) && now < db_otp.expiration_date {
@@ -124,8 +124,8 @@ impl SendTokens {
                         } else {
                             // SEND OTP CODE
                             let code = crypto::generate_email_token(CONFIG.email_token_size());
-                            SendOTP::new(send_id, e, code.clone()).save(conn).await?;
-                            mail::send_sends_otp(e, &code).await?;
+                            SendOTP::new(send_id, &e, code.clone()).save(conn).await?;
+                            mail::send_sends_otp(&e, &code).await?;
                         }
                         return Self::expected_error("Email OTP required", "email_and_otp_required");
                     }
