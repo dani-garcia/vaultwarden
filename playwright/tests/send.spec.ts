@@ -77,7 +77,7 @@ test('Password', async ({ browser, page }) => {
         await page.getByRole('link', { name: 'Send' }).click();
         await expect(page.locator('#main-content').getByText('Send', { exact: true })).toBeVisible();
 
-        await page.getByRole('button', { name: 'New' }).click();
+        await page.getByRole('button', { name: ' New', exact: true }).click();
         await page.getByRole('menuitem', { name: 'Text' }).click();
 
         await page.getByRole('textbox', { name: 'Send name * (required)' }).fill('Password');
@@ -116,14 +116,14 @@ test('Validation', async ({ browser, page }) => {
         await page.getByRole('link', { name: 'Send' }).click();
         await expect(page.locator('#main-content').getByText('Send', { exact: true })).toBeVisible();
 
-        await page.getByRole('button', { name: 'New', exact: true }).click();
+        await page.getByRole('button', { name: ' New', exact: true }).click();
         await page.getByRole('menuitem', { name: 'Text' }).click();
 
-        await page.getByRole('textbox', { name: 'Send name (required)' }).fill('Email');
-        await page.getByRole('textbox', { name: 'Text to share (required)' }).fill('Email');
+        await page.getByRole('textbox', { name: 'Send name * (required)' }).fill('Email');
+        await page.getByRole('textbox', { name: 'Text to share * (required)' }).fill('Email');
         await page.getByRole('combobox', { name: 'Who can view' }).click();
         await page.getByText('Specific people').click();
-        await page.getByRole('textbox', { name: 'Emails (required)' }).fill(users.user2.email);
+        await page.getByRole('textbox', { name: 'Emails * (required)' }).fill(users.user2.email);
 
         await page.getByRole('button', { name: 'Save' }).click();
         await page.locator('footer').getByRole('button', { name: 'Copy link' }).click();
@@ -134,7 +134,7 @@ test('Validation', async ({ browser, page }) => {
     await test.step('View with email OTP', async () => {
         await page2.goto(mail_url, { waitUntil: 'domcontentloaded' });
         await expect(page2.getByRole('heading', { name: 'Verify your email to view' })).toBeVisible();
-        await page2.getByRole('textbox', { name: 'Email (required)' }).fill(users.user2.email);
+        await page2.getByRole('textbox', { name: 'Email * (required)' }).fill(users.user2.email);
         await page2.getByRole('button', { name: 'Send code' }).click();
 
         let code = await retrieveEmailCode(test, pageMail, mailBuffer);
