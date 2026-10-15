@@ -111,6 +111,7 @@ macro_rules! make_config {
             _usr: ConfigBuilder,
 
             _overrides: Vec<&'static str>,
+            _config_file_status: ConfigFileStatus,
         }
 
         // Custom Deserialize for ConfigBuilder, mainly based upon https://serde.rs/deserialize-struct.html
@@ -259,17 +260,18 @@ macro_rules! make_config {
                 builder
             }
 
-            async fn from_file() -> Result<Self, Error> {
+            async fn from_file() -> Result<Option<Self>, Error> {
                 let operator = storage::operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
                 let config_bytes = match operator.read(&CONFIG_FILENAME).await {
                     Ok(bytes) => bytes,
                     // No config file is fine, should not return any error
-                    Err(e) if e.kind() == opendal::ErrorKind::NotFound => return Ok(Self::default()),
+                    Err(e) if e.kind() == opendal::ErrorKind::NotFound => return Ok(None),
                     // Any other error might be an issue and should be passed back to the caller
                     Err(e) => return Err(e.into()),
                 };
+                let builder = serde_json::from_slice(&config_bytes.to_vec())?;
                 println!("[INFO] Using saved config from `{}` for configuration.\n", *CONFIG_FILE);
-                serde_json::from_slice(&config_bytes.to_vec()).map_err(Into::into)
+                Ok(Some(builder))
             }
 
             fn clear_non_editable(&mut self) {
@@ -446,6 +448,8 @@ macro_rules! make_config {
                     "domain_origin",
                     "domain_path",
                     "domain",
+                    "duo_ikey",
+                    "duo_host",
                     "helo_name",
                     "org_creation_users",
                     "signups_domains_whitelist",
@@ -457,6 +461,8 @@ macro_rules! make_config {
                     "sso_authority",
                     "sso_callback_path",
                     "sso_client_id",
+                    "yubico_client_id",
+                    "yubico_server",
                 ];
 
                 let cfg = {
@@ -488,6 +494,10 @@ macro_rules! make_config {
                     inner._overrides.clone()
                 };
                 overrides
+            }
+
+            pub fn get_config_file_status(&self) -> ConfigFileStatus {
+                self.inner.read().unwrap()._config_file_status
             }
         }
     };
@@ -1481,23 +1491,34 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "pm-32009-new-item-types",
 ];
 
+#[derive(Clone, Copy, Serialize)]
+pub enum ConfigFileStatus {
+    NotFound,
+    Loaded,
+    Error,
+}
+
 impl Config {
     pub async fn load() -> Result<Self, Error> {
         // Loading from env and file
         let env = ConfigBuilder::from_env();
-        let usr = ConfigBuilder::from_file().await.unwrap_or_else(|e| {
-            println!(
-                "[ERROR] Failed to load configuration from `{}`\n\
-                #####################################################################################\n\
-                # The file seems to exist but might contain invalid JSON or invalid values.         #\n\
-                # Check the syntax and make sure every value is valid and within its allowed range. #\n\
-                # This file is not used until those errors are resolved.                            #\n\
-                #####################################################################################\n\
+        let (usr, config_file_status) = match ConfigBuilder::from_file().await {
+            Ok(Some(usr)) => (usr, ConfigFileStatus::Loaded),
+            Ok(None) => (ConfigBuilder::default(), ConfigFileStatus::NotFound),
+            Err(e) => {
+                println!(
+                    "[ERROR] Failed to load configuration from `{}`\n\
+                    #####################################################################################\n\
+                    # The file seems to exist but might contain invalid JSON or invalid values.         #\n\
+                    # Check the syntax and make sure every value is valid and within its allowed range. #\n\
+                    # This file is not used until those errors are resolved.                            #\n\
+                    #####################################################################################\n\
                 {e:?}\n",
-                *CONFIG_FILE
-            );
-            ConfigBuilder::default()
-        });
+                    *CONFIG_FILE
+                );
+                (ConfigBuilder::default(), ConfigFileStatus::Error)
+            }
+        };
 
         // Create merged config, config file overwrites env
         let mut overrides = Vec::new();
@@ -1517,6 +1538,7 @@ impl Config {
                 _env: env,
                 _usr: usr,
                 _overrides: overrides,
+                _config_file_status: config_file_status,
             }),
         })
     }
@@ -1550,6 +1572,7 @@ impl Config {
             writer.config = config;
             writer._usr = builder;
             writer._overrides = overrides;
+            writer._config_file_status = ConfigFileStatus::Loaded;
         }
 
         //Save to file
@@ -1641,6 +1664,7 @@ impl Config {
             writer.config = config;
             writer._usr = usr;
             writer._overrides = Vec::new();
+            writer._config_file_status = ConfigFileStatus::NotFound;
         }
 
         // Invalidate CSS Cache because several config items might have impact on the rendered CSS
