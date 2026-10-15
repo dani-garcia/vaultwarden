@@ -462,6 +462,15 @@ impl SendOTP {
         }
     }
 
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
+        conn.run(move |conn| {
+            diesel::delete(sends_otp::table.filter(sends_otp::send_uuid.eq(&self.send_uuid)))
+                .execute(conn)
+                .map_res("Error deleting send_otp")
+        })
+        .await
+    }
+
     pub async fn find_with_send(uuid: &SendId, email: Option<&String>, conn: &DbConn) -> Option<(Send, Option<Self>)> {
         if let Some(mail) = email.map(|e| e.to_lowercase()) {
             conn.run(move |conn| {
