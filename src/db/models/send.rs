@@ -102,7 +102,7 @@ impl Send {
 
             max_access_count,
             access_count: 0,
-            emails: emails.map(|e| e.to_lowercase()),
+            emails: emails.map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()),
 
             creation_date: now,
             revision_date: now,

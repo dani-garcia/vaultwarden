@@ -535,7 +535,7 @@ async fn update_send_from_data(
     send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
     send.hide_email = data.hide_email.unwrap_or(false);
     send.disabled = data.disabled;
-    send.emails = data.emails.map(|e| e.to_lowercase());
+    send.emails = data.emails.map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty());
 
     // Only change the value if it's present
     if let Some(password) = data.password {
