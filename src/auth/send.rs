@@ -130,13 +130,7 @@ impl SendTokens {
                         return Self::expected_error("Email OTP required", "email_and_otp_required");
                     }
                 }
-                Some(e) => {
-                    return Self::invalid_error(
-                        &format!("Send {send_id}, invalid access from {e}"),
-                        "send_id_invalid",
-                        false,
-                    );
-                }
+                Some(_) => return Self::expected_error("Email OTP required", "email_and_otp_required"),
                 None => return Self::expected_error("Email validation required", "email_required"),
             }
         }
