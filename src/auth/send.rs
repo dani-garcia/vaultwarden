@@ -124,8 +124,12 @@ impl SendTokens {
                         } else {
                             // SEND OTP CODE
                             let code = crypto::generate_email_token(CONFIG.email_token_size());
-                            SendOTP::new(send_id, &e, code.clone()).save(conn).await?;
-                            mail::send_sends_otp(&e, &code).await?;
+                            let send_otp = SendOTP::new(send_id, &e, code.clone());
+                            send_otp.save(conn).await?;
+                            if let Err(e) = mail::send_sends_otp(&e, &code).await {
+                                drop(send_otp.delete(conn).await);
+                                Err(e)?;
+                            }
                         }
                         return Self::expected_error("Email OTP required", "email_and_otp_required");
                     }
