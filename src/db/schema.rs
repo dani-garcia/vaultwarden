@@ -40,6 +40,8 @@ table! {
         org_uuid -> Text,
         name -> Text,
         external_id -> Nullable<Text>,
+        default_user_uuid -> Nullable<Text>,
+        default_user_collection_email -> Nullable<Text>,
     }
 }
 
