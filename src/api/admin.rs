@@ -782,6 +782,8 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
     .into_keys()
     .collect();
 
+    let invalid_env_vars = crate::util::INVALID_ENV_VARS.lock().unwrap().join(", ");
+
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
         "current_release": VERSION,
@@ -804,7 +806,9 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
         "db_version": get_sql_server_version(&conn).await,
         "admin_url": format!("{}/diagnostics", admin_url()),
         "overrides": &CONFIG.get_overrides().join(", "),
+        "config_file_status": &CONFIG.get_config_file_status(),
         "template_overrides": check_template_overrides().join(", "),
+        "invalid_env_vars": invalid_env_vars,
         "invalid_feature_flags": invalid_feature_flags,
         "host_arch": env::consts::ARCH,
         "host_os":  env::consts::OS,
