@@ -80,7 +80,7 @@ impl SendTokens {
             return Self::invalid_error(&format!("Can't convert {access_id}"), "send_id_invalid", false);
         };
 
-        let Some((mut send, o_otp)) = SendOTP::find_with_send(&send_id, email.as_ref(), conn).await else {
+        let Some((send, o_otp)) = SendOTP::find_with_send(&send_id, email.as_ref(), conn).await else {
             return Self::invalid_error(&format!("Can't find {send_id}"), "send_id_invalid", false);
         };
 
@@ -106,16 +106,28 @@ impl SendTokens {
             let now = Utc::now().naive_utc();
             match email.as_ref() {
                 Some(e) if split.any(|s| s == e) => {
-                    match (otp, o_otp) {
-                        (Some(code), Some(db_otp)) if crypto::ct_eq(&code, &db_otp.code) && now < db_otp.expiration_date => (),
-                        (None, _) => {
+                    if let Some(code) = otp {
+                        if let Some(db_otp) = o_otp {
+                            if crypto::ct_eq(&code, &db_otp.code) && now < db_otp.expiration_date {
+                                db_otp.delete(conn).await?;
+                            } else {
+                                return Self::expected_error("Email OTP required", "email_and_otp_required");
+                            }
+                        } else {
+                            return Self::invalid_error(&format!("Send {send_id}, disabled"), "send_id_invalid", true);
+                        }
+                    } else {
+                        if let Some(db_otp) = o_otp
+                            && now + TimeDelta::try_minutes(1).unwrap() < db_otp.expiration_date
+                        {
+                            // Code is still valid for a minute do nothing
+                        } else {
                             // SEND OTP CODE
                             let code = crypto::generate_email_token(CONFIG.email_token_size());
                             SendOTP::new(send_id, e, code.clone()).save(conn).await?;
                             mail::send_sends_otp(e, &code).await?;
-                            return Self::expected_error("Email OTP required", "email_and_otp_required");
                         }
-                        _ => return Self::invalid_error(&format!("Send {send_id}, disabled"), "send_id_invalid", true),
+                        return Self::expected_error("Email OTP required", "email_and_otp_required");
                     }
                 }
                 Some(e) => {
