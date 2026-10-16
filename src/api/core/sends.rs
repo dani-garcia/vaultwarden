@@ -16,9 +16,12 @@ use crate::{
     config::PathType,
     db::{
         DbConn, DbPool,
-        models::{Device, OrgPolicy, OrgPolicyType, Send, SendAuthType, SendFileId, SendId, SendType, UserId},
+        models::{
+            Cipher, CipherId, Device, OrgPolicy, OrgPolicyType, Send, SendAuthType, SendFileId, SendId, SendType,
+            UserId,
+        },
     },
-    util::{NumberOrString, save_temp_file},
+    util::{FeatureFlagFilter, NumberOrString, parse_experimental_client_feature_flags, save_temp_file},
 };
 
 const SEND_INACCESSIBLE_MSG: &str = "Send does not exist or is no longer available";
@@ -85,6 +88,7 @@ pub struct SendData {
     notes: Option<String>,
     text: Option<Value>,
     file: Option<Value>,
+    data: Option<Value>,
     file_length: Option<NumberOrString>,
 
     // Used for key rotations
@@ -132,6 +136,8 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
         data.text
     } else if data.r#type == SendType::File as i32 {
         data.file
+    } else if data.r#type == SendType::Item as i32 {
+        Some(serde_json::to_value(parse_item_data(data.data)?)?)
     } else {
         err!("Invalid Send type")
     };
@@ -163,8 +169,103 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
 
     apply_send_auth(&mut send, data.auth_type, data.emails.as_deref(), data.password)?;
     enforce_mail_enabled_for_email_auth(&send)?;
+    enforce_email_auth_for_item_send(&send)?;
 
     Ok(send)
+}
+
+const ITEM_SENDS_FEATURE_FLAG: &str = "pm-34203-temporary-item-sharing";
+
+/// Item Sends (sharing a vault item through a temporary link) are opt-in through the client feature flag.
+pub fn item_sends_enabled() -> bool {
+    parse_experimental_client_feature_flags(&CONFIG.experimental_client_feature_flags(), &FeatureFlagFilter::ValidOnly)
+        .contains_key(ITEM_SENDS_FEATURE_FLAG)
+}
+
+/// Whether a Send can be shown to its owner or a recipient, Item Sends are hidden while the feature is disabled.
+pub fn send_visible(send: &Send) -> bool {
+    send.atype != SendType::Item as i32 || item_sends_enabled()
+}
+
+/// Data of an Item Send. The vault item is encrypted client side into a single opaque blob, the item id
+/// is kept in clear so the server can check that the sender is allowed to share it.
+///
+/// Upstream: https://github.com/bitwarden/server/blob/main/src/Core/Tools/Models/Data/SendItemData.cs
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SendItemData {
+    encryption_version: i32,
+    data: String,
+    metadata: SendItemMetadata,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SendItemMetadata {
+    item_id: CipherId,
+}
+
+impl SendItemData {
+    const ENCRYPTION_VERSION: i32 = 1;
+    const MAX_DATA_LENGTH: usize = 500_000;
+}
+
+fn parse_item_data(data: Option<Value>) -> ApiResult<SendItemData> {
+    if !item_sends_enabled() {
+        err!("Item Sends are not enabled on this server")
+    }
+    let Some(data) = data else {
+        err!("Send data not provided")
+    };
+    let Ok(item) = serde_json::from_value::<SendItemData>(data) else {
+        err!("Invalid Item Send data")
+    };
+    if item.encryption_version != SendItemData::ENCRYPTION_VERSION {
+        err!("Unsupported Item Send encryption version")
+    }
+    if item.data.is_empty() || item.data.len() > SendItemData::MAX_DATA_LENGTH {
+        err!("Invalid Item Send data")
+    }
+    Ok(item)
+}
+
+fn stored_item_id(send: &Send) -> Option<CipherId> {
+    serde_json::from_str::<SendItemData>(&send.data).ok().map(|d| d.metadata.item_id)
+}
+
+fn enforce_email_auth_for_item_send(send: &Send) -> EmptyResult {
+    if send.atype == SendType::Item as i32 && send.auth_type != SendAuthType::Email as i32 {
+        err!("Item Sends require email verification")
+    }
+    Ok(())
+}
+
+/// A user can only share an item they own, or an organization item they can edit and see the password of.
+/// Deleted, archived and SSH key items can't be shared.
+///
+/// Upstream: https://github.com/bitwarden/server/blob/main/src/Core/Tools/SendFeatures/Services/SendValidationService.cs
+async fn enforce_item_shareable(item_id: &CipherId, user_id: &UserId, conn: &DbConn) -> EmptyResult {
+    const SSH_KEY_TYPE: i32 = 5;
+
+    let Some(cipher) = Cipher::find_by_uuid(item_id, conn).await else {
+        err!("Item not found.")
+    };
+    let can_share = if cipher.user_uuid.as_ref() == Some(user_id) {
+        true
+    } else if cipher.organization_uuid.is_some() {
+        // (read_only, hide_passwords, manage)
+        matches!(cipher.get_access_restrictions(user_id, None, conn).await, Some((false, false, _)))
+    } else {
+        false
+    };
+    if !can_share
+        || cipher.deleted_at.is_some()
+        || cipher.atype == SSH_KEY_TYPE
+        || cipher.get_archived_at(user_id, conn).await.is_some()
+    {
+        err!("Item not found.")
+    }
+    Ok(())
 }
 
 /// Splits a comma separated list of emails, trimming and lowercasing each entry and dropping empty ones.
@@ -243,7 +344,7 @@ fn enforce_mail_enabled_for_email_auth(send: &Send) -> EmptyResult {
 #[get("/sends")]
 async fn get_sends(headers: Headers, conn: DbConn) -> Json<Value> {
     let sends = Send::find_by_user(&headers.user.uuid, &conn);
-    let sends_json: Vec<Value> = sends.await.iter().map(Send::to_json).collect();
+    let sends_json: Vec<Value> = sends.await.iter().filter(|s| send_visible(s)).map(Send::to_json).collect();
 
     Json(json!({
       "data": sends_json,
@@ -254,7 +355,9 @@ async fn get_sends(headers: Headers, conn: DbConn) -> Json<Value> {
 
 #[get("/sends/<send_id>")]
 async fn get_send(send_id: SendId, headers: Headers, conn: DbConn) -> JsonResult {
-    if let Some(send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await {
+    if let Some(send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await
+        && send_visible(&send)
+    {
         Ok(Json(send.to_json()))
     } else {
         err!("Send not found", "Invalid send uuid or does not belong to user")
@@ -272,7 +375,10 @@ async fn post_send(data: Json<SendData>, headers: Headers, conn: DbConn, nt: Not
         err!("File sends should use /api/sends/file/v2")
     }
 
-    let mut send = create_send(data, headers.user.uuid)?;
+    let mut send = create_send(data, headers.user.uuid.clone())?;
+    if let Some(item_id) = stored_item_id(&send) {
+        enforce_item_shareable(&item_id, &headers.user.uuid, &conn).await?;
+    }
     send.save(&conn).await?;
     nt.send_send_update(
         UpdateType::SyncSendCreate,
@@ -439,11 +545,13 @@ async fn post_access(headers: SendHeaders, conn: DbConn, nt: Notify<'_>) -> Json
     let Some(mut send) = Send::find_by_uuid(&headers.send_id, &conn).await else {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     };
-    if !send.is_accessible() {
+    if !send.is_accessible() || !send_visible(&send) {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
     // Files are incremented during the download
-    if send.atype == SendType::Text as i32 && !send.register_access(&conn).await? {
+    if (send.atype == SendType::Text as i32 || send.atype == SendType::Item as i32)
+        && !send.register_access(&conn).await?
+    {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
     process_access(send, conn, nt).await
@@ -581,6 +689,13 @@ async fn update_send_from_data(
             err!("Send data not provided");
         };
         send.data = data_str;
+    } else if data.r#type == SendType::Item as i32 {
+        let item = parse_item_data(data.data)?;
+        // Only check access to the item when it changes
+        if stored_item_id(send).as_ref() != Some(&item.metadata.item_id) {
+            enforce_item_shareable(&item.metadata.item_id, &headers.user.uuid, conn).await?;
+        }
+        send.data = serde_json::to_string(&item)?;
     }
 
     send.name = data.name;
@@ -597,6 +712,7 @@ async fn update_send_from_data(
 
     apply_send_auth(send, data.auth_type, data.emails.as_deref(), data.password)?;
     enforce_mail_enabled_for_email_auth(send)?;
+    enforce_email_auth_for_item_send(send)?;
 
     send.save(conn).await?;
     if ut != UpdateType::None {
@@ -729,6 +845,31 @@ mod tests {
         apply_send_auth(&mut send, None, None, None).unwrap();
         assert_eq!(send.auth_type, EMAIL);
         assert_eq!(send.emails.as_deref(), Some("a@x.com"));
+    }
+
+    #[test]
+    fn test_item_send_data_roundtrip() {
+        let mut send = new_send();
+        send.atype = SendType::Item as i32;
+        send.data = String::from(r#"{"encryptionVersion":1,"data":"blob","metadata":{"itemId":"item-id"}}"#);
+        assert_eq!(stored_item_id(&send).as_deref().map(String::as_str), Some("item-id"));
+
+        // Other Send types don't have an item
+        assert!(stored_item_id(&new_send()).is_none());
+    }
+
+    #[test]
+    fn test_item_send_requires_email_auth() {
+        let mut send = new_send();
+        send.atype = SendType::Item as i32;
+        apply_send_auth(&mut send, Some(PASSWORD), None, Some(String::from("secret"))).unwrap();
+        assert!(enforce_email_auth_for_item_send(&send).is_err());
+
+        apply_send_auth(&mut send, Some(EMAIL), Some("a@x.com"), None).unwrap();
+        assert!(enforce_email_auth_for_item_send(&send).is_ok());
+
+        // Text Sends aren't affected
+        assert!(enforce_email_auth_for_item_send(&new_send()).is_ok());
     }
 
     #[test]

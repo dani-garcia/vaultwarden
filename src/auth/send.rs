@@ -91,7 +91,7 @@ impl SendTokens {
             return Self::invalid_error(&format!("Send {send_id}, max access reached"), "send_id_invalid", true);
         }
 
-        if !send.is_accessible() {
+        if !send.is_accessible() || !crate::api::core::send_visible(&send) {
             return Self::invalid_error(&format!("Send {send_id}, not accessible"), "send_id_invalid", true);
         }
 

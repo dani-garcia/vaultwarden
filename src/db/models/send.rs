@@ -60,6 +60,7 @@ pub struct Send {
 pub enum SendType {
     Text = 0,
     File = 1,
+    Item = 2,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, num_derive::FromPrimitive)]
@@ -179,6 +180,7 @@ impl Send {
             "notes": self.notes,
             "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
             "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "data": if self.atype == SendType::Item as i32 { Some(&data) } else { None },
 
             "key": self.akey,
             "maxAccessCount": self.max_access_count,
@@ -211,6 +213,7 @@ impl Send {
             "name": self.name,
             "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
             "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "data": if self.atype == SendType::Item as i32 { Some(&data) } else { None },
 
             "expirationDate": self.expiration_date.as_ref().map(format_date),
             "creatorIdentifier": self.creator_identifier(conn).await,
