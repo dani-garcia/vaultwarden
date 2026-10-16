@@ -19,7 +19,7 @@ use crate::{
     crypto::sha256_hex,
     db::{
         DbConn,
-        models::{AttachmentId, CipherId},
+        models::{AttachmentId, CipherId, custom_roles_enabled},
     },
     error::Error,
     util::{Cached, EtagCached},
@@ -89,6 +89,7 @@ fn vaultwarden_css() -> EtagCached<Css<String>> {
 
     // Else, there is either no cache, or reload_templates is true and we need to rebuild the CSS
     let css_options = json!({
+        "custom_roles_enabled": custom_roles_enabled(),
         "email_change_allowed": CONFIG.email_change_allowed(),
         "emergency_access_allowed": CONFIG.emergency_access_allowed(),
         "load_user_scss": true,
