@@ -19,7 +19,7 @@ use crate::{
         },
     },
     error::MapResult,
-    util::LowerCase,
+    util::{LowerCase, convert_json_key_lcase_first},
 };
 use macros::UuidFromParam;
 
@@ -63,6 +63,18 @@ pub struct Cipher {
     pub reprompt: Option<i32>,
 }
 
+/// Whether `data` is a v2 cipher blob, recognized like upstream by a top-level `format_version` key.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Core/Vault/Entities/Cipher.cs#L36-L41>
+pub fn is_data_blob_encrypted(data: &str) -> bool {
+    serde_json::from_str::<Value>(data).is_ok_and(|d| is_blob_value(&d))
+}
+
+/// [`is_data_blob_encrypted`] for `data` that was already parsed.
+fn is_blob_value(data: &Value) -> bool {
+    data.get("format_version").is_some()
+}
+
 pub enum RepromptType {
     None = 0,
     Password = 1,
@@ -70,7 +82,8 @@ pub enum RepromptType {
 
 /// Local methods
 impl Cipher {
-    pub fn new(atype: i32, name: String) -> Self {
+    /// The name is set when the data is saved, since a blob-encrypted cipher has it inside `data`
+    pub fn new(atype: i32) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
@@ -84,7 +97,7 @@ impl Cipher {
             key: None,
 
             atype,
-            name,
+            name: String::new(),
 
             notes: None,
             fields: None,
@@ -108,6 +121,11 @@ impl Cipher {
             {
                 validation_errors
                     .insert(format!("Ciphers[{index}].Notes"), serde_json::to_value([&max_note_size_msg]).unwrap());
+            }
+
+            if let Err(e) = cipher.validate_content(cipher.is_blob()) {
+                validation_errors
+                    .insert(format!("Ciphers[{index}].{}", e.field), serde_json::to_value([e.message]).unwrap());
             }
 
             // Validate the password history if it contains `null` values and if so, return a warning
@@ -153,6 +171,10 @@ impl Cipher {
         conn: &DbConn,
     ) -> Result<Value, crate::Error> {
         use crate::util::{format_date, validate_and_format_date};
+
+        // Parsed once, since `data` can be large and this runs for every cipher in a sync
+        let type_data = serde_json::from_str::<Value>(&self.data);
+        let is_blob_encrypted = type_data.as_ref().is_ok_and(is_blob_value);
 
         let mut attachments_json: Value = Value::Null;
         if let Some(cipher_sync_data) = cipher_sync_data {
@@ -250,63 +272,9 @@ impl Cipher {
             })
             .unwrap_or_default();
 
-        // Get the type_data or a default to an empty json object '{}'.
-        // If not passing an empty object, mobile clients will crash.
-        let mut type_data_json = serde_json::from_str::<LowerCase<Value>>(&self.data)
-            .inspect_err(|_| warn!("Error parsing data field for {}", self.uuid))
-            .map_or_else(|_| Value::Object(serde_json::Map::new()), |d| d.data);
-
-        // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
-        // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
-        if self.atype == 1 {
-            // Upstream always has an `uri` key/value
-            type_data_json["uri"] = Value::Null;
-            if let Some(uris) = type_data_json["uris"].as_array_mut()
-                && !uris.is_empty()
-            {
-                // Fix uri match values first, they are only allowed to be a number or null
-                // If it is a string, convert it to an int or null if that fails
-                for uri in &mut *uris {
-                    if uri["match"].is_string() {
-                        let match_value = match uri["match"].as_str().unwrap_or_default().parse::<u8>() {
-                            Ok(n) => json!(n),
-                            _ => Value::Null,
-                        };
-                        uri["match"] = match_value;
-                    }
-                }
-                type_data_json["uri"] = uris[0]["uri"].clone();
-            }
-
-            // Check if `passwordRevisionDate` is a valid date, else convert it
-            if let Some(pw_revision) = type_data_json["passwordRevisionDate"].as_str() {
-                type_data_json["passwordRevisionDate"] = json!(validate_and_format_date(pw_revision));
-            }
-        }
-
-        // Fix secure note issues when data is invalid
-        // This breaks at least the native mobile clients
-        if self.atype == 2 {
-            match type_data_json {
-                Value::Object(ref t) if t.get("type").is_some_and(Value::is_number) => {}
-                _ => {
-                    type_data_json = json!({"type": 0});
-                }
-            }
-        }
-
-        // Fix invalid SSH Entries
-        // This breaks at least the native mobile client if invalid
-        // The only way to fix this is by setting type_data_json to `null`
-        // Opening this ssh-key in the mobile client will probably crash the client, but you can edit, save and afterwards delete it
-        if self.atype == 5
-            && (type_data_json["keyFingerprint"].as_str().is_none_or(str::is_empty)
-                || type_data_json["privateKey"].as_str().is_none_or(str::is_empty)
-                || type_data_json["publicKey"].as_str().is_none_or(str::is_empty))
-        {
-            warn!("Error parsing ssh-key, mandatory fields are invalid for {}", self.uuid);
-            type_data_json = Value::Null;
-        }
+        // Like upstream, fields and password history stored as NULL are sent as null, not `[]`
+        let fields_json = self.fields.is_some().then_some(fields_json);
+        let password_history_json = self.password_history.is_some().then_some(password_history_json);
 
         let collection_ids = if let Some(cipher_sync_data) = cipher_sync_data {
             if let Some(cipher_collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
@@ -403,8 +371,82 @@ impl Cipher {
             _ => err!(format!("Cipher {} has an invalid type {}", self.uuid, self.atype)),
         };
 
-        json_object[key] = type_data_json;
+        if is_blob_encrypted {
+            // Like upstream, sent as-is with the structured fields null
+            json_object["data"] = json!(self.data);
+            json_object["name"] = Value::Null;
+        } else {
+            json_object[key] = self.legacy_type_data_json(type_data);
+        }
         Ok(json_object)
+    }
+
+    /// The per-type data of a legacy cipher, with fixups for values known to break clients.
+    fn legacy_type_data_json(&self, type_data: Result<Value, serde_json::Error>) -> Value {
+        use crate::util::validate_and_format_date;
+
+        // Get the type_data or a default to an empty json object '{}'.
+        // If not passing an empty object, mobile clients will crash.
+        let mut type_data_json = if let Ok(data @ Value::Object(_)) = type_data {
+            convert_json_key_lcase_first(data)
+        } else {
+            warn!("Error parsing data field for {}", self.uuid);
+            Value::Object(serde_json::Map::new())
+        };
+
+        // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
+        // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
+        if self.atype == 1 {
+            // Upstream always has an `uri` key/value
+            type_data_json["uri"] = Value::Null;
+            if let Some(uris) = type_data_json["uris"].as_array_mut()
+                && !uris.is_empty()
+            {
+                // Fix uri match values first, they are only allowed to be a number or null
+                // If it is a string, convert it to an int or null if that fails
+                for uri in &mut *uris {
+                    if uri["match"].is_string() {
+                        let match_value = match uri["match"].as_str().unwrap_or_default().parse::<u8>() {
+                            Ok(n) => json!(n),
+                            _ => Value::Null,
+                        };
+                        uri["match"] = match_value;
+                    }
+                }
+                type_data_json["uri"] = uris[0]["uri"].clone();
+            }
+
+            // Check if `passwordRevisionDate` is a valid date, else convert it
+            if let Some(pw_revision) = type_data_json["passwordRevisionDate"].as_str() {
+                type_data_json["passwordRevisionDate"] = json!(validate_and_format_date(pw_revision));
+            }
+        }
+
+        // Fix secure note issues when data is invalid
+        // This breaks at least the native mobile clients
+        if self.atype == 2 {
+            match type_data_json {
+                Value::Object(ref t) if t.get("type").is_some_and(Value::is_number) => {}
+                _ => {
+                    type_data_json = json!({"type": 0});
+                }
+            }
+        }
+
+        // Fix invalid SSH Entries
+        // This breaks at least the native mobile client if invalid
+        // The only way to fix this is by setting type_data_json to `null`
+        // Opening this ssh-key in the mobile client will probably crash the client, but you can edit, save and afterwards delete it
+        if self.atype == 5
+            && (type_data_json["keyFingerprint"].as_str().is_none_or(str::is_empty)
+                || type_data_json["privateKey"].as_str().is_none_or(str::is_empty)
+                || type_data_json["publicKey"].as_str().is_none_or(str::is_empty))
+        {
+            warn!("Error parsing ssh-key, mandatory fields are invalid for {}", self.uuid);
+            type_data_json = Value::Null;
+        }
+
+        type_data_json
     }
 
     pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<UserId> {
