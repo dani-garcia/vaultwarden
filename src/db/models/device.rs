@@ -33,6 +33,16 @@ pub struct Device {
 
     pub refresh_token: String,
     pub twofactor_remember: Option<String>,
+
+    // Trusted device encryption. The client generates a key pair per device plus a device key
+    // that never leaves the device, and stores the three resulting blobs here:
+    /// The user key, encrypted with `encrypted_public_key`. This is the copy of the user key that
+    /// lets the device unlock the vault without a master password.
+    pub encrypted_user_key: Option<String>,
+    /// The device public key, encrypted with the user key.
+    pub encrypted_public_key: Option<String>,
+    /// The device private key, encrypted with the device key. The server never sees the device key.
+    pub encrypted_private_key: Option<String>,
 }
 
 /// Local methods
@@ -53,12 +63,48 @@ impl Device {
             push_token: None,
             refresh_token: Device::generate_refresh_token(),
             twofactor_remember: None,
+
+            encrypted_user_key: None,
+            encrypted_public_key: None,
+            encrypted_private_key: None,
         }
     }
 
     #[inline(always)]
     pub fn generate_refresh_token() -> String {
         crypto::encode_random_bytes::<64>(&BASE64URL)
+    }
+
+    /// A stored key is only usable when it is actually there and non-empty.
+    fn present(key: Option<&String>) -> Option<&String> {
+        key.filter(|key| !key.is_empty())
+    }
+
+    fn key_json(key: Option<&String>) -> Value {
+        match Self::present(key) {
+            Some(key) => Value::String(key.clone()),
+            None => Value::Null,
+        }
+    }
+
+    /// Whether this device holds everything needed to unlock the vault on its own.
+    ///
+    /// A client can drop its device key without telling us, so this only says that the server side
+    /// of the trust is complete. See `DeviceExtensions.IsTrusted` upstream.
+    pub fn is_trusted(&self) -> bool {
+        Self::present(self.encrypted_user_key.as_ref()).is_some()
+            && Self::present(self.encrypted_public_key.as_ref()).is_some()
+            && Self::present(self.encrypted_private_key.as_ref()).is_some()
+    }
+
+    /// The wrapped user key, but only while the whole trust is intact. Handing out one half of an
+    /// incomplete set would just make the client fail later in the unlock.
+    pub fn trusted_user_key(&self) -> Option<&String> {
+        self.is_trusted().then_some(self.encrypted_user_key.as_ref()).flatten()
+    }
+
+    pub fn trusted_private_key(&self) -> Option<&String> {
+        self.is_trusted().then_some(self.encrypted_private_key.as_ref()).flatten()
     }
 
     pub fn to_json(&self) -> Value {
@@ -68,8 +114,25 @@ impl Device {
             "type": self.atype,
             "identifier": self.uuid,
             "creationDate": format_date(&self.created_at),
-            "isTrusted": false,
+            "isTrusted": self.is_trusted(),
+            "encryptedUserKey": Self::key_json(self.encrypted_user_key.as_ref()),
+            "encryptedPublicKey": Self::key_json(self.encrypted_public_key.as_ref()),
             "object":"device"
+        })
+    }
+
+    /// Response of `POST /devices/<identifier>/retrieve-keys`, used by the clients to re-wrap the
+    /// user key for every trusted device during a key rotation.
+    pub fn to_protected_json(&self) -> Value {
+        json!({
+            "id": self.uuid,
+            "name": self.name,
+            "type": self.atype,
+            "identifier": self.uuid,
+            "creationDate": format_date(&self.created_at),
+            "encryptedUserKey": Self::key_json(self.encrypted_user_key.as_ref()),
+            "encryptedPublicKey": Self::key_json(self.encrypted_public_key.as_ref()),
+            "object": "protectedDevice"
         })
     }
 
@@ -123,9 +186,9 @@ impl DeviceWithAuthRequest {
             "identifier": self.device.uuid,
             "creationDate": format_date(&self.device.created_at),
             "devicePendingAuthRequest": auth_request,
-            "isTrusted": false,
-            "encryptedPublicKey": null,
-            "encryptedUserKey": null,
+            "isTrusted": self.device.is_trusted(),
+            "encryptedPublicKey": Device::key_json(self.device.encrypted_public_key.as_ref()),
+            "encryptedUserKey": Device::key_json(self.device.encrypted_user_key.as_ref()),
             "object": "device",
         })
     }
@@ -176,6 +239,79 @@ impl Device {
             diesel::delete(devices::table.filter(devices::user_uuid.eq(user_uuid)))
                 .execute(conn)
                 .map_res("Error removing devices for user")
+        })
+        .await
+    }
+
+    /// Drops every stored key of the named devices, in one statement so it cannot half apply.
+    ///
+    /// The caller has already checked that each id belongs to this user.
+    pub async fn untrust_many(user_uuid: &UserId, device_ids: Vec<DeviceId>, conn: &DbConn) -> EmptyResult {
+        if device_ids.is_empty() {
+            return Ok(());
+        }
+
+        conn.run(move |conn| {
+            diesel::update(
+                devices::table.filter(devices::user_uuid.eq(user_uuid)).filter(devices::uuid.eq_any(device_ids)),
+            )
+            .set((
+                devices::encrypted_user_key.eq::<Option<String>>(None),
+                devices::encrypted_public_key.eq::<Option<String>>(None),
+                devices::encrypted_private_key.eq::<Option<String>>(None),
+            ))
+            .execute(conn)
+            .map_res("Error untrusting the devices")
+        })
+        .await
+    }
+
+    /// Replaces the trust of every device of the user in one go: the listed ones are re-wrapped for the
+    /// current user key, everything else loses whatever it still holds.
+    ///
+    /// This is what a key rotation comes down to; the caller has already validated the ids, so this only
+    /// writes. One transaction, so the devices cannot be left split between the old and the new user key,
+    /// a state no client can tell apart from a working one.
+    pub async fn replace_trust(
+        user_uuid: &UserId,
+        updates: Vec<(DeviceId, String, String)>,
+        conn: &DbConn,
+    ) -> EmptyResult {
+        conn.run(move |conn| {
+            conn.transaction(|conn| -> EmptyResult {
+                let keep: Vec<DeviceId> = updates.iter().map(|(device_id, ..)| device_id.clone()).collect();
+
+                // Whatever the untouched devices hold wraps the previous user key, or is one half of
+                // a trust that was never finished. Either way it unlocks nothing and must not stay.
+                let cleared = (
+                    devices::encrypted_user_key.eq::<Option<String>>(None),
+                    devices::encrypted_public_key.eq::<Option<String>>(None),
+                    devices::encrypted_private_key.eq::<Option<String>>(None),
+                );
+                let outdated = devices::table.filter(devices::user_uuid.eq(&user_uuid));
+                let _: () = if keep.is_empty() {
+                    diesel::update(outdated).set(cleared).execute(conn)
+                } else {
+                    diesel::update(outdated.filter(devices::uuid.ne_all(keep))).set(cleared).execute(conn)
+                }
+                .map_res("Error untrusting the devices left out of the rotation")?;
+
+                // The device key pair is deliberately not touched here: it is wrapped with the
+                // device key, which the server never sees and a rotation never changes.
+                for (device_id, encrypted_user_key, encrypted_public_key) in updates {
+                    let _: () = diesel::update(
+                        devices::table.filter(devices::uuid.eq(device_id)).filter(devices::user_uuid.eq(&user_uuid)),
+                    )
+                    .set((
+                        devices::encrypted_user_key.eq(Some(encrypted_user_key)),
+                        devices::encrypted_public_key.eq(Some(encrypted_public_key)),
+                    ))
+                    .execute(conn)
+                    .map_res("Error rotating the wrapped user key of a device")?;
+                }
+
+                Ok(())
+            })
         })
         .await
     }
@@ -379,6 +515,17 @@ impl DeviceType {
             _ => DeviceType::UnknownBrowser,
         }
     }
+
+    /// Whether a device of this type can answer a login request from another device.
+    ///
+    /// The SDK, the server and the CLIs have no interactive prompt to show the request in, so they are
+    /// the ones left out. Matches `LoginApprovingClientTypes` upstream (desktop, mobile, web, browser).
+    pub fn can_approve_login_requests(&self) -> bool {
+        !matches!(
+            self,
+            DeviceType::Sdk | DeviceType::Server | DeviceType::WindowsCLI | DeviceType::MacOsCLI | DeviceType::LinuxCLI
+        )
+    }
 }
 
 #[derive(
@@ -388,3 +535,52 @@ pub struct DeviceId(String);
 
 #[derive(Clone, Debug, DieselNewType, Display, From, FromForm, Serialize, Deserialize, UuidFromParam)]
 pub struct PushId(pub String);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn trusted_device() -> Device {
+        let mut device = Device::new(String::from("device").into(), String::from("user").into(), String::new(), 9);
+        device.encrypted_user_key = Some(String::from("2.user"));
+        device.encrypted_public_key = Some(String::from("2.public"));
+        device.encrypted_private_key = Some(String::from("2.private"));
+        device
+    }
+
+    /// Without all three keys the device is not trusted and hands out none of them, the public key
+    /// included: it is not part of the login response, but without it the other two are useless to the
+    /// client. An empty key is as good as a missing one.
+    #[test]
+    fn a_device_is_only_trusted_with_all_three_keys() {
+        let device = trusted_device();
+        assert!(device.is_trusted());
+        assert_eq!(device.trusted_user_key(), Some(&String::from("2.user")));
+        assert_eq!(device.trusted_private_key(), Some(&String::from("2.private")));
+
+        let keys: [fn(&mut Device) -> &mut Option<String>; 3] = [
+            |device| &mut device.encrypted_user_key,
+            |device| &mut device.encrypted_public_key,
+            |device| &mut device.encrypted_private_key,
+        ];
+
+        for key in keys {
+            for missing in [None, Some(String::new())] {
+                let mut device = trusted_device();
+                *key(&mut device) = missing;
+                assert!(!device.is_trusted());
+                assert_eq!(device.trusted_user_key(), None);
+                assert_eq!(device.trusted_private_key(), None);
+            }
+        }
+    }
+
+    #[test]
+    fn only_interactive_clients_can_approve_a_login_request() {
+        for atype in 0..=26 {
+            let device_type = DeviceType::from_i32(atype);
+            let expected = !matches!(atype, 21..=25);
+            assert_eq!(device_type.can_approve_login_requests(), expected, "device type {atype} ({device_type})");
+        }
+    }
+}

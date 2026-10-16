@@ -317,13 +317,22 @@ pub async fn push_auth_request(user_id: &UserId, auth_request_id: &str, device: 
     }
 }
 
-pub async fn push_auth_response(user_id: &UserId, auth_request_id: &AuthRequestId, device: &Device, conn: &DbConn) {
+/// `acting_device` is the device that answered and the one left out of the notification, since it
+/// already knows. An answer that did not come from a device of this user, as an administrator approval
+/// does, leaves it out: naming a foreign device would hand its identifiers to the push relay under the
+/// wrong user id and tell the wrong device to ignore the answer.
+pub async fn push_auth_response(
+    user_id: &UserId,
+    auth_request_id: &AuthRequestId,
+    acting_device: Option<&Device>,
+    conn: &DbConn,
+) {
     if Device::check_user_has_push_device(user_id, conn).await {
         tokio::task::spawn(send_to_push_relay(json!({
             "userId": user_id,
             "organizationId": null,
-            "deviceId": device.push_uuid, // Should be the records unique uuid of the acting device (unique uuid per user/device)
-            "identifier": device.uuid, // Should be the acting device id (aka uuid per device/app)
+            "deviceId": acting_device.and_then(|device| device.push_uuid.as_ref()), // Should be the records unique uuid of the acting device (unique uuid per user/device)
+            "identifier": acting_device.map(|device| &device.uuid), // Should be the acting device id (aka uuid per device/app)
             "type": UpdateType::AuthRequestResponse as i32,
             "payload": {
                 "userId": user_id,
