@@ -15,7 +15,7 @@ use crate::{
     api::{ApiResult, EmptyResult, UpdateType},
     db::{
         DbConn,
-        models::{AuthRequestId, Cipher, Device, Folder, PushId, Send, User, UserId},
+        models::{AuthRequestId, Cipher, Device, Folder, OrgPolicy, PushId, Send, User, UserId},
     },
     http_client::make_http_request,
     util::{format_date, get_uuid},
@@ -257,6 +257,33 @@ pub async fn push_send_update(ut: UpdateType, send: &Send, device: &Device, conn
                 "id": send.uuid,
                 "userId": send.user_uuid,
                 "revisionDate": format_date(&send.revision_date)
+            },
+            "clientType": null,
+            "installationId": null
+        })));
+    }
+}
+
+// Vaultwarden does not register the `organizationIds` of a device with the push relay (see
+// `register_push_device`), so the members are notified one by one instead of the organization.
+// The payload matches the one sent over the WebSocket, see `create_policy_update`.
+pub async fn push_policy_update(policy: &OrgPolicy, user_id: &UserId, conn: &DbConn) {
+    if Device::check_user_has_push_device(user_id, conn).await {
+        tokio::task::spawn(send_to_push_relay(json!({
+            "userId": user_id,
+            "organizationId": null,
+            "deviceId": null, // All devices of this user need to know about the change
+            "identifier": null,
+            "type": UpdateType::SyncPolicy as i32,
+            "payload": {
+                "organizationId": policy.org_uuid,
+                "policy": {
+                    "id": policy.uuid,
+                    "organizationId": policy.org_uuid,
+                    "type": policy.atype,
+                    "data": policy.data,
+                    "enabled": policy.enabled,
+                }
             },
             "clientType": null,
             "installationId": null
