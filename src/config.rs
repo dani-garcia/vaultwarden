@@ -1439,6 +1439,9 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "pm-34171-card-scanner",
     // Platform Team
     "pm-30529-webauthn-related-origins",
+    // Tools Team
+    "pm-30110-sdk-sends-api",
+    "pm-34203-temporary-item-sharing",
     // Vault Team
     "pm-32009-new-item-types",
 ];
@@ -1736,6 +1739,7 @@ where
     reg!("email/invite_confirmed", ".html");
     reg!("email/new_device_logged_in", ".html");
     reg!("email/protected_action", ".html");
+    reg!("email/send_access_otp", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
     reg!("email/recover_twofactor", ".html");
