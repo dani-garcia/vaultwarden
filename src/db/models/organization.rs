@@ -523,7 +523,8 @@ impl Membership {
 
             // These are per user
             "userId": self.user_uuid,
-            "key": self.akey,
+            // Accepted (not yet confirmed) members have no key yet; send null like upstream, not ""
+            "key": (!self.akey.is_empty()).then_some(&self.akey),
             "status": self.status,
             "type": membership_type,
             "enabled": true,
