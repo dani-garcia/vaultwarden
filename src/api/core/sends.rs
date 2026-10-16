@@ -16,7 +16,7 @@ use crate::{
     config::PathType,
     db::{
         DbConn, DbPool,
-        models::{Device, OrgPolicy, OrgPolicyType, Send, SendFileId, SendId, SendType, UserId},
+        models::{Device, OrgPolicy, OrgPolicyType, Send, SendAuthType, SendFileId, SendId, SendType, UserId},
     },
     util::{NumberOrString, save_temp_file},
 };
@@ -69,7 +69,8 @@ pub async fn purge_sends(pool: DbPool) {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendData {
-    r#type: i32,
+    r#type: SendType,
+    auth_type: SendAuthType,
     pub key: String,
     password: Option<String>,
     max_access_count: Option<NumberOrString>,
@@ -127,12 +128,9 @@ async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, c
 }
 
 fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
-    let data_val = if data.r#type == SendType::Text as i32 {
-        data.text
-    } else if data.r#type == SendType::File as i32 {
-        data.file
-    } else {
-        err!("Invalid Send type")
+    let data_val = match data.r#type {
+        SendType::Text => data.text,
+        SendType::File => data.file,
     };
 
     let data_str = if let Some(mut d) = data_val {
@@ -159,6 +157,7 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
 
     let mut send = Send::new(
         data.r#type,
+        data.auth_type,
         user_id,
         data.name,
         data.notes,
@@ -205,7 +204,7 @@ async fn post_send(data: Json<SendData>, headers: Headers, conn: DbConn, nt: Not
     let data: SendData = data.into_inner();
     enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
-    if data.r#type == SendType::File as i32 {
+    if data.r#type == SendType::File {
         err!("File sends should use /api/sends/file/v2")
     }
 
@@ -235,7 +234,7 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn)
 
     let data = data.into_inner();
 
-    if data.r#type != SendType::File as i32 {
+    if data.r#type != SendType::File {
         err!("Send content is not a file");
     }
 
@@ -502,7 +501,7 @@ async fn update_send_from_data(
         err!("Send is not owned by user")
     }
 
-    if send.atype != data.r#type {
+    if send.atype != data.r#type as i32 {
         err!("Sends can't change type")
     }
 
@@ -514,7 +513,7 @@ async fn update_send_from_data(
 
     // When updating a file Send, we receive nulls in the File field, as it's immutable,
     // so we only need to update the data field in the Text case
-    if data.r#type == SendType::Text as i32 {
+    if data.r#type == SendType::Text {
         let data_str = if let Some(mut d) = data.text {
             d.as_object_mut().and_then(|d| d.remove("response"));
             serde_json::to_string(&d)?
@@ -535,11 +534,24 @@ async fn update_send_from_data(
     send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
     send.hide_email = data.hide_email.unwrap_or(false);
     send.disabled = data.disabled;
-    send.emails = data.emails.map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty());
 
-    // Only change the value if it's present
-    if let Some(password) = data.password {
-        send.set_password(Some(&password));
+    send.auth_type = data.auth_type as i32;
+    match data.auth_type {
+        SendAuthType::Email => {
+            send.emails = data.emails.map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty());
+            send.set_password(None);
+        }
+        SendAuthType::Password => {
+            send.emails = None;
+            // Only change the value if it's present
+            if let Some(password) = data.password {
+                send.set_password(Some(&password));
+            }
+        }
+        SendAuthType::None => {
+            send.emails = None;
+            send.set_password(None);
+        }
     }
 
     send.save(conn).await?;

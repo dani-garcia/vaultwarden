@@ -6,6 +6,7 @@ use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
 use macros::{IdFromParam, UuidFromParam};
 use serde_json::Value;
+use serde_repr::Deserialize_repr;
 use uuid::Uuid;
 
 use crate::{
@@ -35,6 +36,7 @@ pub struct Send {
     pub notes: Option<String>,
 
     pub atype: i32,
+    pub auth_type: i32,
     pub data: String,
     pub akey: String,
     pub password_hash: Option<Vec<u8>>,
@@ -54,14 +56,16 @@ pub struct Send {
     pub hide_email: bool,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, num_derive::FromPrimitive)]
+#[derive(Copy, Clone, Deserialize_repr, PartialEq, Eq, num_derive::FromPrimitive)]
+#[repr(u8)]
 pub enum SendType {
     Text = 0,
     File = 1,
 }
 
-enum SendAuthType {
-    #[allow(dead_code)]
+#[derive(Copy, Clone, Deserialize_repr, Eq, PartialEq, num_derive::FromPrimitive)]
+#[repr(u8)]
+pub enum SendAuthType {
     // Send requires email OTP verification
     Email = 0,
     // Send requires a password
@@ -73,7 +77,8 @@ enum SendAuthType {
 impl Send {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        atype: i32,
+        atype: SendType,
+        auth_type: SendAuthType,
         user_uuid: UserId,
         name: String,
         notes: Option<String>,
@@ -93,7 +98,8 @@ impl Send {
             user_uuid,
             name,
             notes,
-            atype,
+            atype: atype as i32,
+            auth_type: auth_type as i32,
             data,
             akey,
             password_hash: None,
@@ -175,7 +181,7 @@ impl Send {
             "maxAccessCount": self.max_access_count,
             "accessCount": self.access_count,
             "password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
-            "authType": if self.password_hash.is_some() { SendAuthType::Password } else if self.emails.is_some() { SendAuthType::Email } else { SendAuthType::None } as i32,
+            "authType": self.auth_type,
             "disabled": self.disabled,
             "hideEmail": self.hide_email,
             "emails": self.emails,
