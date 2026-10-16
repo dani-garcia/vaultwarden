@@ -23,7 +23,7 @@ use crate::{
         models::{
             Archive, Attachment, AttachmentId, Cipher, CipherId, Collection, CollectionCipher, CollectionGroup,
             CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group, KeyId,
-            Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, UserId,
+            Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, User, UserId,
         },
     },
     util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
@@ -1659,12 +1659,22 @@ async fn move_cipher_selected(
     // Find all ciphers a user has access to, all others will be ignored
     let accessible_ciphers = Cipher::find_by_user_and_ciphers(user_id, &data.ids, &conn).await;
     let accessible_ciphers_count = accessible_ciphers.len();
+    let mut move_result = Ok(());
     for cipher in accessible_ciphers {
-        cipher.move_to_folder(data.folder_id.clone(), user_id, &conn).await?;
+        move_result = cipher.move_to_folder_without_revision_update(data.folder_id.clone(), user_id, &conn).await;
+        if move_result.is_err() {
+            break;
+        }
         if cipher_count == 1 {
             single_cipher = Some(cipher);
         }
     }
+    // Update the revision once for the whole batch. Also when a move failed halfway,
+    // since the ciphers moved before it are already changed.
+    if accessible_ciphers_count > 0 {
+        User::update_uuid_revision(user_id, &conn).await;
+    }
+    move_result?;
 
     if let Some(cipher) = single_cipher {
         nt.send_cipher_update(
