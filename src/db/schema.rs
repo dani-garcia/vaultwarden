@@ -137,6 +137,7 @@ table! {
         name -> Text,
         notes -> Nullable<Text>,
         atype -> Integer,
+        auth_type -> Integer,
         data -> Text,
         akey -> Text,
         password_hash -> Nullable<Binary>,

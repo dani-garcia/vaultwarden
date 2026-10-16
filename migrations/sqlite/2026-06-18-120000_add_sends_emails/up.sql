@@ -8,6 +8,7 @@ CREATE TABLE sends (
   notes             TEXT,
 
   atype             INTEGER NOT NULL,
+  auth_type         INTEGER NOT NULL,
   data              TEXT    NOT NULL,
   akey              TEXT    NOT NULL,
   password_hash     BLOB,
@@ -30,11 +31,12 @@ CREATE TABLE sends (
 INSERT INTO sends(
         uuid, user_uuid, name, notes, atype, data, akey, password_hash, password_salt, password_iter,
         max_access_count, access_count, creation_date, revision_date, expiration_date, deletion_date,
-        disabled, hide_email
+        disabled, hide_email, auth_type
 ) SELECT uuid, user_uuid, name, notes, atype, data, akey, password_hash, password_salt, password_iter,
         max_access_count, access_count, creation_date, revision_date, expiration_date, deletion_date,
         disabled,
-        CASE WHEN hide_email IS NOT NULL THEN hide_email ELSE false END
+        CASE WHEN hide_email IS NOT NULL THEN hide_email ELSE false END,
+        CASE WHEN password_hash IS NOT NULL THEN 1 ELSE 2 END
     FROM sends_old WHERE user_uuid IS NOT NULL;
 
 DROP TABLE sends_old;

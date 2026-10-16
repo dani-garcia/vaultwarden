@@ -1,3 +1,6 @@
+ALTER TABLE sends ADD COLUMN auth_type INTEGER NOT NULL DEFAULT 2;
+UPDATE sends SET auth_type = 1 WHERE password_hash is NOT NULL;
+
 ALTER TABLE sends ADD COLUMN emails TEXT;
 
 CREATE TABLE sends_otp (
