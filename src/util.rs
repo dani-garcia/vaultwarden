@@ -210,7 +210,7 @@ impl Fairing for Cors {
 pub struct Cached<R> {
     response: R,
     is_immutable: bool,
-    ttl: u64,
+    ttl: u32,
 }
 
 impl<R> Cached<R> {
@@ -230,7 +230,7 @@ impl<R> Cached<R> {
         }
     }
 
-    pub fn ttl(response: R, ttl: u64, is_immutable: bool) -> Cached<R> {
+    pub fn ttl(response: R, ttl: u32, is_immutable: bool) -> Cached<R> {
         Self {
             response,
             is_immutable,
@@ -251,7 +251,7 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for Cache
         res.set_raw_header("Cache-Control", cache_control_header);
 
         let time_now = Local::now();
-        let expiry_time = time_now + chrono::TimeDelta::try_seconds(self.ttl.try_into().unwrap()).unwrap();
+        let expiry_time = time_now + chrono::TimeDelta::try_seconds(self.ttl.into()).unwrap();
         res.set_raw_header("Expires", format_datetime_http(&expiry_time));
         Ok(res)
     }
@@ -447,20 +447,34 @@ pub fn get_env_str_value(key: &str) -> Option<String> {
     }
 }
 
-pub fn get_env<V>(key: &str) -> Option<V>
+pub static INVALID_ENV_VARS: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
+
+pub fn get_env<V>(key: &'static str) -> Option<V>
 where
     V: FromStr,
 {
-    try_parse_string(get_env_str_value(key))
+    let value = get_env_str_value(key);
+    let value_is_some = value.is_some();
+    let parsed: Option<V> = try_parse_string(value);
+    if parsed.is_none() && value_is_some {
+        println!("[ERROR] `{key}` contains an invalid value for its type and is ignored, the default is used instead.");
+        INVALID_ENV_VARS.lock().unwrap().push(key);
+    }
+    parsed
 }
 
-pub fn get_env_bool(key: &str) -> Option<bool> {
+pub fn get_env_bool(key: &'static str) -> Option<bool> {
     const TRUE_VALUES: &[&str] = &["true", "t", "yes", "y", "1"];
     const FALSE_VALUES: &[&str] = &["false", "f", "no", "n", "0"];
 
     match get_env_str_value(key) {
         Some(val) if TRUE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(true),
         Some(val) if FALSE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(false),
+        Some(_) => {
+            println!("[ERROR] `{key}` contains an invalid boolean value and is ignored, the default is used instead.");
+            INVALID_ENV_VARS.lock().unwrap().push(key);
+            None
+        }
         _ => None,
     }
 }

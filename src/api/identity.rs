@@ -447,9 +447,9 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
     if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
         if user.last_verifying_at.is_none()
             || now.signed_duration_since(user.last_verifying_at.unwrap()).num_seconds()
-                > CONFIG.signups_verify_resend_time().cast_signed()
+                > i64::from(CONFIG.signups_verify_resend_time())
         {
-            let resend_limit = CONFIG.signups_verify_resend_limit().cast_signed();
+            let resend_limit = i32::from(CONFIG.signups_verify_resend_limit());
             if resend_limit == 0 || user.login_verify_count < resend_limit {
                 // We want to send another email verification if we require signups to verify
                 // their email address, and we haven't sent them a reminder in a while...
