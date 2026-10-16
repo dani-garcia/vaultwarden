@@ -1736,6 +1736,7 @@ where
     reg!("email/invite_confirmed", ".html");
     reg!("email/new_device_logged_in", ".html");
     reg!("email/protected_action", ".html");
+    reg!("email/send_access_otp", ".html");
     reg!("email/pw_hint_none", ".html");
     reg!("email/pw_hint_some", ".html");
     reg!("email/recover_twofactor", ".html");

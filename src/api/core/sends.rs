@@ -1,7 +1,7 @@
 use std::{path::Path, sync::LazyLock, time::Duration};
 
 use chrono::{DateTime, TimeDelta, Utc};
-use num_traits::ToPrimitive;
+use num_traits::{FromPrimitive, ToPrimitive};
 use rocket::{
     form::Form,
     fs::{NamedFile, TempFile},
@@ -16,7 +16,7 @@ use crate::{
     config::PathType,
     db::{
         DbConn, DbPool,
-        models::{Device, OrgPolicy, OrgPolicyType, Send, SendFileId, SendId, SendType, UserId},
+        models::{Device, OrgPolicy, OrgPolicyType, Send, SendAuthType, SendFileId, SendId, SendType, UserId},
     },
     util::{NumberOrString, save_temp_file},
 };
@@ -77,6 +77,7 @@ pub struct SendData {
     deletion_date: DateTime<Utc>,
     disabled: bool,
     hide_email: Option<bool>,
+    auth_type: Option<i32>,
     emails: Option<String>,
 
     // Data field
@@ -148,10 +149,6 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
         );
     }
 
-    if data.emails.is_some() {
-        err!("Sends with email verification is not supported");
-    }
-
     let mut send = Send::new(data.r#type, data.name, data_str, data.key, data.deletion_date.naive_utc());
     send.user_uuid = Some(user_id);
     send.notes = data.notes;
@@ -164,9 +161,83 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
     send.hide_email = data.hide_email;
     send.atype = data.r#type;
 
-    send.set_password(data.password.as_deref());
+    apply_send_auth(&mut send, data.auth_type, data.emails.as_deref(), data.password)?;
+    enforce_mail_enabled_for_email_auth(&send)?;
 
     Ok(send)
+}
+
+/// Splits a comma separated list of emails, trimming and lowercasing each entry and dropping empty ones.
+/// Returns `None` when no address is left.
+fn normalize_emails(emails: Option<&str>) -> Option<String> {
+    let emails: Vec<String> = emails?.split(',').map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()).collect();
+    (!emails.is_empty()).then(|| emails.join(","))
+}
+
+/// Applies the requested access control to a Send, used for both creation and updates.
+///
+/// When `authType` is missing (older clients) it is inferred from the other fields, like upstream does.
+/// The stored `auth_type` is always derived from the resulting state, so a Send never claims a
+/// protection it doesn't actually enforce.
+///
+/// Upstream: https://github.com/bitwarden/server/blob/main/src/Api/Tools/Models/Request/SendRequestModel.cs
+fn apply_send_auth(
+    send: &mut Send,
+    auth_type: Option<i32>,
+    emails: Option<&str>,
+    password: Option<String>,
+) -> EmptyResult {
+    let auth_type = match auth_type.map(SendAuthType::from_i32) {
+        Some(None) => err!("Invalid authType"),
+        Some(t) => t,
+        None => None,
+    };
+    let emails = normalize_emails(emails);
+    let password = password.filter(|p| !p.is_empty());
+
+    match auth_type {
+        Some(SendAuthType::Email) => {
+            let Some(emails) = emails else {
+                err!("Email verification requires at least one email address")
+            };
+            send.emails = Some(emails);
+            send.set_password(None);
+        }
+        Some(SendAuthType::Password) => {
+            send.emails = None;
+            // Editing a password protected Send doesn't resend the password, keep the existing one
+            if let Some(password) = password {
+                send.set_password(Some(&password));
+            } else if send.password_hash.is_none() {
+                err!("A password is required")
+            }
+        }
+        Some(SendAuthType::None) => {
+            send.emails = None;
+            send.set_password(None);
+        }
+        // Unlike upstream, an email protected Send is kept as is when no emails are provided, clients
+        // without `authType` don't know about emails so they can't have intentionally removed them.
+        None => {
+            if emails.is_some() {
+                send.emails = emails;
+                send.set_password(None);
+            } else if let Some(password) = password {
+                send.emails = None;
+                send.set_password(Some(&password));
+            }
+        }
+    }
+
+    send.auth_type = send.effective_auth_type() as i32;
+    Ok(())
+}
+
+fn enforce_mail_enabled_for_email_auth(send: &Send) -> EmptyResult {
+    if send.emails.is_some() && !CONFIG.mail_enabled() {
+        err!("Email verification for Sends requires email to be enabled on this server")
+    }
+    Ok(())
 }
 
 #[get("/sends")]
@@ -473,10 +544,6 @@ async fn put_send(send_id: SendId, data: Json<SendData>, headers: Headers, conn:
         err!("Send not found", "Send send_id is invalid or does not belong to user")
     };
 
-    if data.emails.is_some() {
-        err!("Sends with email verification is not supported");
-    }
-
     update_send_from_data(&mut send, data, &headers, &conn, &nt, UpdateType::SyncSendUpdate).await?;
 
     Ok(Json(send.to_json()))
@@ -528,10 +595,8 @@ async fn update_send_from_data(
     send.hide_email = data.hide_email;
     send.disabled = data.disabled;
 
-    // Only change the value if it's present
-    if let Some(password) = data.password {
-        send.set_password(Some(&password));
-    }
+    apply_send_auth(send, data.auth_type, data.emails.as_deref(), data.password)?;
+    enforce_mail_enabled_for_email_auth(send)?;
 
     send.save(conn).await?;
     if ut != UpdateType::None {
@@ -568,6 +633,7 @@ async fn put_remove_password(send_id: SendId, headers: Headers, conn: DbConn, nt
     };
 
     send.set_password(None);
+    send.auth_type = send.effective_auth_type() as i32;
     send.save(&conn).await?;
     nt.send_send_update(
         UpdateType::SyncSendUpdate,
@@ -579,4 +645,95 @@ async fn put_remove_password(send_id: SendId, headers: Headers, conn: DbConn, nt
     .await;
 
     Ok(Json(send.to_json()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_send() -> Send {
+        Send::new(
+            SendType::Text as i32,
+            String::from("name"),
+            String::from("{}"),
+            String::from("key"),
+            Utc::now().naive_utc(),
+        )
+    }
+
+    const EMAIL: i32 = SendAuthType::Email as i32;
+    const PASSWORD: i32 = SendAuthType::Password as i32;
+    const NONE: i32 = SendAuthType::None as i32;
+
+    #[test]
+    fn test_normalize_emails() {
+        assert_eq!(normalize_emails(Some(" A@x.com, ,b@X.com ,")).as_deref(), Some("a@x.com,b@x.com"));
+        assert_eq!(normalize_emails(Some(" , ")), None);
+        assert_eq!(normalize_emails(Some("")), None);
+        assert_eq!(normalize_emails(None), None);
+    }
+
+    #[test]
+    fn test_email_auth_requires_an_email() {
+        let mut send = new_send();
+        assert!(apply_send_auth(&mut send, Some(EMAIL), Some(" , "), None).is_err());
+        assert!(apply_send_auth(&mut send, Some(EMAIL), None, None).is_err());
+    }
+
+    #[test]
+    fn test_email_auth_clears_password() {
+        let mut send = new_send();
+        apply_send_auth(&mut send, Some(PASSWORD), None, Some(String::from("secret"))).unwrap();
+        apply_send_auth(&mut send, Some(EMAIL), Some("A@x.com"), Some(String::from("secret"))).unwrap();
+        assert_eq!(send.auth_type, EMAIL);
+        assert_eq!(send.emails.as_deref(), Some("a@x.com"));
+        assert!(send.password_hash.is_none());
+    }
+
+    #[test]
+    fn test_password_auth() {
+        let mut send = new_send();
+        assert!(apply_send_auth(&mut send, Some(PASSWORD), None, None).is_err());
+
+        apply_send_auth(&mut send, Some(PASSWORD), Some("a@x.com"), Some(String::from("secret"))).unwrap();
+        assert_eq!(send.auth_type, PASSWORD);
+        assert!(send.emails.is_none());
+
+        // Edits don't resend the password, the existing one is kept
+        apply_send_auth(&mut send, Some(PASSWORD), None, None).unwrap();
+        assert_eq!(send.auth_type, PASSWORD);
+        assert!(send.check_password("secret"));
+    }
+
+    #[test]
+    fn test_none_auth_clears_everything() {
+        let mut send = new_send();
+        apply_send_auth(&mut send, Some(EMAIL), Some("a@x.com"), None).unwrap();
+        apply_send_auth(&mut send, Some(NONE), Some("a@x.com"), Some(String::from("secret"))).unwrap();
+        assert_eq!(send.auth_type, NONE);
+        assert!(send.emails.is_none());
+        assert!(send.password_hash.is_none());
+    }
+
+    #[test]
+    fn test_missing_auth_type_is_inferred() {
+        let mut send = new_send();
+        apply_send_auth(&mut send, None, None, Some(String::from("secret"))).unwrap();
+        assert_eq!(send.auth_type, PASSWORD);
+
+        apply_send_auth(&mut send, None, Some("a@x.com"), None).unwrap();
+        assert_eq!(send.auth_type, EMAIL);
+        assert!(send.password_hash.is_none());
+
+        // Clients without authType don't know about emails, an email protected Send stays protected
+        apply_send_auth(&mut send, None, None, None).unwrap();
+        assert_eq!(send.auth_type, EMAIL);
+        assert_eq!(send.emails.as_deref(), Some("a@x.com"));
+    }
+
+    #[test]
+    fn test_invalid_auth_type() {
+        let mut send = new_send();
+        assert!(apply_send_auth(&mut send, Some(42), None, None).is_err());
+    }
 }
