@@ -24,8 +24,9 @@ use crate::{
     db::{
         ACTIVE_DB_TYPE, DbConn, DbConnType, backup_sqlite, get_sql_server_version,
         models::{
-            Attachment, Cipher, Collection, Device, Event, EventType, Group, Invitation, Membership, MembershipId,
-            MembershipType, OrgPolicy, Organization, OrganizationId, SsoUser, TwoFactor, User, UserId,
+            Attachment, Cipher, Collection, Device, Event, EventType, Group, Invitation, MaximumVaultTimeoutPolicyData,
+            Membership, MembershipId, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationId, SsoUser,
+            TwoFactor, User, UserId,
         },
     },
     error::{Error, MapResult},
@@ -66,6 +67,7 @@ pub fn routes() -> Vec<Route> {
         test_smtp,
         users_overview,
         organizations_overview,
+        update_organization_policies,
         delete_organization,
         diagnostics,
         get_diagnostics_config,
@@ -603,11 +605,113 @@ async fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<H
         org["event_count"] = json!(Event::count_by_org(&o.uuid, &conn).await);
         org["attachment_count"] = json!(Attachment::count_by_org(&o.uuid, &conn).await);
         org["attachment_size"] = json!(get_display_size(Attachment::size_by_org(&o.uuid, &conn).await));
+
+        let policies = OrgPolicy::find_by_org(&o.uuid, &conn).await;
+        let policy = |policy_type| policies.iter().find(|policy| policy.has_type(policy_type));
+        let policy_enabled = |policy_type| policy(policy_type).is_some_and(|policy| policy.enabled);
+        let maximum_vault_timeout_policy = policy(OrgPolicyType::MaximumVaultTimeout);
+        let maximum_vault_timeout_data = maximum_vault_timeout_policy
+            .and_then(|policy| serde_json::from_str::<MaximumVaultTimeoutPolicyData>(&policy.data).ok())
+            .unwrap_or_default();
+
+        org["policies"] = json!({
+            "singleOrgEnabled": policy_enabled(OrgPolicyType::SingleOrg),
+            "maximumVaultTimeout": {
+                "enabled": maximum_vault_timeout_policy.is_some_and(|policy| policy.enabled),
+                "data": maximum_vault_timeout_data,
+            },
+            "disablePersonalVaultExport": policy_enabled(OrgPolicyType::DisablePersonalVaultExport),
+        });
         organizations_json.push(org);
     }
 
     let text = AdminTemplateData::new("admin/organizations", json!(organizations_json)).render()?;
     Ok(Html(text))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminMaximumVaultTimeoutPolicyData {
+    enabled: bool,
+    #[serde(flatten)]
+    data: MaximumVaultTimeoutPolicyData,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminOrganizationPoliciesData {
+    maximum_vault_timeout: AdminMaximumVaultTimeoutPolicyData,
+    disable_personal_vault_export: bool,
+}
+
+async fn save_admin_org_policy(
+    org_id: &OrganizationId,
+    policy_type: OrgPolicyType,
+    enabled: bool,
+    data: String,
+    token: &AdminToken,
+    conn: &DbConn,
+) -> EmptyResult {
+    let mut policy = OrgPolicy::find_by_org_and_type(org_id, policy_type, conn)
+        .await
+        .unwrap_or_else(|| OrgPolicy::new(org_id.clone(), policy_type, false, "null".to_owned()));
+
+    if policy.enabled == enabled && policy.data == data {
+        return Ok(());
+    }
+
+    policy.enabled = enabled;
+    policy.data = data;
+    policy.save(conn).await?;
+
+    log_event(
+        EventType::PolicyUpdated,
+        policy.uuid.as_ref(),
+        org_id,
+        &ACTING_ADMIN_USER.into(),
+        14, // Use UnknownBrowser type
+        &token.ip.ip,
+        conn,
+    )
+    .await;
+
+    Ok(())
+}
+
+#[post("/organizations/<org_id>/policies", format = "application/json", data = "<data>")]
+async fn update_organization_policies(
+    org_id: OrganizationId,
+    data: Json<AdminOrganizationPoliciesData>,
+    token: AdminToken,
+    conn: DbConn,
+) -> EmptyResult {
+    if Organization::find_by_uuid(&org_id, &conn).await.is_none() {
+        err_code!("Organization doesn't exist", Status::NotFound.code);
+    }
+
+    let mut data = data.into_inner();
+    if let Err(message) = data.maximum_vault_timeout.data.validate_and_normalize() {
+        err_code!(message, Status::BadRequest.code);
+    }
+
+    if data.maximum_vault_timeout.enabled && !OrgPolicy::is_enabled(&org_id, OrgPolicyType::SingleOrg, &conn).await {
+        err_code!(
+            "The Single Organization policy must be enabled before enabling the Vault Timeout policy.",
+            Status::BadRequest.code
+        );
+    }
+
+    for (policy_type, enabled, policy_data) in [
+        (
+            OrgPolicyType::MaximumVaultTimeout,
+            data.maximum_vault_timeout.enabled,
+            serde_json::to_string(&data.maximum_vault_timeout.data)?,
+        ),
+        (OrgPolicyType::DisablePersonalVaultExport, data.disable_personal_vault_export, "null".to_owned()),
+    ] {
+        save_admin_org_policy(&org_id, policy_type, enabled, policy_data, &token, &conn).await?;
+    }
+    Ok(())
 }
 
 #[post("/organizations/<org_id>/delete", format = "application/json")]
