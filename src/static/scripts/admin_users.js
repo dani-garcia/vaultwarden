@@ -174,20 +174,21 @@ const ORG_TYPES = {
         "bg": "blue"
     },
     "4": {
-        "name": "Manager",
-        "bg": "green"
+        "name": "Custom",
+        "bg": "teal"
     },
 };
 
 const userOrgTypeDialog = document.getElementById("userOrgTypeDialog");
 // Fill the form and title
 userOrgTypeDialog.addEventListener("show.bs.modal", function (event) {
+    document.getElementById("userOrgTypeForm").reset();
+
     // Get shared values
     const userEmail = event.relatedTarget.parentNode.dataset.vwUserEmail;
     const userUuid = event.relatedTarget.parentNode.dataset.vwUserUuid;
     // Get org specific values
     const userOrgType = event.relatedTarget.dataset.vwOrgType;
-    const userOrgTypeName = ORG_TYPES[userOrgType]["name"];
     const orgName = event.relatedTarget.dataset.vwOrgName;
     const orgUuid = event.relatedTarget.dataset.vwOrgUuid;
 
@@ -195,7 +196,9 @@ userOrgTypeDialog.addEventListener("show.bs.modal", function (event) {
     document.getElementById("userOrgTypeDialogUserEmail").textContent = userEmail;
     document.getElementById("userOrgTypeUserUuid").value = userUuid;
     document.getElementById("userOrgTypeOrgUuid").value = orgUuid;
-    document.getElementById(`userOrgType${userOrgTypeName}`).checked = true;
+    if (ORG_TYPES[userOrgType] !== undefined) {
+        document.getElementById(`userOrgType${ORG_TYPES[userOrgType].name}`).checked = true;
+    }
 }, false);
 
 // Prevent accidental submission of the form with valid elements after the modal has been hidden.
@@ -222,7 +225,10 @@ function updateUserOrgType(event) {
 function initUserTable() {
     // Color all the org buttons per type
     document.querySelectorAll("button[data-vw-org-type]").forEach(function (e) {
-        const orgType = ORG_TYPES[e.dataset.vwOrgType];
+        const orgType = ORG_TYPES[e.dataset.vwOrgType] ?? {
+            "name": "Unknown membership type",
+            "bg": "gray"
+        };
         e.style.backgroundColor = orgType.bg;
         if (orgType.font !== undefined) {
             e.style.color = orgType.font;
