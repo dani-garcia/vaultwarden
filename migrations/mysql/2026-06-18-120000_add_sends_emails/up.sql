@@ -1,7 +1,7 @@
 ALTER TABLE sends ADD COLUMN emails TEXT;
 
 CREATE TABLE sends_otp (
-    send_uuid       CHAR(36) NOT NULL REFERENCES sends(uuid) ON DELETE CASCADE ON UPDATE CASCADE,
+    send_uuid       CHAR(36) NOT NULL,
     email           VARCHAR(255) NOT NULL,
     code            TEXT NOT NULL,
 
@@ -12,6 +12,7 @@ CREATE TABLE sends_otp (
     PRIMARY KEY(send_uuid, email)
 );
 
+ALTER TABLE sends_otp ADD CONSTRAINT fk_send_uuid FOREIGN KEY (send_uuid) REFERENCES sends(uuid) ON DELETE CASCADE ON UPDATE CASCADE;
 
 DELETE FROM sends where user_uuid IS NULL;
 UPDATE sends SET hide_email = false WHERE hide_email IS NULL;
