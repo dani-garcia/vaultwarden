@@ -48,6 +48,8 @@ s3 = [
     "dep:reqsign-aws-v4",
     "dep:reqsign-core",
 ]
+# Enable to allow to set lower KDF iterations settings
+unsafe_test_mode = []
 
 # OIDC specific features
 oidc-accept-rfc3339-timestamps = ["openidconnect/accept-rfc3339-timestamps"]
