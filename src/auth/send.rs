@@ -156,12 +156,14 @@ impl SendTokens {
         let Some(code) = otp.map(|o| o.trim().to_owned()).filter(|o| !o.is_empty()) else {
             if stored.as_ref().is_none_or(SendAccessOtp::can_resend) {
                 let code = crypto::generate_email_token(CONFIG.email_token_size());
-                let new_otp = SendAccessOtp::new(send.uuid.clone(), email.clone(), code.clone());
-                new_otp.save(conn).await?;
-                if let Err(e) = mail::send_send_access_otp(&email, &code).await {
-                    new_otp.delete(conn).await.ok();
-                    return Err(e);
-                }
+                SendAccessOtp::new(send.uuid.clone(), email.clone(), code.clone()).save(conn).await?;
+                // Mail in the background, so neither the response time nor a mail failure tells listed
+                // and unlisted emails apart. On failure the recipient can request a new code after the cooldown.
+                tokio::spawn(async move {
+                    if let Err(e) = mail::send_send_access_otp(&email, &code).await {
+                        error!("Failed to send Send verification code: {e:#?}");
+                    }
+                });
             }
             return Self::expected_error("Email and OTP required", "email_and_otp_required");
         };
