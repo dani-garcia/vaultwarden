@@ -175,11 +175,17 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
 }
 
 const ITEM_SENDS_FEATURE_FLAG: &str = "pm-34203-temporary-item-sharing";
+// Clients can only decrypt (and rotate the keys of) Item Sends through the SDK
+const SDK_SENDS_FEATURE_FLAG: &str = "pm-30110-sdk-sends-api";
 
-/// Item Sends (sharing a vault item through a temporary link) are opt-in through the client feature flag.
+/// Item Sends (sharing a vault item through a temporary link) are opt-in through the client feature flags,
+/// both are needed for clients to handle them.
 pub fn item_sends_enabled() -> bool {
-    parse_experimental_client_feature_flags(&CONFIG.experimental_client_feature_flags(), &FeatureFlagFilter::ValidOnly)
-        .contains_key(ITEM_SENDS_FEATURE_FLAG)
+    let flags = parse_experimental_client_feature_flags(
+        &CONFIG.experimental_client_feature_flags(),
+        &FeatureFlagFilter::ValidOnly,
+    );
+    flags.contains_key(ITEM_SENDS_FEATURE_FLAG) && flags.contains_key(SDK_SENDS_FEATURE_FLAG)
 }
 
 /// Whether a Send can be shown to its owner or a recipient, Item Sends are hidden while the feature is disabled.
