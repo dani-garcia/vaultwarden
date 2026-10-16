@@ -215,6 +215,7 @@ async fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn
     Ok(Json(org.to_json()))
 }
 
+#[suppress(dubious_payload)]
 #[delete("/organizations/<org_id>", data = "<data>")]
 async fn delete_organization(
     org_id: OrganizationId,
@@ -711,6 +712,7 @@ struct BulkCollectionIds {
     ids: Vec<CollectionId>,
 }
 
+#[suppress(dubious_payload)]
 #[delete("/organizations/<org_id>/collections", data = "<data>")]
 async fn bulk_delete_organization_collections(
     org_id: OrganizationId,
@@ -1593,6 +1595,7 @@ async fn edit_member(
     member_to_edit.save(&conn).await
 }
 
+#[suppress(dubious_payload)]
 #[delete("/organizations/<org_id>/users", data = "<data>")]
 async fn bulk_delete_member(
     org_id: OrganizationId,
@@ -2677,6 +2680,7 @@ async fn delete_group_impl(
     group.delete(org_id, conn).await
 }
 
+#[suppress(dubious_payload)]
 #[delete("/organizations/<org_id>/groups", data = "<data>")]
 async fn bulk_delete_groups(
     org_id: OrganizationId,

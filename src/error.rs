@@ -165,10 +165,12 @@ impl Error {
         self
     }
 
+    #[must_use]
     pub fn get_event(&self) -> &Option<ErrorEvent> {
         &self.event
     }
 
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -425,12 +427,12 @@ macro_rules! err_json {
 macro_rules! err_handler {
     ($expr:expr) => {{
         error!(target: "auth", "Unauthorized Error: {}", $expr);
-        return ::rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, $expr));
+        return ::rocket::request::Outcome::Error((::rocket::http::Status::Unauthorized, $expr));
     }};
     ($usr_msg:expr, $log_value:expr) => {{
         let usr_msg = $usr_msg;
         let log_value = $log_value;
         error!(target: "auth", "Unauthorized Error: {usr_msg}. {log_value}");
-        return ::rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, usr_msg));
+        return ::rocket::request::Outcome::Error((::rocket::http::Status::Unauthorized, usr_msg));
     }};
 }
