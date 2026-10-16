@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::{ApiResult, EmptyResult, JsonResult, Notify, UpdateType},
-    auth::{Headers, Host, SendHeaders},
+    auth::{ClientVersion, Headers, Host, SendHeaders},
     config::PathType,
     db::{
         DbConn, DbPool,
@@ -174,7 +174,7 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
     Ok(send)
 }
 
-const ITEM_SENDS_FEATURE_FLAG: &str = "pm-34203-temporary-item-sharing";
+pub const ITEM_SENDS_FEATURE_FLAG: &str = "pm-34203-temporary-item-sharing";
 // Clients can only decrypt (and rotate the keys of) Item Sends through the SDK
 const SDK_SENDS_FEATURE_FLAG: &str = "pm-30110-sdk-sends-api";
 
@@ -188,9 +188,26 @@ pub fn item_sends_enabled() -> bool {
     flags.contains_key(ITEM_SENDS_FEATURE_FLAG) && flags.contains_key(SDK_SENDS_FEATURE_FLAG)
 }
 
-/// Whether a Send can be shown to its owner or a recipient, Item Sends are hidden while the feature is disabled.
+/// Whether a Send can be accessed by a recipient, Item Sends are hidden while the feature is disabled.
 pub fn send_visible(send: &Send) -> bool {
     send.atype != SendType::Item as i32 || item_sends_enabled()
+}
+
+/// Clients able to handle Item Sends. The mobile apps and the CLI don't know the type (an unknown Send type
+/// breaks the whole Android sync), the other clients support it since 2026.10.0.
+pub fn client_supports_item_sends(device: &Device, client_version: Option<&ClientVersion>) -> bool {
+    !device.is_mobile() && !device.is_cli() && client_version_supports_item_sends(client_version)
+}
+
+pub fn client_version_supports_item_sends(client_version: Option<&ClientVersion>) -> bool {
+    static MIN_VERSION: LazyLock<semver::VersionReq> =
+        LazyLock::new(|| semver::VersionReq::parse(">=2026.10.0").unwrap());
+    client_version.is_some_and(|v| MIN_VERSION.matches(&v.0))
+}
+
+/// Whether a Send can be shown to its owner on the requesting client.
+pub fn send_visible_to(send: &Send, device: &Device, client_version: Option<&ClientVersion>) -> bool {
+    send.atype != SendType::Item as i32 || (item_sends_enabled() && client_supports_item_sends(device, client_version))
 }
 
 /// Data of an Item Send. The vault item is encrypted client side into a single opaque blob, the item id
@@ -348,9 +365,14 @@ fn enforce_mail_enabled_for_email_auth(send: &Send) -> EmptyResult {
 }
 
 #[get("/sends")]
-async fn get_sends(headers: Headers, conn: DbConn) -> Json<Value> {
+async fn get_sends(headers: Headers, client_version: Option<ClientVersion>, conn: DbConn) -> Json<Value> {
     let sends = Send::find_by_user(&headers.user.uuid, &conn);
-    let sends_json: Vec<Value> = sends.await.iter().filter(|s| send_visible(s)).map(Send::to_json).collect();
+    let sends_json: Vec<Value> = sends
+        .await
+        .iter()
+        .filter(|s| send_visible_to(s, &headers.device, client_version.as_ref()))
+        .map(Send::to_json)
+        .collect();
 
     Json(json!({
       "data": sends_json,
@@ -360,9 +382,14 @@ async fn get_sends(headers: Headers, conn: DbConn) -> Json<Value> {
 }
 
 #[get("/sends/<send_id>")]
-async fn get_send(send_id: SendId, headers: Headers, conn: DbConn) -> JsonResult {
+async fn get_send(
+    send_id: SendId,
+    headers: Headers,
+    client_version: Option<ClientVersion>,
+    conn: DbConn,
+) -> JsonResult {
     if let Some(send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await
-        && send_visible(&send)
+        && send_visible_to(&send, &headers.device, client_version.as_ref())
     {
         Ok(Json(send.to_json()))
     } else {

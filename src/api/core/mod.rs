@@ -21,7 +21,7 @@ use rocket::{Catcher, Route, serde::json::Json, serde::json::Value};
 use crate::{
     CONFIG,
     api::{EmptyResult, JsonResult, Notify, UpdateType},
-    auth::Headers,
+    auth::{ClientVersion, Headers},
     db::{
         DbConn,
         models::{Membership, MembershipStatus, OrgPolicy, Organization, User},
@@ -208,7 +208,8 @@ fn get_api_webauthn(_headers: Headers) -> Json<Value> {
 }
 
 #[get("/config")]
-fn config() -> Json<Value> {
+#[expect(clippy::needless_pass_by_value, reason = "Rocket request guards are passed by value")]
+fn config(client_version: Option<ClientVersion>) -> Json<Value> {
     let domain = CONFIG.domain();
     // Official available feature flags can be found here:
     // Server (v2026.2.1): https://github.com/bitwarden/server/blob/0e42725d0837bd1c0dabd864ff621a579959744b/src/Core/Constants.cs#L135
@@ -220,6 +221,10 @@ fn config() -> Json<Value> {
         &FeatureFlagFilter::ValidOnly,
     );
     feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
+    // Older clients with only part of the item sharing feature could create Item Sends they can't handle
+    if !sends::client_version_supports_item_sends(client_version.as_ref()) {
+        feature_states.remove(sends::ITEM_SENDS_FEATURE_FLAG);
+    }
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns

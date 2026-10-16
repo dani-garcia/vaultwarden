@@ -31,7 +31,7 @@ use crate::{
 
 use super::{
     folders::FolderData,
-    sends::{SIZE_525_MB, send_visible},
+    sends::{SIZE_525_MB, send_visible_to},
 };
 
 pub fn routes() -> Vec<Route> {
@@ -130,7 +130,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     let mut ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn).await;
 
     // Filter out SSH keys if the client version is less than 2024.12.0
-    let show_ssh_keys = if let Some(client_version) = client_version {
+    let show_ssh_keys = if let Some(client_version) = &client_version {
         let ver_match = semver::VersionReq::parse(">=2024.12.0").unwrap();
         ver_match.matches(&client_version.0)
     } else {
@@ -162,7 +162,7 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     let sends_json: Vec<Value> = Send::find_by_user(&headers.user.uuid, &conn)
         .await
         .iter()
-        .filter(|s| send_visible(s))
+        .filter(|s| send_visible_to(s, &headers.device, client_version.as_ref()))
         .map(Send::to_json)
         .collect();
 
