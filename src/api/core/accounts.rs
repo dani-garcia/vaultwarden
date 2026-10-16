@@ -1606,10 +1606,19 @@ async fn get_all_devices(headers: Headers, conn: DbConn) -> JsonResult {
     })))
 }
 
+/// Reported by a client that still holds a device key but did not get any keys back from us.
 #[post("/devices/lost-trust")]
 async fn post_device_lost_trust(headers: Headers, conn: DbConn) -> EmptyResult {
     let mut device = headers.device;
 
+    warn!(
+        "Device {} ({}) of user {} still holds a device key, but has no trusted device keys on the server",
+        device.uuid,
+        DeviceType::from_i32(device.atype),
+        headers.user.uuid
+    );
+
+    // Still ensure that it's the case.
     if device.lost_trust() {
         device.save(true, &conn).await?;
     }
