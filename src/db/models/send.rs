@@ -400,10 +400,6 @@ pub struct SendAccessOtp {
 }
 
 impl SendAccessOtp {
-    /// How long a code stays valid.
-    const VALIDITY_MINUTES: i64 = 5;
-    /// Wrong guesses allowed before a code is discarded.
-    pub const MAX_ATTEMPTS: i32 = 5;
     /// Minimum time before a new code can be requested, so the endpoint can't be used to spam a
     /// recipient or keep invalidating the code they are about to type.
     const RESEND_COOLDOWN_SECONDS: i64 = 60;
@@ -416,8 +412,14 @@ impl SendAccessOtp {
             code,
             attempts: 0,
             creation_date: now,
-            expiration_date: now + TimeDelta::minutes(Self::VALIDITY_MINUTES),
+            // Same settings as the email 2FA codes
+            expiration_date: now + TimeDelta::seconds(CONFIG.email_expiration_time().cast_signed()),
         }
+    }
+
+    /// Wrong guesses allowed before a code is discarded.
+    pub fn attempts_exhausted(&self) -> bool {
+        u64::try_from(self.attempts).unwrap_or(u64::MAX) >= CONFIG.email_attempts_limit()
     }
 
     pub fn is_expired(&self) -> bool {

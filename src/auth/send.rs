@@ -171,7 +171,7 @@ impl SendTokens {
         let Some(stored) = stored else {
             return Self::expected_error("Email and OTP required", "email_and_otp_required");
         };
-        if stored.is_expired() || stored.attempts >= SendAccessOtp::MAX_ATTEMPTS {
+        if stored.is_expired() || stored.attempts_exhausted() {
             stored.delete(conn).await?;
             return Self::expected_error("Email and OTP required", "email_and_otp_required");
         }
