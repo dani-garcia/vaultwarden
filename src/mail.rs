@@ -684,6 +684,20 @@ pub async fn send_protected_action_token(address: &str, token: &str) -> EmptyRes
     send_email(address, &subject, body_html, body_text).await
 }
 
+pub async fn send_send_otp(address: &str, token: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/send_otp",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "token": token,
+            "expiration": CONFIG.email_expiration_time() / 60,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 async fn send_with_selected_transport(email: Message) -> EmptyResult {
     if CONFIG.use_sendmail() {
         match sendmail_transport().send(email).await {
