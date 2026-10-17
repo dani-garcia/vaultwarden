@@ -1234,6 +1234,24 @@ impl<'r> FromRequest<'r> for ClientVersion {
     }
 }
 
+/// Like `Option<ClientVersion>`, but a missing or invalid header is not logged as an error:
+/// for endpoints that anonymous pages and every client hit, like `/api/config`.
+pub struct MaybeClientVersion(pub Option<ClientVersion>);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for MaybeClientVersion {
+    type Error = ();
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let version = request
+            .headers()
+            .get_one("Bitwarden-Client-Version")
+            .and_then(|v| semver::Version::parse(v).ok())
+            .map(ClientVersion);
+        Outcome::Success(MaybeClientVersion(version))
+    }
+}
+
 #[derive(Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthMethod {
