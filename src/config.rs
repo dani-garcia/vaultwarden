@@ -772,7 +772,7 @@ make_config! {
         /// Allowed iframe ancestors (Know the risks!) |> Allows other domains to embed the web vault into an iframe, useful for embedding into secure intranets
         allowed_iframe_ancestors: String, true, def,    String::new();
 
-        /// Allowed connect-src (Know the risks!) |> Allows other domains to URLs which can be loaded using script interfaces like the Forwarded email alias feature
+        /// Allowed connect-src (Know the risks!) |> Allows other domains for URLs which can be loaded using script interfaces like the Forwarded email alias feature
         allowed_connect_src:      String, true, def,    String::new();
 
         /// Seconds between login requests |> Number of seconds, on average, between login and 2FA requests from the same IP address before rate limiting kicks in
