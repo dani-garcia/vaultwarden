@@ -115,6 +115,7 @@ services:
 <br>
 
 <a name="get-in-touch"></a>
+
 ## 获取支持
 
 有问题、有建议，还是需要帮助？来加入我们在 [Matrix](https://matrix.to/#/#vaultwarden:matrix.org)、[GitHub Discussions](https://github.com/dani-garcia/vaultwarden/discussions) 或 [Discourse 论坛](https://vaultwarden.discourse.group/) 上的社区。
@@ -133,6 +134,7 @@ services:
 <br>
 
 <a name="disclaimer"></a>
+
 ## 免责声明
 
 **本项目与 [Bitwarden](https://bitwarden.com/) 或 Bitwarden, Inc. 并无关联。**
