@@ -1323,6 +1323,7 @@ async fn post_delete_account(data: Json<PasswordOrOtpData>, headers: Headers, co
     delete_account(data, headers, conn).await
 }
 
+#[suppress(dubious_payload)]
 #[delete("/accounts", data = "<data>")]
 async fn delete_account(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: PasswordOrOtpData = data.into_inner();

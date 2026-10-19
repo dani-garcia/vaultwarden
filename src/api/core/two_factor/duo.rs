@@ -143,6 +143,7 @@ async fn activate_duo_put(data: Json<EnableDuoData>, headers: Headers, conn: DbC
     activate_duo(data, headers, conn).await
 }
 
+#[suppress(dubious_payload)]
 #[delete("/two-factor/duo", data = "<data>")]
 async fn disable_duo(data: Json<VerificationTokenData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let user = headers.user;
