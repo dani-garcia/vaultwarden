@@ -887,6 +887,7 @@ impl<'r> FromRequest<'r> for AdminHeaders {
 macro_rules! permission_headers {
     ($(#[$doc:meta])* $name:ident, $permission:expr) => {
         $(#[$doc])*
+        #[allow(dead_code, reason = "Not every route reads every field")]
         pub struct $name {
             pub device: Device,
             pub user: User,
@@ -925,6 +926,16 @@ permission_headers!(
     /// For the routes that manage the members of an organization.
     ManageUsersHeaders,
     CustomPermission::ManageUsers
+);
+permission_headers!(
+    /// For the routes that manage the policies of an organization.
+    ManagePoliciesHeaders,
+    CustomPermission::ManagePolicies
+);
+permission_headers!(
+    /// For the routes that manage the groups of an organization.
+    ManageGroupsHeaders,
+    CustomPermission::ManageGroups
 );
 
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),

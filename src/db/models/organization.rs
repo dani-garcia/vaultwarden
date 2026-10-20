@@ -248,6 +248,8 @@ pub enum CustomPermission {
 /// grant of any other one grants nothing. They are implemented one at a time, so this grows with them.
 const SUPPORTED_CUSTOM_PERMISSIONS: &[CustomPermission] = &[
     CustomPermission::ManageUsers,
+    CustomPermission::ManageGroups,
+    CustomPermission::ManagePolicies,
     CustomPermission::CreateNewCollections,
     CustomPermission::EditAnyCollection,
     CustomPermission::DeleteAnyCollection,
@@ -1612,7 +1614,7 @@ mod tests {
         }
         assert_eq!(
             SUPPORTED_CUSTOM_PERMISSIONS,
-            [ManageUsers, CreateNewCollections, EditAnyCollection, DeleteAnyCollection]
+            [ManageUsers, ManageGroups, ManagePolicies, CreateNewCollections, EditAnyCollection, DeleteAnyCollection]
         );
     }
 
