@@ -597,9 +597,11 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
         }
     }
 
-    // A Manager only becomes a Custom member if that changes nothing they may do
+    // A Manager only becomes a Custom member if that changes nothing they may do. Here they would keep the permissions
+    // they are shown with, the admin panel can't give up their access to all collections, so that is refused.
     if new_type == MembershipType::Custom
-        && let Some(loss) = member_to_edit.custom_role_conversion_loss(&conn).await
+        && let Some(loss) =
+            member_to_edit.custom_role_conversion_loss(&member_to_edit.legacy_manager_permissions(), &conn).await
     {
         err!(loss)
     }

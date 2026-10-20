@@ -25,7 +25,8 @@ use macros::UuidFromParam;
 
 use super::{
     Archive, Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership,
-    MembershipStatus, OrganizationId, User, UserId, organization::ORG_ADMIN_ATYPES,
+    MembershipStatus, OrganizationId, User, UserId,
+    organization::{ORG_ADMIN_ATYPES, custom_edit_any_collection},
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -230,6 +231,23 @@ impl Cipher {
             .await
     }
 
+    pub async fn to_json_org_admin_collections(
+        &self,
+        host: &str,
+        user_uuid: &UserId,
+        conn: &DbConn,
+    ) -> Result<Value, crate::Error> {
+        self.to_json_scoped(
+            host,
+            user_uuid,
+            None,
+            CipherSyncType::Organization,
+            CipherAccessScope::OrganizationAdmin,
+            conn,
+        )
+        .await
+    }
+
     async fn to_json_scoped(
         &self,
         host: &str,
@@ -352,7 +370,7 @@ impl Cipher {
                 Cow::from(Vec::new())
             }
         } else {
-            Cow::from(self.get_admin_collections(user_uuid.clone(), conn).await)
+            Cow::from(self.get_admin_collections(user_uuid.clone(), scope, conn).await)
         };
 
         // There are three types of cipher response models in upstream
@@ -1194,7 +1212,12 @@ impl Cipher {
         }
     }
 
-    pub async fn get_admin_collections(&self, user_uuid: UserId, conn: &DbConn) -> Vec<CollectionId> {
+    pub async fn get_admin_collections(
+        &self,
+        user_uuid: UserId,
+        scope: CipherAccessScope,
+        conn: &DbConn,
+    ) -> Vec<CollectionId> {
         if CONFIG.org_groups_enabled() {
             conn.run(move |conn| {
                 ciphers_collections::table
@@ -1234,7 +1257,9 @@ impl Cipher {
                             .or(collections_groups::collections_uuid
                                 .is_not_null() // Access via groups
                                 .and(collections_groups::read_only.eq(false)))
-                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)), // User is admin or owner
+                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // User is admin or owner
+                            .or(custom_edit_any_collection()
+                                .and::<_, diesel::sql_types::Bool>(scope == CipherAccessScope::OrganizationAdmin)),
                     )
                     .select(ciphers_collections::collection_uuid)
                     .load::<CollectionId>(conn)
@@ -1263,7 +1288,9 @@ impl Cipher {
                             .or(users_collections::user_uuid
                                 .eq(user_uuid) // User has access to collection
                                 .and(users_collections::read_only.eq(false)))
-                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)), // User is admin or owner
+                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // User is admin or owner
+                            .or(custom_edit_any_collection()
+                                .and::<_, diesel::sql_types::Bool>(scope == CipherAccessScope::OrganizationAdmin)),
                     )
                     .select(ciphers_collections::collection_uuid)
                     .load::<CollectionId>(conn)

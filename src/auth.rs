@@ -32,9 +32,9 @@ use crate::{
     db::{
         DbConn,
         models::{
-            AttachmentId, CipherId, Collection, CollectionId, Device, DeviceId, DeviceType, EmergencyAccessId,
-            EventType, Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, OrganizationId,
-            SendFileId, SendId, User, UserId,
+            AttachmentId, CipherId, Collection, CollectionId, CustomPermission, Device, DeviceId, DeviceType,
+            EmergencyAccessId, EventType, Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId,
+            OrganizationId, SendFileId, SendId, User, UserId, custom_roles_enabled,
         },
     },
     error::Error,
@@ -757,6 +757,12 @@ impl OrgHeaders {
     fn is_confirmed_and_owner(&self) -> bool {
         self.membership_status == MembershipStatus::Confirmed && self.membership_type == MembershipType::Owner
     }
+    // A Custom member, while Custom roles are enabled. What they may do depends on their permissions.
+    fn is_confirmed_and_custom(&self) -> bool {
+        self.membership_status == MembershipStatus::Confirmed
+            && self.membership_type == MembershipType::Custom
+            && custom_roles_enabled()
+    }
 }
 
 // org_id is usually the second path param ("/organizations/<org_id>"),
@@ -895,62 +901,132 @@ fn get_col_id(request: &Request<'_>) -> Option<CollectionId> {
     None
 }
 
-/// The ManagerHeaders are used to check if you are at least a Manager
-/// and have access to the specific collection provided via the <col_id>/collections/collectionId.
-/// This does strict checking on the collection_id, ManagerHeadersLoose does not.
-pub struct ManagerHeaders {
-    pub host: String,
-    pub device: Device,
-    pub user: User,
-    pub ip: ClientIp,
-    pub org_id: OrganizationId,
+/// What a collection route does with its collection, which decides what a Custom member needs for it.
+#[derive(Clone, Copy)]
+pub enum CollectionAction {
+    Edit,
+    Read,
+    Delete,
 }
 
-#[rocket::async_trait]
-impl<'r> FromRequest<'r> for ManagerHeaders {
-    type Error = &'static str;
+/// Whether `member`, a confirmed Custom member, may `action` the collection `col_id` of their organization.
+///
+/// Deleting needs Delete any collection: the clients are told collection deletion is limited, so the manage option
+/// on a collection is no permission to delete it. Editing is open with Edit any collection, reading also with Delete
+/// any collection, and otherwise both need the manage option on the collection itself. Neither the role nor any
+/// `access_all` counts as that.
+pub async fn custom_member_may(
+    action: CollectionAction,
+    member: &Membership,
+    col_id: &CollectionId,
+    conn: &DbConn,
+) -> bool {
+    if !(member.has_type(MembershipType::Custom)
+        && member.has_status(MembershipStatus::Confirmed)
+        && custom_roles_enabled())
+    {
+        return false;
+    }
+    match action {
+        CollectionAction::Delete => member.has_custom_permission(CustomPermission::DeleteAnyCollection),
+        CollectionAction::Edit if member.can_edit_any_collection() => true,
+        CollectionAction::Read if member.can_view_all_collections() => true,
+        CollectionAction::Edit | CollectionAction::Read => {
+            Collection::find_explicitly_manageable_by_user(&member.org_uuid, &member.user_uuid, conn)
+                .await
+                .contains(col_id)
+        }
+    }
+}
 
-    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.is_confirmed_and_manager() {
-            if let Some(col_id) = get_col_id(request) {
-                let Outcome::Success(conn) = DbConn::from_request(request).await else {
-                    err_handler!("Error getting DB")
-                };
+/// Checks a collection route for the collection provided via the <col_id>/collections/collectionId: a Manager, Admin
+/// or Owner needs to be able to manage the collection, a Custom member is checked for the `action`.
+async fn collection_headers(request: &Request<'_>, action: CollectionAction) -> Outcome<OrgHeaders, &'static str> {
+    let headers = try_outcome!(OrgHeaders::from_request(request).await);
+    let is_custom = headers.is_confirmed_and_custom();
+    if !headers.is_confirmed_and_manager() && !is_custom {
+        err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
+    }
 
-                if !Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await {
-                    err_handler!("The current user isn't a manager for this collection")
-                }
-            } else {
-                err_handler!("Error getting the collection id")
+    let Some(col_id) = get_col_id(request) else {
+        err_handler!("Error getting the collection id")
+    };
+    let Outcome::Success(conn) = DbConn::from_request(request).await else {
+        err_handler!("Error getting DB")
+    };
+
+    let allowed = if is_custom {
+        custom_member_may(action, &headers.membership, &col_id, &conn).await
+    } else {
+        Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await
+    };
+    if !allowed {
+        err_handler!("The current user isn't a manager for this collection")
+    }
+    Outcome::Success(headers)
+}
+
+macro_rules! collection_headers {
+    ($(#[$doc:meta])* $name:ident, $action:expr) => {
+        $(#[$doc])*
+        pub struct $name {
+            pub host: String,
+            pub device: Device,
+            pub user: User,
+            pub ip: ClientIp,
+            pub org_id: OrganizationId,
+        }
+
+        #[rocket::async_trait]
+        impl<'r> FromRequest<'r> for $name {
+            type Error = &'static str;
+
+            async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+                let headers = try_outcome!(collection_headers(request, $action).await);
+                Outcome::Success(Self {
+                    host: headers.host,
+                    device: headers.device,
+                    user: headers.user,
+                    ip: headers.ip,
+                    org_id: headers.membership.org_uuid,
+                })
             }
-
-            Outcome::Success(Self {
-                host: headers.host,
-                device: headers.device,
-                user: headers.user,
-                ip: headers.ip,
-                org_id: headers.membership.org_uuid,
-            })
-        } else {
-            err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
         }
-    }
+
+        impl From<$name> for Headers {
+            fn from(h: $name) -> Headers {
+                Headers {
+                    host: h.host,
+                    device: h.device,
+                    user: h.user,
+                    ip: h.ip,
+                }
+            }
+        }
+    };
 }
 
-impl From<ManagerHeaders> for Headers {
-    fn from(h: ManagerHeaders) -> Headers {
-        Headers {
-            host: h.host,
-            device: h.device,
-            user: h.user,
-            ip: h.ip,
-        }
-    }
-}
+collection_headers!(
+    /// The ManagerHeaders are used to check if you are at least a Manager
+    /// and have access to the specific collection provided via the <col_id>/collections/collectionId.
+    /// This does strict checking on the collection_id, ManagerHeadersLoose does not.
+    ManagerHeaders,
+    CollectionAction::Edit
+);
+collection_headers!(
+    /// The same as ManagerHeaders, for the routes which only read the collection and its access.
+    CollectionReadHeaders,
+    CollectionAction::Read
+);
+collection_headers!(
+    /// The same as ManagerHeaders, for the routes which delete the collection.
+    CollectionDeleteHeaders,
+    CollectionAction::Delete
+);
 
 /// The ManagerHeadersLoose is used when you at least need to be a Manager,
 /// but there is no collection_id sent with the request (either in the path or as form data).
+/// A Custom member is let through as well, the routes check what their permissions allow.
 pub struct ManagerHeadersLoose {
     pub host: String,
     pub device: Device,
@@ -965,7 +1041,7 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.is_confirmed_and_manager() {
+        if headers.is_confirmed_and_manager() || headers.is_confirmed_and_custom() {
             Outcome::Success(Self {
                 host: headers.host,
                 device: headers.device,
@@ -990,22 +1066,29 @@ impl From<ManagerHeadersLoose> for Headers {
     }
 }
 
-impl ManagerHeaders {
+impl CollectionDeleteHeaders {
     pub async fn from_loose(
         h: ManagerHeadersLoose,
         collections: &Vec<CollectionId>,
         conn: &DbConn,
-    ) -> Result<ManagerHeaders, Error> {
+    ) -> Result<CollectionDeleteHeaders, Error> {
+        let is_custom = h.membership.has_type(MembershipType::Custom) && custom_roles_enabled();
         for col_id in collections {
             if uuid::Uuid::parse_str(col_id.as_ref()).is_err() {
                 err!("Collection Id is malformed!");
             }
-            if !Collection::is_coll_manageable_by_user(col_id, &h.membership.user_uuid, conn).await {
+            let allowed = if is_custom {
+                Collection::find_by_uuid_and_org(col_id, &h.membership.org_uuid, conn).await.is_some()
+                    && custom_member_may(CollectionAction::Delete, &h.membership, col_id, conn).await
+            } else {
+                Collection::is_coll_manageable_by_user(col_id, &h.membership.user_uuid, conn).await
+            };
+            if !allowed {
                 err!("Collection not found", "The current user isn't a manager for this collection")
             }
         }
 
-        Ok(ManagerHeaders {
+        Ok(CollectionDeleteHeaders {
             host: h.host,
             device: h.device,
             user: h.user,

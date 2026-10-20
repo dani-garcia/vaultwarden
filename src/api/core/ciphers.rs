@@ -1115,7 +1115,7 @@ async fn update_collections_by_scope(
             let current = HashSet::<CollectionId>::from_iter(match scope {
                 CipherAccessScope::User => cipher.get_collections(headers.user.uuid.clone(), &conn).await,
                 CipherAccessScope::OrganizationAdmin => {
-                    cipher.get_admin_collections(headers.user.uuid.clone(), &conn).await
+                    cipher.get_admin_collections(headers.user.uuid.clone(), scope, &conn).await
                 }
             });
             // The admin route accepts Edit Any for all collections of this cipher's organization.
@@ -1171,11 +1171,15 @@ async fn update_collections_by_scope(
         &conn,
     )
     .await;
-    let sync_type = match scope {
-        CipherAccessScope::User => CipherSyncType::User,
-        CipherAccessScope::OrganizationAdmin => CipherSyncType::Organization,
+    let response = match scope {
+        CipherAccessScope::User => {
+            cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &conn).await?
+        }
+        CipherAccessScope::OrganizationAdmin => {
+            cipher.to_json_org_admin_collections(&headers.host, &headers.user.uuid, &conn).await?
+        }
     };
-    Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, sync_type, &conn).await?))
+    Ok(Json(response))
 }
 
 #[derive(Deserialize)]
@@ -2837,8 +2841,9 @@ mod custom_role_tests {
             let admin = cipher.to_json_org_admin("http://localhost", &member.user_uuid, &conn).await.unwrap();
             assert_eq!(personal["collectionIds"], json!([collection.uuid]));
             let admin_ids = admin["collectionIds"].as_array().unwrap();
-            assert_eq!(admin_ids.len(), 1);
+            assert_eq!(admin_ids.len(), 2);
             assert!(admin_ids.contains(&json!(collection.uuid)));
+            assert!(admin_ids.contains(&json!(hidden.uuid)));
             // Exercise PR2's SQL authorization independently of Custom permission support added in PR3.
             let sql = format!("DELETE FROM users_collections WHERE user_uuid='{}'", user.uuid);
             conn.run(move |c| c.batch_execute(&sql)).await.unwrap();
