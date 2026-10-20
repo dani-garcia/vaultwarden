@@ -540,6 +540,159 @@ pub fn is_valid_email(email: &str) -> bool {
     email_url.domain().is_some() && email_url.path() == "/" && email_url.query().is_none()
 }
 
+/// The most an `EncString` we are willing to store may weigh.
+///
+/// Upstream puts no length on the fields this guards; this is ours, so a client cannot park megabytes in
+/// a column meant to hold a wrapped key. The largest legitimate value is a device's RSA-2048 private key
+/// wrapped with AES-CBC plus a MAC, around 1.7 kB, so this leaves room to spare.
+const MAX_ENC_STRING_LENGTH: usize = 4096;
+
+/// The number of `|` separated parts an `EncString` of the given `EncryptionType` is made of.
+///
+///  - `3`/`4` Rsa2048_OaepSha256/Sha1_B64 and `7` XChaCha20Poly1305_B64 are one blob;
+///  - `0` AesCbc256_B64 is `iv|ct`, `5`/`6` Rsa2048_Oaep*_HmacSha256_B64 are `rsaCt|mac`;
+///  - `1`/`2` AesCbc128/256_HmacSha256_B64 are `iv|ct|mac`.
+///
+/// https://github.com/bitwarden/server/blob/main/src/Core/Enums/EncryptionType.cs
+fn enc_string_parts(enc_type: u8) -> Option<usize> {
+    match enc_type {
+        3 | 4 | 7 => Some(1),
+        0 | 5 | 6 => Some(2),
+        1 | 2 => Some(3),
+        _ => None,
+    }
+}
+
+/// Whether a single part is base64, as permissively as upstream reads it.
+///
+/// Upstream accepts a final character whose unused padding bits are not zero, because such values exist
+/// in the wild; a strict decoder rejects them. Everything else is the usual shape: a multiple of four
+/// characters from the base64 alphabet, with at most two `=` closing it off.
+/// https://github.com/bitwarden/server/blob/main/src/Core/Utilities/EncryptedStringAttribute.cs
+fn is_valid_base64_permissive(value: &str) -> bool {
+    if value.is_empty() || !value.len().is_multiple_of(4) {
+        return false;
+    }
+
+    // A group of four holds at least two characters of data, so at most two may be padded away.
+    let data = value.strip_suffix("==").or_else(|| value.strip_suffix('=')).unwrap_or(value);
+
+    !data.is_empty() && data.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
+}
+
+/// Whether a value has the shape of a Bitwarden `EncString`: `<type>.<part>|<part>...`.
+///
+/// The server cannot tell whether a blob decrypts, but it can refuse everything that is not even of the
+/// right form, which keeps unbounded junk out of the columns that hold key material. Mirrors
+/// `EncryptedStringAttribute` upstream, including its header-less legacy form, but not its acceptance of
+/// a type spelled out by name (`AesCbc256_B64.…`), which no client has ever written.
+/// https://github.com/bitwarden/server/blob/main/src/Core/Utilities/EncryptedStringAttribute.cs
+pub fn is_valid_enc_string(value: &str) -> bool {
+    if value.is_empty() || value.len() > MAX_ENC_STRING_LENGTH {
+        return false;
+    }
+
+    let (parts, data) = if let Some((enc_type, data)) = value.split_once('.') {
+        let Some(parts) = enc_type.parse::<u8>().ok().and_then(enc_string_parts) else {
+            return false;
+        };
+        (parts, data)
+    } else {
+        // Without a header the type is guessed from the number of parts, the same two candidates
+        // upstream picks between: three means it carries a MAC, anything else is read as iv|ct.
+        let parts = if value.matches('|').count() == 2 {
+            3
+        } else {
+            2
+        };
+        (parts, value)
+    };
+
+    let mut seen = 0;
+    for part in data.split('|') {
+        seen += 1;
+        if seen > parts || !is_valid_base64_permissive(part) {
+            return false;
+        }
+    }
+
+    seen == parts
+}
+
+#[cfg(test)]
+mod enc_string_tests {
+    use super::is_valid_enc_string;
+
+    #[test]
+    fn a_well_formed_enc_string_of_every_type_is_accepted() {
+        for value in [
+            "0.aXY=|Y2lwaGVy",        // AesCbc256_B64
+            "1.aXY=|Y2lwaGVy|bWFj",   // AesCbc128_HmacSha256_B64
+            "2.aXY=|Y2lwaGVy|bWFj",   // AesCbc256_HmacSha256_B64
+            "3.Y2lwaGVy",             // Rsa2048_OaepSha256_B64
+            "4.Y2lwaGVy",             // Rsa2048_OaepSha1_B64
+            "5.Y2lwaGVy|bWFj",        // Rsa2048_OaepSha256_HmacSha256_B64
+            "6.Y2lwaGVy|bWFj",        // Rsa2048_OaepSha1_HmacSha256_B64
+            "7.Y29zZWJ5dGVz",         // XChaCha20Poly1305_B64, one blob of COSE bytes
+            "07.Y29zZWJ5dGVz",        // the header is read as a number, not matched as text
+            "aXY=|Y2lwaGVy",          // header-less legacy form, read as iv|ct
+            "aXY=|Y2lwaGVy|bWFj",     // and as iv|ct|mac when it has three parts
+            "3.Y2lwaGVyLysvdGV4dA==", // the whole base64 alphabet, padded
+            "3.Y2lwaGVyLysvdGV4dGE=", // and with a single pad character
+            "3.QR==",                 // unused padding bits that are not zero: a strict decoder
+            "3.QUJDRR==",             // refuses these, upstream deliberately does not, and such
+            "2.aXY=|QR==|bWFj",       // values exist in the wild
+        ] {
+            assert!(is_valid_enc_string(value), "{value}");
+        }
+    }
+
+    #[test]
+    fn anything_that_is_not_one_is_refused() {
+        for value in [
+            "",
+            "   ",
+            "not-an-enc-string",
+            "2",
+            "2.",
+            ".aXY=|Y2lwaGVy|bWFj",
+            "8.Y2lwaGVy",             // no such type
+            "255.Y2lwaGVy",           // nor at the top of the byte the header is read as
+            "256.Y2lwaGVy",           // nor past it
+            "-1.Y2lwaGVy",            // and none below zero either
+            "2.aXY=|Y2lwaGVy",        // type 2 without its mac
+            "2.aXY=|Y2lwaGVy|bWFj|x", // or with one part too many
+            "4.Y2lwaGVy|bWFj",        // type 4 carries no mac
+            "7.Y29zZQ==|bWFj",        // and neither does type 7
+            "2.aXY=||bWFj",           // an empty part is not base64
+            "4.not base64!",
+            "4.Y2lwaGV",                   // a length that is not a multiple of four
+            "4.Y2lwaGVy=",                 // a stray pad character breaks that length
+            "4.====",                      // padding only
+            "4.Y2lw=GVy",                  // padding in the middle
+            "4.Y2lw-GVy",                  // url-safe base64 is a different alphabet
+            "4.Y2lw GVy",                  // whitespace is not part of it either
+            "aXY=",                        // header-less, but only one part
+            "aXY=|Y2lwaGVy|bWFj|Zm91cg==", // header-less with four
+        ] {
+            assert!(!is_valid_enc_string(value), "{value}");
+        }
+    }
+
+    #[test]
+    fn an_oversized_value_is_refused() {
+        let payload = "A".repeat(4096);
+        assert!(is_valid_enc_string(&format!("4.{}", &payload[..4000])));
+        assert!(!is_valid_enc_string(&format!("4.{payload}")), "must not grow without bound");
+
+        // A wrapped RSA-2048 device private key, the largest thing that legitimately arrives here,
+        // has to fit with room to spare.
+        let private_key = format!("2.{}|{}|{}", "A".repeat(24), "B".repeat(1652), "C".repeat(44));
+        assert!(private_key.len() < 2048);
+        assert!(is_valid_enc_string(&private_key));
+    }
+}
+
 //
 // Deployment environment methods
 //
