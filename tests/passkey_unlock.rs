@@ -101,10 +101,13 @@ struct Fixture {
     postgres: Option<(String, String)>,
 }
 impl Fixture {
-    async fn new(enabled: bool) -> Self {
-        Self::with_policy(enabled, true).await
+    async fn new() -> Self {
+        Self::with_policy(true).await
     }
-    async fn with_policy(enabled: bool, sso_only: bool) -> Self {
+    async fn with_policy(sso_only: bool) -> Self {
+        Self::with_verification_policy(sso_only, false).await
+    }
+    async fn with_verification_policy(sso_only: bool, verify_email: bool) -> Self {
         static CRYPTO: std::sync::Once = std::sync::Once::new();
         CRYPTO.call_once(|| rustls::crypto::ring::default_provider().install_default().unwrap());
         let id = || uuid::Uuid::new_v4().to_string();
@@ -142,7 +145,6 @@ impl Fixture {
             .env("LOGIN_RATELIMIT_MAX_BURST", "100")
             .env("DATABASE_MAX_CONNS", "4")
             .env("DATABASE_MIN_CONNS", "1")
-            .env("PASSKEYS_ENABLED", enabled.to_string())
             .env("SSO_ENABLED", sso_only.to_string())
             .env("SSO_ONLY", sso_only.to_string())
             .env("SSO_CLIENT_ID", "synthetic-client")
@@ -150,6 +152,14 @@ impl Fixture {
             .env("SSO_AUTHORITY", "http://127.0.0.1:9")
             .stdout(Stdio::from(log.try_clone().unwrap()))
             .stderr(Stdio::from(log));
+        if verify_email {
+            command
+                .env("SIGNUPS_VERIFY", "true")
+                .env("SMTP_HOST", "127.0.0.1")
+                .env("SMTP_PORT", "9")
+                .env("SMTP_SECURITY", "off")
+                .env("SMTP_FROM", "notifications@example.test");
+        }
         for name in ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"] {
             if let Some(value) = std::env::var_os(name) {
                 command.env(name, value);
@@ -294,7 +304,7 @@ impl Drop for Fixture {
 
 #[tokio::test]
 async fn passkey_enrollment_requires_step_up_and_never_adds_an_sso_bypass() {
-    let f = Fixture::new(true).await;
+    let f = Fixture::new().await;
     for proof in [json!({}), json!({"masterPasswordHash":"wrong"})] {
         assert_eq!(f.post("/api/webauthn/attestation-options", proof).await.status(), StatusCode::BAD_REQUEST);
     }
@@ -321,29 +331,16 @@ async fn passkey_enrollment_requires_step_up_and_never_adds_an_sso_bypass() {
 }
 
 #[tokio::test]
-async fn passkey_disabled_preserves_existing_sync_and_list_and_denies_enrollment() {
-    let f = Fixture::new(false).await;
-    // The shared keypair endpoint retains its ordinary behavior with the new
-    // feature disabled, including first initialization and serial replacement.
+async fn passkeys_are_available_without_opt_in_and_keep_master_password_unlock() {
+    let f = Fixture::with_policy(false).await;
     f.sql(&format!("UPDATE users SET private_key=NULL,public_key=NULL WHERE uuid='{}'", f.user));
-    for private_key in [&keys().original_account_private_key, &keys().repaired_private_key] {
-        assert_eq!(
-            f.post(
-                "/api/accounts/keys",
-                json!({"publicKey":keys().repaired_public_key,
-            "encryptedPrivateKey":private_key})
-            )
-            .await
-            .status(),
-            StatusCode::OK
-        );
-    }
-
-    assert!(
-        !f.post("/api/webauthn/attestation-options", json!({"masterPasswordHash":PASSWORD}))
-            .await
-            .status()
-            .is_success()
+    let keypair = json!({"publicKey":keys().repaired_public_key,
+        "encryptedPrivateKey":keys().original_account_private_key});
+    assert_eq!(f.post("/api/accounts/keys", keypair.clone()).await.status(), StatusCode::OK);
+    assert_eq!(f.post("/api/accounts/keys", keypair).await.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        f.post("/api/webauthn/attestation-options", json!({"masterPasswordHash":PASSWORD})).await.status(),
+        StatusCode::OK
     );
     assert_eq!(f.get("/api/webauthn").await["data"], json!([]));
     let sync = f.get("/api/sync").await;
@@ -402,7 +399,7 @@ fn registration(options: &Value, origin: &str, uv: bool) -> Value {
 
 #[tokio::test]
 async fn passkey_registration_verifies_origin_uv_replay_and_complete_wrapped_keys() {
-    let f = Fixture::new(true).await;
+    let f = Fixture::new().await;
     for (origin, uv) in [("http://unrelated.example", true), (ORIGIN, false)] {
         let o = f.options().await;
         let r = f.post("/api/webauthn", registration(&o, origin, uv)).await;
@@ -431,7 +428,7 @@ async fn passkey_registration_verifies_origin_uv_replay_and_complete_wrapped_key
 
 #[tokio::test]
 async fn passkey_multiple_options_removal_and_password_wrapping_are_consistent() {
-    let f = Fixture::new(true).await;
+    let f = Fixture::new().await;
     for _ in 0..2 {
         let o = f.options().await;
         assert_eq!(f.post("/api/webauthn", registration(&o, ORIGIN, true)).await.status(), StatusCode::OK);
@@ -461,7 +458,7 @@ fn rotate_request(passkeys: &Value) -> Value {
 
 #[tokio::test]
 async fn passkey_rotation_validates_before_mutation_and_rewraps_all_credentials() {
-    let f = Fixture::new(true).await;
+    let f = Fixture::new().await;
     f.sql(&format!("UPDATE users SET public_key='synthetic-public-key' WHERE uuid='{}'", f.user));
     let o = f.options().await;
     assert_eq!(f.post("/api/webauthn", registration(&o, ORIGIN, true)).await.status(), StatusCode::OK);
@@ -515,7 +512,7 @@ async fn passkey_rotation_validates_before_mutation_and_rewraps_all_credentials(
 
 #[tokio::test]
 async fn passkey_challenges_are_fresh_session_bound_and_consumed_exactly_once() {
-    let f = Fixture::new(true).await;
+    let f = Fixture::new().await;
     for change in [
         "json_set(data,'$.createdAt',0)",
         "json_set(data,'$.deviceUuid','another-device')",
@@ -538,7 +535,7 @@ async fn passkey_challenges_are_fresh_session_bound_and_consumed_exactly_once() 
 
 #[tokio::test]
 async fn passkey_prf_update_verifies_assertion_and_rejects_replay() {
-    let f = Fixture::new(true).await;
+    let f = Fixture::new().await;
     let o = f.options().await;
     let (registration, key) = registration_with_key(&o, ORIGIN, true);
     let credential = registration["deviceResponse"]["rawId"].clone();
@@ -571,7 +568,7 @@ async fn passkey_prf_update_verifies_assertion_and_rejects_replay() {
 
 #[tokio::test]
 async fn passkey_credentials_cannot_be_read_or_removed_by_another_account() {
-    let f = Fixture::new(true).await;
+    let f = Fixture::new().await;
     let o = f.options().await;
     assert_eq!(f.post("/api/webauthn", registration(&o, ORIGIN, true)).await.status(), StatusCode::OK);
     let list = f.get("/api/webauthn").await;
@@ -636,7 +633,7 @@ fn local_postgres_database() -> Option<(String, String)> {
 
 #[tokio::test]
 async fn passkey_rewrap_failure_rolls_back_account_keys_and_can_retry() {
-    let f = Fixture::new(true).await;
+    let f = Fixture::new().await;
     f.sql(&format!("UPDATE users SET public_key='synthetic-public-key' WHERE uuid='{}'", f.user));
     let o = f.options().await;
     assert_eq!(f.post("/api/webauthn", registration(&o, ORIGIN, true)).await.status(), StatusCode::OK);
@@ -736,8 +733,8 @@ impl Fixture {
 #[tokio::test]
 #[ignore = "requires a disposable PostgreSQL instance; see tests/README.md"]
 async fn passkey_postgres_rotation_serializes_deletion_and_stale_rotation() {
-    for competing_action in ["delete", "rotate", "repair"] {
-        let f = Fixture::new(true).await;
+    for competing_action in ["delete", "rotate"] {
+        let f = Fixture::new().await;
         let (data, id) = f.paused_rotation_data().await;
         let mut pause = PausedRotation::new(&f);
         let first = f.start_rotation(&data);
@@ -748,11 +745,6 @@ async fn passkey_postgres_rotation_serializes_deletion_and_stale_rotation() {
                 .post(format!("{}/api/webauthn/{id}/delete", f.url))
                 .bearer_auth(&f.token)
                 .json(&json!({"masterPasswordHash":PASSWORD}));
-            tokio::spawn(async move { request.send().await })
-        } else if competing_action == "repair" {
-            let request = f.client.post(format!("{}/api/accounts/keys", f.url)).bearer_auth(&f.token).json(
-                &json!({"publicKey":keys().repaired_public_key,"encryptedPrivateKey":keys().repaired_private_key}),
-            );
             tokio::spawn(async move { request.send().await })
         } else {
             f.start_rotation(&data)
@@ -779,7 +771,7 @@ async fn passkey_postgres_rotation_serializes_deletion_and_stale_rotation() {
 #[tokio::test]
 #[ignore = "requires a disposable PostgreSQL instance; see tests/README.md"]
 async fn passkey_postgres_cancelled_statement_rolls_back_and_retries() {
-    let f = Fixture::new(true).await;
+    let f = Fixture::new().await;
     let (data, _) = f.paused_rotation_data().await;
     let mut pause = PausedRotation::new(&f);
     let request = f.start_rotation(&data);
@@ -797,7 +789,7 @@ async fn passkey_postgres_cancelled_statement_rolls_back_and_retries() {
 #[tokio::test]
 #[ignore = "requires a disposable PostgreSQL instance; see tests/README.md"]
 async fn passkey_postgres_server_interruption_rolls_back_vault_and_keys() {
-    let mut f = Fixture::new(true).await;
+    let mut f = Fixture::new().await;
     let (data, _) = f.paused_rotation_data().await;
     let mut pause = PausedRotation::new(&f);
     let request = f.start_rotation(&data);
@@ -820,7 +812,7 @@ async fn passkey_postgres_server_interruption_rolls_back_vault_and_keys() {
 
 #[tokio::test]
 async fn passkey_native_registration_response_and_options_match_bitwarden() {
-    let f = Fixture::new(true).await;
+    let f = Fixture::new().await;
     let options = f.options().await;
     assert!(options["options"]["extensions"]["hmacCreateSecret"].is_null());
     let mut request = registration(&options, ORIGIN, true);
@@ -850,7 +842,7 @@ async fn passkey_native_registration_response_and_options_match_bitwarden() {
 
 #[tokio::test]
 async fn passkey_rejects_malformed_wrapped_keys_before_advertising_them() {
-    let f = Fixture::new(true).await;
+    let f = Fixture::new().await;
     for field in ["encryptedUserKey", "encryptedPublicKey", "encryptedPrivateKey"] {
         for invalid in [
             "plain text".to_owned(),
@@ -870,7 +862,7 @@ async fn passkey_rejects_malformed_wrapped_keys_before_advertising_them() {
 
 #[tokio::test]
 async fn passkey_excludes_registered_credentials_and_limits_enrollment_to_five() {
-    let f = Fixture::new(true).await;
+    let f = Fixture::new().await;
     let mut ids = Vec::new();
     for count in 0..5 {
         let options = f.options().await;
@@ -891,8 +883,8 @@ async fn passkey_excludes_registered_credentials_and_limits_enrollment_to_five()
 }
 
 #[tokio::test]
-async fn passkey_survives_account_keypair_repair_and_remains_in_rotation() {
-    let f = Fixture::new(true).await;
+async fn passkey_rejects_keypair_replacement_and_remains_in_rotation() {
+    let f = Fixture::new().await;
     f.sql(&format!("UPDATE users SET private_key=NULL,public_key=NULL WHERE uuid='{}'", f.user));
     assert_eq!(
         f.post(
@@ -908,8 +900,8 @@ async fn passkey_survives_account_keypair_repair_and_remains_in_rotation() {
     assert_eq!(f.post("/api/webauthn", registration(&options, ORIGIN, true)).await.status(), StatusCode::OK);
     let before = f.get("/api/sync").await["userDecryption"].clone();
     let credential = f.get("/api/webauthn").await["data"][0].clone();
-    // Rewrapping the same account asymmetric pair changes ciphertext, but not
-    // that pair or the user key. It must not hide an unchanged PRF keyset.
+    // Upstream rejects replacing an existing account keypair. The rejection
+    // must preserve its existing master-password and passkey unlock options.
     let response = f
         .post(
             "/api/accounts/keys",
@@ -917,7 +909,7 @@ async fn passkey_survives_account_keypair_repair_and_remains_in_rotation() {
         "encryptedPrivateKey":keys().repaired_private_key}),
         )
         .await;
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert!(
         f.get("/api/sync").await["userDecryption"] == before,
         "keypair repair must preserve both native unlock options"
@@ -982,7 +974,7 @@ fn native_assertion(
 
 #[tokio::test]
 async fn native_passkey_login_uses_one_challenge_and_returns_prf_unlock() {
-    let f = Fixture::with_policy(true, false).await;
+    let f = Fixture::with_policy(false).await;
     let registration_options = f.options().await;
     let (registration, key) = registration_with_key(&registration_options, ORIGIN, true);
     let credential = registration["deviceResponse"]["rawId"].as_str().unwrap().to_owned();
@@ -1028,7 +1020,7 @@ async fn native_passkey_login_uses_one_challenge_and_returns_prf_unlock() {
 
 #[tokio::test]
 async fn native_passkey_login_rejects_wrong_handle_origin_and_uv() {
-    let f = Fixture::with_policy(true, false).await;
+    let f = Fixture::with_policy(false).await;
     let registration_options = f.options().await;
     let (registration, key) = registration_with_key(&registration_options, ORIGIN, true);
     let credential = registration["deviceResponse"]["rawId"].as_str().unwrap().to_owned();
@@ -1071,7 +1063,7 @@ async fn native_passkey_login_rejects_wrong_handle_origin_and_uv() {
 
 #[tokio::test]
 async fn native_passkey_without_prf_keeps_master_password_unlock_and_refresh() {
-    let f = Fixture::with_policy(true, false).await;
+    let f = Fixture::with_policy(false).await;
     let registration_options = f.options().await;
     let (mut registration, key) = registration_with_key(&registration_options, ORIGIN, true);
     let credential = registration["deviceResponse"]["rawId"].as_str().unwrap().to_owned();
@@ -1124,4 +1116,55 @@ async fn native_passkey_without_prf_keeps_master_password_unlock_and_refresh() {
         .await
         .unwrap();
     assert!(refresh["access_token"].as_str().is_some_and(|v| !v.is_empty()));
+}
+
+#[tokio::test]
+async fn native_passkey_login_enforces_configured_email_verification() {
+    let f = Fixture::with_verification_policy(false, true).await;
+    let registration_options = f.options().await;
+    let (registration, key) = registration_with_key(&registration_options, ORIGIN, true);
+    let credential = registration["deviceResponse"]["rawId"].as_str().unwrap().to_owned();
+    assert_eq!(f.post("/api/webauthn", registration).await.status(), StatusCode::OK);
+    for verified in [false, true] {
+        if verified {
+            f.sql("UPDATE users SET verified_at=CURRENT_TIMESTAMP");
+        }
+        let options: Value = f
+            .client
+            .get(format!("{}/identity/accounts/webauthn/assertion-options", f.url))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let response = native_assertion(&options, &credential, &key, &f.user, ORIGIN, true).to_string();
+        let result = f
+            .client
+            .post(format!("{}/identity/connect/token", f.url))
+            .form(&[
+                ("grant_type", "webauthn"),
+                ("scope", "api offline_access"),
+                ("client_id", "web"),
+                ("token", options["token"].as_str().unwrap()),
+                ("deviceResponse", response.as_str()),
+                ("deviceIdentifier", f.device.as_str()),
+                ("deviceName", "Synthetic browser"),
+                ("deviceType", "14"),
+            ])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            result.status(),
+            if verified {
+                StatusCode::OK
+            } else {
+                StatusCode::BAD_REQUEST
+            }
+        );
+        let body: Value = result.json().await.unwrap();
+        assert_eq!(body.get("access_token").is_some(), verified);
+        assert_eq!(body.get("refresh_token").is_some(), verified);
+    }
 }

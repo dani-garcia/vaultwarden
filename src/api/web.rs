@@ -89,6 +89,7 @@ fn vaultwarden_css() -> EtagCached<Css<String>> {
 
     // Else, there is either no cache, or reload_templates is true and we need to rebuild the CSS
     let css_options = json!({
+        "email_change_allowed": CONFIG.email_change_allowed(),
         "emergency_access_allowed": CONFIG.emergency_access_allowed(),
         "load_user_scss": true,
         "mail_2fa_enabled": CONFIG._enable_email_2fa(),
@@ -100,7 +101,7 @@ fn vaultwarden_css() -> EtagCached<Css<String>> {
         "sso_enabled": CONFIG.sso_enabled(),
         "sso_only": CONFIG.sso_enabled() && CONFIG.sso_only(),
         "webauthn_2fa_supported": CONFIG.is_webauthn_2fa_supported(),
-        "passkeys_enabled": crate::api::core::passkeys::account_passkeys_allowed(),
+        "passkey_account_supported": crate::api::core::passkeys::account_passkeys_allowed(),
         "passkey_login_available": crate::api::core::passkeys::account_passkeys_allowed()
             && !(CONFIG.sso_enabled() && CONFIG.sso_only()),
         "yubico_enabled": CONFIG._enable_yubico() && CONFIG.yubico_client_id().is_some() && CONFIG.yubico_secret_key().is_some(),

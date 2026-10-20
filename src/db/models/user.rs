@@ -19,7 +19,8 @@ use crate::{
 use macros::UuidFromParam;
 
 use super::{
-    Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor, TwoFactorIncomplete,
+    AuthRequest, Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor,
+    TwoFactorIncomplete,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
@@ -170,6 +171,10 @@ impl User {
         )
     }
 
+    pub fn master_password_salt(&self) -> String {
+        self.email.trim().to_lowercase()
+    }
+
     pub fn check_valid_recovery_code(&self, recovery_code: &str) -> bool {
         if let Some(ref totp_recover) = self.totp_recover {
             crypto::ct_eq(recovery_code, totp_recover.to_lowercase())
@@ -257,6 +262,29 @@ impl User {
 
 /// Database methods
 impl User {
+    pub fn verified(&self) -> bool {
+        !CONFIG.mail_enabled() || self.verified_at.is_some()
+    }
+
+    /// The `accountKeys` object (upstream's `PrivateKeysResponseModel`), null without a key pair
+    pub fn account_keys_json(&self) -> Value {
+        if self.private_key.is_some() {
+            json!({
+                "publicKeyEncryptionKeyPair": {
+                    "wrappedPrivateKey": self.private_key,
+                    "publicKey": self.public_key,
+                    "signedPublicKey": null,
+                    "object": "publicKeyEncryptionKeyPair",
+                },
+                "securityState": null,
+                "signatureKeyPair": null,
+                "object": "privateKeys"
+            })
+        } else {
+            Value::Null
+        }
+    }
+
     pub async fn to_json(&self, conn: &DbConn) -> Value {
         let mut orgs_json = Vec::new();
         for c in Membership::find_confirmed_by_user(&self.uuid, conn).await {
@@ -277,21 +305,7 @@ impl User {
             UserStatus::Enabled
         };
 
-        let account_keys = if self.private_key.is_some() {
-            json!({
-                "publicKeyEncryptionKeyPair": {
-                    "wrappedPrivateKey": self.private_key,
-                    "publicKey": self.public_key,
-                    "signedPublicKey": null,
-                    "object": "publicKeyEncryptionKeyPair",
-                },
-                "securityState": null,
-                "signatureKeyPair": null,
-                "object": "privateKeys"
-            })
-        } else {
-            Value::Null
-        };
+        let account_keys = self.account_keys_json();
 
         json!({
             "_status": status as i32,
@@ -299,7 +313,7 @@ impl User {
             "id": self.uuid,
             "name": self.name,
             "email": self.email,
-            "emailVerified": !CONFIG.mail_enabled() || self.verified_at.is_some(),
+            "emailVerified": self.verified(),
             "premium": true,
             "premiumFromOrganization": false,
             "culture": "en-US",
@@ -321,7 +335,7 @@ impl User {
 
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         if !crate::util::is_valid_email(&self.email) {
-            err!(format!("User email {} is not a valid email address", self.email))
+            err!(format!("User email {} is not a valid email address", self.email.escape_debug()))
         }
 
         self.updated_at = Utc::now().naive_utc();
@@ -417,6 +431,7 @@ impl User {
         Cipher::delete_all_by_user(&self.uuid, conn).await?;
         Favorite::delete_all_by_user(&self.uuid, conn).await?;
         Folder::delete_all_by_user(&self.uuid, conn).await?;
+        AuthRequest::delete_all_by_user(&self.uuid, conn).await?;
         Device::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactor::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn).await?;
@@ -522,7 +537,7 @@ impl Invitation {
 
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         if !crate::util::is_valid_email(&self.email) {
-            err!(format!("Invitation email {} is not a valid email address", self.email))
+            err!(format!("Invitation email {} is not a valid email address", self.email.escape_debug()))
         }
 
         db_run! { conn:

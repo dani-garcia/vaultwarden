@@ -250,7 +250,7 @@ fn passkey_count_limit_reached(count: usize) -> bool {
 }
 
 pub(crate) fn account_passkeys_allowed() -> bool {
-    CONFIG.passkeys_enabled() && CONFIG.is_webauthn_2fa_supported()
+    CONFIG.is_webauthn_2fa_supported()
 }
 
 pub(crate) fn passkey_counter(passkey: &Passkey) -> u32 {
@@ -494,7 +494,7 @@ async fn post_api_webauthn(
         err!("Maximum number of passkeys reached")
     }
 
-    let type_ = TwoFactorType::WebauthnPasskeyRegisterChallenge as i32;
+    let type_ = TwoFactorType::WebauthnPasskeyRegisterChallenge;
     let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await else {
         err!("No registration challenge found. Please try again.")
     };
@@ -584,7 +584,7 @@ async fn put_api_webauthn(
         err!("User not found")
     };
 
-    let type_ = TwoFactorType::WebauthnPasskeyAssertionChallenge as i32;
+    let type_ = TwoFactorType::WebauthnPasskeyAssertionChallenge;
     let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await else {
         err!("No assertion challenge found. Please try again.")
     };

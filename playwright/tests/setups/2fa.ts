@@ -4,6 +4,24 @@ import * as OTPAuth from "otpauth";
 
 import * as utils from '../../global-utils';
 
+export async function recoveryCodes(test: Test, page: Page, user: { name: string, password: string }): string {
+    return await test.step('Recovery code', async () => {
+        await page.getByRole('button', { name: user.name }).click();
+        await page.getByRole('menuitem', { name: 'Account settings' }).click();
+        await page.getByRole('link', { name: 'Security' }).click();
+        await page.getByRole('link', { name: 'Two-step login' }).click();
+
+        await page.getByRole('button', { name: 'View recovery code' }).click();
+        await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).fill(user.password);
+        await page.getByRole('button', { name: 'Continue' }).click();
+
+        const recovery = await page.getByRole('code').innerText();
+        await page.getByLabel('Close').click();
+
+        return recovery;
+    })
+}
+
 export async function activateTOTP(test: Test, page: Page, user: { name: string, password: string }): OTPAuth.TOTP {
     return await test.step('Activate TOTP 2FA', async () => {
         await page.getByRole('button', { name: user.name }).click();
@@ -21,7 +39,6 @@ export async function activateTOTP(test: Test, page: Page, user: { name: string,
         await page.getByLabel(/Verification code/).fill(totp.generate());
         await page.getByRole('button', { name: 'Turn on' }).click();
         await page.getByRole('heading', { name: 'Turned on', exact: true });
-        await page.getByLabel('Close').click();
 
         return totp;
     })

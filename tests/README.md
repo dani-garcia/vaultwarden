@@ -26,7 +26,7 @@ VW_PASSKEY_TEST_DATABASE_URL='postgresql://passkey_test:synthetic-passkey-test@1
 The PostgreSQL-only concurrency and interruption cases are marked `ignore`
 because they need that instance. A default test run does not cover them.
 
-Before enabling passkeys for real vaults, separately test compatible clients and
+Before relying on passkeys for real vaults, separately test compatible clients and
 authenticators: enrollment, fresh sign-in, PRF decryption of existing personal
 and shared items, master-password fallback, multiple passkeys, removal, and
 password/KDF/account-key changes. For SSO-only installations, verify SSO is still
