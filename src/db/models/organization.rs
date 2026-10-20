@@ -247,6 +247,7 @@ pub enum CustomPermission {
 /// The permissions this version enforces on every endpoint they open. Only these can be granted, a stored
 /// grant of any other one grants nothing. They are implemented one at a time, so this grows with them.
 const SUPPORTED_CUSTOM_PERMISSIONS: &[CustomPermission] = &[
+    CustomPermission::ManageUsers,
     CustomPermission::CreateNewCollections,
     CustomPermission::EditAnyCollection,
     CustomPermission::DeleteAnyCollection,
@@ -341,7 +342,7 @@ pub(super) fn custom_edit_any_collection() -> CustomEditAnyCollection {
 }
 
 #[cfg(test)]
-pub(crate) mod test_flag {
+pub mod test_flag {
     thread_local! {
         /// Overrides EXPERIMENTAL_CUSTOM_ROLES for the tests running on this thread.
         pub static CUSTOM_ROLES_ENABLED: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
@@ -1084,6 +1085,12 @@ impl Membership {
         self.can_edit_any_collection() || self.has_custom_permission(CustomPermission::DeleteAnyCollection)
     }
 
+    /// Whether this member may read every collection's member and group assignments in the Admin Console.
+    /// Manage users grants this access without granting the plain all-collections listing or metadata editing.
+    pub fn can_view_all_collection_access_details(&self) -> bool {
+        self.can_view_all_collections() || self.has_custom_permission(CustomPermission::ManageUsers)
+    }
+
     pub async fn find_by_uuid(uuid: &MembershipId, conn: &DbConn) -> Option<Self> {
         conn.run(move |conn| {
             users_organizations::table.filter(users_organizations::uuid.eq(uuid)).first::<Self>(conn).ok()
@@ -1603,7 +1610,10 @@ mod tests {
                 }
             }
         }
-        assert_eq!(SUPPORTED_CUSTOM_PERMISSIONS, [CreateNewCollections, EditAnyCollection, DeleteAnyCollection]);
+        assert_eq!(
+            SUPPORTED_CUSTOM_PERMISSIONS,
+            [ManageUsers, CreateNewCollections, EditAnyCollection, DeleteAnyCollection]
+        );
     }
 
     #[test]

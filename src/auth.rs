@@ -882,6 +882,49 @@ impl<'r> FromRequest<'r> for AdminHeaders {
     }
 }
 
+/// Generates the request guard of the routes a Custom member may use with a permission. Like AdminHeaders it lets a
+/// confirmed Owner or Admin through, and a confirmed Custom member holding the permission.
+macro_rules! permission_headers {
+    ($(#[$doc:meta])* $name:ident, $permission:expr) => {
+        $(#[$doc])*
+        pub struct $name {
+            pub device: Device,
+            pub user: User,
+            pub membership_type: MembershipType,
+            pub membership: Membership,
+            pub ip: ClientIp,
+            pub org_id: OrganizationId,
+        }
+
+        #[rocket::async_trait]
+        impl<'r> FromRequest<'r> for $name {
+            type Error = &'static str;
+
+            async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+                let headers = try_outcome!(OrgHeaders::from_request(request).await);
+                if headers.is_confirmed_and_admin() || headers.membership.has_custom_permission($permission) {
+                    Outcome::Success(Self {
+                        device: headers.device,
+                        user: headers.user,
+                        membership_type: headers.membership_type,
+                        org_id: headers.membership.org_uuid.clone(),
+                        membership: headers.membership,
+                        ip: headers.ip,
+                    })
+                } else {
+                    err_handler!("You need to be Admin or Owner to call this endpoint")
+                }
+            }
+        }
+    };
+}
+
+permission_headers!(
+    /// For the routes that manage the members of an organization.
+    ManageUsersHeaders,
+    CustomPermission::ManageUsers
+);
+
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),
 // but there could be cases where it is a query value.
 // First check the path, if this is not a valid uuid, try the query values.
@@ -906,6 +949,7 @@ fn get_col_id(request: &Request<'_>) -> Option<CollectionId> {
 pub enum CollectionAction {
     Edit,
     Read,
+    ReadAccess,
     Delete,
 }
 
@@ -930,8 +974,11 @@ pub async fn custom_member_may(
     match action {
         CollectionAction::Delete => member.has_custom_permission(CustomPermission::DeleteAnyCollection),
         CollectionAction::Edit if member.can_edit_any_collection() => true,
-        CollectionAction::Read if member.can_view_all_collections() => true,
-        CollectionAction::Edit | CollectionAction::Read => {
+        // Individual access details may be read with Manage users. The separate /users route follows
+        // Bitwarden's ReadAccess operation, which does not grant that permission on its own.
+        CollectionAction::Read if member.can_view_all_collection_access_details() => true,
+        CollectionAction::ReadAccess if member.can_view_all_collections() => true,
+        CollectionAction::Edit | CollectionAction::Read | CollectionAction::ReadAccess => {
             Collection::find_explicitly_manageable_by_user(&member.org_uuid, &member.user_uuid, conn)
                 .await
                 .contains(col_id)
@@ -1019,6 +1066,11 @@ collection_headers!(
     /// The same as ManagerHeaders, for the routes which only read the collection and its access.
     CollectionReadHeaders,
     CollectionAction::Read
+);
+collection_headers!(
+    /// The collection's /users route has narrower access than its /details route.
+    CollectionUsersReadHeaders,
+    CollectionAction::ReadAccess
 );
 collection_headers!(
     /// The same as ManagerHeaders, for the routes which delete the collection.
