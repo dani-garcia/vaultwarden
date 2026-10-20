@@ -664,6 +664,25 @@ impl Collection {
         user_uuid: &UserId,
         conn: &DbConn,
     ) -> Vec<CollectionId> {
+        Self::find_manageable_by_option(org_uuid, user_uuid, false, conn).await
+    }
+
+    /// [`Collection::find_explicitly_manageable_by_user`], but like Bitwarden the manage option of any assignment
+    /// counts: a direct assignment without it doesn't hide the one of a group.
+    pub async fn find_manageable_by_any_assignment(
+        org_uuid: &OrganizationId,
+        user_uuid: &UserId,
+        conn: &DbConn,
+    ) -> Vec<CollectionId> {
+        Self::find_manageable_by_option(org_uuid, user_uuid, true, conn).await
+    }
+
+    async fn find_manageable_by_option(
+        org_uuid: &OrganizationId,
+        user_uuid: &UserId,
+        any_assignment: bool,
+        conn: &DbConn,
+    ) -> Vec<CollectionId> {
         let org_uuid = org_uuid.to_string();
         let user_uuid = user_uuid.to_string();
         let groups_enabled = CONFIG.org_groups_enabled();
@@ -691,6 +710,7 @@ impl Collection {
                     users_collections::manage.eq(true).or(users_collections::user_uuid
                         .is_null()
                         .or(users_organizations::atype.eq(MembershipType::Manager as i32))
+                        .or::<_, diesel::sql_types::Bool>(any_assignment)
                         .and(collections_groups::manage.eq(true))
                         .and::<_, diesel::sql_types::Bool>(groups_enabled)),
                 )

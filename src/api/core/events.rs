@@ -7,11 +7,12 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::{ApiResult, EmptyResult, JsonResult},
-    auth::{AdminHeaders, Headers},
+    auth::{AccessEventLogsHeaders, Headers},
     db::{
         DbConn, DbPool,
         models::{
-            Cipher, CipherAccessScope, CipherId, Event, EventType, Membership, MembershipId, OrganizationId, UserId,
+            Cipher, CipherAccessScope, CipherId, CustomPermission, Event, EventType, Membership, MembershipId,
+            MembershipType, OrganizationId, UserId,
         },
     },
     error::MapResult,
@@ -42,7 +43,12 @@ impl EventRange {
 
 // Upstream: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Controllers/EventsController.cs#L87
 #[get("/organizations/<org_id>/events?<data..>")]
-async fn get_org_events(org_id: OrganizationId, data: EventRange, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn get_org_events(
+    org_id: OrganizationId,
+    data: EventRange,
+    headers: AccessEventLogsHeaders,
+    conn: DbConn,
+) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -72,12 +78,21 @@ async fn get_org_events(org_id: OrganizationId, data: EventRange, headers: Admin
 async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Headers, conn: DbConn) -> JsonResult {
     // Return an empty vec when org events are disabled.
     // This prevents client errors
+    // Only an Owner or Admin of the organization of the cipher, or a Custom member there with Access event logs, gets
+    // its events, and only the ones of that organization
     let events_json: Vec<Value> = if CONFIG.org_events_enabled()
-        && Membership::user_has_ge_admin_access_to_cipher(&headers.user.uuid, &cipher_id, &conn).await
+        && let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await
+        && let Some(org_id) = cipher.organization_uuid
+        && let Some(member) = Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, &conn).await
+        && (member.atype >= MembershipType::Admin || member.has_custom_permission(CustomPermission::AccessEventLogs))
     {
         let (start_date, end_date) = data.date_range()?;
 
-        Event::find_by_cipher_uuid(&cipher_id, &start_date, &end_date, &conn).await.iter().map(Event::to_json).collect()
+        Event::find_by_cipher_uuid(&cipher_id, &org_id, &start_date, &end_date, &conn)
+            .await
+            .iter()
+            .map(Event::to_json)
+            .collect()
     } else {
         Vec::new()
     };
@@ -94,7 +109,7 @@ async fn get_user_events(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: EventRange,
-    headers: AdminHeaders,
+    headers: AccessEventLogsHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
