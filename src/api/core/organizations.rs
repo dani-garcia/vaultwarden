@@ -12,9 +12,9 @@ use crate::{
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
     auth::{
-        AdminHeaders, CollectionAction, CollectionDeleteHeaders, CollectionReadHeaders, CollectionUsersReadHeaders,
-        Headers, ManageGroupsHeaders, ManagePoliciesHeaders, ManageUsersHeaders, ManagerHeaders, ManagerHeadersLoose,
-        OrgMemberHeaders, OwnerHeaders, custom_member_may, decode_invite,
+        AccessImportExportHeaders, AdminHeaders, CollectionAction, CollectionDeleteHeaders, CollectionReadHeaders,
+        CollectionUsersReadHeaders, Headers, ManageGroupsHeaders, ManagePoliciesHeaders, ManageUsersHeaders,
+        ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, custom_member_may, decode_invite,
     },
     db::{
         DbConn,
@@ -369,10 +369,7 @@ async fn get_org_collections(org_id: OrganizationId, headers: ManagerHeadersLoos
         err!("Organization not found", "Organization id's do not match");
     }
 
-    // Manage groups may list organization collections for group access administration without editing them.
-    let collections = if headers.membership.can_view_all_collections()
-        || headers.membership.has_custom_permission(CustomPermission::ManageGroups)
-    {
+    let collections = if headers.membership.can_list_all_collections() {
         get_org_collections_impl(&org_id, &conn).await
     } else if headers.membership.has_type(MembershipType::Custom) {
         // A Custom member gets the collections they may manage
@@ -905,7 +902,7 @@ async fn get_org_details(data: OrgIdData, headers: ManagerHeadersLoose, conn: Db
         err_code!("Resource not found.", "Organization id's do not match", Status::NotFound.code);
     }
 
-    if !headers.membership.can_edit_any_collection() {
+    if !headers.membership.can_list_all_ciphers() {
         err_code!("Resource not found.", "User does not have full access", Status::NotFound.code);
     }
 
@@ -1615,7 +1612,10 @@ async fn get_org_user_mini_details(org_id: OrganizationId, headers: ManagerHeade
     if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
+    // A Custom member may also need basic member details for event logs or reports.
     if headers.membership.has_type(MembershipType::Custom)
+        && !headers.membership.has_custom_permission(CustomPermission::AccessEventLogs)
+        && !headers.membership.has_custom_permission(CustomPermission::AccessReports)
         && !may_assign_collection_access(&headers.membership, &conn).await
     {
         err_code!("Resource not found.", "User does not have access", Status::NotFound.code);
@@ -1995,21 +1995,40 @@ async fn validate_org_import_collections(
     imported: &[ImportCollectionData],
     org_id: &OrganizationId,
     membership: &Membership,
+    import_export: bool,
     conn: &DbConn,
 ) -> ApiResult<HashMap<CollectionId, Collection>> {
     let existing: HashMap<CollectionId, Collection> =
         Collection::find_by_organization(org_id, conn).await.into_iter().map(|c| (c.uuid.clone(), c)).collect();
+    let manageable = if membership.atype < MembershipType::Admin
+        && !membership.can_edit_any_collection()
+        && !membership.has_type(MembershipType::Manager)
+    {
+        Some(
+            Collection::find_explicitly_manageable_by_user(org_id, &membership.user_uuid, conn)
+                .await
+                .into_iter()
+                .collect::<HashSet<_>>(),
+        )
+    } else {
+        None
+    };
     for col in imported {
         if let Some(collection) = col.id.as_ref().and_then(|id| existing.get(id)) {
-            if membership.atype < MembershipType::Admin
-                && !membership.can_edit_any_collection()
-                && !collection.is_writable_by_user(&membership.user_uuid, conn).await
-            {
-                err!(Compact, "The current user isn't allowed to manage this collection")
+            if membership.atype < MembershipType::Admin && !membership.can_edit_any_collection() {
+                let can_import = if let Some(manageable) = &manageable {
+                    manageable.contains(&collection.uuid)
+                } else {
+                    collection.is_writable_by_user(&membership.user_uuid, conn).await
+                };
+                if !can_import {
+                    err!(Compact, "The current user isn't allowed to manage this collection")
+                }
             }
         } else if membership.atype <= MembershipType::Manager
             && !membership.has_full_access()
             && !membership.has_custom_permission(CustomPermission::CreateNewCollections)
+            && !import_export
         {
             err!(Compact, "The current user isn't allowed to create new collections")
         }
@@ -2042,6 +2061,8 @@ async fn post_org_import(
     // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
     Cipher::validate_cipher_data(&data.ciphers)?;
 
+    // Access import/export includes unassigned organization items. It is effective only for confirmed Custom members.
+    let import_export = headers.membership.has_custom_permission(CustomPermission::AccessImportExport);
     let relations = validate_org_import_relationships(&data)?;
     let ImportData {
         ciphers: imported_ciphers,
@@ -2067,7 +2088,8 @@ async fn post_org_import(
     // Keep authorization and every write on the same connection. A failure at any later cipher or
     // relationship must also roll back newly created collections and their Manage assignments.
     conn.transaction(async || {
-        let existing = validate_org_import_collections(&imported_collections, &org_id, &membership, &conn).await?;
+        let existing =
+            validate_org_import_collections(&imported_collections, &org_id, &membership, import_export, &conn).await?;
         let mut collections: Vec<CollectionId> = Vec::with_capacity(imported_collections.len());
         for col in imported_collections {
             let collection_uuid = if let Some(collection) = col.id.as_ref().and_then(|id| existing.get(id)) {
@@ -2101,6 +2123,7 @@ async fn post_org_import(
                 &nt,
                 UpdateType::None,
                 false,
+                import_export,
             )
             .await?;
             for collection_id in collection_ids {
@@ -2139,6 +2162,7 @@ mod org_import_tests {
                 ("index", MembershipType::Custom, CustomPermission::CreateNewCollections),
                 ("disabled", MembershipType::Custom, CustomPermission::CreateNewCollections),
                 ("export", MembershipType::Owner, CustomPermission::CreateNewCollections),
+                ("export", MembershipType::Custom, CustomPermission::AccessImportExport),
             ] {
                 test_flag::CUSTOM_ROLES_ENABLED.set(Some(case != "disabled"));
                 let org = test_db::organization(&conn).await;
@@ -2856,7 +2880,10 @@ async fn get_groups_data(
             || headers.membership.has_custom_permission(CustomPermission::ManageUsers)
             || headers.membership.has_custom_permission(CustomPermission::ManageGroups)
     } else {
-        has_full_access || may_assign_collection_access(&headers.membership, &conn).await
+        // Reports need the basic group list, not group details or management rights.
+        has_full_access
+            || headers.membership.has_custom_permission(CustomPermission::AccessReports)
+            || may_assign_collection_access(&headers.membership, &conn).await
     };
     if !allowed {
         err_code!("Resource not found.", "User does not have access", Status::NotFound.code);
@@ -3541,11 +3568,11 @@ async fn put_reset_password_enrollment(
 // NOTE: It seems clients can't handle uppercase-first keys!!
 //       We need to convert all keys so they have the first character to be a lowercase.
 //       Else the export will be just an empty JSON file.
-// We currently only support exports by members of the Admin or Owner status.
+// Exports the whole vault of the organization, for an Owner, an Admin or a Custom member with Access import/export.
 // Vaultwarden does not yet support exporting only managed collections!
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Tools/Controllers/OrganizationExportController.cs#L52
 #[get("/organizations/<org_id>/export")]
-async fn get_org_export(org_id: OrganizationId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+async fn get_org_export(org_id: OrganizationId, headers: AccessImportExportHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
@@ -3675,6 +3702,7 @@ mod tests {
     #[cfg(sqlite)]
     async fn users_headers(member: &Membership, conn: &DbConn) -> ManageUsersHeaders {
         ManageUsersHeaders {
+            host: "http://localhost".into(),
             device: Device::new("test".to_owned().into(), member.user_uuid.clone(), "test".into(), 1),
             user: User::find_by_uuid(&member.user_uuid, conn).await.unwrap(),
             membership: Membership::find_by_uuid(&member.uuid, conn).await.unwrap(),
@@ -3757,6 +3785,7 @@ mod tests {
                 for first_enable in [true, false] {
                     let headers = users_headers(&actor, &conn).await;
                     let headers = ManagePoliciesHeaders {
+                        host: headers.host,
                         device: headers.device,
                         user: headers.user,
                         membership: headers.membership,
@@ -3790,6 +3819,60 @@ mod tests {
                         }
                     }
                 }
+            }
+        });
+    }
+    #[cfg(sqlite)]
+    async fn directory_headers(member: &Membership, conn: &DbConn) -> ManagerHeadersLoose {
+        let headers = users_headers(member, conn).await;
+        ManagerHeadersLoose {
+            host: headers.host,
+            device: headers.device,
+            user: headers.user,
+            membership: headers.membership,
+            ip: headers.ip,
+        }
+    }
+
+    #[cfg(sqlite)]
+    #[test]
+    fn access_reports_directory_authorization() {
+        test_db::run(async |db| {
+            let conn = db.conn();
+            let (org, _, mut member) = test_db::custom_member(&conn, CustomPermission::AccessReports).await;
+            let foreign = test_db::organization(&conn).await;
+            for (enabled, status, permission, org_id, allowed) in [
+                (true, 2, true, &org.uuid, true),
+                (true, 2, true, &foreign.uuid, false),
+                (true, 2, false, &org.uuid, false),
+                (true, 1, true, &org.uuid, false),
+                (true, -126, true, &org.uuid, false),
+                (false, 2, true, &org.uuid, false),
+            ] {
+                test_flag::CUSTOM_ROLES_ENABLED.set(Some(enabled));
+                member.status = status;
+                member.set_custom_permissions(&if permission {
+                    HashSet::from([CustomPermission::AccessReports])
+                } else {
+                    HashSet::new()
+                });
+                member.save(&conn).await.unwrap();
+                assert!(!may_assign_collection_access(&member, &conn).await);
+                assert_eq!(
+                    get_groups(org_id.clone(), directory_headers(&member, &conn).await, db.conn()).await.is_ok(),
+                    allowed
+                );
+                let users =
+                    get_org_user_mini_details(org_id.clone(), directory_headers(&member, &conn).await, db.conn()).await;
+                assert_eq!(users.is_ok(), allowed);
+                if allowed {
+                    assert_eq!(users.unwrap().0["data"].as_array().unwrap().len(), 1);
+                }
+                assert!(
+                    get_groups_details(org_id.clone(), directory_headers(&member, &conn).await, db.conn())
+                        .await
+                        .is_err()
+                );
             }
         });
     }

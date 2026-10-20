@@ -22,9 +22,9 @@ use crate::{
         DbConn, DbPool,
         models::{
             Archive, Attachment, AttachmentId, Cipher, CipherAccessScope, CipherId, Collection, CollectionCipher,
-            CollectionGroup, CollectionId, CollectionUser, EventType, Favorite, Folder, FolderCipher, FolderId, Group,
-            KeyId, Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send, User,
-            UserId, is_data_blob_encrypted,
+            CollectionGroup, CollectionId, CollectionUser, CustomPermission, EventType, Favorite, Folder, FolderCipher,
+            FolderId, Group, KeyId, Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType,
+            Send, User, UserId, is_data_blob_encrypted,
         },
     },
     util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
@@ -539,7 +539,8 @@ async fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn, nt
     data.last_known_revision_date = None;
 
     let mut cipher = Cipher::new(data.r#type);
-    update_cipher_from_data(&mut cipher, data, &headers, None, &conn, &nt, UpdateType::SyncCipherCreate, true).await?;
+    update_cipher_from_data(&mut cipher, data, &headers, None, &conn, &nt, UpdateType::SyncCipherCreate, true, false)
+        .await?;
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &conn).await?))
 }
@@ -613,9 +614,21 @@ pub async fn update_cipher_from_data(
     nt: &Notify<'_>,
     ut: UpdateType,
     emit_side_effects: bool,
+    allow_unassigned_org_import: bool,
 ) -> EmptyResult {
     enforce_personal_ownership_policy(Some(&data), headers, conn).await?;
-    save_cipher_data(cipher, data, headers, shared_to_collections, conn, nt, ut, emit_side_effects).await
+    save_cipher_data(
+        cipher,
+        data,
+        headers,
+        shared_to_collections,
+        conn,
+        nt,
+        ut,
+        emit_side_effects,
+        allow_unassigned_org_import,
+    )
+    .await
 }
 
 /// [`update_cipher_from_data`] for a rotation: like upstream, the personal ownership policy doesn't apply.
@@ -626,7 +639,7 @@ pub async fn rotate_cipher_data(
     conn: &DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
-    save_cipher_data(cipher, data, headers, None, conn, nt, UpdateType::None, false).await
+    save_cipher_data(cipher, data, headers, None, conn, nt, UpdateType::None, false, false).await
 }
 
 /// The checks of [`rotate_cipher_data`] that need the database, to run on every cipher before the first is saved
@@ -652,6 +665,7 @@ async fn save_cipher_data(
     nt: &Notify<'_>,
     ut: UpdateType,
     emit_side_effects: bool,
+    allow_unassigned_org_import: bool,
 ) -> EmptyResult {
     let is_blob = data.is_blob();
     data.validate_content(is_blob)?;
@@ -674,6 +688,8 @@ async fn save_cipher_data(
                 // Write access to the cipher itself only counts when it already belongs to this organization.
                 if shared_to_collections.as_ref().is_some_and(|cols| !cols.is_empty())
                     || member.can_edit_any_collection()
+                    || (allow_unassigned_org_import
+                        && member.has_custom_permission(CustomPermission::AccessImportExport))
                     || (!transfer_cipher
                         && cipher.is_write_accessible_to_user(&headers.user.uuid, CipherAccessScope::User, conn).await)
                 {
@@ -945,7 +961,8 @@ async fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbC
         cipher_data.organization_id = None;
 
         let mut cipher = Cipher::new(cipher_data.r#type);
-        update_cipher_from_data(&mut cipher, cipher_data, &headers, None, &conn, &nt, UpdateType::None, true).await?;
+        update_cipher_from_data(&mut cipher, cipher_data, &headers, None, &conn, &nt, UpdateType::None, true, false)
+            .await?;
     }
 
     let mut user = headers.user;
@@ -1036,7 +1053,8 @@ async fn put_cipher_impl(
         err!("Organization mismatch. Please resync the client before updating the cipher")
     }
 
-    update_cipher_from_data(&mut cipher, data, &headers, None, &conn, &nt, UpdateType::SyncCipherUpdate, true).await?;
+    update_cipher_from_data(&mut cipher, data, &headers, None, &conn, &nt, UpdateType::SyncCipherUpdate, true, false)
+        .await?;
 
     Ok(Json(cipher_json_for_scope(&cipher, &headers, scope, &conn).await?))
 }
@@ -1500,6 +1518,7 @@ async fn share_cipher_by_uuid(
                 conn,
                 nt,
                 ut,
+                false,
                 false,
             )
             .await?;
