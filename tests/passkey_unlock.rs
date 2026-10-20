@@ -331,6 +331,22 @@ async fn passkey_enrollment_requires_step_up_and_never_adds_an_sso_bypass() {
 }
 
 #[tokio::test]
+async fn user_key_id_initialization_preserves_existing_keys_and_rejects_replacement() {
+    let f = Fixture::with_policy(false).await;
+    let key_id = uuid::Uuid::new_v4().to_string();
+    let data = json!({"userKeyId":key_id});
+    assert_eq!(f.post("/api/accounts/key-management/user-key-id", data.clone()).await.status(), StatusCode::OK);
+    assert_eq!(f.count(&format!("users WHERE key_id='{key_id}' AND akey='synthetic-key' AND private_key='synthetic-private-key' AND security_stamp='synthetic-stamp'")),1);
+    assert_eq!(
+        f.post("/api/accounts/key-management/user-key-id", data).await.status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let sync = f.get("/api/sync").await;
+    assert_eq!(sync["userDecryption"]["userKeyId"], key_id);
+    assert_eq!(sync["userDecryption"]["masterPasswordUnlock"]["masterKeyWrappedUserKey"], "synthetic-key");
+}
+
+#[tokio::test]
 async fn passkeys_are_available_without_opt_in_and_keep_master_password_unlock() {
     let f = Fixture::with_policy(false).await;
     f.sql(&format!("UPDATE users SET private_key=NULL,public_key=NULL WHERE uuid='{}'", f.user));
@@ -733,7 +749,7 @@ impl Fixture {
 #[tokio::test]
 #[ignore = "requires a disposable PostgreSQL instance; see tests/README.md"]
 async fn passkey_postgres_rotation_serializes_deletion_and_stale_rotation() {
-    for competing_action in ["delete", "rotate"] {
+    for competing_action in ["delete", "rotate", "user-key-id"] {
         let f = Fixture::new().await;
         let (data, id) = f.paused_rotation_data().await;
         let mut pause = PausedRotation::new(&f);
@@ -745,6 +761,13 @@ async fn passkey_postgres_rotation_serializes_deletion_and_stale_rotation() {
                 .post(format!("{}/api/webauthn/{id}/delete", f.url))
                 .bearer_auth(&f.token)
                 .json(&json!({"masterPasswordHash":PASSWORD}));
+            tokio::spawn(async move { request.send().await })
+        } else if competing_action == "user-key-id" {
+            let request = f
+                .client
+                .post(format!("{}/api/accounts/key-management/user-key-id", f.url))
+                .bearer_auth(&f.token)
+                .json(&json!({"userKeyId": uuid::Uuid::new_v4().to_string()}));
             tokio::spawn(async move { request.send().await })
         } else {
             f.start_rotation(&data)
@@ -764,6 +787,9 @@ async fn passkey_postgres_rotation_serializes_deletion_and_stale_rotation() {
         assert_eq!(f.count("users WHERE akey='new-master-wrapper' AND private_key='new-account-private-wrapper'"), 1);
         assert_eq!(f.count("folders WHERE name='rotated-folder-wrapper'"), 1);
         assert_eq!(f.count("web_authn_credentials"), i64::from(competing_action != "delete"));
+        if competing_action == "user-key-id" {
+            assert_eq!(f.count("users WHERE key_id IS NOT NULL"), 0);
+        }
     }
 }
 

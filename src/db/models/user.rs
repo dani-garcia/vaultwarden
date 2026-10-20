@@ -362,6 +362,47 @@ impl User {
         }
     }
 
+    /// Initialize the client key ID without overwriting a concurrent key rotation.
+    pub async fn set_key_id_if_current(&self, key_id: KeyId, conn: &DbConn) -> EmptyResult {
+        let expected = (
+            self.uuid.clone(),
+            self.security_stamp.clone(),
+            self.akey.clone(),
+            self.private_key.clone(),
+            self.public_key.clone(),
+        );
+        let updated_at = Utc::now().naive_utc();
+        conn.run(move |conn| {
+            conn.transaction::<_, Error, _>(|conn| {
+                let failed = || Error::new_msg("Unable to update user key ID");
+                // Match the portable account lock used by passkey key rotation.
+                diesel::update(users::table.filter(users::uuid.eq(&expected.0)))
+                    .set(users::uuid.eq(&expected.0))
+                    .execute(conn)
+                    .map_err(|_| failed())?;
+                let current =
+                    users::table.filter(users::uuid.eq(&expected.0)).first::<Self>(conn).map_err(|_| failed())?;
+                if current.key_id.is_some() {
+                    return Err(Error::new_msg("Unexpected data").with_code(422));
+                }
+                if !current.enabled
+                    || current.security_stamp != expected.1
+                    || current.akey != expected.2
+                    || current.private_key != expected.3
+                    || current.public_key != expected.4
+                {
+                    return Err(Error::new_msg("Account keys changed. Sync and try again."));
+                }
+                diesel::update(users::table.filter(users::uuid.eq(&expected.0)))
+                    .set((users::key_id.eq(&key_id), users::updated_at.eq(updated_at)))
+                    .execute(conn)
+                    .map_err(|_| failed())?;
+                Ok(())
+            })
+        })
+        .await
+    }
+
     /// Update only the asymmetric pair, without replaying unrelated fields from
     /// an earlier request snapshot over a completed key rotation.
     pub async fn replace_keypair_if_current(

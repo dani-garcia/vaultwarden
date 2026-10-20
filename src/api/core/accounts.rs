@@ -1093,13 +1093,12 @@ struct KeyIdData {
 
 #[post("/accounts/key-management/user-key-id", data = "<data>")]
 async fn post_user_key(data: Json<KeyIdData>, headers: Headers, conn: DbConn) -> EmptyResult {
-    let mut user = headers.user;
+    let user = headers.user;
     if user.key_id.is_some() {
         err_code!("Unexpected data", Status::UnprocessableEntity.code);
     }
 
-    user.key_id = Some(data.into_inner().user_key_id);
-    user.save(&conn).await
+    user.set_key_id_if_current(data.into_inner().user_key_id, &conn).await
 }
 
 #[post("/accounts/security-stamp", data = "<data>")]
