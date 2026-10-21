@@ -720,7 +720,7 @@ fn schedule_jobs(pool: db::DbPool) {
             }
 
             // Clean unused, expired Duo authentication contexts.
-            if !CONFIG.duo_context_purge_schedule().is_empty() && CONFIG._enable_duo() && !CONFIG.duo_use_iframe() {
+            if !CONFIG.duo_context_purge_schedule().is_empty() && CONFIG._enable_duo() {
                 sched.add(Job::new(CONFIG.duo_context_purge_schedule().parse().unwrap(), || {
                     runtime.spawn(purge_duo_contexts(pool.clone()));
                 }));

@@ -1,6 +1,6 @@
 [workspace.package]
 edition = "2024"
-rust-version = "1.96.1"
+rust-version = "1.97.1"
 license = "AGPL-3.0-only"
 repository = "https://github.com/dani-garcia/vaultwarden"
 publish = false
@@ -77,7 +77,7 @@ dotenvy = { version = "0.15.7", default-features = false }
 # Numerical libraries
 num-traits = "0.2.19"
 num-derive = "0.5.1"
-bigdecimal = "0.4.10"
+bigdecimal = "0.4.11"
 
 # Web framework
 rocket = { version = "0.5.1", default-features = false, features = ["json", "tls"] }
@@ -91,7 +91,7 @@ dashmap = "6.2.1"
 
 # Async futures
 futures = "0.3.34"
-tokio = { version = "1.53.1", features = [
+tokio = { version = "1.53.2", features = [
     "fs",
     "io-util",
     "net",
@@ -123,13 +123,13 @@ diesel-derive-newtype = "2.1.3"
 libsqlite3-sys = { version = "0.38.2", optional = true }
 
 # Crypto-related libraries
-rand = "0.10.2"
+rand = "0.10.3"
 ring = "0.17.14"
 rustls = { version = "0.23.45", features = ["ring", "std"], default-features = false }
 subtle = "2.6.1"
 
 # UUID generation
-uuid = { version = "1.26.1", features = ["v4"] }
+uuid = { version = "1.27.0", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
@@ -215,7 +215,7 @@ bytes = "1.12.1"
 svg-hush = "0.9.7"
 
 # Cache function results (Used for version check and favicon fetching)
-cached = { version = "4.0.0", features = ["async"] }
+cached = { version = "4.0.1", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.18.2"
@@ -257,8 +257,8 @@ rpassword = "7.5.4"
 grass_compiler = { version = "0.13.4", default-features = false }
 
 # File are accessed through Apache OpenDAL
-opendal = { version = "0.59.2", default-features = false, features = ["services-fs"] }
-opendal-http-transport-reqwest = { version = "0.59.2", default-features = false, features = ["rustls-no-provider"], optional = true }
+opendal = { version = "0.59.4", default-features = false, features = ["services-fs"] }
+opendal-http-transport-reqwest = { version = "0.59.4", default-features = false, features = ["rustls-no-provider"], optional = true }
 
 # For retrieving AWS credentials, including temporary SSO credentials
 aws-config = { version = "1.12.0", optional = true, default-features = false, features = [
@@ -268,10 +268,10 @@ aws-config = { version = "1.12.0", optional = true, default-features = false, fe
     "sso",
 ] }
 aws-credential-types = { version = "1.3.0", optional = true }
-aws-smithy-runtime-api = { version = "1.16.2", optional = true }
+aws-smithy-runtime-api = { version = "1.19.0", optional = true }
 http = { version = "1.5.0", optional = true }
-reqsign-aws-v4 = { version = "3.3.0", optional = true }
-reqsign-core = { version = "3.3.1", optional = true }
+reqsign-aws-v4 = { version = "3.3.1", optional = true }
+reqsign-core = { version = "3.3.2", optional = true }
 
 # Strip debuginfo from the release builds
 # The debug symbols are to provide better panic traces

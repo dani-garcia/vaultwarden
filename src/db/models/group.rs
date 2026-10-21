@@ -104,7 +104,6 @@ impl Group {
             "id": self.uuid,
             "organizationId": self.organizations_uuid,
             "name": self.name,
-            "accessAll": self.access_all,
             "externalId": self.external_id,
             "collections": collections_groups,
             "object": "groupDetails"
@@ -572,26 +571,6 @@ impl GroupUser {
             Some(member) => User::update_uuid_revision(&member.user_uuid, conn).await,
             None => warn!("Member could not be found!"),
         }
-    }
-
-    pub async fn delete_by_group_and_member(
-        group_uuid: &GroupId,
-        member_uuid: &MembershipId,
-        conn: &DbConn,
-    ) -> EmptyResult {
-        match Membership::find_by_uuid(member_uuid, conn).await {
-            Some(member) => User::update_uuid_revision(&member.user_uuid, conn).await,
-            None => warn!("Member could not be found!"),
-        }
-
-        conn.run(move |conn| {
-            diesel::delete(groups_users::table)
-                .filter(groups_users::groups_uuid.eq(group_uuid))
-                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
-                .execute(conn)
-                .map_res("Error deleting group users")
-        })
-        .await
     }
 
     pub async fn delete_all_by_group(group_uuid: &GroupId, org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {

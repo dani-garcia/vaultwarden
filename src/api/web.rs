@@ -89,6 +89,7 @@ fn vaultwarden_css() -> EtagCached<Css<String>> {
 
     // Else, there is either no cache, or reload_templates is true and we need to rebuild the CSS
     let css_options = json!({
+        "email_change_allowed": CONFIG.email_change_allowed(),
         "emergency_access_allowed": CONFIG.emergency_access_allowed(),
         "load_user_scss": true,
         "mail_2fa_enabled": CONFIG._enable_email_2fa(),

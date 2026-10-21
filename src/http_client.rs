@@ -466,7 +466,7 @@ mod tests {
     #[test]
     fn dotted_decimal_loopback_normalizes() {
         let ip = parse_to_ip("127.0.0.1").unwrap();
-        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
         assert!(!is_global_hardcoded(ip));
     }
 
@@ -474,21 +474,21 @@ mod tests {
     fn single_decimal_loopback_normalizes() {
         // 127.0.0.1 == 2130706433
         let ip = parse_to_ip("2130706433").unwrap();
-        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
         assert!(!is_global_hardcoded(ip));
     }
 
     #[test]
     fn hex_loopback_normalizes() {
         let ip = parse_to_ip("0x7f000001").unwrap();
-        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
         assert!(!is_global_hardcoded(ip));
     }
 
     #[test]
     fn dotted_hex_loopback_normalizes() {
         let ip = parse_to_ip("0x7f.0.0.1").unwrap();
-        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
         assert!(!is_global_hardcoded(ip));
     }
 
@@ -496,14 +496,14 @@ mod tests {
     fn octal_loopback_normalizes() {
         // 017700000001 == 127.0.0.1
         let ip = parse_to_ip("017700000001").unwrap();
-        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
         assert!(!is_global_hardcoded(ip));
     }
 
     #[test]
     fn dotted_octal_loopback_normalizes() {
         let ip = parse_to_ip("0177.0.0.01").unwrap();
-        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
         assert!(!is_global_hardcoded(ip));
     }
 
@@ -535,19 +535,19 @@ mod tests {
     #[test]
     fn get_valid_host_normalizes_decimal_int() {
         let h = get_valid_host("2130706433").expect("valid");
-        assert!(matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::new(127, 0, 0, 1)));
+        assert!(matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::LOCALHOST));
     }
 
     #[test]
     fn get_valid_host_normalizes_hex() {
         let h = get_valid_host("0x7f000001").expect("valid");
-        assert!(matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::new(127, 0, 0, 1)));
+        assert!(matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::LOCALHOST));
     }
 
     #[test]
     fn get_valid_host_normalizes_octal() {
         let h = get_valid_host("017700000001").expect("valid");
-        assert!(matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::new(127, 0, 0, 1)));
+        assert!(matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::LOCALHOST));
     }
 
     // ===

@@ -85,7 +85,7 @@ static ICON_SIZE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?x)(\d+
 #[get("/<host>/icon.png")]
 fn icon_external(host: &str) -> Cached<Option<Redirect>> {
     let Ok(host) = get_valid_host(host) else {
-        warn!("Invalid host: {host}");
+        warn!("Invalid host: {}", host.escape_debug());
         return Cached::ttl(None, CONFIG.icon_cache_negttl(), true);
     };
 
@@ -113,7 +113,7 @@ async fn icon_internal(host: &str) -> Cached<(ContentType, Vec<u8>)> {
     const FALLBACK_ICON: &[u8] = include_bytes!("../static/images/fallback-icon.png");
 
     let Ok(host) = get_valid_host(host) else {
-        warn!("Invalid host: {host}");
+        warn!("Invalid host: {}", host.escape_debug());
         return Cached::ttl(
             (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
             CONFIG.icon_cache_negttl(),

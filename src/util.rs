@@ -380,7 +380,7 @@ pub fn get_display_size(size: i64) -> String {
     let mut unit_counter = 0;
 
     loop {
-        if size > 1024. {
+        if size > 1024. && unit_counter < UNITS.len() - 1 {
             size /= 1024.;
             unit_counter += 1;
         } else {
@@ -522,8 +522,8 @@ pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
     expiry_time.to_rfc2822().replace("+0000", "GMT")
 }
 
-pub fn parse_date(date: &str) -> NaiveDateTime {
-    DateTime::parse_from_rfc3339(date).unwrap().naive_utc()
+pub fn parse_date(date: &str) -> Option<NaiveDateTime> {
+    DateTime::parse_from_rfc3339(date).ok().map(|dt| dt.naive_utc())
 }
 
 /// Returns true or false if an email address is valid or not
@@ -943,15 +943,15 @@ mod tests {
     use std::net::IpAddr;
 
     #[test]
-    #[ignore]
+    #[ignore = "exhaustive IPv4 check is too slow for the regular test suite"]
     fn test_ipv4_global() {
         for a in 0..u8::MAX {
-            println!("Iter: {}/255", a);
+            println!("Iter: {a}/255");
             for b in 0..u8::MAX {
                 for c in 0..u8::MAX {
                     for d in 0..u8::MAX {
                         let ip = IpAddr::V4(std::net::Ipv4Addr::new(a, b, c, d));
-                        assert_eq!(ip.is_global(), is_global_hardcoded(ip), "IP mismatch: {}", ip)
+                        assert_eq!(ip.is_global(), is_global_hardcoded(ip), "IP mismatch: {ip}");
                     }
                 }
             }
@@ -959,15 +959,15 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "random IPv6 check is too slow for the regular test suite"]
     fn test_ipv6_global() {
-        use rand::Rng;
+        use rand::RngExt;
 
         std::thread::scope(|s| {
             for t in 0..16 {
-                let handle = s.spawn(move || {
+                let _handle = s.spawn(move || {
                     let mut v = [0u8; 16];
-                    let mut rng = rand::thread_rng();
+                    let mut rng = rand::rng();
 
                     for i in 0..20 {
                         println!("Thread {t} Iter: {i}/50");
