@@ -21,7 +21,7 @@ use rocket::{Catcher, Route, serde::json::Json, serde::json::Value};
 use crate::{
     CONFIG,
     api::{EmptyResult, JsonResult, Notify, UpdateType},
-    auth::Headers,
+    auth::{Headers, MaybeClientVersion},
     db::{
         DbConn,
         models::{Membership, MembershipStatus, OrgPolicy, Organization, User},
@@ -208,7 +208,7 @@ fn get_api_webauthn(_headers: Headers) -> Json<Value> {
 }
 
 #[get("/config")]
-fn config() -> Json<Value> {
+fn config(client_version: MaybeClientVersion) -> Json<Value> {
     let domain = CONFIG.domain();
     // Official available feature flags can be found here:
     // Server (v2026.2.1): https://github.com/bitwarden/server/blob/0e42725d0837bd1c0dabd864ff621a579959744b/src/Core/Constants.cs#L135
@@ -220,6 +220,13 @@ fn config() -> Json<Value> {
         &FeatureFlagFilter::ValidOnly,
     );
     feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
+    // These flags switch every Send of the client to the SDK and enable Item Sends, which older
+    // clients can't handle: only clients at or above `ITEM_SHARING_MIN_CLIENT_VERSION` get them
+    if !client_version.0.is_some_and(|v| sends::client_version_supports_item_sharing(Some(&v))) {
+        for flag in crate::config::ITEM_SHARING_FEATURE_FLAGS {
+            feature_states.remove(*flag);
+        }
+    }
 
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
