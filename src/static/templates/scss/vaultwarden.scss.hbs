@@ -48,24 +48,28 @@ a[href$="/settings/sponsored-families"] {
 }
 {{/if}}
 
+{{#unless passkey_account_supported}}
 /* Hide the `Log in with passkey` settings */
 app-user-layout app-password-settings app-webauthn-login-settings {
   @extend %vw-hide;
 }
+{{/unless}}
+{{#unless passkey_login_available}}
 /* Hide Log in with passkey on the login page */
 .vw-passkey-login {
   @extend %vw-hide;
 }
+{{/unless}}
 
 /* Hide the or text followed by the two buttons hidden above */
-{{#if (or (not sso_enabled) sso_only)}}
+{{#if (and (not passkey_login_available) (or (not sso_enabled) sso_only))}}
 .vw-or-text {
   @extend %vw-hide;
 }
 {{/if}}
 
 /* Hide the `Other` button on the login page */
-{{#if (or (not sso_enabled) sso_only)}}
+{{#if (and (not passkey_login_available) (or (not sso_enabled) sso_only))}}
 .vw-other-login {
   @extend %vw-hide;
 }

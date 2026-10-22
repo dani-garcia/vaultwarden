@@ -40,3 +40,6 @@ pub use self::two_factor::{TwoFactor, TwoFactorType};
 pub use self::two_factor_duo_context::TwoFactorDuoContext;
 pub use self::two_factor_incomplete::TwoFactorIncomplete;
 pub use self::user::{Invitation, KeyId, SsoUser, User, UserId, UserKdfType, UserStampException};
+
+mod web_authn_credential;
+pub use web_authn_credential::{PasskeyAccount, WebAuthnCredential, WebAuthnLoginChallenge};
