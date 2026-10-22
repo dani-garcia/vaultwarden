@@ -688,8 +688,8 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
 }
 
 fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
-    if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < 100_000 {
-        err!("PBKDF2 KDF iterations must be at least 100000.")
+    if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < CONFIG.client_kdf_iter() {
+        err!(format!("PBKDF2 KDF iterations must be at least {}.", CONFIG.client_kdf_iter()))
     }
 
     if data.kdf == UserKdfType::Argon2id as i32 {
@@ -1401,15 +1401,15 @@ fn unknown_email_kdf(email: &str) -> (i32, i32, Option<i32>, Option<i32>) {
     const PBKDF2: i32 = UserKdfType::Pbkdf2 as i32;
     const ARGON2ID: i32 = UserKdfType::Argon2id as i32;
     // Same list as upstream, the default is in it twice to give it more weight
-    const KDF_SETTINGS: [(i32, i32, Option<i32>, Option<i32>); 6] = [
-        (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
-        (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+    let kdf_settings: [(i32, i32, Option<i32>, Option<i32>); 6] = [
+        (User::CLIENT_KDF_TYPE_DEFAULT, CONFIG.client_kdf_iter(), None, None),
+        (User::CLIENT_KDF_TYPE_DEFAULT, CONFIG.client_kdf_iter(), None, None),
         (PBKDF2, 100_000, None, None),
         (PBKDF2, 5_000, None, None),
         (ARGON2ID, 3, Some(64), Some(4)),
         (ARGON2ID, 6, Some(32), Some(4)),
     ];
-    KDF_SETTINGS[crate::auth::prelogin_kdf_index(email, KDF_SETTINGS.len())]
+    kdf_settings[crate::auth::prelogin_kdf_index(email, kdf_settings.len())]
 }
 
 pub async fn prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
