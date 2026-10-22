@@ -1,0 +1,1 @@
+-- TEXT has no size limit here, only MySQL needed the change
