@@ -190,20 +190,26 @@ pub async fn push_cipher_update(ut: UpdateType, cipher: &Cipher, device: &Device
 
 pub async fn push_logout(user: &User, acting_device: Option<&Device>, conn: &DbConn) {
     if Device::check_user_has_push_device(&user.uuid, conn).await {
-        tokio::task::spawn(send_to_push_relay(json!({
-            "userId": user.uuid,
-            "organizationId": (),
-            "deviceId": acting_device.and_then(|d| d.push_uuid.as_ref()),
-            "identifier": acting_device.map(|d| &d.uuid),
-            "type": UpdateType::LogOut as i32,
-            "payload": {
-                "userId": user.uuid,
-                "date": format_date(&user.updated_at)
-            },
-            "clientType": null,
-            "installationId": null
-        })));
+        push_logout_to_relay(user, acting_device);
     }
+}
+
+// Sends the logout without checking for push devices first.
+// Needed after deleting a user, when the devices are already gone from the database.
+pub fn push_logout_to_relay(user: &User, acting_device: Option<&Device>) {
+    tokio::task::spawn(send_to_push_relay(json!({
+        "userId": user.uuid,
+        "organizationId": (),
+        "deviceId": acting_device.and_then(|d| d.push_uuid.as_ref()),
+        "identifier": acting_device.map(|d| &d.uuid),
+        "type": UpdateType::LogOut as i32,
+        "payload": {
+            "userId": user.uuid,
+            "date": format_date(&user.updated_at)
+        },
+        "clientType": null,
+        "installationId": null
+    })));
 }
 
 pub async fn push_user_update(ut: UpdateType, user: &User, push_uuid: Option<&PushId>, conn: &DbConn) {
