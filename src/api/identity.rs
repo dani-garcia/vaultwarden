@@ -216,6 +216,14 @@ async fn sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbCon
                     }
                 )
             }
+            Some((user, None)) if user.is_stage_only_placeholder(conn).await => {
+                err!(
+                    "This account is staged. Ask your organization administrator to send an invitation before signing in with SSO.",
+                    ErrorEvent {
+                        event: EventType::UserFailedLogIn
+                    }
+                )
+            }
             Some((user, None))
                 if user.private_key.is_none()
                     && !CONFIG.sso_signups_allowed()
