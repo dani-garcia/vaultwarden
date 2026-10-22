@@ -29,7 +29,7 @@ static CLIENT_CACHE_KEY: LazyLock<String> = LazyLock::new(|| "sso-client".to_own
 static CLIENT_CACHE: LazyLock<moka::sync::Cache<String, Client>> = LazyLock::new(|| {
     moka::sync::Cache::builder()
         .max_capacity(1)
-        .time_to_live(Duration::from_secs(CONFIG.sso_client_cache_expiration()))
+        .time_to_live(Duration::from_secs(u64::from(CONFIG.sso_client_cache_expiration())))
         .build()
 });
 static REFRESH_CACHE: LazyLock<moka::future::Cache<String, Result<RefreshTokenResponse, String>>> =

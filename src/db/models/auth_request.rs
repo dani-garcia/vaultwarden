@@ -197,7 +197,7 @@ impl AuthRequest {
     pub async fn purge_expired_auth_requests(conn: &DbConn) {
         // delete auth requests older than 15 minutes which is functionally equivalent to upstream:
         // https://github.com/bitwarden/server/blob/f8ee2270409f7a13125cd414c450740af605a175/src/Sql/dbo/Auth/Stored%20Procedures/AuthRequest_DeleteIfExpired.sql
-        let expiry_time = Utc::now().naive_utc() - chrono::TimeDelta::try_minutes(15).unwrap();
+        let expiry_time = Utc::now().naive_utc() - chrono::TimeDelta::minutes(15);
         for auth_request in Self::find_created_before(&expiry_time, conn).await {
             auth_request.delete(conn).await.ok();
         }

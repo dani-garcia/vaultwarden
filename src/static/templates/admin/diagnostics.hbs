@@ -69,12 +69,26 @@
                     </dd>
                     <dt class="col-sm-5">Uses config.json</dt>
                     <dd class="col-sm-7">
-                    {{#if page_data.overrides}}
+                    {{#if (eq page_data.config_file_status "Loaded")}}
                         <span class="d-inline"><b>Yes</b></span>
+                        {{#if page_data.overrides}}
                         <span class="badge bg-info text-dark abbr-badge" title="Environment variables are overwritten by a config.json.&#013;&#010;{{page_data.overrides}}">Details</span>
+                        {{/if}}
+                    {{~else if (eq page_data.config_file_status "Error")}}
+                        <span class="d-inline"><b>Errors</b></span>
+                        <span class="badge bg-danger abbr-badge" title="Config file could not be loaded and was ignored. Check server logs for details.">Details</span>
+                    {{~else}}
+                        <span class="d-inline"><b>No</b></span>
                     {{/if}}
-                    {{#unless page_data.overrides}}
-                        <span class="d-block"><b>No</b></span>
+                    </dd>
+                    <dt class="col-sm-5">Environment variables are valid</dt>
+                    <dd class="col-sm-7">
+                    {{#if page_data.invalid_env_vars}}
+                        <span class="d-inline"><b>No</b></span>
+                        <span class="badge bg-danger abbr-badge" title="Invalid environment variables are found and defaults are used instead.&#013;&#010;{{page_data.invalid_env_vars}}">Details</span>
+                    {{/if}}
+                    {{#unless page_data.invalid_env_vars}}
+                        <span class="d-block"><b>Yes</b></span>
                     {{/unless}}
                     </dd>
                     <dt class="col-sm-5">Uses custom templates</dt>
