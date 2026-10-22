@@ -524,7 +524,7 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
                 Ok(())
             }) {
                 Ok(_) => {
-                    // Also check if the size is atleast 67 bytes, which seems to be the smallest png i could create
+                    // Also check if the size is at least 67 bytes, which seems to be the smallest png I could create
                     if body.len() >= 67 {
                         // Check if the icon type is allowed, else try an icon from the list.
                         icon_type = get_icon_type(&body);
