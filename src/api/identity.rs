@@ -14,13 +14,13 @@ use crate::{
     api::{
         ApiResult, EmptyResult, JsonResult,
         core::{
-            accounts::{PreloginData, RegisterData, kdf_upgrade, prelogin, register},
+            accounts::{PreloginData, RegisterData, prelogin, register},
             log_user_event,
             two_factor::{
                 authenticator, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn, yubikey,
             },
         },
-        identity_master_password_policy,
+        identity_master_password_policy, kdf_upgrade,
         push::register_push_device,
     },
     auth,

@@ -123,9 +123,9 @@ async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbC
     }
 
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&mut user, false, &conn).await?;
 
     let (enabled, registrations) = get_webauthn_registrations(&user.uuid, &conn).await?;
     let keys: Vec<i32> = registrations.iter().map(|r| r.id).collect();
