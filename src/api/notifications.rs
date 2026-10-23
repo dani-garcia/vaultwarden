@@ -212,7 +212,7 @@ fn websockets_hub<'r>(
                         if last_received.elapsed() > WS_CLIENT_TIMEOUT {
                             break;
                         }
-                        yield Message::Ping(create_ping());
+                        yield Message::Ping(PING.to_vec());
                     }
                 }
             }
@@ -295,7 +295,7 @@ fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> R
                         if last_received.elapsed() > WS_CLIENT_TIMEOUT {
                             break;
                         }
-                        yield Message::Ping(create_ping());
+                        yield Message::Ping(PING.to_vec());
                     }
                 }
             }
@@ -359,6 +359,7 @@ fn convert_option<T: Into<Value>>(option: Option<T>) -> Value {
 
 const RECORD_SEPARATOR: u8 = 0x1e;
 const INITIAL_RESPONSE: [u8; 3] = [0x7b, 0x7d, RECORD_SEPARATOR]; // {, }, <RS>
+const PING: [u8; 3] = [0x02, 0x91, 0x06];
 
 #[derive(Deserialize, Copy, Clone, Eq, PartialEq)]
 struct InitialMessage<'a> {
@@ -689,10 +690,6 @@ fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id
     ]);
 
     serialize(&value)
-}
-
-fn create_ping() -> Vec<u8> {
-    serialize(&Value::Array(vec![6.into()]))
 }
 
 // https://github.com/bitwarden/server/blob/375af7c43b10d9da03525d41452f95de3f921541/src/Core/Enums/PushType.cs
