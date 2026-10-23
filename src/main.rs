@@ -595,7 +595,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .manage(Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS))
         .attach(util::AppHeaders())
         .attach(util::Cors())
-        .attach(util::BetterLogging(extra_debug))
+        .attach(util::BetterLogging::new(extra_debug, basepath))
         .ignite()
         .await?;
 
