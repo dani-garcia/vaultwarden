@@ -494,12 +494,22 @@ impl Cipher {
 
     /// Purge all ciphers that are old enough to be auto-deleted.
     pub async fn purge_trash(conn: &DbConn) {
-        if let Some(auto_delete_days) = CONFIG.trash_auto_delete_days() {
-            let now = Utc::now().naive_utc();
-            let dt = now - TimeDelta::try_days(auto_delete_days).unwrap();
-            for cipher in Self::find_deleted_before(&dt, conn).await {
-                cipher.delete(conn).await.ok();
-            }
+        let Some(auto_delete_days) = CONFIG.trash_auto_delete_days().filter(|&d| d != 0) else {
+            debug!("trash_auto_delete_days is not configured or set to 0, skipping");
+            return;
+        };
+
+        let Some(days) = TimeDelta::try_days(i64::from(auto_delete_days)) else {
+            error!("Unable to calculate auto delete days!");
+            return;
+        };
+        let now = Utc::now().naive_utc();
+        let Some(dt) = now.checked_sub_signed(days) else {
+            error!("Unable to calculate trash purge date!");
+            return;
+        };
+        for cipher in Self::find_deleted_before(&dt, conn).await {
+            cipher.delete(conn).await.ok();
         }
     }
 

@@ -212,8 +212,8 @@ impl DbPool {
         let pool = Pool::builder()
             .max_size(max_conns)
             .min_idle(Some(CONFIG.database_min_conns()))
-            .idle_timeout(Some(Duration::from_secs(CONFIG.database_idle_timeout())))
-            .connection_timeout(Duration::from_secs(CONFIG.database_timeout()))
+            .idle_timeout(Some(Duration::from_secs(u64::from(CONFIG.database_idle_timeout()))))
+            .connection_timeout(Duration::from_secs(u64::from(CONFIG.database_timeout())))
             .connection_customizer(Box::new(DbConnOptions {
                 init_stmts: conn_type.get_init_stmts(),
             }))
@@ -233,7 +233,7 @@ impl DbPool {
 
     // Get a connection from the pool
     pub async fn get(&self) -> Result<DbConn, Error> {
-        let duration = Duration::from_secs(CONFIG.database_timeout());
+        let duration = Duration::from_secs(u64::from(CONFIG.database_timeout()));
         let permit = match timeout(duration, Arc::clone(&self.semaphore).acquire_owned()).await {
             Ok(p) => p.expect("Semaphore should be open"),
             Err(_) => {

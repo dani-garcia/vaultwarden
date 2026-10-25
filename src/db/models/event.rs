@@ -347,17 +347,23 @@ impl Event {
     }
 
     pub async fn clean_events(conn: &DbConn) -> EmptyResult {
-        if let Some(days_to_retain) = CONFIG.events_days_retain() {
-            let dt = Utc::now().naive_utc() - TimeDelta::try_days(days_to_retain).unwrap();
-            conn.run(move |conn| {
-                diesel::delete(event::table.filter(event::event_date.lt(dt)))
-                    .execute(conn)
-                    .map_res("Error cleaning old events")
-            })
-            .await
-        } else {
-            Ok(())
-        }
+        let Some(days_to_retain) = CONFIG.events_days_retain().filter(|&d| d != 0) else {
+            return Ok(());
+        };
+
+        let Some(days_to_retain) = TimeDelta::try_days(i64::from(days_to_retain)) else {
+            err!("Unable to calculate the event retention date, check 'EVENTS_DAYS_RETAIN'")
+        };
+
+        let Some(dt) = Utc::now().naive_utc().checked_sub_signed(days_to_retain) else {
+            err!("Unable to calculate the event retention date, check 'EVENTS_DAYS_RETAIN'")
+        };
+        conn.run(move |conn| {
+            diesel::delete(event::table.filter(event::event_date.lt(dt)))
+                .execute(conn)
+                .map_res("Error cleaning old events")
+        })
+        .await
     }
 }
 
