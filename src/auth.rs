@@ -314,6 +314,17 @@ impl LoginJwtClaims {
     }
 }
 
+fn calculate_invite_expire_hours(now: &DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
+    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
+    let Some(hours_delta) = TimeDelta::try_hours(expire_hours) else {
+        err!("Unable to calculate time delta for invite expire hours. Check `INVITATION_EXPIRATION_HOURS`.");
+    };
+    let Some(exp) = now.checked_add_signed(hours_delta) else {
+        err!("Unable to calculate invitation expire date. Check `INVITATION_EXPIRATION_HOURS`.");
+    };
+    Ok(exp)
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InviteJwtClaims {
     // Not before
@@ -337,19 +348,19 @@ pub fn generate_invite_claims(
     org_id: OrganizationId,
     member_id: MembershipId,
     invited_by_email: Option<String>,
-) -> InviteJwtClaims {
+) -> Result<InviteJwtClaims, Error> {
     let time_now = Utc::now();
-    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
-    InviteJwtClaims {
+    let exp = calculate_invite_expire_hours(&time_now)?;
+    Ok(InviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
+        exp: exp.timestamp(),
         iss: JWT_INVITE_ISSUER.to_string(),
         sub: user_id,
         email,
         org_id,
         member_id,
         invited_by_email,
-    }
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -375,19 +386,19 @@ pub fn generate_emergency_access_invite_claims(
     emer_id: EmergencyAccessId,
     grantor_name: String,
     grantor_email: String,
-) -> EmergencyAccessInviteJwtClaims {
+) -> Result<EmergencyAccessInviteJwtClaims, Error> {
     let time_now = Utc::now();
-    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
-    EmergencyAccessInviteJwtClaims {
+    let exp = calculate_invite_expire_hours(&time_now)?;
+    Ok(EmergencyAccessInviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
+        exp: exp.timestamp(),
         iss: JWT_EMERGENCY_ACCESS_INVITE_ISSUER.to_string(),
         sub: user_id,
         email,
         emer_id,
         grantor_name,
         grantor_email,
-    }
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -521,36 +532,43 @@ impl BasicJwtClaims {
     }
 }
 
-pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
+pub fn generate_delete_claims(uuid: String) -> Result<BasicJwtClaims, Error> {
     let time_now = Utc::now();
-    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
-    BasicJwtClaims {
+    let exp = calculate_invite_expire_hours(&time_now)?;
+    Ok(BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
+        exp: exp.timestamp(),
         iss: JWT_DELETE_ISSUER.to_string(),
         sub: uuid,
-    }
+    })
 }
 
-pub fn generate_verify_email_claims(user_id: &UserId) -> BasicJwtClaims {
+pub fn generate_verify_email_claims(user_id: &UserId) -> Result<BasicJwtClaims, Error> {
     let time_now = Utc::now();
-    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
-    BasicJwtClaims {
+    let exp = calculate_invite_expire_hours(&time_now)?;
+    Ok(BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
+        exp: exp.timestamp(),
         iss: JWT_VERIFYEMAIL_ISSUER.to_string(),
         sub: user_id.to_string(),
-    }
+    })
 }
 
-pub fn generate_admin_claims() -> BasicJwtClaims {
+pub fn generate_admin_claims() -> Result<BasicJwtClaims, Error> {
     let time_now = Utc::now();
-    BasicJwtClaims {
+    let lifetime_minutes = i64::from(CONFIG.admin_session_lifetime());
+    let Some(minutes_delta) = TimeDelta::try_minutes(lifetime_minutes) else {
+        err!("Unable to calculate time delta for admin session lifetime. Check `ADMIN_SESSION_LIFETIME`.");
+    };
+    let Some(exp) = time_now.checked_add_signed(minutes_delta) else {
+        err!("Unable to calculate admin session lifetime. Check `ADMIN_SESSION_LIFETIME`.");
+    };
+    Ok(BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_minutes(CONFIG.admin_session_lifetime()).unwrap()).timestamp(),
+        exp: exp.timestamp(),
         iss: JWT_ADMIN_ISSUER.to_string(),
         sub: "admin_panel".to_owned(),
-    }
+    })
 }
 
 pub fn generate_send_claims(send_id: &SendId, file_id: &SendFileId) -> BasicJwtClaims {

@@ -201,12 +201,15 @@ fn post_admin_login(
     // If the token is invalid, redirect to login page
     if validate_token(&data.token) {
         // If the token received is valid, generate JWT and save it as a cookie
-        let claims = generate_admin_claims();
+        let claims = match generate_admin_claims() {
+            Ok(claims) => claims,
+            Err(e) => return Err(AdminResponse::Ok(render_admin_login(Some(e.message()), redirect.as_deref()))),
+        };
         let jwt = encode_jwt(&claims);
 
         let cookie = Cookie::build((COOKIE_NAME, jwt))
             .path(admin_path())
-            .max_age(time::Duration::minutes(CONFIG.admin_session_lifetime()))
+            .max_age(time::Duration::minutes(i64::from(CONFIG.admin_session_lifetime())))
             .same_site(SameSite::Strict)
             .http_only(true)
             .secure(secure.https);
@@ -779,6 +782,8 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
     .into_keys()
     .collect();
 
+    let invalid_env_vars = crate::util::INVALID_ENV_VARS.lock().unwrap().join(", ");
+
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
         "current_release": VERSION,
@@ -801,7 +806,9 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
         "db_version": get_sql_server_version(&conn).await,
         "admin_url": format!("{}/diagnostics", admin_url()),
         "overrides": &CONFIG.get_overrides().join(", "),
+        "config_file_status": &CONFIG.get_config_file_status(),
         "template_overrides": check_template_overrides().join(", "),
+        "invalid_env_vars": invalid_env_vars,
         "invalid_feature_flags": invalid_feature_flags,
         "host_arch": env::consts::ARCH,
         "host_os":  env::consts::OS,
