@@ -50,7 +50,7 @@ fn reserve_send_otp(send_id: &SendId, email: &str) -> Option<String> {
         return None;
     }
     let code = crypto::generate_email_token(CONFIG.email_token_size());
-    let expires = now + i64::try_from(CONFIG.email_expiration_time()).unwrap_or(600);
+    let expires = now + i64::from(CONFIG.email_expiration_time());
     otps.insert(
         key,
         SendOtp {
@@ -103,7 +103,7 @@ fn verify_send_otp(send_id: &SendId, email: &str, code: &str) -> bool {
         return true;
     }
     otp.failed_attempts += 1;
-    if otp.failed_attempts >= CONFIG.email_attempts_limit() {
+    if otp.failed_attempts >= u64::from(CONFIG.email_attempts_limit()) {
         otp.code = None;
     }
     false

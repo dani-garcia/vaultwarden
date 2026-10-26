@@ -36,7 +36,7 @@ fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
 
     let smtp_client = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host.as_str())
         .port(CONFIG.smtp_port())
-        .timeout(Some(Duration::from_secs(CONFIG.smtp_timeout())));
+        .timeout(Some(Duration::from_secs(u64::from(CONFIG.smtp_timeout()))));
 
     // Determine security
     let smtp_client = if CONFIG.smtp_security() == *"off" {
@@ -169,7 +169,7 @@ pub async fn send_password_hint(address: &str, hint: Option<String>) -> EmptyRes
 }
 
 pub async fn send_delete_account(address: &str, user_id: &UserId) -> EmptyResult {
-    let claims = generate_delete_claims(user_id.to_string());
+    let claims = generate_delete_claims(user_id.to_string())?;
     let delete_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -187,7 +187,7 @@ pub async fn send_delete_account(address: &str, user_id: &UserId) -> EmptyResult
 }
 
 pub async fn send_verify_email(address: &str, user_id: &UserId) -> EmptyResult {
-    let claims = generate_verify_email_claims(user_id);
+    let claims = generate_verify_email_claims(user_id)?;
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -237,7 +237,7 @@ pub async fn send_welcome(address: &str) -> EmptyResult {
 }
 
 pub async fn send_welcome_must_verify(address: &str, user_id: &UserId) -> EmptyResult {
-    let claims = generate_verify_email_claims(user_id);
+    let claims = generate_verify_email_claims(user_id)?;
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -292,7 +292,7 @@ pub async fn send_invite(
         org_id.clone(),
         member_id.clone(),
         invited_by_email,
-    );
+    )?;
     let invite_token = encode_jwt(&claims);
     let mut query = url::Url::parse("https://query.builder").unwrap();
     {
@@ -351,7 +351,7 @@ pub async fn send_emergency_access_invite(
         emer_id.clone(),
         String::from(grantor_name),
         String::from(grantor_email),
-    );
+    )?;
 
     // Build the query here to ensure proper escaping
     let mut query = url::Url::parse("https://query.builder").unwrap();
@@ -752,8 +752,8 @@ async fn send_email(address: &str, subject: &str, body_html: String, body_text: 
     let smtp_from = Address::from_str(&CONFIG.smtp_from())?;
 
     let body = if CONFIG.smtp_embed_images() {
-        let logo_gray_body = Body::new(crate::api::static_files("logo-gray.png").unwrap().1.to_vec());
-        let mail_github_body = Body::new(crate::api::static_files("mail-github.png").unwrap().1.to_vec());
+        let logo_gray_body = Body::new(crate::api::STATIC_FILES["logo-gray.png"].bytes.to_vec());
+        let mail_github_body = Body::new(crate::api::STATIC_FILES["mail-github.png"].bytes.to_vec());
         MultiPart::alternative().singlepart(SinglePart::plain(body_text)).multipart(
             MultiPart::related()
                 .singlepart(SinglePart::html(body_html))

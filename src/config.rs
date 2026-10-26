@@ -111,6 +111,7 @@ macro_rules! make_config {
             _usr: ConfigBuilder,
 
             _overrides: Vec<&'static str>,
+            _config_file_status: ConfigFileStatus,
         }
 
         // Custom Deserialize for ConfigBuilder, mainly based upon https://serde.rs/deserialize-struct.html
@@ -259,11 +260,18 @@ macro_rules! make_config {
                 builder
             }
 
-            async fn from_file() -> Result<Self, Error> {
+            async fn from_file() -> Result<Option<Self>, Error> {
                 let operator = storage::operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
-                let config_bytes = operator.read(&CONFIG_FILENAME).await?;
+                let config_bytes = match operator.read(&CONFIG_FILENAME).await {
+                    Ok(bytes) => bytes,
+                    // No config file is fine, should not return any error
+                    Err(e) if e.kind() == opendal::ErrorKind::NotFound => return Ok(None),
+                    // Any other error might be an issue and should be passed back to the caller
+                    Err(e) => return Err(e.into()),
+                };
+                let builder = serde_json::from_slice(&config_bytes.to_vec())?;
                 println!("[INFO] Using saved config from `{}` for configuration.\n", *CONFIG_FILE);
-                serde_json::from_slice(&config_bytes.to_vec()).map_err(Into::into)
+                Ok(Some(builder))
             }
 
             fn clear_non_editable(&mut self) {
@@ -440,6 +448,8 @@ macro_rules! make_config {
                     "domain_origin",
                     "domain_path",
                     "domain",
+                    "duo_ikey",
+                    "duo_host",
                     "helo_name",
                     "org_creation_users",
                     "signups_domains_whitelist",
@@ -451,6 +461,8 @@ macro_rules! make_config {
                     "sso_authority",
                     "sso_callback_path",
                     "sso_client_id",
+                    "yubico_client_id",
+                    "yubico_server",
                 ];
 
                 let cfg = {
@@ -482,6 +494,10 @@ macro_rules! make_config {
                     inner._overrides.clone()
                 };
                 overrides
+            }
+
+            pub fn get_config_file_status(&self) -> ConfigFileStatus {
+                self.inner.read().unwrap()._config_file_status
             }
         }
     };
@@ -539,7 +555,7 @@ make_config! {
     jobs {
         /// Job scheduler poll interval |> How often the job scheduler thread checks for jobs to run.
         /// Set to 0 to globally disable scheduled jobs.
-        job_poll_interval_ms:   u64,    false,  def,    30_000;
+        job_poll_interval_ms:   u32,    false,  def,    30_000;
         /// Send purge schedule |> Cron schedule of the job that checks for Sends past their deletion date.
         /// Defaults to hourly. Set blank to disable this job.
         send_purge_schedule:    String, false,  def,    "0 5 * * * *".to_owned();
@@ -595,19 +611,19 @@ make_config! {
         /// Per-organization attachment storage limit (KB) |> Max kilobytes of attachment storage allowed per org. When this limit is reached, org members will not be allowed to upload further attachments for ciphers owned by that org.
         org_attachment_limit:   i64,    true,   option;
         /// Per-user send storage limit (KB) |> Max kilobytes of sends storage allowed per user. When this limit is reached, the user will not be allowed to upload further sends.
-        user_send_limit:   i64,    true,   option;
+        user_send_limit:        i64,    true,   option;
 
         /// Trash auto-delete days |> Number of days to wait before auto-deleting a trashed item.
-        /// If unset, trashed items are not auto-deleted. This setting applies globally, so make
+        /// If unset or 0, trashed items are not auto-deleted. This setting applies globally, so make
         /// sure to inform all users of any changes to this setting.
-        trash_auto_delete_days: i64,    true,   option;
+        trash_auto_delete_days: u16,    true,   option;
 
         /// Incomplete 2FA time limit |> Number of minutes to wait before a 2FA-enabled login is
         /// considered incomplete, resulting in an email notification. An incomplete 2FA login is one
         /// where the correct master password was provided but the required 2FA step was not completed,
         /// which potentially indicates a master password compromise. Set to 0 to disable this check.
         /// This setting applies globally to all users.
-        incomplete_2fa_time_limit: i64, true,   def,    3;
+        incomplete_2fa_time_limit: u16, true,   def,    3;
 
         /// Disable icon downloads |> Set to true to disable icon downloading in the internal icon service.
         /// This still serves existing icons from $ICON_CACHE_FOLDER, without generating any external
@@ -620,9 +636,9 @@ make_config! {
         /// this will prevent logins from succeeding until the address has been verified
         signups_verify:         bool,   true,   def,    false;
         /// If signups require email verification, automatically re-send verification email if it hasn't been sent for a while (in seconds)
-        signups_verify_resend_time: u64, true,  def,    3_600;
+        signups_verify_resend_time: u32, true,  def,    3_600;
         /// If signups require email verification, limit how many emails are automatically sent when login is attempted (0 means no limit)
-        signups_verify_resend_limit: u32, true, def,    6;
+        signups_verify_resend_limit: u16, true, def,    6;
         /// Email domain whitelist |> Allow signups only from this list of comma-separated domains, even when signups are otherwise disabled
         signups_domains_whitelist: String, true, def,   String::new();
         /// Enable event logging |> Enables event logging for organizations.
@@ -634,7 +650,7 @@ make_config! {
         invitations_allowed:    bool,   true,   def,    true;
         /// Invitation token expiration time (in hours) |> The number of hours after which an organization invite token, emergency access invite token,
         /// email verification token and deletion request token will expire (must be at least 1)
-        invitation_expiration_hours: u32, false, def, 120;
+        invitation_expiration_hours: u16, false, def, 120;
         /// Enable emergency access |> Controls whether users can enable emergency access to their accounts. This setting applies globally to all users.
         emergency_access_allowed:    bool,   true,   def,    true;
         /// Allow email change |> Controls whether users can change their email. This setting applies globally to all users.
@@ -655,8 +671,8 @@ make_config! {
         /// Invitation organization name |> Name shown in the invitation emails that don't come from a specific organization
         invitation_org_name:    String, true,   def,    "Vaultwarden".to_owned();
 
-        /// Events days retain |> Number of days to retain events stored in the database. If unset, events are kept indefinitely.
-        events_days_retain:     i64,    false,   option;
+        /// Events days retain |> Number of days to retain events stored in the database. If unset or 0, events are kept indefinitely.
+        events_days_retain:     u16,    false,   option;
     },
 
     client {
@@ -694,13 +710,13 @@ make_config! {
         /// Temporary redirects are useful while testing different icon services, but once a service
         /// has been decided on, consider using permanent redirects for cacheability. The legacy codes
         /// are currently better supported by the Bitwarden clients.
-        icon_redirect_code:     u32,    true,   def,    302;
+        icon_redirect_code:     u16,    true,   def,    302;
         /// Positive icon cache expiry |> Number of seconds to consider that an already cached icon is fresh. After this period, the icon will be refreshed
-        icon_cache_ttl:         u64,    true,   def,    2_592_000;
+        icon_cache_ttl:         u32,    true,   def,    2_592_000;
         /// Negative icon cache expiry |> Number of seconds before trying to download an icon that failed again.
-        icon_cache_negttl:      u64,    true,   def,    259_200;
+        icon_cache_negttl:      u32,    true,   def,    259_200;
         /// Icon download timeout |> Number of seconds when to stop attempting to download an icon.
-        icon_download_timeout:  u64,    true,   def,    10;
+        icon_download_timeout:  u16,    true,   def,    10;
 
         /// [Deprecated] Icon blacklist Regex |> Use `http_request_block_regex` instead
         icon_blacklist_regex:   String, false,   option;
@@ -756,11 +772,11 @@ make_config! {
         /// Max database connection retries |> Number of times to retry the database connection during startup, with 1 second between each retry, set to 0 to retry indefinitely
         db_connection_retries:  u32,    false,  def,    15;
 
-        /// Timeout when acquiring database connection
-        database_timeout:       u64,    false,  def,    30;
+        /// Timeout in seconds when acquiring database connection
+        database_timeout:       u32,    false,  def,    30;
 
         /// Timeout in seconds before idle connections to the database are closed
-        database_idle_timeout:  u64,    false, def,     600;
+        database_idle_timeout:  u32,    false, def,     600;
 
         /// Database connection max pool size
         database_max_conns:     u32,    false,  def,    10;
@@ -777,26 +793,26 @@ make_config! {
         /// Allowed iframe ancestors (Know the risks!) |> Allows other domains to embed the web vault into an iframe, useful for embedding into secure intranets
         allowed_iframe_ancestors: String, true, def,    String::new();
 
-        /// Allowed connect-src (Know the risks!) |> Allows other domains to URLs which can be loaded using script interfaces like the Forwarded email alias feature
+        /// Allowed connect-src (Know the risks!) |> Allows other domains for URLs which can be loaded using script interfaces like the Forwarded email alias feature
         allowed_connect_src:      String, true, def,    String::new();
 
         /// Seconds between login requests |> Number of seconds, on average, between login and 2FA requests from the same IP address before rate limiting kicks in
-        login_ratelimit_seconds:       u64, false, def, 60;
+        login_ratelimit_seconds:       u16, false, def, 60;
         /// Max burst size for login requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `login_ratelimit_seconds`. Note that this applies to both the login and the 2FA, so it's recommended to allow a burst size of at least 2
-        login_ratelimit_max_burst:     u32, false, def, 10;
+        login_ratelimit_max_burst:     u16, false, def, 10;
 
         /// Seconds between unauthenticated requests |> Number of seconds, on average, between requests from the same IP address to any of the rate limited unauthenticated endpoints
-        unauthenticated_ratelimit_seconds:   u64, false, def, 60;
+        unauthenticated_ratelimit_seconds:   u16, false, def, 60;
         /// Max burst size for unauthenticated requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `unauthenticated_ratelimit_seconds`. This is shared between several endpoints, so it needs to be more lenient than the login one
-        unauthenticated_ratelimit_max_burst: u32, false, def, 50;
+        unauthenticated_ratelimit_max_burst: u16, false, def, 50;
 
         /// Seconds between admin login requests |> Number of seconds, on average, between admin requests from the same IP address before rate limiting kicks in
-        admin_ratelimit_seconds:       u64, false, def, 300;
+        admin_ratelimit_seconds:       u16, false, def, 300;
         /// Max burst size for admin login requests |> Allow a burst of requests of up to this size, while maintaining the average indicated by `admin_ratelimit_seconds`
-        admin_ratelimit_max_burst:     u32, false, def, 3;
+        admin_ratelimit_max_burst:     u16, false, def, 3;
 
         /// Admin session lifetime |> Set the lifetime of admin sessions to this value (in minutes).
-        admin_session_lifetime:        i64, true,  def, 20;
+        admin_session_lifetime:        u32, true,  def, 20;
 
         /// Enable groups (BETA!) (Know the risks!) |> Enables groups support for organizations (Currently contains known issues!).
         org_groups_enabled:            bool, false, def, false;
@@ -849,8 +865,8 @@ make_config! {
         sso_master_password_policy:     String, true,  option;
         /// Use SSO only for auth not the session lifecycle |> Use default Vaultwarden session lifecycle (Idle refresh token valid for 30days)
         sso_auth_only_not_session:      bool,   true,   def,    false;
-        /// Client cache for discovery endpoint. |> Duration in seconds (0 or less to disable). More details: https://github.com/dani-garcia/vaultwarden/wiki/Enabling-SSO-support-using-OpenId-Connect#client-cache
-        sso_client_cache_expiration:    u64,    true,   def,    0;
+        /// Client cache for discovery endpoint. |> Duration in seconds (0 to disable). More details: https://github.com/dani-garcia/vaultwarden/wiki/Enabling-SSO-support-using-OpenId-Connect#client-cache
+        sso_client_cache_expiration:    u32,    true,   def,    0;
         /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
         sso_debug_tokens:               bool,   true,   def,    false;
     },
@@ -908,11 +924,11 @@ make_config! {
         /// SMTP Auth mechanism |> Defaults for SSL is "Plain" and "Login" and nothing for Non-SSL connections. Possible values: ["Plain", "Login", "Xoauth2"]. Multiple options need to be separated by a comma ','.
         smtp_auth_mechanism:           String, true,   option;
         /// SMTP connection timeout |> Number of seconds when to stop trying to connect to the SMTP server
-        smtp_timeout:                  u64,    true,   def,     15;
+        smtp_timeout:                  u16,    true,   def,     15;
         /// Server name sent during HELO |> By default this value should be the machine's hostname, but might need to be changed in case it trips some anti-spam filters
         helo_name:                     String, true,   option;
         /// Embed images as email attachments.
-        smtp_embed_images:             bool, true, def, true;
+        smtp_embed_images:             bool,   true,   def,     true;
         /// _smtp_img_src
         _smtp_img_src:                 String, false, generated, |c| generate_smtp_img_src(c.smtp_embed_images, &c.domain);
         /// Enable SMTP debugging (Know the risks!) |> DANGEROUS: Enabling this will output very detailed SMTP messages. This could contain sensitive information like passwords and usernames! Only enable this during troubleshooting!
@@ -930,9 +946,9 @@ make_config! {
         /// Email token size |> Number of digits in an email 2FA token (min: 6, max: 255). Note that the Bitwarden clients are hardcoded to mention 6 digit codes regardless of this setting.
         email_token_size:       u8,     true,   def,      6;
         /// Token expiration time |> Maximum time in seconds a token is valid. The time the user has to open email client and copy token.
-        email_expiration_time:  u64,    true,   def,      600;
+        email_expiration_time:  u32,    true,   def,      600;
         /// Maximum attempts |> Maximum attempts before an email token is reset and a new email will need to be sent
-        email_attempts_limit:   u64,    true,   def,      3;
+        email_attempts_limit:   u8,     true,   def,      3;
         /// Setup email 2FA at signup |> Setup email 2FA provider on registration regardless of any organization policy
         email_2fa_enforce_on_verified_invite: bool,   true,   def,      false;
         /// Auto-enable 2FA (Know the risks!) |> Automatically setup email 2FA as fallback provider when needed
@@ -988,7 +1004,15 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     }
 
     if cfg.database_min_conns > cfg.database_max_conns {
-        err!("`DATABASE_MIN_CONNS` must be smaller than or equal to `DATABASE_MAX_CONNS`.");
+        err!("`DATABASE_MIN_CONNS` must be less than or equal to `DATABASE_MAX_CONNS`.");
+    }
+
+    if cfg.database_timeout < 1 {
+        err!("`DATABASE_TIMEOUT` must be at least 1 second");
+    }
+
+    if cfg.database_idle_timeout < 1 {
+        err!("`DATABASE_IDLE_TIMEOUT` must be at least 1 second");
     }
 
     if let Some(log_file) = &cfg.log_file
@@ -1283,6 +1307,30 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         err!("`PURGE_INCOMPLETE_SSO_AUTH` is not a valid cron expression")
     }
 
+    if cfg.login_ratelimit_seconds < 1 {
+        err!("`LOGIN_RATELIMIT_SECONDS` must be at least 1 second");
+    }
+
+    if cfg.login_ratelimit_max_burst < 1 {
+        err!("`LOGIN_RATELIMIT_MAX_BURST` must be at least 1");
+    }
+
+    if cfg.admin_ratelimit_seconds < 1 {
+        err!("`ADMIN_RATELIMIT_SECONDS` must be at least 1 second");
+    }
+
+    if cfg.admin_ratelimit_max_burst < 1 {
+        err!("`ADMIN_RATELIMIT_MAX_BURST` must be at least 1");
+    }
+
+    if cfg.unauthenticated_ratelimit_seconds < 1 {
+        err!("`UNAUTHENTICATED_RATELIMIT_SECONDS` must be at least 1 second");
+    }
+
+    if cfg.unauthenticated_ratelimit_max_burst < 1 {
+        err!("`UNAUTHENTICATED_RATELIMIT_MAX_BURST` must be at least 1");
+    }
+
     if !cfg.disable_admin_token {
         match cfg.admin_token.as_ref() {
             Some(t) if t.starts_with("$argon2") => {
@@ -1456,6 +1504,13 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "pm-32009-new-item-types",
 ];
 
+#[derive(Clone, Copy, Serialize)]
+pub enum ConfigFileStatus {
+    NotFound,
+    Loaded,
+    Error,
+}
+
 /// Flags that change how clients handle Sends. They are only served to clients at or above
 /// `ITEM_SHARING_MIN_CLIENT_VERSION`, see `api::core::sends::client_supports_item_sharing`.
 pub const ITEM_SHARING_FEATURE_FLAGS: &[&str] = &["pm-30110-sdk-sends-api", "pm-34203-temporary-item-sharing"];
@@ -1464,7 +1519,23 @@ impl Config {
     pub async fn load() -> Result<Self, Error> {
         // Loading from env and file
         let env = ConfigBuilder::from_env();
-        let usr = ConfigBuilder::from_file().await.unwrap_or_default();
+        let (usr, config_file_status) = match ConfigBuilder::from_file().await {
+            Ok(Some(usr)) => (usr, ConfigFileStatus::Loaded),
+            Ok(None) => (ConfigBuilder::default(), ConfigFileStatus::NotFound),
+            Err(e) => {
+                println!(
+                    "[ERROR] Failed to load configuration from `{}`\n\
+                    #####################################################################################\n\
+                    # The file seems to exist but might contain invalid JSON or invalid values.         #\n\
+                    # Check the syntax and make sure every value is valid and within its allowed range. #\n\
+                    # This file is not used until those errors are resolved.                            #\n\
+                    #####################################################################################\n\
+                {e:?}\n",
+                    *CONFIG_FILE
+                );
+                (ConfigBuilder::default(), ConfigFileStatus::Error)
+            }
+        };
 
         // Create merged config, config file overwrites env
         let mut overrides = Vec::new();
@@ -1484,6 +1555,7 @@ impl Config {
                 _env: env,
                 _usr: usr,
                 _overrides: overrides,
+                _config_file_status: config_file_status,
             }),
         })
     }
@@ -1517,6 +1589,7 @@ impl Config {
             writer.config = config;
             writer._usr = builder;
             writer._overrides = overrides;
+            writer._config_file_status = ConfigFileStatus::Loaded;
         }
 
         //Save to file
@@ -1608,6 +1681,7 @@ impl Config {
             writer.config = config;
             writer._usr = usr;
             writer._overrides = Vec::new();
+            writer._config_file_status = ConfigFileStatus::NotFound;
         }
 
         // Invalidate CSS Cache because several config items might have impact on the rendered CSS

@@ -294,7 +294,7 @@ pub async fn validate_email_code_str(
 
     if !crypto::ct_eq(issued_token, token) {
         email_data.add_attempt();
-        if email_data.attempts >= CONFIG.email_attempts_limit() {
+        if email_data.attempts >= u64::from(CONFIG.email_attempts_limit()) {
             email_data.reset_token();
         }
         twofactor.data = email_data.to_json();
@@ -313,7 +313,7 @@ pub async fn validate_email_code_str(
     twofactor.save(conn).await?;
 
     let dt = DateTime::from_timestamp(email_data.token_sent, 0).expect("Email token timestamp invalid.").naive_utc();
-    let max_time = CONFIG.email_expiration_time().cast_signed();
+    let max_time = i64::from(CONFIG.email_expiration_time());
     if dt + TimeDelta::try_seconds(max_time).unwrap() < Utc::now().naive_utc() {
         err!(
             "Token has expired",

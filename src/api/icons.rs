@@ -62,7 +62,7 @@ static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     // Generate the cookie store
     let cookie_store = Arc::new(Jar::default());
 
-    let icon_download_timeout = Duration::from_secs(CONFIG.icon_download_timeout());
+    let icon_download_timeout = Duration::from_secs(u64::from(CONFIG.icon_download_timeout()));
     let pool_idle_timeout = Duration::from_secs(10);
     // Reuse the client between requests
     get_reqwest_client_builder(true)
@@ -193,14 +193,14 @@ async fn get_cached_icon(path: &str) -> Option<Vec<u8>> {
     None
 }
 
-async fn file_is_expired(path: &str, ttl: u64) -> Result<bool, Error> {
+async fn file_is_expired(path: &str, ttl: u32) -> Result<bool, Error> {
     let operator = CONFIG.opendal_operator_for_path_type(&PathType::IconCache)?;
     let meta = operator.stat(path).await?;
     let modified =
         meta.last_modified().ok_or_else(|| std::io::Error::other(format!("No last modified time for `{path}`")))?;
     let age = SystemTime::now().duration_since(modified.into())?;
 
-    Ok(ttl > 0 && ttl <= age.as_secs())
+    Ok(ttl > 0 && u64::from(ttl) <= age.as_secs())
 }
 
 async fn icon_is_negcached(path: &str) -> bool {
@@ -524,7 +524,7 @@ async fn download_icon(domain: &str) -> Result<(Bytes, Option<&str>), Error> {
                 Ok(())
             }) {
                 Ok(_) => {
-                    // Also check if the size is atleast 67 bytes, which seems to be the smallest png i could create
+                    // Also check if the size is at least 67 bytes, which seems to be the smallest png I could create
                     if body.len() >= 67 {
                         // Check if the icon type is allowed, else try an icon from the list.
                         icon_type = get_icon_type(&body);
