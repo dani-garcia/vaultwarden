@@ -376,59 +376,142 @@ where
 {
     match err {
         UserInfoError::Request(_) => 503,
-        UserInfoError::Response(status, ..) if status.is_server_error() => 503,
+        UserInfoError::Response(status, ..) if status.is_server_error() => status.as_u16(),
         _ => 400,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::{Read, Write},
+        net::{TcpListener, TcpStream},
+    };
+
+    use openidconnect::{AuthUrl, IssuerUrl, JsonWebKeySet, TokenUrl, UserInfoUrl};
+
     use super::*;
 
-    type TokenErr = RequestTokenError<HttpClientError<reqwest::Error>, StandardErrorResponse<CoreErrorResponseType>>;
+    // Answers every request with `response`, after reading the whole request.
+    fn mock_provider(response: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for mut stream in listener.incoming().flatten() {
+                read_request(&mut stream);
+                stream.write_all(response.as_bytes()).ok();
+            }
+        });
+        base
+    }
 
-    #[test]
-    fn test_refresh_error_status_invalid_grant() {
-        let err = TokenErr::ServerResponse(StandardErrorResponse::new(CoreErrorResponseType::InvalidGrant, None, None));
-        assert_eq!(refresh_error_status(&err), 400);
+    fn read_request(stream: &mut TcpStream) {
+        stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut data = Vec::new();
+        let mut buf = [0u8; 1024];
+        loop {
+            let n = stream.read(&mut buf).unwrap_or(0);
+            if n == 0 {
+                return;
+            }
+            data.extend_from_slice(&buf[..n]);
+            if let Some(end) = data.windows(4).position(|w| w == b"\r\n\r\n") {
+                let headers = String::from_utf8_lossy(&data[..end]).to_ascii_lowercase();
+                let length = headers
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .and_then(|value| value.trim().parse().ok())
+                    .unwrap_or(0);
+                if data.len() >= end + 4 + length {
+                    return;
+                }
+            }
+        }
+    }
+
+    fn unreachable_provider() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        format!("http://{}", listener.local_addr().unwrap())
+    }
+
+    fn test_client(base: &str) -> Client {
+        // main() installs this at startup. Err means another test already installed it.
+        rustls::crypto::ring::default_provider().install_default().ok();
+        let core_client = CoreClient::new(
+            ClientId::new("vaultwarden".to_owned()),
+            IssuerUrl::new(base.to_owned()).unwrap(),
+            JsonWebKeySet::new(Vec::new()),
+        )
+        .set_client_secret(ClientSecret::new("secret".to_owned()))
+        .set_auth_uri(AuthUrl::new(format!("{base}/auth")).unwrap())
+        .set_token_uri(TokenUrl::new(format!("{base}/token")).unwrap())
+        .set_user_info_url(UserInfoUrl::new(format!("{base}/userinfo")).unwrap());
+
+        Client {
+            http_client: OidcHttpClient {
+                client: reqwest::Client::new(),
+            },
+            core_client,
+        }
+    }
+
+    fn run<F: Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(future)
+    }
+
+    fn refresh_status(base: &str) -> u16 {
+        let result = run(test_client(base).exchange_refresh_token_impl("refresh".to_owned()));
+        result.map_or_else(|(code, _)| code, |_| 200)
+    }
+
+    fn user_info_status(base: &str) -> u16 {
+        let result = run(test_client(base).user_info(AccessToken::new("access".to_owned())));
+        result.map_or_else(|err| err.get_code(), |_| 200)
     }
 
     #[test]
-    fn test_refresh_error_status_temporarily_unavailable() {
-        let err = TokenErr::ServerResponse(StandardErrorResponse::new(
-            CoreErrorResponseType::Extension("temporarily_unavailable".to_owned()),
-            None,
-            None,
-        ));
-        assert_eq!(refresh_error_status(&err), 503);
+    fn test_refresh_invalid_grant() {
+        let base = mock_provider(
+            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: 25\r\nConnection: close\r\n\r\n{\"error\":\"invalid_grant\"}",
+        );
+        assert_eq!(refresh_status(&base), 400);
     }
 
     #[test]
-    fn test_refresh_error_status_other() {
-        let err = TokenErr::Other("unexpected response from the token endpoint".to_owned());
-        assert_eq!(refresh_error_status(&err), 503);
+    fn test_refresh_temporarily_unavailable() {
+        let base = mock_provider(
+            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: 35\r\nConnection: close\r\n\r\n{\"error\":\"temporarily_unavailable\"}",
+        );
+        assert_eq!(refresh_status(&base), 503);
     }
 
     #[test]
-    fn test_refresh_error_status_request() {
-        let err = TokenErr::Request(HttpClientError::Io(std::io::Error::new(
-            std::io::ErrorKind::ConnectionRefused,
-            "connection refused",
-        )));
-        assert_eq!(refresh_error_status(&err), 503);
-    }
-
-    type UserInfoErr = UserInfoError<HttpClientError<reqwest::Error>>;
-
-    #[test]
-    fn test_user_info_error_status_unauthorized() {
-        let err = UserInfoErr::Response(http::StatusCode::UNAUTHORIZED, Vec::new(), "invalid_token".to_owned());
-        assert_eq!(user_info_error_status(&err), 400);
+    fn test_refresh_provider_error_page() {
+        let base = mock_provider(
+            "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/html\r\nContent-Length: 11\r\nConnection: close\r\n\r\nBad Gateway",
+        );
+        assert_eq!(refresh_status(&base), 503);
     }
 
     #[test]
-    fn test_user_info_error_status_unavailable() {
-        let err = UserInfoErr::Response(http::StatusCode::SERVICE_UNAVAILABLE, Vec::new(), "down".to_owned());
-        assert_eq!(user_info_error_status(&err), 503);
+    fn test_refresh_provider_unreachable() {
+        assert_eq!(refresh_status(&unreachable_provider()), 503);
+    }
+
+    #[test]
+    fn test_user_info_invalid_token() {
+        let base = mock_provider("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        assert_eq!(user_info_status(&base), 400);
+    }
+
+    #[test]
+    fn test_user_info_provider_unavailable() {
+        let base = mock_provider("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        assert_eq!(user_info_status(&base), 502);
+    }
+
+    #[test]
+    fn test_user_info_provider_unreachable() {
+        assert_eq!(user_info_status(&unreachable_provider()), 503);
     }
 }
