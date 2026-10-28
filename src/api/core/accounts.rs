@@ -651,6 +651,8 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
                 err!("Invalid master password salt")
             }
 
+            validate_key_id_unchanged(&user, &unlock_data)?;
+
             (authentication_data.master_password_authentication_hash, unlock_data.master_key_wrapped_user_key)
         } else if let (Some(new_master_password_hash), Some(new_key)) = (data.new_master_password_hash, data.key) {
             (new_master_password_hash, new_key)
@@ -753,6 +755,19 @@ pub(super) struct UnlockData {
     salt: String,
     kdf: KDFData,
     pub(super) master_key_wrapped_user_key: String,
+    contained_key_id: Option<KeyId>,
+}
+
+/// A password or KDF change keeps the user key, so its key id must be the current one, when both are known.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Core/KeyManagement/Models/Data/MasterPasswordUnlockData.cs#L27-L47>
+fn validate_key_id_unchanged(user: &User, unlock_data: &UnlockData) -> EmptyResult {
+    if let (Some(current), Some(contained)) = (&user.key_id, &unlock_data.contained_key_id)
+        && current != contained
+    {
+        err!("Invalid user key sent in master-password unlock data.")
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -772,6 +787,8 @@ async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, conn: DbConn, nt:
     }
 
     data.authentication_data.check(&headers.user, &data.unlock_data)?;
+
+    validate_key_id_unchanged(&headers.user, &data.unlock_data)?;
 
     let mut user = headers.user;
 
@@ -1073,8 +1090,9 @@ struct KeyIdData {
 #[post("/accounts/key-management/user-key-id", data = "<data>")]
 async fn post_user_key(data: Json<KeyIdData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let mut user = headers.user;
+    // Only a backfill for accounts that have none. Afterwards the id changes with the key, in a rotation.
     if user.key_id.is_some() {
-        err_code!("Unexpected data", Status::UnprocessableEntity.code);
+        err!("User key id is already set.")
     }
 
     user.key_id = Some(data.into_inner().user_key_id);
