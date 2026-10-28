@@ -692,7 +692,7 @@ async fn put_cipher_admin(
 ) -> JsonResult {
     // Only organization ciphers can be edited here, put_cipher() rejects an organization ID that isn't the cipher's
     if data.organization_id.is_none() {
-        err!("Cipher doesn't exist")
+        err_code!("Resource not found.", "Cipher is not an organization cipher", Status::NotFound.code);
     }
 
     put_cipher(cipher_id, data, headers, conn, nt).await
