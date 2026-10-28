@@ -663,6 +663,17 @@ impl reqwest::cookie::CookieStore for Jar {
         use time::Duration;
 
         let mut cookie_store = self.0.write().unwrap();
+
+        // The store only skips expired cookies when reading them, so remove them here or they are kept forever
+        let expired: Vec<_> = cookie_store
+            .iter_any()
+            .filter(|c| c.is_expired())
+            .map(|c| (String::from(&c.domain), String::from(&c.path), c.name().to_owned()))
+            .collect();
+        for (domain, path, name) in expired {
+            cookie_store.remove(&domain, &path, &name);
+        }
+
         let cookies = cookie_headers.filter_map(|val| {
             std::str::from_utf8(val.as_bytes())
                 .map_err(RawCookieParseError::from)
