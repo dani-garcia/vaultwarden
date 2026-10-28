@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::{
     CONFIG,
-    api::{self, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType, core::log_event},
+    api::{self, ApiResult, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType, core::log_event},
     auth::ClientVersion,
     auth::{Headers, OrgIdGuard, OwnerHeaders},
     config::PathType,
@@ -1214,6 +1214,40 @@ enum FileUploadType {
     // Azure = 1, // only used upstream
 }
 
+/// Remaining attachment storage in bytes for the cipher's owner, `None` when unlimited.
+/// `size_adjust` credits a v2 attachment whose record already counts as used.
+async fn attachment_size_limit(cipher: &Cipher, size_adjust: i64, conn: &DbConn) -> ApiResult<Option<i64>> {
+    let (limit_kb, already_used) = if let Some(ref user_id) = cipher.user_uuid {
+        let Some(limit_kb) = CONFIG.user_attachment_limit() else {
+            return Ok(None);
+        };
+        (limit_kb, Attachment::size_by_user(user_id, conn).await)
+    } else if let Some(ref org_id) = cipher.organization_uuid {
+        let Some(limit_kb) = CONFIG.org_attachment_limit() else {
+            return Ok(None);
+        };
+        (limit_kb, Attachment::size_by_org(org_id, conn).await)
+    } else {
+        err!("Cipher is neither owned by a user nor an organization");
+    };
+
+    if limit_kb == 0 {
+        err!("Attachments are disabled")
+    }
+
+    let Some(left) =
+        limit_kb.checked_mul(1024).and_then(|l| l.checked_sub(already_used)).and_then(|l| l.checked_add(size_adjust))
+    else {
+        err!("Attachment size overflow");
+    };
+
+    if left <= 0 {
+        err!("Attachment storage limit reached! Delete some attachments to free up space")
+    }
+
+    Ok(Some(left))
+}
+
 /// v2 API for creating an attachment associated with a cipher.
 /// This redirects the client to the API it should use to upload the attachment.
 /// For upstream's cloud-hosted service, it's an Azure object storage API.
@@ -1243,6 +1277,13 @@ async fn post_attachment_v2(
     if file_size > SIZE_525_MB {
         err!("Max file size is 525 MB.")
     }
+
+    if let Some(size_limit) = attachment_size_limit(&cipher, 0, &conn).await?
+        && file_size > size_limit
+    {
+        err!("Attachment storage limit exceeded with this file");
+    }
+
     let attachment_id = crypto::generate_attachment_id();
     let attachment =
         Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.file_name, file_size, Some(data.key));
@@ -1309,55 +1350,7 @@ async fn save_attachment(
         Some(a) => a.file_size, // v2 API
     };
 
-    let size_limit = if let Some(ref user_id) = cipher.user_uuid {
-        match CONFIG.user_attachment_limit() {
-            Some(0) => err!("Attachments are disabled"),
-            Some(limit_kb) => {
-                let already_used = Attachment::size_by_user(user_id, &conn).await;
-                let left = limit_kb
-                    .checked_mul(1024)
-                    .and_then(|l| l.checked_sub(already_used))
-                    .and_then(|l| l.checked_add(size_adjust));
-
-                let Some(left) = left else {
-                    err!("Attachment size overflow");
-                };
-
-                if left <= 0 {
-                    err!("Attachment storage limit reached! Delete some attachments to free up space")
-                }
-
-                Some(left)
-            }
-            None => None,
-        }
-    } else if let Some(ref org_id) = cipher.organization_uuid {
-        match CONFIG.org_attachment_limit() {
-            Some(0) => err!("Attachments are disabled"),
-            Some(limit_kb) => {
-                let already_used = Attachment::size_by_org(org_id, &conn).await;
-                let left = limit_kb
-                    .checked_mul(1024)
-                    .and_then(|l| l.checked_sub(already_used))
-                    .and_then(|l| l.checked_add(size_adjust));
-
-                let Some(left) = left else {
-                    err!("Attachment size overflow");
-                };
-
-                if left <= 0 {
-                    err!("Attachment storage limit reached! Delete some attachments to free up space")
-                }
-
-                Some(left)
-            }
-            None => None,
-        }
-    } else {
-        err!("Cipher is neither owned by a user nor an organization");
-    };
-
-    if let Some(size_limit) = size_limit
+    if let Some(size_limit) = attachment_size_limit(&cipher, size_adjust, &conn).await?
         && size > size_limit
     {
         err!("Attachment storage limit exceeded with this file");
