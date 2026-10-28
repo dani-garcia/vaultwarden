@@ -666,6 +666,9 @@ async fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbC
     for (index, mut cipher_data) in data.ciphers.into_iter().enumerate() {
         let folder_id = relations_map.get(&index).and_then(|i| folders.get(*i).cloned());
         cipher_data.folder_id = folder_id;
+        // A personal import always creates personal ciphers, the organization ID is ignored instead of rejected
+        // Upstream: https://github.com/bitwarden/server/blob/b06b81c1fb33ce9c9872b96397ba2b4d879b66af/src/Api/Tools/Controllers/ImportCiphersController.cs#L58
+        cipher_data.organization_id = None;
 
         let mut cipher = Cipher::new(cipher_data.r#type, cipher_data.name.clone());
         update_cipher_from_data(&mut cipher, cipher_data, &headers, None, &conn, &nt, UpdateType::None).await?;
@@ -687,6 +690,11 @@ async fn put_cipher_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    // Only organization ciphers can be edited here, put_cipher() rejects an organization ID that isn't the cipher's
+    if data.organization_id.is_none() {
+        err!("Cipher doesn't exist")
+    }
+
     put_cipher(cipher_id, data, headers, conn, nt).await
 }
 
@@ -698,7 +706,7 @@ async fn post_cipher_admin(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    post_cipher(cipher_id, data, headers, conn, nt).await
+    put_cipher_admin(cipher_id, data, headers, conn, nt).await
 }
 
 #[post("/ciphers/<cipher_id>", data = "<data>")]
@@ -733,6 +741,11 @@ async fn put_cipher(
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn).await {
         err!("Cipher is not write accessible")
+    }
+
+    // Moving a cipher into an organization is only possible through the share endpoints
+    if cipher.organization_uuid != data.organization_id {
+        err!("Organization mismatch. Please resync the client before updating the cipher")
     }
 
     update_cipher_from_data(&mut cipher, data, &headers, None, &conn, &nt, UpdateType::SyncCipherUpdate).await?;
@@ -993,9 +1006,7 @@ async fn post_cipher_share(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
-    let data: ShareCipherData = data.into_inner();
-
-    share_cipher_by_uuid(&cipher_id, data, &headers, &conn, &nt, None).await
+    put_cipher_share(cipher_id, data, headers, conn, nt).await
 }
 
 #[put("/ciphers/<cipher_id>/share", data = "<data>")]
@@ -1007,6 +1018,14 @@ async fn put_cipher_share(
     nt: Notify<'_>,
 ) -> JsonResult {
     let data: ShareCipherData = data.into_inner();
+
+    if data.cipher.organization_id.is_none() {
+        err!("Cipher OrganizationId is required.")
+    }
+
+    if data.collection_ids.is_empty() {
+        err!("You must select at least one collection.")
+    }
 
     share_cipher_by_uuid(&cipher_id, data, &headers, &conn, &nt, None).await
 }
@@ -1077,6 +1096,9 @@ async fn put_cipher_share_selected(
     for cipher in &data.ciphers {
         if cipher.id.is_none() {
             err!("Request missing ids field")
+        }
+        if cipher.organization_id.is_none() {
+            err!("Cipher OrganizationId is required.")
         }
     }
 
@@ -1258,6 +1280,7 @@ async fn post_attachment_v2(
     data: Json<AttachmentRequestData>,
     headers: Headers,
     conn: DbConn,
+    nt: Notify<'_>,
 ) -> JsonResult {
     let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await else {
         err!("Cipher doesn't exist")
@@ -1288,6 +1311,7 @@ async fn post_attachment_v2(
     let attachment =
         Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.file_name, file_size, Some(data.key));
     attachment.save(&conn).await.expect("Error saving attachment");
+    notify_attachment_created(&cipher, &headers, &conn, &nt).await;
 
     let url = format!("/ciphers/{}/attachment/{attachment_id}", cipher.uuid);
     let response_key = match data.admin_request {
@@ -1407,13 +1431,23 @@ async fn save_attachment(
 
     save_temp_file(&PathType::Attachments, &format!("{cipher_id}/{file_id}"), data.data, true).await?;
 
+    // With the v2 API, post_attachment_v2() already did this when it created the attachment record
+    if attachment.is_none() {
+        notify_attachment_created(&cipher, headers, &conn, &nt).await;
+    }
+
+    Ok((cipher, conn))
+}
+
+/// Sends the cipher update to the clients and logs the attachment event
+async fn notify_attachment_created(cipher: &Cipher, headers: &Headers, conn: &DbConn, nt: &Notify<'_>) {
     nt.send_cipher_update(
         UpdateType::SyncCipherUpdate,
-        &cipher,
-        &cipher.update_users_revision(&conn).await,
+        cipher,
+        &cipher.update_users_revision(conn).await,
         &headers.device,
         None,
-        &conn,
+        conn,
     )
     .await;
 
@@ -1425,12 +1459,10 @@ async fn save_attachment(
             &headers.user.uuid,
             headers.device.atype,
             &headers.ip.ip,
-            &conn,
+            conn,
         )
         .await;
     }
-
-    Ok((cipher, conn))
 }
 
 /// v2 API for uploading the actual data content of an attachment.
