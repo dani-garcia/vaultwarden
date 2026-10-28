@@ -864,6 +864,8 @@ make_config! {
         sso_client_cache_expiration:    u32,    true,   def,    0;
         /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
         sso_debug_tokens:               bool,   true,   def,    false;
+        /// Do not call userinfo endpoint, solely use identity token claims (set to true if you use ADFS).
+        sso_skip_userinfo:              bool,   true,   def,    false;
     },
 
     /// Yubikey settings
