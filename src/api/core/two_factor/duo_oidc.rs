@@ -383,7 +383,7 @@ pub async fn get_duo_auth_url(
     device_identifier: &DeviceId,
     conn: &DbConn,
 ) -> Result<String, Error> {
-    let (ik, sk, _, host) = get_duo_keys_email(email, conn).await?;
+    let (ik, sk, host) = get_duo_keys_email(email, conn).await?;
 
     let callback_url = match make_callback_url(client_id) {
         Ok(url) => url,
@@ -435,7 +435,7 @@ pub async fn validate_duo_login(
     let code = split[0];
     let state = split[1];
 
-    let (ik, sk, _, host) = get_duo_keys_email(email, conn).await?;
+    let (ik, sk, host) = get_duo_keys_email(email, conn).await?;
 
     // Get the context by the state reported by the client. If we don't have one,
     // it means the context is either missing or expired.

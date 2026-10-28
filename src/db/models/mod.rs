@@ -24,7 +24,9 @@ pub use self::auth_request::{AuthRequest, AuthRequestId};
 pub use self::cipher::{Cipher, CipherId, RepromptType};
 pub use self::collection::{Collection, CollectionCipher, CollectionId, CollectionUser};
 pub use self::device::{Device, DeviceId, DeviceType, DeviceWithAuthRequest, PushId};
-pub use self::emergency_access::{EmergencyAccess, EmergencyAccessId, EmergencyAccessStatus, EmergencyAccessType};
+pub use self::emergency_access::{
+    EMERGENCY_ACCESS_TIMEOUT_RANGE, EmergencyAccess, EmergencyAccessId, EmergencyAccessStatus, EmergencyAccessType,
+};
 pub use self::event::{Event, EventType};
 pub use self::favorite::Favorite;
 pub use self::folder::{Folder, FolderCipher, FolderId};
@@ -39,4 +41,4 @@ pub use self::sso_auth::{OIDCAuthenticatedUser, OIDCCodeResponseError, SsoAuth};
 pub use self::two_factor::{TwoFactor, TwoFactorType};
 pub use self::two_factor_duo_context::TwoFactorDuoContext;
 pub use self::two_factor_incomplete::TwoFactorIncomplete;
-pub use self::user::{Invitation, SsoUser, User, UserId, UserKdfType, UserStampException};
+pub use self::user::{Invitation, KeyId, SsoUser, User, UserId, UserKdfType, UserStampException};

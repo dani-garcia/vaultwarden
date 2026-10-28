@@ -140,6 +140,10 @@ impl Send {
         None
     }
 
+    fn access_id(&self) -> String {
+        BASE64URL_NOPAD.encode(Uuid::parse_str(&self.uuid).unwrap_or_default().as_bytes())
+    }
+
     pub fn to_json(&self) -> Value {
         let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
 
@@ -150,7 +154,7 @@ impl Send {
 
         json!({
             "id": self.uuid,
-            "accessId": BASE64URL_NOPAD.encode(Uuid::parse_str(&self.uuid).unwrap_or_default().as_bytes()),
+            "accessId": self.access_id(),
             "type": self.atype,
 
             "name": self.name,
@@ -182,7 +186,7 @@ impl Send {
         }
 
         json!({
-            "id": self.uuid,
+            "id": self.access_id(),
             "type": self.atype,
 
             "name": self.name,
@@ -256,7 +260,7 @@ impl Send {
 
     /// Whether the Send is currently within its validity window: not disabled, not past its
     /// expiration date, and not past its deletion date. Does not consider `max_access_count`
-    /// (consumed at token issuance) or the password.
+    /// (counted on each access) or the password.
     pub fn is_accessible(&self) -> bool {
         let now = Utc::now().naive_utc();
         if self.disabled {
@@ -309,19 +313,6 @@ impl Send {
         Ok(())
     }
 
-    pub async fn find_by_access_id(access_id: &str, conn: &DbConn) -> Option<Self> {
-        let Ok(uuid_vec) = BASE64URL_NOPAD.decode(access_id.as_bytes()) else {
-            return None;
-        };
-
-        let uuid = match Uuid::from_slice(&uuid_vec) {
-            Ok(u) => SendId::from(u.to_string()),
-            Err(_) => return None,
-        };
-
-        Self::find_by_uuid(&uuid, conn).await
-    }
-
     pub async fn find_by_uuid(uuid: &SendId, conn: &DbConn) -> Option<Self> {
         conn.run(move |conn| sends::table.filter(sends::uuid.eq(uuid)).first::<Self>(conn).ok()).await
     }
@@ -359,13 +350,6 @@ impl Send {
         }
 
         Some(total)
-    }
-
-    pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
-        conn.run(move |conn| {
-            sends::table.filter(sends::organization_uuid.eq(org_uuid)).load::<Self>(conn).expect("Error loading sends")
-        })
-        .await
     }
 
     pub async fn find_by_past_deletion_date(conn: &DbConn) -> Vec<Self> {

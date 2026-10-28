@@ -72,8 +72,7 @@ async fn request_otp(headers: Headers, conn: DbConn) -> EmptyResult {
     let user = headers.user;
 
     // Only one Protected Action per user is allowed to take place, delete the previous one
-    if let Some(pa) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::ProtectedActions as i32, &conn).await
-    {
+    if let Some(pa) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::ProtectedActions, &conn).await {
         let pa_data = ProtectedActionData::from_json(&pa.data)?;
         let elapsed = pa_data.time_since_sent().num_seconds();
         let delay = 30;
@@ -125,27 +124,28 @@ pub async fn validate_protected_action_otp(
     delete_if_valid: bool,
     conn: &DbConn,
 ) -> EmptyResult {
-    let mut pa = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::ProtectedActions as i32, conn)
+    let mut pa = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::ProtectedActions, conn)
         .await
         .map_res("Protected action token not found, try sending the code again or restart the process")?;
     let mut pa_data = ProtectedActionData::from_json(&pa.data)?;
-    pa_data.add_attempt();
-    pa.data = pa_data.to_json();
 
     // Fail after x attempts if the token has been used too many times.
     // Don't delete it, as we use it to keep track of attempts.
-    if pa_data.attempts >= CONFIG.email_attempts_limit() {
+    if pa_data.attempts >= u64::from(CONFIG.email_attempts_limit()) {
         err!("Token has expired")
     }
 
     // Check if the token has expired (Using the email 2fa expiration time)
-    let max_time = CONFIG.email_expiration_time().cast_signed();
+    let max_time = i64::from(CONFIG.email_expiration_time());
     if pa_data.time_since_sent().num_seconds() > max_time {
         pa.delete(conn).await?;
         err!("Token has expired")
     }
 
     if !crypto::ct_eq(&pa_data.token, otp) {
+        pa_data.add_attempt();
+        pa.data = pa_data.to_json();
+
         pa.save(conn).await?;
         err!("Token is invalid")
     }

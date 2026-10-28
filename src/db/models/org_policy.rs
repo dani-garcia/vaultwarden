@@ -1,3 +1,4 @@
+use chrono::{NaiveDateTime, Utc};
 use derive_more::{AsRef, From};
 use diesel::prelude::*;
 use serde::Deserialize;
@@ -11,6 +12,7 @@ use crate::{
         schema::{org_policies, users_organizations},
     },
     error::MapResult,
+    util::format_date,
 };
 
 use super::{Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId, TwoFactor, UserId};
@@ -24,6 +26,7 @@ pub struct OrgPolicy {
     pub atype: i32,
     pub enabled: bool,
     pub data: String,
+    pub revision_date: NaiveDateTime,
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Enums/PolicyType.cs
@@ -46,9 +49,10 @@ pub enum OrgPolicyType {
     RemoveUnlockWithPin = 14,
     RestrictedItemTypes = 15,
     UriMatchDefaults = 16,
-    // AutotypeDefaultSetting = 17, // Not supported yet
+    AutotypeDefaultSetting = 17,
     // AutoConfirm = 18, // Not supported (not implemented yet)
     // BlockClaimedDomainAccountCreation = 19, // Not supported (Not AGPLv3 Licensed)
+    OrganizationUserNotification = 20,
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Models/Data/Organizations/Policies/SendOptionsPolicyData.cs#L5
@@ -76,6 +80,7 @@ impl OrgPolicy {
             atype: atype as i32,
             enabled,
             data,
+            revision_date: Utc::now().naive_utc(),
         }
     }
 
@@ -91,7 +96,7 @@ impl OrgPolicy {
             "type": self.atype,
             "data": data_json,
             "enabled": self.enabled,
-            "revisionDate": null,
+            "revisionDate": format_date(&self.revision_date),
             "object": "policy",
         });
 
@@ -109,11 +114,13 @@ impl OrgPolicy {
 
 /// Database methods
 impl OrgPolicy {
-    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+        self.revision_date = Utc::now().naive_utc();
+
         db_run! { conn:
             sqlite, mysql {
                 match diesel::replace_into(org_policies::table)
-                    .values(self)
+                    .values(&*self)
                     .execute(conn)
                 {
                     Ok(_) => Ok(()),
@@ -121,7 +128,7 @@ impl OrgPolicy {
                     Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
                         diesel::update(org_policies::table)
                             .filter(org_policies::uuid.eq(&self.uuid))
-                            .set(self)
+                            .set(&*self)
                             .execute(conn)
                             .map_res("Error saving org_policy")
                     }
@@ -141,10 +148,10 @@ impl OrgPolicy {
                 .map_res("Error deleting org_policy for insert")?;
 
                 diesel::insert_into(org_policies::table)
-                    .values(self)
+                    .values(&*self)
                     .on_conflict(org_policies::uuid)
                     .do_update()
-                    .set(self)
+                    .set(&*self)
                     .execute(conn)
                     .map_res("Error saving org_policy")
             }
@@ -179,6 +186,26 @@ impl OrgPolicy {
                         .and(users_organizations::user_uuid.eq(user_uuid))),
                 )
                 .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .select(org_policies::all_columns)
+                .load::<Self>(conn)
+                .expect("Error loading org_policy")
+        })
+        .await
+    }
+
+    pub async fn find_accepted_and_confirmed_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
+        conn.run(move |conn| {
+            org_policies::table
+                .inner_join(
+                    users_organizations::table.on(users_organizations::org_uuid
+                        .eq(org_policies::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid))),
+                )
+                .filter(
+                    users_organizations::status
+                        .eq(MembershipStatus::Accepted as i32)
+                        .or(users_organizations::status.eq(MembershipStatus::Confirmed as i32)),
+                )
                 .select(org_policies::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading org_policy")

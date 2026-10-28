@@ -201,12 +201,15 @@ fn post_admin_login(
     // If the token is invalid, redirect to login page
     if validate_token(&data.token) {
         // If the token received is valid, generate JWT and save it as a cookie
-        let claims = generate_admin_claims();
+        let claims = match generate_admin_claims() {
+            Ok(claims) => claims,
+            Err(e) => return Err(AdminResponse::Ok(render_admin_login(Some(e.message()), redirect.as_deref()))),
+        };
         let jwt = encode_jwt(&claims);
 
         let cookie = Cookie::build((COOKIE_NAME, jwt))
             .path(admin_path())
-            .max_age(time::Duration::minutes(CONFIG.admin_session_lifetime()))
+            .max_age(time::Duration::minutes(i64::from(CONFIG.admin_session_lifetime())))
             .same_site(SameSite::Strict)
             .http_only(true)
             .secure(secure.https);
@@ -508,6 +511,7 @@ async fn enable_user(user_id: UserId, _token: AdminToken, conn: DbConn) -> Empty
 async fn remove_2fa(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyResult {
     let mut user = get_user_or_404(&user_id, &conn).await?;
     TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
+    Device::clear_twofactor_remember_by_user(&user.uuid, &conn).await?;
     two_factor::enforce_2fa_policy(&user, &ACTING_ADMIN_USER.into(), 14, &token.ip.ip, &conn).await?;
     user.totp_recover = None;
     user.save(&conn).await
@@ -778,6 +782,8 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
     .into_keys()
     .collect();
 
+    let invalid_env_vars = crate::util::INVALID_ENV_VARS.lock().unwrap().join(", ");
+
     let diagnostics_json = json!({
         "dns_resolved": dns_resolved,
         "current_release": VERSION,
@@ -800,7 +806,9 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
         "db_version": get_sql_server_version(&conn).await,
         "admin_url": format!("{}/diagnostics", admin_url()),
         "overrides": &CONFIG.get_overrides().join(", "),
+        "config_file_status": &CONFIG.get_config_file_status(),
         "template_overrides": check_template_overrides().join(", "),
+        "invalid_env_vars": invalid_env_vars,
         "invalid_feature_flags": invalid_feature_flags,
         "host_arch": env::consts::ARCH,
         "host_os":  env::consts::OS,
@@ -905,23 +913,23 @@ mod tests {
     fn validate_web_vault_compare() {
         // web_vault_compare(active, latest)
         // Test normal versions
-        assert!(web_vault_compare("2025.12.0", "2025.12.1") == -1);
-        assert!(web_vault_compare("2025.12.1", "2025.12.1") == 0);
-        assert!(web_vault_compare("2025.12.2", "2025.12.1") == 1);
+        assert_eq!(web_vault_compare("2025.12.0", "2025.12.1"), -1);
+        assert_eq!(web_vault_compare("2025.12.1", "2025.12.1"), 0);
+        assert_eq!(web_vault_compare("2025.12.2", "2025.12.1"), 1);
 
         // Test patched/+build.n versions
         // Newer latest version
-        assert!(web_vault_compare("2025.12.0+build.1", "2025.12.1") == -1);
-        assert!(web_vault_compare("2025.12.1", "2025.12.1+build.1") == -1);
-        assert!(web_vault_compare("2025.12.0+build.1", "2025.12.1+build.1") == -1);
-        assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.2") == -1);
+        assert_eq!(web_vault_compare("2025.12.0+build.1", "2025.12.1"), -1);
+        assert_eq!(web_vault_compare("2025.12.1", "2025.12.1+build.1"), -1);
+        assert_eq!(web_vault_compare("2025.12.0+build.1", "2025.12.1+build.1"), -1);
+        assert_eq!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.2"), -1);
         // Equal versions
-        assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.1") == 0);
-        assert!(web_vault_compare("2025.12.2+build.2", "2025.12.2+build.2") == 0);
+        assert_eq!(web_vault_compare("2025.12.1+build.1", "2025.12.1+build.1"), 0);
+        assert_eq!(web_vault_compare("2025.12.2+build.2", "2025.12.2+build.2"), 0);
         // Newer active version
-        assert!(web_vault_compare("2025.12.1+build.1", "2025.12.1") == 1);
-        assert!(web_vault_compare("2025.12.2", "2025.12.1+build.1") == 1);
-        assert!(web_vault_compare("2025.12.2+build.1", "2025.12.1+build.1") == 1);
-        assert!(web_vault_compare("2025.12.1+build.3", "2025.12.1+build.2") == 1);
+        assert_eq!(web_vault_compare("2025.12.1+build.1", "2025.12.1"), 1);
+        assert_eq!(web_vault_compare("2025.12.2", "2025.12.1+build.1"), 1);
+        assert_eq!(web_vault_compare("2025.12.2+build.1", "2025.12.1+build.1"), 1);
+        assert_eq!(web_vault_compare("2025.12.1+build.3", "2025.12.1+build.2"), 1);
     }
 }

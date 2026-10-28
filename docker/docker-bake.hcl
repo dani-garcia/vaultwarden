@@ -148,6 +148,12 @@ target "debian-s390x" {
   platforms = ["linux/s390x"]
   tags = generate_tags("", "-s390x")
 }
+
+target "debian-riscv64" {
+  inherits = ["debian"]
+  platforms = ["linux/riscv64"]
+  tags = generate_tags("", "-riscv64")
+}
 // ==== End of unsupported Debian architecture targets ===
 
 // A Group to build all platforms individually for local testing
