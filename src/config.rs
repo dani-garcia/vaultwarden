@@ -817,6 +817,10 @@ make_config! {
         /// Enable groups (BETA!) (Know the risks!) |> Enables groups support for organizations (Currently contains known issues!).
         org_groups_enabled:            bool, false, def, false;
 
+        /// Enable Custom roles (EXPERIMENTAL!) (Know the risks!) |> Enables the in-development Custom member role with granular permissions for organizations.
+        /// Only the permissions this version enforces can be granted. Disabling it again keeps the stored Custom roles, but they grant nothing until it is re-enabled.
+        experimental_custom_roles:     bool, false, def, false;
+
         /// Increase note size limit (Know the risks!) |> Sets the secure note size limit to 100_000 instead of the default 10_000.
         /// WARNING: This could cause issues with clients. Also exports will not work on Bitwarden servers!
         increase_note_size_limit:      bool,  true,  def, false;
