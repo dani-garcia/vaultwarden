@@ -135,6 +135,11 @@
                         <div class="radio">
                             <label><input type="radio" value="3" class="form-radio-input" name="user_type" id="userOrgTypeManager">&nbsp;Manager</label>
                         </div>
+                        {{#if custom_roles_enabled}}
+                        <div class="radio">
+                            <label><input type="radio" value="4" class="form-radio-input" name="user_type" id="userOrgTypeCustom">&nbsp;Custom</label>
+                        </div>
+                        {{/if}}
                         <div class="radio">
                             <label><input type="radio" value="1" class="form-radio-input" name="user_type" id="userOrgTypeAdmin">&nbsp;Admin</label>
                         </div>

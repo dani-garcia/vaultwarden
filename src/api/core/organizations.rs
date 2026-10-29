@@ -15,10 +15,10 @@ use crate::{
     db::{
         DbConn,
         models::{
-            Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, Device,
-            EventType, FillAssistPolicyData, Group, GroupId, GroupUser, Invitation, Membership, MembershipId,
-            MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
-            OrganizationId, TwoFactor, TwoFactorType, User, UserId,
+            Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser,
+            CustomPermission, Device, EventType, FillAssistPolicyData, Group, GroupId, GroupUser, Invitation,
+            Membership, MembershipId, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization,
+            OrganizationApiKey, OrganizationId, TwoFactor, TwoFactorType, User, UserId, custom_roles_enabled,
         },
     },
     mail,
@@ -1002,14 +1002,12 @@ async fn send_invite(
     data.validate(&org_id, &conn).await?;
 
     // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
-    // The from_str() will convert the custom role type into a manager role type
+    // Unless Custom roles are enabled, a custom role (4) is converted to a manager role (3)
     let raw_type = &data.r#type.into_string();
-    // Membership::from_str will convert custom (4) to manager (3)
-    let new_type = if let Some(new_type) = MembershipType::from_str(raw_type) {
-        new_type as i32
-    } else {
+    let Some(requested_type) = MembershipType::from_str(raw_type) else {
         err!("Invalid type")
     };
+    let new_type = MembershipType::requested(requested_type, None, custom_roles_enabled());
 
     if new_type != MembershipType::User && headers.membership_type != MembershipType::Owner {
         err!("Only Owners can invite Managers, Admins or Owners")
@@ -1019,10 +1017,18 @@ async fn send_invite(
     // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
     // If the box is not checked, the user will still be a manager, but not with the access_all permission
     let access_all = new_type >= MembershipType::Admin
-        || (raw_type.eq("4")
+        || (new_type == MembershipType::Manager
+            && raw_type.eq("4")
             && data.permissions.get("editAnyCollection") == Some(&json!(true))
             && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
             && data.permissions.get("createNewCollections") == Some(&json!(true)));
+
+    // Checked before anything is created, so a rejected permission leaves nothing behind
+    let custom_permissions = if new_type == MembershipType::Custom {
+        Some(CustomPermission::requested(&data.permissions)?)
+    } else {
+        None
+    };
 
     let mut user_created: bool;
     for email in &data.emails {
@@ -1065,8 +1071,11 @@ async fn send_invite(
         };
 
         let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), Some(headers.user.email.clone()));
+        new_member.set_type(new_type);
         new_member.access_all = access_all;
-        new_member.atype = new_type;
+        if let Some(permissions) = &custom_permissions {
+            new_member.set_custom_permissions(permissions);
+        }
         new_member.status = member_status;
         new_member.save(&conn).await?;
 
@@ -1502,24 +1511,32 @@ async fn edit_member(
     let data: EditUserData = data.into_inner();
 
     // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
-    // The from_str() will convert the custom role type into a manager role type
+    // Unless Custom roles are enabled, a custom role (4) is converted to a manager role (3)
     let raw_type = &data.r#type.into_string();
-    // MembershipType::from_str will convert custom (4) to manager (3)
-    let Some(new_type) = MembershipType::from_str(raw_type) else {
+    let Some(requested_type) = MembershipType::from_str(raw_type) else {
         err!("Invalid type")
     };
+
+    let Some(mut member_to_edit) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
+        err!("The specified user isn't member of the organization")
+    };
+    let new_type = MembershipType::requested(requested_type, Some(&member_to_edit), custom_roles_enabled());
 
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
     // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
     // If the box is not checked, the user will still be a manager, but not with the access_all permission
     let access_all = new_type >= MembershipType::Admin
-        || (raw_type.eq("4")
+        || (new_type == MembershipType::Manager
+            && raw_type.eq("4")
             && data.permissions.get("editAnyCollection") == Some(&json!(true))
             && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
             && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
-    let Some(mut member_to_edit) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
-        err!("The specified user isn't member of the organization")
+    // While Custom roles are disabled, a Custom member keeps their stored permissions untouched
+    let custom_permissions = if new_type == MembershipType::Custom && custom_roles_enabled() {
+        Some(CustomPermission::requested(&data.permissions)?)
+    } else {
+        None
     };
 
     if new_type != member_to_edit.atype
@@ -1543,8 +1560,11 @@ async fn edit_member(
         }
     }
 
+    member_to_edit.set_type(new_type);
     member_to_edit.access_all = access_all;
-    member_to_edit.atype = new_type as i32;
+    if let Some(permissions) = &custom_permissions {
+        member_to_edit.set_custom_permissions(permissions);
+    }
 
     // This check is also done at accept_invite, _confirm_invite, _activate_member, edit_member, admin::update_membership_type
     // We need to perform the check after changing the type since `admin` is exempt.
