@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::{
-        AnonymousNotify, ApiResult, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
+        AnonymousNotify, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType,
         core::{accept_org_invite, log_user_event, two_factor::email},
         master_password_policy, register_push_device, unregister_push_device,
     },
@@ -1086,7 +1086,7 @@ async fn post_sstamp(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbCo
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     user.reset_security_stamp(&conn).await?;
     let save_result = user.save(&conn).await;
@@ -1326,9 +1326,9 @@ async fn post_delete_account(data: Json<PasswordOrOtpData>, headers: Headers, co
 #[delete("/accounts", data = "<data>")]
 async fn delete_account(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     user.delete(&conn).await
 }
@@ -1446,19 +1446,6 @@ struct SecretVerificationRequest {
     master_password_hash: String,
 }
 
-// Change the KDF Iterations if necessary
-pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &DbConn) -> ApiResult<()> {
-    if user.password_iterations < CONFIG.password_iterations() {
-        user.password_iterations = CONFIG.password_iterations();
-        user.set_password(pwd_hash, None, false, None, conn).await?;
-
-        if let Err(e) = user.save(conn).await {
-            error!("Error updating user: {e:#?}");
-        }
-    }
-    Ok(())
-}
-
 #[post("/accounts/verify-password", data = "<data>")]
 async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner();
@@ -1468,7 +1455,7 @@ async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers
         err!("Invalid password")
     }
 
-    kdf_upgrade(&mut user, &data.master_password_hash, &conn).await?;
+    user.check_persist_kdf_upgrade(&data.master_password_hash, &conn).await?;
 
     Ok(Json(master_password_policy(&user, &conn).await))
 }
@@ -1477,7 +1464,7 @@ async fn update_api_key(data: Json<PasswordOrOtpData>, rotate: bool, headers: He
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     if rotate || user.api_key.is_none() {
         user.api_key = Some(crypto::generate_api_key());
