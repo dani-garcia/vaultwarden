@@ -520,7 +520,16 @@ impl Cipher {
         conn: &DbConn,
     ) -> EmptyResult {
         User::update_uuid_revision(user_uuid, conn).await;
+        self.move_to_folder_without_revision_update(folder_uuid, user_uuid, conn).await
+    }
 
+    /// Same as `move_to_folder`, but the caller is responsible for updating the user's revision.
+    pub async fn move_to_folder_without_revision_update(
+        &self,
+        folder_uuid: Option<FolderId>,
+        user_uuid: &UserId,
+        conn: &DbConn,
+    ) -> EmptyResult {
         match (self.get_folder_uuid(user_uuid, conn).await, folder_uuid) {
             // No changes
             (None, None) => Ok(()),
