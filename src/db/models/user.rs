@@ -72,6 +72,9 @@ pub struct User {
     pub external_id: Option<String>, // Todo: Needs to be removed in the future, this is not used anymore.
 
     pub key_id: Option<KeyId>,
+
+    /// Verify a new device via an emailed code, when `NEW_DEVICE_VERIFICATION` is enabled.
+    pub verify_devices: bool,
 }
 
 #[derive(Identifiable, Queryable, Insertable)]
@@ -159,6 +162,7 @@ impl User {
             external_id: None, // Todo: Needs to be removed in the future, this is not used anymore.
 
             key_id: None,
+            verify_devices: true,
         }
     }
 
@@ -329,6 +333,7 @@ impl User {
             "avatarColor": self.avatar_color,
             "usesKeyConnector": false,
             "creationDate": format_date(&self.created_at),
+            "verifyDevices": self.verify_devices,
             "object": "profile",
         })
     }
