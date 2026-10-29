@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrono::{NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, TimeDelta, Utc};
 use data_encoding::BASE64URL_NOPAD;
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
@@ -12,7 +12,10 @@ use crate::{
     CONFIG,
     api::EmptyResult,
     config::PathType,
-    db::{DbConn, schema::sends},
+    db::{
+        DbConn,
+        schema::{send_access_otps, sends},
+    },
     error::MapResult,
     util::{LowerCase, NumberOrString, format_date},
 };
@@ -49,18 +52,21 @@ pub struct Send {
 
     pub disabled: bool,
     pub hide_email: Option<bool>,
+    pub auth_type: i32,
+    pub emails: Option<String>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, num_derive::FromPrimitive)]
 pub enum SendType {
     Text = 0,
     File = 1,
+    Item = 2,
 }
 
-enum SendAuthType {
-    #[allow(dead_code)]
+#[derive(Copy, Clone, PartialEq, Eq, num_derive::FromPrimitive)]
+pub enum SendAuthType {
     // Send requires email OTP verification
-    Email = 0, // Not yet supported by Vaultwarden
+    Email = 0,
     // Send requires a password
     Password = 1,
     // Send requires no auth
@@ -96,6 +102,8 @@ impl Send {
 
             disabled: false,
             hide_email: None,
+            auth_type: SendAuthType::None as i32,
+            emails: None,
         }
     }
 
@@ -112,6 +120,17 @@ impl Send {
             self.password_iter = None;
             self.password_salt = None;
             self.password_hash = None;
+        }
+    }
+
+    /// The protection actually enforced, given the stored emails and password.
+    pub fn effective_auth_type(&self) -> SendAuthType {
+        if self.emails.is_some() {
+            SendAuthType::Email
+        } else if self.password_hash.is_some() {
+            SendAuthType::Password
+        } else {
+            SendAuthType::None
         }
     }
 
@@ -161,12 +180,14 @@ impl Send {
             "notes": self.notes,
             "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
             "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "data": if self.atype == SendType::Item as i32 { Some(&data) } else { None },
 
             "key": self.akey,
             "maxAccessCount": self.max_access_count,
             "accessCount": self.access_count,
             "password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
-            "authType": if self.password_hash.is_some() { SendAuthType::Password as i32 } else { SendAuthType::None as i32 },
+            "authType": self.auth_type,
+            "emails": self.emails,
             "disabled": self.disabled,
             "hideEmail": self.hide_email.unwrap_or(false),
 
@@ -192,6 +213,7 @@ impl Send {
             "name": self.name,
             "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
             "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "data": if self.atype == SendType::Item as i32 { Some(&data) } else { None },
 
             "expirationDate": self.expiration_date.as_ref().map(format_date),
             "creatorIdentifier": self.creator_identifier(conn).await,
@@ -282,17 +304,20 @@ impl Send {
             operator.delete_with(&self.uuid).recursive(true).await.ok();
         }
 
+        SendAccessOtp::delete_all_by_send(&self.uuid, conn).await?;
+
         conn.run(move |conn| {
             diesel::delete(sends::table.filter(sends::uuid.eq(&self.uuid))).execute(conn).map_res("Error deleting send")
         })
         .await
     }
 
-    /// Purge all sends that are past their deletion date.
+    /// Purge all sends that are past their deletion date, and expired access codes.
     pub async fn purge(conn: &DbConn) {
         for send in Self::find_by_past_deletion_date(conn).await {
             send.delete(conn).await.ok();
         }
+        SendAccessOtp::delete_expired(conn).await.ok();
     }
 
     pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<UserId> {
@@ -356,6 +381,126 @@ impl Send {
         let now = Utc::now().naive_utc();
         conn.run(move |conn| {
             sends::table.filter(sends::deletion_date.lt(now)).load::<Self>(conn).expect("Error loading sends")
+        })
+        .await
+    }
+}
+
+/// A one-time code emailed to a recipient of an email verified Send.
+#[derive(Identifiable, Queryable, Insertable, AsChangeset)]
+#[diesel(table_name = send_access_otps)]
+#[diesel(primary_key(send_uuid, email))]
+pub struct SendAccessOtp {
+    pub send_uuid: SendId,
+    pub email: String,
+    pub code: String,
+    pub attempts: i32,
+    pub creation_date: NaiveDateTime,
+    pub expiration_date: NaiveDateTime,
+}
+
+impl SendAccessOtp {
+    /// Minimum time before a new code can be requested, so the endpoint can't be used to spam a
+    /// recipient or keep invalidating the code they are about to type.
+    const RESEND_COOLDOWN_SECONDS: i64 = 60;
+
+    pub fn new(send_uuid: SendId, email: String, code: String) -> Self {
+        let now = Utc::now().naive_utc();
+        Self {
+            send_uuid,
+            email,
+            code,
+            attempts: 0,
+            creation_date: now,
+            // Same settings as the email 2FA codes
+            expiration_date: now + TimeDelta::seconds(CONFIG.email_expiration_time().cast_signed()),
+        }
+    }
+
+    /// Wrong guesses allowed before a code is discarded.
+    pub fn attempts_exhausted(&self) -> bool {
+        u64::try_from(self.attempts).unwrap_or(u64::MAX) >= CONFIG.email_attempts_limit()
+    }
+
+    pub fn is_expired(&self) -> bool {
+        Utc::now().naive_utc() >= self.expiration_date
+    }
+
+    pub fn can_resend(&self) -> bool {
+        self.is_expired()
+            || Utc::now().naive_utc() >= self.creation_date + TimeDelta::seconds(Self::RESEND_COOLDOWN_SECONDS)
+    }
+
+    /// Stores the code, replacing any previous one for the same Send and email.
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
+        conn.run(move |conn| {
+            conn.transaction(|conn| {
+                diesel::delete(
+                    send_access_otps::table
+                        .filter(send_access_otps::send_uuid.eq(&self.send_uuid))
+                        .filter(send_access_otps::email.eq(&self.email)),
+                )
+                .execute(conn)?;
+                diesel::insert_into(send_access_otps::table).values(self).execute(conn)
+            })
+            .map_res("Error saving send access otp")
+        })
+        .await
+    }
+
+    pub async fn increment_attempts(&self, conn: &DbConn) -> EmptyResult {
+        conn.run(move |conn| {
+            diesel::update(
+                send_access_otps::table
+                    .filter(send_access_otps::send_uuid.eq(&self.send_uuid))
+                    .filter(send_access_otps::email.eq(&self.email)),
+            )
+            .set(send_access_otps::attempts.eq(send_access_otps::attempts + 1))
+            .execute(conn)
+            .map_res("Error updating send access otp")
+        })
+        .await
+    }
+
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
+        conn.run(move |conn| {
+            diesel::delete(
+                send_access_otps::table
+                    .filter(send_access_otps::send_uuid.eq(&self.send_uuid))
+                    .filter(send_access_otps::email.eq(&self.email)),
+            )
+            .execute(conn)
+            .map_res("Error deleting send access otp")
+        })
+        .await
+    }
+
+    pub async fn delete_all_by_send(send_uuid: &SendId, conn: &DbConn) -> EmptyResult {
+        conn.run(move |conn| {
+            diesel::delete(send_access_otps::table.filter(send_access_otps::send_uuid.eq(send_uuid)))
+                .execute(conn)
+                .map_res("Error deleting send access otps")
+        })
+        .await
+    }
+
+    pub async fn delete_expired(conn: &DbConn) -> EmptyResult {
+        let now = Utc::now().naive_utc();
+        conn.run(move |conn| {
+            diesel::delete(send_access_otps::table.filter(send_access_otps::expiration_date.le(now)))
+                .execute(conn)
+                .map_res("Error deleting expired send access otps")
+        })
+        .await
+    }
+
+    pub async fn find(send_uuid: &SendId, email: &str, conn: &DbConn) -> Option<Self> {
+        conn.run(move |conn| {
+            send_access_otps::table
+                .filter(send_access_otps::send_uuid.eq(send_uuid))
+                .filter(send_access_otps::email.eq(email))
+                .first::<Self>(conn)
+                .ok()
         })
         .await
     }

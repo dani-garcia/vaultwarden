@@ -671,6 +671,19 @@ pub async fn send_admin_account_recovery(
     send_email(address, &subject, body_html, body_text).await
 }
 
+pub async fn send_send_access_otp(address: &str, token: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/send_access_otp",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "token": token,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_protected_action_token(address: &str, token: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/protected_action",

@@ -1,16 +1,20 @@
 use chrono::{TimeDelta, Utc};
+use num_traits::FromPrimitive;
 
 use rocket::request::{FromRequest, Outcome, Request};
 
 use crate::{
+    CONFIG,
     api::ApiResult,
     auth,
     auth::{BasicJwtClaims, ClientIp},
+    crypto,
     db::{
         DbConn,
-        models::{Send, SendId},
+        models::{Send, SendAccessOtp, SendAuthType, SendId},
     },
     error::{Error, ErrorKind},
+    mail,
 };
 
 fn generate_send_access_claims(send_id: &SendId) -> BasicJwtClaims {
@@ -45,7 +49,7 @@ impl SendTokens {
         })
     }
 
-    fn expected_error(msg: &str, error_type: &str) -> ApiResult<SendTokens> {
+    fn expected_error<T>(msg: &str, error_type: &str) -> ApiResult<T> {
         let err = json!({
             "kind": "expected_server",
             "error": "invalid_request",
@@ -55,7 +59,7 @@ impl SendTokens {
         Err(Error::new_msg(msg).with_kind(ErrorKind::Json(err)).silent())
     }
 
-    fn invalid_error(msg: &str, error_type: &str, silent: bool) -> ApiResult<SendTokens> {
+    fn invalid_error<T>(msg: &str, error_type: &str, silent: bool) -> ApiResult<T> {
         let err = json!({
             "kind": "expected_server",
             "error": "invalid_grant",
@@ -68,6 +72,8 @@ impl SendTokens {
     pub async fn generate_tokens(
         access_id: &str,
         password: Option<String>,
+        email: Option<String>,
+        otp: Option<String>,
         ip: &ClientIp,
         conn: &DbConn,
     ) -> ApiResult<SendTokens> {
@@ -85,12 +91,14 @@ impl SendTokens {
             return Self::invalid_error(&format!("Send {send_id}, max access reached"), "send_id_invalid", true);
         }
 
-        if !send.is_accessible() {
+        if !send.is_accessible() || !crate::api::core::send_visible(&send) {
             return Self::invalid_error(&format!("Send {send_id}, not accessible"), "send_id_invalid", true);
         }
 
-        if send.password_hash.is_some() {
-            match password {
+        // Rely on the stored auth type and fail closed if the Send doesn't hold what it requires
+        match SendAuthType::from_i32(send.auth_type) {
+            Some(SendAuthType::Email) => Self::verify_email_otp(&send, email, otp, conn).await?,
+            Some(SendAuthType::Password) => match password {
                 Some(ref p) if send.check_password(p) => { /* Nothing to do here */ }
                 Some(_) => {
                     return Self::invalid_error(
@@ -100,12 +108,81 @@ impl SendTokens {
                     );
                 }
                 None => return Self::expected_error("Password required", "password_hash_b64_required"),
+            },
+            Some(SendAuthType::None) if send.password_hash.is_none() && send.emails.is_none() => {}
+            _ => {
+                return Self::invalid_error(
+                    &format!("Send {send_id}, inconsistent access settings"),
+                    "send_id_invalid",
+                    false,
+                );
             }
         }
 
         Ok(Self {
             access_claims: generate_send_access_claims(&send_id),
         })
+    }
+}
+
+impl SendTokens {
+    /// Email verification: the first request (without `otp`) emails a code to the recipient, the
+    /// second one exchanges it for an access token.
+    ///
+    /// Unlisted emails get the same response as listed ones and no email is sent, so the list of
+    /// recipients can't be enumerated.
+    ///
+    /// Upstream: https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/RequestValidators/SendAccess/SendEmailOtpRequestValidator.cs
+    async fn verify_email_otp(send: &Send, email: Option<String>, otp: Option<String>, conn: &DbConn) -> ApiResult<()> {
+        let Some(allowed_emails) = send.emails.as_deref() else {
+            return Self::invalid_error(&format!("Send {}, no emails to verify", send.uuid), "send_id_invalid", false);
+        };
+        if !CONFIG.mail_enabled() {
+            return Self::invalid_error(
+                &format!("Send {}, email verification without mail enabled", send.uuid),
+                "send_id_invalid",
+                false,
+            );
+        }
+
+        let Some(email) = email.map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()) else {
+            return Self::expected_error("Email required", "email_required");
+        };
+        if !allowed_emails.split(',').any(|e| e == email) {
+            return Self::expected_error("Email and OTP required", "email_and_otp_required");
+        }
+
+        let stored = SendAccessOtp::find(&send.uuid, &email, conn).await;
+        let Some(code) = otp.map(|o| o.trim().to_owned()).filter(|o| !o.is_empty()) else {
+            if stored.as_ref().is_none_or(SendAccessOtp::can_resend) {
+                let code = crypto::generate_email_token(CONFIG.email_token_size());
+                SendAccessOtp::new(send.uuid.clone(), email.clone(), code.clone()).save(conn).await?;
+                // Mail in the background, so neither the response time nor a mail failure tells listed
+                // and unlisted emails apart. On failure the recipient can request a new code after the cooldown.
+                tokio::spawn(async move {
+                    if let Err(e) = mail::send_send_access_otp(&email, &code).await {
+                        error!("Failed to send Send verification code: {e:#?}");
+                    }
+                });
+            }
+            return Self::expected_error("Email and OTP required", "email_and_otp_required");
+        };
+
+        let Some(stored) = stored else {
+            return Self::expected_error("Email and OTP required", "email_and_otp_required");
+        };
+        if stored.is_expired() || stored.attempts_exhausted() {
+            stored.delete(conn).await?;
+            return Self::expected_error("Email and OTP required", "email_and_otp_required");
+        }
+        if !crypto::ct_eq(&code, &stored.code) {
+            stored.increment_attempts(conn).await?;
+            return Self::expected_error("Email and OTP required", "email_and_otp_required");
+        }
+
+        // Codes are single use
+        stored.delete(conn).await?;
+        Ok(())
     }
 }
 
