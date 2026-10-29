@@ -2,6 +2,8 @@ use std::{sync::LazyLock, time::Duration};
 
 use chrono::Utc;
 use derive_more::{AsRef, Deref, Display, From, Into};
+use openidconnect::core::{CoreGenderClaim, CoreUserInfoClaims};
+use openidconnect::StandardClaims;
 use url::Url;
 
 use crate::{
@@ -281,7 +283,12 @@ pub async fn exchange_code(
     let client = Client::cached().await?;
     let (token_response, id_claims) = client.exchange_code(code, client_verifier, &sso_auth).await?;
 
-    let user_info = client.user_info(token_response.access_token().to_owned()).await?;
+    let user_info: CoreUserInfoClaims;
+    if CONFIG.sso_skip_userinfo() {
+        user_info = client.user_info(token_response.access_token().to_owned()).await?;
+    } else {
+        user_info = CoreUserInfoClaims::new(StandardClaims::new(id_claims.subject().clone()), Default::default());
+    }
 
     let email = match id_claims.email().or(user_info.email()) {
         None => err!("Neither id token nor userinfo contained an email"),
