@@ -139,21 +139,25 @@ pub async fn unregister_push_device(push_id: Option<&PushId>) -> EmptyResult {
     if !CONFIG.push_enabled() || push_id.is_none() {
         return Ok(());
     }
-    let auth_api_token = get_auth_api_token().await?;
+    let data = json!({
+        "id": push_id.as_ref().unwrap(),
+    });
 
+    let auth_api_token = get_auth_api_token().await?;
     let auth_header = format!("Bearer {auth_api_token}");
 
-    match make_http_request(
-        Method::POST,
-        &format!("{}/push/delete/{}", CONFIG.push_relay_uri(), push_id.as_ref().unwrap()),
-    )?
-    .header(AUTHORIZATION, auth_header)
-    .send()
-    .await
+    if let Err(e) = make_http_request(Method::POST, &(CONFIG.push_relay_uri() + "/push/delete"))?
+        .header(CONTENT_TYPE, "application/json")
+        .header(ACCEPT, "application/json")
+        .header(AUTHORIZATION, auth_header)
+        .json(&data)
+        .send()
+        .await?
+        .error_for_status()
     {
-        Ok(r) => r,
-        Err(e) => err!(format!("An error occurred during device unregistration: {e}")),
-    };
+        err!(format!("An error occurred during device unregistration: {e}"));
+    }
+
     Ok(())
 }
 
