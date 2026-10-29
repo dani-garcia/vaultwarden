@@ -16,7 +16,7 @@ use crate::{
     config::PathType,
     db::{
         DbConn, DbPool,
-        models::{Device, OrgPolicy, OrgPolicyType, Send, SendFileId, SendId, SendType, UserId},
+        models::{Device, OrgPolicy, OrgPolicyType, Send, SendAuthType, SendFileId, SendId, SendType, UserId},
     },
     util::{NumberOrString, save_temp_file},
 };
@@ -69,7 +69,8 @@ pub async fn purge_sends(pool: DbPool) {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendData {
-    r#type: i32,
+    r#type: SendType,
+    auth_type: SendAuthType,
     pub key: String,
     password: Option<String>,
     max_access_count: Option<NumberOrString>,
@@ -127,12 +128,9 @@ async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, c
 }
 
 fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
-    let data_val = if data.r#type == SendType::Text as i32 {
-        data.text
-    } else if data.r#type == SendType::File as i32 {
-        data.file
-    } else {
-        err!("Invalid Send type")
+    let data_val = match data.r#type {
+        SendType::Text => data.text,
+        SendType::File => data.file,
     };
 
     let data_str = if let Some(mut d) = data_val {
@@ -148,21 +146,30 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
         );
     }
 
-    if data.emails.is_some() {
-        err!("Sends with email verification is not supported");
+    if !CONFIG.mail_enabled() && data.emails.is_some() {
+        err!("Email are disabled, cannot send verification code");
     }
 
-    let mut send = Send::new(data.r#type, data.name, data_str, data.key, data.deletion_date.naive_utc());
-    send.user_uuid = Some(user_id);
-    send.notes = data.notes;
-    send.max_access_count = match data.max_access_count {
+    let max_access_count = match data.max_access_count {
         Some(m) => Some(m.into_i32()?),
         _ => None,
     };
-    send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
-    send.disabled = data.disabled;
-    send.hide_email = data.hide_email;
-    send.atype = data.r#type;
+
+    let mut send = Send::new(
+        data.r#type,
+        data.auth_type,
+        user_id,
+        data.name,
+        data.notes,
+        data_str,
+        data.key,
+        max_access_count,
+        data.emails,
+        data.expiration_date.map(|d| d.naive_utc()),
+        data.deletion_date.naive_utc(),
+        data.disabled,
+        data.hide_email.unwrap_or(false),
+    );
 
     send.set_password(data.password.as_deref());
 
@@ -197,7 +204,7 @@ async fn post_send(data: Json<SendData>, headers: Headers, conn: DbConn, nt: Not
     let data: SendData = data.into_inner();
     enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
-    if data.r#type == SendType::File as i32 {
+    if data.r#type == SendType::File {
         err!("File sends should use /api/sends/file/v2")
     }
 
@@ -227,7 +234,7 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn)
 
     let data = data.into_inner();
 
-    if data.r#type != SendType::File as i32 {
+    if data.r#type != SendType::File {
         err!("Send content is not a file");
     }
 
@@ -469,13 +476,13 @@ async fn put_send(send_id: SendId, data: Json<SendData>, headers: Headers, conn:
     let data: SendData = data.into_inner();
     enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
+    if !CONFIG.mail_enabled() && data.emails.is_some() {
+        err!("Email are disabled, cannot send verification code");
+    }
+
     let Some(mut send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await else {
         err!("Send not found", "Send send_id is invalid or does not belong to user")
     };
-
-    if data.emails.is_some() {
-        err!("Sends with email verification is not supported");
-    }
 
     update_send_from_data(&mut send, data, &headers, &conn, &nt, UpdateType::SyncSendUpdate).await?;
 
@@ -490,11 +497,11 @@ async fn update_send_from_data(
     nt: &Notify<'_>,
     ut: UpdateType,
 ) -> EmptyResult {
-    if send.user_uuid.as_ref() != Some(&headers.user.uuid) {
+    if send.user_uuid != headers.user.uuid {
         err!("Send is not owned by user")
     }
 
-    if send.atype != data.r#type {
+    if send.atype != data.r#type as i32 {
         err!("Sends can't change type")
     }
 
@@ -506,7 +513,7 @@ async fn update_send_from_data(
 
     // When updating a file Send, we receive nulls in the File field, as it's immutable,
     // so we only need to update the data field in the Text case
-    if data.r#type == SendType::Text as i32 {
+    if data.r#type == SendType::Text {
         let data_str = if let Some(mut d) = data.text {
             d.as_object_mut().and_then(|d| d.remove("response"));
             serde_json::to_string(&d)?
@@ -525,12 +532,26 @@ async fn update_send_from_data(
         _ => None,
     };
     send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
-    send.hide_email = data.hide_email;
+    send.hide_email = data.hide_email.unwrap_or(false);
     send.disabled = data.disabled;
 
-    // Only change the value if it's present
-    if let Some(password) = data.password {
-        send.set_password(Some(&password));
+    send.auth_type = data.auth_type as i32;
+    match data.auth_type {
+        SendAuthType::Email => {
+            send.emails = data.emails.map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty());
+            send.set_password(None);
+        }
+        SendAuthType::Password => {
+            send.emails = None;
+            // Only change the value if it's present
+            if let Some(password) = data.password {
+                send.set_password(Some(&password));
+            }
+        }
+        SendAuthType::None => {
+            send.emails = None;
+            send.set_password(None);
+        }
     }
 
     send.save(conn).await?;
