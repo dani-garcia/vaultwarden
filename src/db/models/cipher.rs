@@ -296,16 +296,20 @@ impl Cipher {
         }
 
         // Fix invalid SSH Entries
-        // This breaks at least the native mobile client if invalid
-        // The only way to fix this is by setting type_data_json to `null`
-        // Opening this ssh-key in the mobile client will probably crash the client, but you can edit, save and afterwards delete it
+        // Bitwarden SDK-backed clients (2026.5+) expect all SSH key fields to be strings when type == 5.
+        // Returning `null` makes deserialization fail and breaks the whole sync, so the item can't be edited or deleted.
+        // Use the encrypted cipher name as a placeholder instead, it is encrypted with the same key, so the client can decrypt it.
         if self.atype == 5
             && (type_data_json["keyFingerprint"].as_str().is_none_or(str::is_empty)
                 || type_data_json["privateKey"].as_str().is_none_or(str::is_empty)
                 || type_data_json["publicKey"].as_str().is_none_or(str::is_empty))
         {
             warn!("Error parsing ssh-key, mandatory fields are invalid for {}", self.uuid);
-            type_data_json = Value::Null;
+            type_data_json = json!({
+                "keyFingerprint": self.name,
+                "privateKey": self.name,
+                "publicKey": self.name,
+            });
         }
 
         let collection_ids = if let Some(cipher_sync_data) = cipher_sync_data {
