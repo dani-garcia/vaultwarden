@@ -25,12 +25,12 @@ pub use crate::api::{
     notifications::routes as notifications_routes,
     notifications::{AnonymousNotify, Notify, UpdateType, WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS},
     push::{
-        push_cipher_update, push_folder_update, push_logout, push_send_update, push_user_update, register_push_device,
-        unregister_push_device,
+        push_cipher_update, push_folder_update, push_logout, push_logout_to_relay, push_send_update, push_user_update,
+        register_push_device, unregister_push_device,
     },
     web::catchers as web_catchers,
     web::routes as web_routes,
-    web::{invalidate_css_cache, static_files},
+    web::{STATIC_FILES, invalidate_css_cache},
 };
 use crate::{
     CONFIG,

@@ -237,6 +237,7 @@ fn config() -> Json<Value> {
           "notifications": format!("{domain}/notifications"),
           "sso": "",
           "cloudRegion": null,
+          "fillAssistRules": CONFIG.fill_assist_rules_url(),
         },
         // Bitwarden uses this for the self-hosted servers to indicate the default push technology
         "push": {

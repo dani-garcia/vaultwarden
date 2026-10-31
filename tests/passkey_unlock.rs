@@ -443,6 +443,36 @@ async fn passkey_registration_verifies_origin_uv_replay_and_complete_wrapped_key
 }
 
 #[tokio::test]
+async fn account_deletion_removes_enrolled_passkeys_and_pending_challenges() {
+    let f = Fixture::with_policy(false).await;
+    let options = f.options().await;
+    assert_eq!(f.post("/api/webauthn", registration(&options, ORIGIN, true)).await.status(), StatusCode::OK);
+    let credentials = format!("web_authn_credentials WHERE user_uuid='{}'", f.user);
+    assert_eq!(f.count(&credentials), 1);
+
+    // Leave both user-bound challenge types pending when the account is deleted.
+    f.options().await;
+    assert_eq!(
+        f.post("/api/webauthn/assertion-options", json!({"masterPasswordHash":PASSWORD})).await.status(),
+        StatusCode::OK
+    );
+    for atype in [1005, 1006] {
+        assert_eq!(f.count(&format!("twofactor WHERE user_uuid='{}' AND atype={atype}", f.user)), 1);
+    }
+    let devices = format!("devices WHERE user_uuid='{}' AND uuid='{}'", f.user, f.device);
+    assert_eq!(f.count(&devices), 1);
+    f.get("/api/sync").await;
+
+    assert_eq!(f.post("/api/accounts/delete", json!({"masterPasswordHash":PASSWORD})).await.status(), StatusCode::OK);
+    assert_eq!(f.count(&format!("users WHERE uuid='{}'", f.user)), 0);
+    assert_eq!(f.count(&devices), 0);
+    assert_eq!(f.count(&credentials), 0);
+    assert_eq!(f.count(&format!("twofactor WHERE user_uuid='{}'", f.user)), 0);
+    let response = f.client.get(format!("{}/api/sync", f.url)).bearer_auth(&f.token).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn passkey_multiple_options_removal_and_password_wrapping_are_consistent() {
     let f = Fixture::new().await;
     for _ in 0..2 {
