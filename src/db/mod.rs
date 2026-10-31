@@ -320,6 +320,28 @@ impl DbConnType {
 }
 
 impl DbConn {
+    /// Keep one request's asynchronous DB work in a Diesel-tracked transaction.
+    /// Cancellation leaves an open transaction: Diesel/r2d2 then discards the
+    /// pooled connection on DbConn drop rather than lending it to another request.
+    pub async fn transaction<T>(&self, operation: impl Future<Output = Result<T, Error>>) -> Result<T, Error> {
+        use diesel::connection::TransactionManager;
+        type Manager = <DbConnInner as Connection>::TransactionManager;
+        self.run(|conn| Manager::begin_transaction(conn).map_err(|_| Error::new_msg("Cannot start key rotation")))
+            .await?;
+        let result = operation.await;
+        let commit = result.is_ok();
+        self.run(move |conn| {
+            let finish = if commit {
+                Manager::commit_transaction(conn)
+            } else {
+                Manager::rollback_transaction(conn)
+            };
+            finish.map_err(|_| Error::new_msg("Cannot finish key rotation"))
+        })
+        .await?;
+        result
+    }
+
     pub async fn run<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut DbConnInner) -> R + Send,
