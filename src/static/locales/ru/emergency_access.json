@@ -1,0 +1,23 @@
+{
+  "emergency_access.not_valid": "Экстренный доступ недействителен.",
+  "emergency_access.invalid_type": "Некорректный тип экстренного доступа.",
+  "emergency_access.wait_time_out_of_bounds": "Время ожидания экстренного доступа вне допустимых границ!",
+  "emergency_access.cannot_set_self": "Нельзя указать себя как контакт экстренного доступа.",
+  "emergency_access.email_domain_not_eligible": "Домен email не подходит для приглашений",
+  "emergency_access.grantee_already_accepted_or_confirmed": "Пользователь-получатель уже принял или подтвердил экстренный доступ",
+  "emergency_access.email_not_valid": "Email некорректен.",
+  "emergency_access.grantee_not_found": "Пользователь-получатель не найден.",
+  "emergency_access.claim_email_mismatch": "Email в claim не совпадает с текущим email пользователя",
+  "emergency_access.invited_user_not_found": "Приглашенный пользователь не найден",
+  "emergency_access.grantor_not_found": "Пользователь-грантор не найден.",
+  "emergency_access.invitation_error": "Ошибка приглашения экстренного доступа.",
+  "emergency_access.kdf_mismatch_grantor": "Параметры KDF не совпадают с учетной записью грантора",
+  "emergency_access.invalid_request": "Некорректный запрос!",
+  "emergency_access.not_enabled": "Экстренный доступ не включен.",
+  "emergency_access.status_changed_already": "Статус экстренного доступа уже был изменен",
+  "emergency_access.error_updating_status": "Ошибка обновления статуса экстренного доступа",
+  "emergency_access.user_email_mismatch_invite": "Email пользователя не совпадает с приглашением.",
+  "emergency_access.contact_already_accepted": "Контакт экстренного доступа уже принял приглашение.",
+  "emergency_access.grantee_user_not_exists": "Пользователь-получатель не существует",
+  "emergency_access.grantee_user_already_invited": "Пользователь-получатель уже приглашен"
+}

@@ -390,7 +390,7 @@ impl User {
         Invitation::take(&self.email, conn).await; // Delete invitation if any
 
         conn.run(move |conn| {
-            diesel::delete(users::table.filter(users::uuid.eq(self.uuid)))
+            diesel::delete(users::table.filter(users::uuid.eq(&self.uuid)))
                 .execute(conn)
                 .map_res(crate::i18n::db_error_deleting_user(&CONFIG.default_locale()))
         })

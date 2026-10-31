@@ -155,7 +155,7 @@ pub async fn unregister_push_device(push_id: Option<&PushId>) -> EmptyResult {
         .await?
         .error_for_status()
     {
-        Err(e) => err!(crate::i18n::push_error_device_unregistration(&CONFIG.default_locale()), e.to_string()),
+        err!(crate::i18n::push_error_device_unregistration(&CONFIG.default_locale()), e.to_string());
     }
     Ok(())
 }

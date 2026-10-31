@@ -1,0 +1,9 @@
+{
+  "identity.sso_required": "Потрібен вхід через SSO",
+  "identity.sso_unavailable": "Вхід через SSO недоступний",
+  "identity.invalid_type": "Некоректний тип",
+  "identity.unsupported_code_challenge_method": "Непідтримуваний метод code challenge",
+  "identity.cannot_retrieve_sso_auth": "Не вдалося отримати sso_auth",
+  "identity.sso_session_binding_mismatch": "Невідповідність прив'язки SSO-сесії",
+  "identity.failed_parse_redirect_uri": "Не вдалося розібрати redirect uri"
+}

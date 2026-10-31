@@ -1,0 +1,23 @@
+{
+  "emergency_access.not_valid": "Emergency access not valid.",
+  "emergency_access.invalid_type": "Invalid emergency access type.",
+  "emergency_access.wait_time_out_of_bounds": "Emergency access wait time is out-of-bounds!",
+  "emergency_access.cannot_set_self": "You can not set yourself as an emergency contact.",
+  "emergency_access.email_domain_not_eligible": "Email domain not eligible for invitations",
+  "emergency_access.grantee_already_accepted_or_confirmed": "The grantee user is already accepted or confirmed for emergency access",
+  "emergency_access.email_not_valid": "Email not valid.",
+  "emergency_access.grantee_not_found": "Grantee user not found.",
+  "emergency_access.claim_email_mismatch": "Claim email does not match current users email",
+  "emergency_access.invited_user_not_found": "Invited user not found",
+  "emergency_access.grantor_not_found": "Grantor user not found.",
+  "emergency_access.invitation_error": "Emergency access invitation error.",
+  "emergency_access.kdf_mismatch_grantor": "KDF settings do not match the grantor account",
+  "emergency_access.invalid_request": "Invalid request!",
+  "emergency_access.not_enabled": "Emergency access is not enabled.",
+  "emergency_access.status_changed_already": "Emergency access status was changed already",
+  "emergency_access.error_updating_status": "Error updating emergency access status",
+  "emergency_access.user_email_mismatch_invite": "User email does not match invite.",
+  "emergency_access.contact_already_accepted": "Emergency contact already accepted.",
+  "emergency_access.grantee_user_not_exists": "Grantee user does not exist",
+  "emergency_access.grantee_user_already_invited": "Grantee user already invited"
+}

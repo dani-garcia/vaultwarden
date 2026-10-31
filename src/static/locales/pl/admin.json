@@ -1,0 +1,10 @@
+{
+  "admin.login_too_many_requests": "Zbyt wiele żądań. Spróbuj ponownie później.",
+  "admin.login_invalid_token": "Nieprawidłowy token administratora. Spróbuj ponownie.",
+  "admin.mail_not_enabled": "Poczta nie jest włączona",
+  "admin.cannot_change_last_owner_type": "Nie można zmienić typu ostatniego właściciela",
+  "admin.backup_only_sqlite": "Nie można wykonać kopii zapasowej bieżącej bazy danych (tylko SQLite obsługuje tę funkcję)",
+  "admin.unable_save_config": "Nie można zapisać konfiguracji",
+  "admin.unable_delete_config": "Nie można usunąć konfiguracji",
+  "admin.backup_unsuccessful": "Tworzenie kopii zapasowej nie powiodło się"
+}

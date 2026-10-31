@@ -1,0 +1,9 @@
+{
+  "identity.sso_required": "SSO sign-in is required",
+  "identity.sso_unavailable": "SSO sign-in is not available",
+  "identity.invalid_type": "Invalid type",
+  "identity.unsupported_code_challenge_method": "Unsupported code challenge method",
+  "identity.cannot_retrieve_sso_auth": "Cannot retrieve sso_auth",
+  "identity.sso_session_binding_mismatch": "SSO session binding mismatch",
+  "identity.failed_parse_redirect_uri": "Failed to parse redirect uri"
+}
