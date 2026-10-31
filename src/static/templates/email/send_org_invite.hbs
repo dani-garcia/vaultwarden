@@ -1,10 +1,10 @@
-Join {{{org_name}}}
+{{t "tpl.email.send_org_invite.subject_prefix" locale=lang}} {{{org_name}}}
 <!---------------->
-You have been invited to join the *{{org_name}}* organization.
+{{t "tpl.email.send_org_invite.body_intro_prefix" locale=lang}} *{{org_name}}* {{t "tpl.email.send_org_invite.body_intro_suffix" locale=lang}}
 
 
-Click here to join: {{{url}}}
+{{t "tpl.email.send_org_invite.body_cta" locale=lang}}: {{{url}}}
 
 
-If you do not wish to join this organization, you can safely ignore this email.
+{{t "tpl.email.send_org_invite.body_ignore" locale=lang}}
 {{> email/email_footer_text }}

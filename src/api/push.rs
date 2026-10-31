@@ -65,12 +65,12 @@ async fn get_auth_api_token() -> ApiResult<String> {
         .await
     {
         Ok(r) => r,
-        Err(e) => err!(format!("Error getting push token from bitwarden server: {e}")),
+        Err(e) => err!(crate::i18n::push_error_get_token_from_server(&CONFIG.default_locale()), e.to_string()),
     };
 
     let json_pushtoken = match res.json::<AuthPushToken>().await {
         Ok(r) => r,
-        Err(e) => err!(format!("Unexpected push token received from bitwarden server: {e}")),
+        Err(e) => err!(crate::i18n::push_unexpected_token_from_server(&CONFIG.default_locale()), e.to_string()),
     };
 
     let mut api_token = API_TOKEN.write().await;
@@ -125,11 +125,11 @@ pub async fn register_push_device(device: &mut Device, conn: &DbConn) -> EmptyRe
         .await?
         .error_for_status()
     {
-        err!(format!("An error occurred while proceeding registration of a device: {e}"));
+        err!(crate::i18n::push_error_register_device(&CONFIG.default_locale()), e.to_string());
     }
 
     if let Err(e) = device.save(true, conn).await {
-        err!(format!("An error occurred while trying to save the (registered) device push uuid: {e}"));
+        err!(crate::i18n::push_error_save_registered_push_uuid(&CONFIG.default_locale()), e.to_string());
     }
 
     Ok(())
@@ -155,9 +155,8 @@ pub async fn unregister_push_device(push_id: Option<&PushId>) -> EmptyResult {
         .await?
         .error_for_status()
     {
-        err!(format!("An error occurred during device unregistration: {e}"));
+        err!(crate::i18n::push_error_device_unregistration(&CONFIG.default_locale()), e.to_string());
     }
-
     Ok(())
 }
 

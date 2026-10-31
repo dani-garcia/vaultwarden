@@ -108,7 +108,7 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
             let (org_name, org_email) = if let Some(org) = Organization::find_by_uuid(&org_id, &conn).await {
                 (org.name, org.billing_email)
             } else {
-                err!("Error looking up organization")
+                err!(crate::i18n::org_error_lookup_organization_short(&CONFIG.default_locale()))
             };
 
             let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), Some(org_email.clone()));
@@ -130,7 +130,7 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
                     new_member.delete(&conn).await?;
                 }
 
-                err!(format!("Error sending invite: {e:?} "));
+                err!(crate::i18n::org_error_sending_invite(&CONFIG.default_locale()), format!("{e:?}"));
             }
         }
     }

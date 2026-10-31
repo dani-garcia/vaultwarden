@@ -10,6 +10,7 @@ use diesel::{
 };
 
 use crate::{
+    CONFIG,
     api::EmptyResult,
     db::{DbConn, DbPool, schema::sso_auth},
     error::MapResult,
@@ -93,7 +94,7 @@ impl SsoAuth {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving SSO auth")
+                    .map_res(crate::i18n::db_error_saving_sso_auth(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(sso_auth::table)
@@ -102,7 +103,7 @@ impl SsoAuth {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving SSO auth")
+                    .map_res(crate::i18n::db_error_saving_sso_auth(&CONFIG.default_locale()))
             }
         }
     }
@@ -134,7 +135,7 @@ impl SsoAuth {
         conn.run(move |conn| {
             diesel::delete(sso_auth::table.filter(sso_auth::state.eq(self.state)))
                 .execute(conn)
-                .map_res("Error deleting sso_auth")
+                .map_res(crate::i18n::db_error_deleting_sso_auth(&CONFIG.default_locale()))
         })
         .await
     }
@@ -146,11 +147,11 @@ impl SsoAuth {
             conn.run(move |conn| {
                 diesel::delete(sso_auth::table.filter(sso_auth::created_at.lt(oldest)))
                     .execute(conn)
-                    .map_res("Error deleting expired SSO nonce")
+                    .map_res(crate::i18n::db_error_deleting_expired_sso_nonce(&CONFIG.default_locale()))
             })
             .await
         } else {
-            err!("Failed to get DB connection while purging expired sso_auth")
+            err!(crate::i18n::api_failed_get_db_connection_purging_expired_sso_auth(&CONFIG.default_locale()))
         }
     }
 }

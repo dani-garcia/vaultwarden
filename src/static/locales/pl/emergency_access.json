@@ -1,0 +1,23 @@
+{
+  "emergency_access.not_valid": "Dostęp awaryjny jest nieprawidłowy.",
+  "emergency_access.invalid_type": "Nieprawidłowy typ dostępu awaryjnego.",
+  "emergency_access.wait_time_out_of_bounds": "Czas oczekiwania dostępu awaryjnego jest poza dopuszczalnym zakresem!",
+  "emergency_access.cannot_set_self": "Nie możesz ustawić siebie jako kontaktu awaryjnego.",
+  "emergency_access.email_domain_not_eligible": "Domena adresu e-mail nie kwalifikuje się do zaproszeń",
+  "emergency_access.grantee_already_accepted_or_confirmed": "Użytkownik grantee został już zaakceptowany lub potwierdzony do dostępu awaryjnego",
+  "emergency_access.email_not_valid": "Adres e-mail jest nieprawidłowy.",
+  "emergency_access.grantee_not_found": "Nie znaleziono użytkownika grantee.",
+  "emergency_access.claim_email_mismatch": "Adres e-mail w claim nie jest zgodny z bieżącym adresem użytkownika",
+  "emergency_access.invited_user_not_found": "Nie znaleziono zaproszonego użytkownika",
+  "emergency_access.grantor_not_found": "Nie znaleziono użytkownika grantor.",
+  "emergency_access.invitation_error": "Błąd zaproszenia do dostępu awaryjnego.",
+  "emergency_access.kdf_mismatch_grantor": "Ustawienia KDF nie są zgodne z kontem grantor",
+  "emergency_access.invalid_request": "Nieprawidłowe żądanie!",
+  "emergency_access.not_enabled": "Dostęp awaryjny nie jest włączony.",
+  "emergency_access.status_changed_already": "Status dostępu awaryjnego został już zmieniony",
+  "emergency_access.error_updating_status": "Błąd podczas aktualizowania statusu dostępu awaryjnego",
+  "emergency_access.user_email_mismatch_invite": "Adres e-mail użytkownika nie jest zgodny z zaproszeniem.",
+  "emergency_access.contact_already_accepted": "Kontakt awaryjny został już zaakceptowany.",
+  "emergency_access.grantee_user_not_exists": "Użytkownik grantee nie istnieje",
+  "emergency_access.grantee_user_already_invited": "Użytkownik grantee został już zaproszony"
+}

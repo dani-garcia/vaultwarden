@@ -1,4 +1,4 @@
-Your access to {{{org_name}}} has been revoked
+{{t "tpl.email.send_single_org_removed.subject_prefix" locale=lang}} {{{org_name}}} {{t "tpl.email.send_single_org_removed.subject_suffix" locale=lang}}
 <!---------------->
-Your access to the *{{org_name}}* organization has been revoked because you are a part of another organization. The {{org_name}} organization has enabled a policy that prevents users from being a part of multiple organizations. Before your access can be restored you need to leave all other organizations or join with a different account.
+{{t "tpl.email.send_single_org_removed.body_intro_prefix" locale=lang}} *{{org_name}}* {{t "tpl.email.send_single_org_removed.body_intro_mid" locale=lang}} {{org_name}} {{t "tpl.email.send_single_org_removed.body_intro_suffix" locale=lang}}
 {{> email/email_footer_text }}

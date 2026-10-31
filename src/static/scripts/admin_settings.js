@@ -1,11 +1,13 @@
 "use strict";
 /* global _post:readable, BASE_URL:readable */
 
+const tSettings = key => (window.VW_ADMIN_I18N && window.VW_ADMIN_I18N[key]) || key;
+
 function smtpTest(event) {
     event.preventDefault();
     event.stopPropagation();
     if (formHasChanges(config_form)) {
-        alert("Config has been changed but not yet saved.\nPlease save the changes first before sending a test email.");
+        alert(tSettings("config_changed_unsaved"));
         return false;
     }
 
@@ -19,8 +21,8 @@ function smtpTest(event) {
 
     const data = JSON.stringify({ "email": test_email.value });
     _post(`${BASE_URL}/admin/test/smtp`,
-        "SMTP Test email sent correctly",
-        "Error sending SMTP test email",
+        tSettings("smtp_test_ok"),
+        tSettings("smtp_test_error"),
         data, false
     );
 }
@@ -45,8 +47,8 @@ function getFormData() {
 function saveConfig(event) {
     const data = JSON.stringify(getFormData());
     _post(`${BASE_URL}/admin/config`,
-        "Config saved correctly",
-        "Error saving config",
+        tSettings("config_save_ok"),
+        tSettings("config_save_error"),
         data
     );
     event.preventDefault();
@@ -56,16 +58,15 @@ function deleteConf(event) {
     event.preventDefault();
     event.stopPropagation();
     const input = prompt(
-        "This will remove all user configurations, and restore the defaults and the " +
-        "values set by the environment. This operation could be dangerous. Type 'DELETE' to proceed:"
+        tSettings("delete_config_prompt")
     );
     if (input === "DELETE") {
         _post(`${BASE_URL}/admin/config/delete`,
-            "Config deleted correctly",
-            "Error deleting config"
+            tSettings("config_delete_ok"),
+            tSettings("config_delete_error")
         );
     } else {
-        alert("Wrong input, please try again");
+        alert(tSettings("wrong_input_retry"));
     }
 }
 
@@ -73,8 +74,8 @@ function backupDatabase(event) {
     event.preventDefault();
     event.stopPropagation();
     _post(`${BASE_URL}/admin/config/backup_db`,
-        "Backup created successfully",
-        "Error creating backup", null, false
+        tSettings("backup_create_ok"),
+        tSettings("backup_create_error"), null, false
     );
 }
 
@@ -121,7 +122,8 @@ function submitTestEmailOnEnter() {
 function colorRiskSettings() {
     const risk_items = document.getElementsByClassName("col-form-label");
     Array.from(risk_items).forEach((el) => {
-        if (el.textContent.toLowerCase().includes("risks") ) {
+        const label = el.textContent.toLowerCase();
+        if (label.includes("risks") || label.includes("риск")) {
             el.parentElement.className += " alert-danger";
         }
     });

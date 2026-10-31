@@ -1,5 +1,5 @@
-Invitation to {{{org_name}}} confirmed
+{{t "tpl.email.invite_confirmed.subject_prefix" locale=lang}} {{{org_name}}} {{t "tpl.email.invite_confirmed.subject_suffix" locale=lang}}
 <!---------------->
-This email is to notify you that you have been confirmed as a user of {{org_name}}.
-Any collections and logins being shared with you by this organization will now appear in your Vaultwarden vault at {{url}}.
+{{t "tpl.email.invite_confirmed.body_intro_prefix" locale=lang}} {{org_name}}.
+{{t "tpl.email.invite_confirmed.body_collections_prefix" locale=lang}} {{url}}.
 {{> email/email_footer_text }}

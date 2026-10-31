@@ -5,6 +5,7 @@ use diesel::prelude::*;
 use serde_json::Value;
 
 use crate::{
+    CONFIG,
     api::EmptyResult,
     crypto,
     db::{DbConn, schema::devices},
@@ -155,7 +156,7 @@ impl Device {
                         .set(&*self)
                         .execute(conn),
                     10,
-                ).map_res("Error saving device")
+                ).map_res(crate::i18n::db_error_saving_device(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 crate::util::retry(||
@@ -166,7 +167,7 @@ impl Device {
                         .set(&*self)
                         .execute(conn),
                     10,
-                ).map_res("Error saving device")
+                ).map_res(crate::i18n::db_error_saving_device(&CONFIG.default_locale()))
             }
         }
     }
@@ -175,7 +176,7 @@ impl Device {
         conn.run(move |conn| {
             diesel::delete(devices::table.filter(devices::user_uuid.eq(user_uuid)))
                 .execute(conn)
-                .map_res("Error removing devices for user")
+                .map_res(crate::i18n::db_error_removing_devices_for_user(&CONFIG.default_locale()))
         })
         .await
     }
@@ -218,7 +219,7 @@ impl Device {
                 .filter(devices::uuid.eq(uuid))
                 .set(devices::push_token.eq::<Option<String>>(None))
                 .execute(conn)
-                .map_res("Error removing push token")
+                .map_res(crate::i18n::db_error_removing_push_token(&CONFIG.default_locale()))
         })
         .await
     }
@@ -281,7 +282,7 @@ impl Device {
                 .filter(devices::user_uuid.eq(user_uuid))
                 .set(devices::twofactor_remember.eq::<Option<String>>(None))
                 .execute(conn)
-                .map_res("Error removing two factor remember tokens")
+                .map_res(crate::i18n::db_error_removing_twofactor_remember_tokens(&CONFIG.default_locale()))
         })
         .await
     }

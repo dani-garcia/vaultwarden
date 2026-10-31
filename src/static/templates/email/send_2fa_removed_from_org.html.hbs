@@ -1,16 +1,16 @@
-Your access to {{{org_name}}} has been revoked.
+{{t "tpl.email.send_2fa_removed.subject_prefix" locale=lang}} {{{org_name}}} {{t "tpl.email.send_2fa_removed.subject_suffix" locale=lang}}
 <!---------------->
 {{> email/email_header }}
 <table width="100%" cellpadding="0" cellspacing="0" style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
    <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
       <td class="content-block" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0 0 10px; -webkit-text-size-adjust: none; text-align: center;" valign="top" align="center">
-         Your user account has been removed from the <b style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">{{org_name}}</b> organization because you do not have two-step login configured.<br>
-         Before you can re-join this organization you need to set up two-step login on your user account.
+         {{t "tpl.email.send_2fa_removed.body_intro_prefix" locale=lang}} <b style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">{{org_name}}</b> {{t "tpl.email.send_2fa_removed.body_intro_suffix" locale=lang}}<br>
+         {{t "tpl.email.send_2fa_removed.body_setup" locale=lang}}
       </td>
    </tr>
    <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
       <td class="content-block last" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0; -webkit-text-size-adjust: none; text-align: center;" valign="top" align="center">
-         You can enable two-step login in your account settings.
+         {{t "tpl.email.send_2fa_removed.body_enable" locale=lang}}
       </td>
    </tr>
 </table>

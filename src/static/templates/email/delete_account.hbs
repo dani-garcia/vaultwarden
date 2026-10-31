@@ -1,8 +1,8 @@
-Delete Your Account
+{{t "tpl.email.delete_account.subject" locale=lang}}
 <!---------------->
-Click the link below to delete your account.
+{{t "tpl.email.delete_account.body_intro" locale=lang}}
 
-Delete Your Account: {{url}}/#/verify-recover-delete?userId={{user_id}}&token={{token}}&email={{email}}
+{{t "tpl.email.delete_account.cta" locale=lang}}: {{url}}/#/verify-recover-delete?userId={{user_id}}&token={{token}}&email={{email}}
 
-If you did not request this email to delete your account, you can safely ignore this email.
+{{t "tpl.email.delete_account.body_ignore" locale=lang}}
 {{> email/email_footer_text }}

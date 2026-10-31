@@ -1,0 +1,23 @@
+{
+  "emergency_access.not_valid": "Notfallzugriff ist ungültig.",
+  "emergency_access.invalid_type": "Ungültiger Notfallzugriffstyp.",
+  "emergency_access.wait_time_out_of_bounds": "Wartezeit für Notfallzugriff liegt außerhalb der zulässigen Grenzen!",
+  "emergency_access.cannot_set_self": "Du kannst dich nicht selbst als Notfallkontakt festlegen.",
+  "emergency_access.email_domain_not_eligible": "E-Mail-Domain ist für Einladungen nicht zulässig",
+  "emergency_access.grantee_already_accepted_or_confirmed": "Der Grantee-Benutzer wurde für den Notfallzugriff bereits akzeptiert oder bestätigt",
+  "emergency_access.email_not_valid": "E-Mail ist ungültig.",
+  "emergency_access.grantee_not_found": "Grantee-Benutzer nicht gefunden.",
+  "emergency_access.claim_email_mismatch": "Claim-E-Mail stimmt nicht mit der aktuellen Benutzer-E-Mail überein",
+  "emergency_access.invited_user_not_found": "Eingeladener Benutzer nicht gefunden",
+  "emergency_access.grantor_not_found": "Grantor-Benutzer nicht gefunden.",
+  "emergency_access.invitation_error": "Fehler bei der Notfallzugriffseinladung.",
+  "emergency_access.kdf_mismatch_grantor": "KDF-Einstellungen stimmen nicht mit dem Grantor-Konto überein",
+  "emergency_access.invalid_request": "Ungültige Anfrage!",
+  "emergency_access.not_enabled": "Notfallzugriff ist nicht aktiviert.",
+  "emergency_access.status_changed_already": "Der Notfallzugriffsstatus wurde bereits geändert",
+  "emergency_access.error_updating_status": "Fehler beim Aktualisieren des Notfallzugriffsstatus",
+  "emergency_access.user_email_mismatch_invite": "Benutzer-E-Mail stimmt nicht mit der Einladung überein.",
+  "emergency_access.contact_already_accepted": "Notfallkontakt wurde bereits akzeptiert.",
+  "emergency_access.grantee_user_not_exists": "Grantee-Benutzer existiert nicht",
+  "emergency_access.grantee_user_already_invited": "Grantee-Benutzer wurde bereits eingeladen"
+}

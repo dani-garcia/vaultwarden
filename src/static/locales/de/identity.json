@@ -1,0 +1,9 @@
+{
+  "identity.sso_required": "SSO-Anmeldung ist erforderlich",
+  "identity.sso_unavailable": "SSO-Anmeldung ist nicht verfügbar",
+  "identity.invalid_type": "Ungültiger Typ",
+  "identity.unsupported_code_challenge_method": "Nicht unterstützte Code-Challenge-Methode",
+  "identity.cannot_retrieve_sso_auth": "sso_auth kann nicht abgerufen werden",
+  "identity.sso_session_binding_mismatch": "SSO-Sitzungsbindung stimmt nicht überein",
+  "identity.failed_parse_redirect_uri": "redirect uri konnte nicht geparst werden"
+}

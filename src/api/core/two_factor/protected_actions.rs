@@ -48,7 +48,7 @@ impl ProtectedActionData {
         if let Ok(x) = res {
             Ok(x)
         } else {
-            err!("Could not decode ProtectedActionData from string")
+            err!(crate::i18n::two_factor_decode_protected_action_data_failed(&CONFIG.default_locale()))
         }
     }
 
@@ -77,7 +77,10 @@ async fn request_otp(headers: Headers, conn: DbConn) -> EmptyResult {
         let elapsed = pa_data.time_since_sent().num_seconds();
         let delay = 30;
         if elapsed < delay {
-            err!(format!("Please wait {} seconds before requesting another code.", (delay - elapsed)));
+            let wait_seconds = (delay - elapsed).to_string();
+            let message =
+                crate::i18n::two_factor_request_otp_wait_seconds(&headers.locale).replacen("{}", &wait_seconds, 1);
+            err!(message);
         }
 
         pa.delete(&conn).await?;
@@ -90,7 +93,7 @@ async fn request_otp(headers: Headers, conn: DbConn) -> EmptyResult {
     let twofactor = TwoFactor::new(user.uuid, TwoFactorType::ProtectedActions, pa_data.to_json());
     twofactor.save(&conn).await?;
 
-    mail::send_protected_action_token(&user.email, &pa_data.token).await?;
+    mail::send_protected_action_token_for_locale(&user.email, &pa_data.token, Some(&headers.locale)).await?;
 
     Ok(())
 }
@@ -124,22 +127,23 @@ pub async fn validate_protected_action_otp(
     delete_if_valid: bool,
     conn: &DbConn,
 ) -> EmptyResult {
+    let locale = CONFIG.default_locale();
     let mut pa = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::ProtectedActions, conn)
         .await
-        .map_res("Protected action token not found, try sending the code again or restart the process")?;
+        .map_res(crate::i18n::two_factor_protected_action_token_not_found(&locale))?;
     let mut pa_data = ProtectedActionData::from_json(&pa.data)?;
 
     // Fail after x attempts if the token has been used too many times.
     // Don't delete it, as we use it to keep track of attempts.
     if pa_data.attempts >= u64::from(CONFIG.email_attempts_limit()) {
-        err!("Token has expired")
+        err!(crate::i18n::two_factor_token_expired(&CONFIG.default_locale()))
     }
 
     // Check if the token has expired (Using the email 2fa expiration time)
     let max_time = i64::from(CONFIG.email_expiration_time());
     if pa_data.time_since_sent().num_seconds() > max_time {
         pa.delete(conn).await?;
-        err!("Token has expired")
+        err!(crate::i18n::two_factor_token_expired(&CONFIG.default_locale()))
     }
 
     if !crypto::ct_eq(&pa_data.token, otp) {
@@ -147,7 +151,7 @@ pub async fn validate_protected_action_otp(
         pa.data = pa_data.to_json();
 
         pa.save(conn).await?;
-        err!("Token is invalid")
+        err!(crate::i18n::two_factor_token_invalid(&CONFIG.default_locale()))
     }
 
     if delete_if_valid {

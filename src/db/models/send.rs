@@ -213,7 +213,7 @@ impl Send {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving send")
+                    .map_res(crate::i18n::db_error_saving_send(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(sends::table)
@@ -222,7 +222,7 @@ impl Send {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving send")
+                    .map_res(crate::i18n::db_error_saving_send(&CONFIG.default_locale()))
             }
         }
     }
@@ -283,7 +283,9 @@ impl Send {
         }
 
         conn.run(move |conn| {
-            diesel::delete(sends::table.filter(sends::uuid.eq(&self.uuid))).execute(conn).map_res("Error deleting send")
+            diesel::delete(sends::table.filter(sends::uuid.eq(&self.uuid)))
+                .execute(conn)
+                .map_res(crate::i18n::db_error_deleting_send(&CONFIG.default_locale()))
         })
         .await
     }

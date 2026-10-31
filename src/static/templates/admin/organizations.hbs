@@ -1,16 +1,16 @@
 <main class="container-xxl">
     <div id="organizations-block" class="my-3 p-3 rounded shadow">
-        <h6 class="border-bottom pb-2 mb-3">Organizations</h6>
+        <h6 class="border-bottom pb-2 mb-3">{{t "tpl.admin.orgs.organizations" locale=lang}}</h6>
         <div class="table-responsive-xl small">
             <table id="orgs-table" class="table table-sm table-striped table-hover">
                 <thead>
                     <tr>
-                        <th class="vw-org-details">Organization</th>
-                        <th class="vw-users">Users</th>
-                        <th class="vw-entries">Entries</th>
-                        <th class="vw-attachments">Attachments</th>
-                        <th class="vw-misc">Misc</th>
-                        <th class="vw-actions text-end">Actions</th>
+                        <th class="vw-org-details">{{t "tpl.admin.orgs.organization" locale=lang}}</th>
+                        <th class="vw-users">{{t "tpl.admin.orgs.users" locale=lang}}</th>
+                        <th class="vw-entries">{{t "tpl.admin.orgs.entries" locale=lang}}</th>
+                        <th class="vw-attachments">{{t "tpl.admin.orgs.attachments" locale=lang}}</th>
+                        <th class="vw-misc">{{t "tpl.admin.orgs.misc" locale=lang}}</th>
+                        <th class="vw-actions text-end">{{t "tpl.admin.orgs.actions" locale=lang}}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -33,18 +33,18 @@
                             <span class="d-block">{{cipher_count}}</span>
                         </td>
                         <td>
-                            <span class="d-block"><strong>Amount:</strong> {{attachment_count}}</span>
+                            <span class="d-block"><strong>{{t "tpl.admin.orgs.amount" locale=../lang}}</strong> {{attachment_count}}</span>
                             {{#if attachment_count}}
-                            <span class="d-block"><strong>Size:</strong> {{attachment_size}}</span>
+                            <span class="d-block"><strong>{{t "tpl.admin.orgs.size" locale=../lang}}</strong> {{attachment_size}}</span>
                             {{/if}}
                         </td>
                         <td>
-                            <span class="d-block"><strong>Collections:</strong> {{collection_count}}</span>
-                            <span class="d-block"><strong>Groups:</strong> {{group_count}}</span>
-                            <span class="d-block"><strong>Events:</strong> {{event_count}}</span>
+                            <span class="d-block"><strong>{{t "tpl.admin.orgs.collections" locale=../lang}}</strong> {{collection_count}}</span>
+                            <span class="d-block"><strong>{{t "tpl.admin.orgs.groups" locale=../lang}}</strong> {{group_count}}</span>
+                            <span class="d-block"><strong>{{t "tpl.admin.orgs.events" locale=../lang}}</strong> {{event_count}}</span>
                         </td>
                         <td class="text-end px-1 small">
-                            <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-organization data-vw-org-uuid="{{id}}" data-vw-org-name="{{name}}" data-vw-billing-email="{{billingEmail}}">Delete Organization</button><br>
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-organization data-vw-org-uuid="{{id}}" data-vw-org-name="{{name}}" data-vw-billing-email="{{billingEmail}}">{{t "tpl.admin.orgs.delete_org" locale=../lang}}</button><br>
                         </td>
                     </tr>
                     {{/each}}
@@ -53,7 +53,7 @@
         </div>
 
         <div class="mt-3 clearfix">
-            <button type="button" class="btn btn-sm btn-primary float-end" id="reload">Reload organizations</button>
+            <button type="button" class="btn btn-sm btn-primary float-end" id="reload">{{t "tpl.admin.orgs.reload" locale=lang}}</button>
         </div>
     </div>
 </main>

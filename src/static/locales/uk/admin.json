@@ -1,0 +1,10 @@
+{
+  "admin.login_too_many_requests": "Забагато запитів, повторіть спробу пізніше.",
+  "admin.login_invalid_token": "Недійсний маркер адміністратора, повторіть спробу.",
+  "admin.mail_not_enabled": "Пошта не ввімкнена",
+  "admin.cannot_change_last_owner_type": "Неможливо змінити тип останнього власника",
+  "admin.backup_only_sqlite": "Не вдається створити резервну копію поточної БД (лише SQLite підтримує цю функцію)",
+  "admin.unable_save_config": "Не вдалося зберегти конфігурацію",
+  "admin.unable_delete_config": "Не вдалося видалити конфігурацію",
+  "admin.backup_unsuccessful": "Резервне копіювання не вдалось"
+}

@@ -1,9 +1,9 @@
-Two-Step Login Recovered From {{ip}}
+{{t "tpl.email.recover_twofactor.subject_prefix" locale=lang}} {{ip}}
 <!---------------->
-Two-step login on your account has been disabled by using the account's recovery code.
+{{t "tpl.email.recover_twofactor.body_intro" locale=lang}}
 
-* Date: {{datetime}}
-* IP Address: {{ip}}
+* {{t "tpl.email.recover_twofactor.label_date" locale=lang}}: {{datetime}}
+* {{t "tpl.email.recover_twofactor.label_ip" locale=lang}}: {{ip}}
 
-If you did not perform this action, you should immediately take steps to secure your account.
+{{t "tpl.email.recover_twofactor.body_ignore" locale=lang}}
 {{> email/email_footer_text }}

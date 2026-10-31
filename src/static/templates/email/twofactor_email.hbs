@@ -1,6 +1,6 @@
-Vaultwarden Login Verification Code
+{{t "tpl.email.twofactor.subject" locale=lang}}
 <!---------------->
-Your two-step verification code is: {{token}}
+{{t "tpl.email.twofactor.body_code" locale=lang}}: {{token}}
 
-Use this code to complete logging in with Vaultwarden.
+{{t "tpl.email.twofactor.body_use_code" locale=lang}}
 {{> email/email_footer_text }}

@@ -1,0 +1,9 @@
+{
+  "identity.sso_required": "Wymagane jest logowanie SSO",
+  "identity.sso_unavailable": "Logowanie SSO jest niedostępne",
+  "identity.invalid_type": "Nieprawidłowy typ",
+  "identity.unsupported_code_challenge_method": "Nieobsługiwana metoda code challenge",
+  "identity.cannot_retrieve_sso_auth": "Nie można pobrać sso_auth",
+  "identity.sso_session_binding_mismatch": "Niezgodność powiązania sesji SSO",
+  "identity.failed_parse_redirect_uri": "Nie udało się przetworzyć redirect uri"
+}

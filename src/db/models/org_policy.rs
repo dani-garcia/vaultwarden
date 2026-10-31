@@ -140,10 +140,10 @@ impl OrgPolicy {
                             .filter(org_policies::uuid.eq(&self.uuid))
                             .set(&*self)
                             .execute(conn)
-                            .map_res("Error saving org_policy")
+                            .map_res(crate::i18n::db_error_saving_org_policy(&CONFIG.default_locale()))
                     }
                     Err(e) => Err(e.into()),
-                }.map_res("Error saving org_policy")
+                }.map_res(crate::i18n::db_error_saving_org_policy(&CONFIG.default_locale()))
             }
             postgresql {
                 // We need to make sure we're not going to violate the unique constraint on org_uuid and atype.
@@ -155,7 +155,7 @@ impl OrgPolicy {
                         .filter(org_policies::atype.eq(&self.atype)),
                 )
                 .execute(conn)
-                .map_res("Error deleting org_policy for insert")?;
+                .map_res(crate::i18n::db_error_deleting_org_policy_for_insert(&CONFIG.default_locale()))?;
 
                 diesel::insert_into(org_policies::table)
                     .values(&*self)
@@ -163,7 +163,7 @@ impl OrgPolicy {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving org_policy")
+                    .map_res(crate::i18n::db_error_saving_org_policy(&CONFIG.default_locale()))
             }
         }
     }
@@ -172,7 +172,7 @@ impl OrgPolicy {
         conn.run(move |conn| {
             diesel::delete(org_policies::table.filter(org_policies::uuid.eq(self.uuid)))
                 .execute(conn)
-                .map_res("Error deleting org_policy")
+                .map_res(crate::i18n::db_error_deleting_org_policy(&CONFIG.default_locale()))
         })
         .await
     }
@@ -242,7 +242,7 @@ impl OrgPolicy {
         conn.run(move |conn| {
             diesel::delete(org_policies::table.filter(org_policies::org_uuid.eq(org_uuid)))
                 .execute(conn)
-                .map_res("Error deleting org_policy")
+                .map_res(crate::i18n::db_error_deleting_org_policy(&CONFIG.default_locale()))
         })
         .await
     }
@@ -328,26 +328,30 @@ impl OrgPolicy {
                 if CONFIG.email_2fa_auto_fallback() {
                     two_factor::email::find_and_activate_email_2fa(&m.user_uuid, conn).await?;
                 } else {
-                    err!(format!("Cannot {} because 2FA is required (membership {})", action, m.uuid));
+                    err!(
+                        crate::i18n::org_policy_cannot_because_2fa_required(&CONFIG.default_locale()),
+                        format!("{}, {}", action, m.uuid)
+                    );
                 }
             }
 
             // Check if the user is part of another Organization with SingleOrg activated
             if Self::is_applicable_to_user(&m.user_uuid, OrgPolicyType::SingleOrg, Some(&m.org_uuid), conn).await {
-                err!(format!(
-                    "Cannot {} because another organization policy forbids it (membership {})",
-                    action, m.uuid
-                ));
+                err!(
+                    crate::i18n::org_policy_cannot_because_other_org_policy_forbids(&CONFIG.default_locale()),
+                    format!("{}, {}", action, m.uuid)
+                );
             }
 
             if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::SingleOrg, conn).await
                 && p.enabled
                 && Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await > 0
             {
-                err!(format!(
+                let msg = format!(
                     "Cannot {} because the organization policy forbids being part of other organization (membership {})",
                     action, m.uuid
-                ));
+                );
+                err!(msg);
             }
         }
 

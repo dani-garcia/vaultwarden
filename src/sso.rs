@@ -174,10 +174,16 @@ pub fn decode_state(base64_state: &str) -> ApiResult<OIDCState> {
         if let Ok(valid) = String::from_utf8(vec) {
             OIDCState(valid)
         } else {
-            err!(format!("Invalid utf8 chars in {} after base64 decoding", base64_state.escape_debug()))
+            err!(
+                crate::i18n::auth_invalid_utf8_after_base64_decode(&CONFIG.default_locale()),
+                base64_state.escape_debug().to_string()
+            )
         }
     } else {
-        err!(format!("Failed to decode {} using base64", base64_state.escape_debug()))
+        err!(
+            crate::i18n::auth_failed_decode_using_base64(&CONFIG.default_locale()),
+            base64_state.escape_debug().to_string()
+        )
     };
 
     Ok(state)
@@ -202,11 +208,14 @@ pub async fn authorize_url(
         "mobile" => "bitwarden://sso-callback".to_owned(),
         "cli" => {
             let Some(uri) = localhost_redirect_uri else {
-                err!(format!("Unsupported redirect uri {}", raw_redirect_uri.escape_debug()))
+                err!(
+                    crate::i18n::auth_unsupported_redirect_uri(&CONFIG.default_locale()),
+                    raw_redirect_uri.escape_debug().to_string()
+                )
             };
             uri
         }
-        _ => err!(format!("Unsupported client {}", client_id.escape_debug())),
+        _ => err!(crate::i18n::auth_unsupported_client(&CONFIG.default_locale()), client_id.escape_debug().to_string()),
     };
 
     let (auth_url, sso_auth) = Client::authorize_url(state, client_challenge, redirect_uri, binding_hash).await?;
@@ -253,7 +262,7 @@ pub async fn exchange_code(
     use openidconnect::OAuth2TokenResponse;
 
     let Some(mut sso_auth) = SsoAuth::find_by_code(code, conn).await else {
-        err!("Invalid code cannot retrieve sso auth")
+        err!(crate::i18n::auth_invalid_code_cannot_retrieve_sso_auth(&CONFIG.default_locale()))
     };
 
     if let Some(authenticated_user) = sso_auth.auth_response.clone() {
@@ -274,7 +283,7 @@ pub async fn exchange_code(
         }
         (None, _) => {
             sso_auth.delete(conn).await?;
-            err!("Missing authorization provider return");
+            err!(crate::i18n::auth_missing_authorization_provider_return(&CONFIG.default_locale()));
         }
     };
 
@@ -284,7 +293,7 @@ pub async fn exchange_code(
     let user_info = client.user_info(token_response.access_token().to_owned()).await?;
 
     let email = match id_claims.email().or(user_info.email()) {
-        None => err!("Neither id token nor userinfo contained an email"),
+        None => err!(crate::i18n::auth_neither_id_token_nor_userinfo_email(&CONFIG.default_locale())),
         Some(e) => e.to_string().to_lowercase(),
     };
 
@@ -350,7 +359,7 @@ pub async fn redeem(
             match (decode_token_claims("access_token", &auth_user.access_token), auth_user.expires_in) {
                 (Ok(ap), _) => (ap.nbf(), ap.exp),
                 (Err(_), Some(exp)) => (now.timestamp(), (now + exp).timestamp()),
-                _ => err!("Non jwt access_token and empty expires_in"),
+                _ => err!(crate::i18n::auth_non_jwt_access_token_empty_expires_in(&CONFIG.default_locale())),
             };
 
         let access_claims =
@@ -378,7 +387,7 @@ pub fn create_auth_tokens(
         let (ap_nbf, ap_exp) = match (decode_token_claims("access_token", &access_token), expires_in) {
             (Ok(ap), _) => (ap.nbf(), ap.exp),
             (Err(_), Some(exp)) => (now.timestamp(), (now + exp).timestamp()),
-            _ => err!("Non jwt access_token and empty expires_in"),
+            _ => err!(crate::i18n::auth_non_jwt_access_token_empty_expires_in(&CONFIG.default_locale())),
         };
 
         let access_claims =
@@ -474,6 +483,6 @@ pub async fn exchange_refresh_token(
 
             create_auth_tokens_impl(device, None, access_claims, access_token)
         }
-        None => err!("No token present while in SSO"),
+        None => err!(crate::i18n::auth_no_token_present_while_sso(&CONFIG.default_locale())),
     }
 }

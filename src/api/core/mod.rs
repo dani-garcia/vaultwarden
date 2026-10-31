@@ -16,7 +16,7 @@ pub use events::{event_cleanup_job, log_event, log_user_event};
 pub use sends::purge_sends;
 
 use reqwest::Method;
-use rocket::{Catcher, Route, serde::json::Json, serde::json::Value};
+use rocket::{Catcher, Request, Route, serde::json::Json, serde::json::Value};
 
 use crate::{
     CONFIG,
@@ -268,12 +268,14 @@ pub fn catchers() -> Vec<Catcher> {
 }
 
 #[catch(404)]
-fn api_not_found() -> Json<Value> {
+fn api_not_found(request: &Request<'_>) -> Json<Value> {
+    let locale =
+        crate::i18n::resolve_locale(None, request.headers().get_one("Accept-Language"), &CONFIG.default_locale());
     Json(json!({
         "error": {
             "code": 404,
             "reason": "Not Found",
-            "description": "The requested resource could not be found."
+            "description": crate::i18n::api_not_found_description(&locale)
         }
     }))
 }
@@ -284,8 +286,10 @@ async fn accept_org_invite(
     reset_password_key: Option<String>,
     conn: &DbConn,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = user.locale.as_deref().unwrap_or(default_locale.as_str());
     if member.status != MembershipStatus::Invited as i32 {
-        err!("User already accepted the invitation");
+        err!(crate::i18n::org_user_already_accepted_invite(locale));
     }
 
     member.status = MembershipStatus::Accepted as i32;
@@ -298,10 +302,12 @@ async fn accept_org_invite(
 
     if CONFIG.mail_enabled() {
         let Some(org) = Organization::find_by_uuid(&member.org_uuid, conn).await else {
-            err!("Organization not found.")
+            err!(crate::i18n::org_not_found_short(locale))
         };
+        let invitee_email = member.invited_by_email.clone().unwrap_or(org.billing_email.clone());
+        let invitee_locale = User::find_by_mail(&invitee_email, conn).await.and_then(|u| u.locale);
         // User was invited to an organization, so they must be confirmed manually after acceptance
-        mail::send_invite_accepted(&user.email, &member.invited_by_email.unwrap_or(org.billing_email), &org.name)
+        mail::send_invite_accepted_for_locale(&user.email, &invitee_email, &org.name, invitee_locale.as_deref())
             .await?;
     }
 

@@ -1,0 +1,39 @@
+name: Check template locales
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    paths:
+      - ".github/workflows/check-template-locales.yml"
+      - "src/static/templates/**/*.hbs"
+      - "src/config.rs"
+      - "tools/check_template_locale_duplicates.py"
+  pull_request:
+    paths:
+      - ".github/workflows/check-template-locales.yml"
+      - "src/static/templates/**/*.hbs"
+      - "src/config.rs"
+      - "tools/check_template_locale_duplicates.py"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  template-locales:
+    name: Validate no locale-duplicated templates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run template locale duplication check
+        run: python3 tools/check_template_locale_duplicates.py

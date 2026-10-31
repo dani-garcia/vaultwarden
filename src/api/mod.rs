@@ -64,13 +64,13 @@ impl PasswordOrOtpData {
         match (self.master_password_hash.as_deref(), self.otp.as_deref()) {
             (Some(pw_hash), None) => {
                 if !user.check_valid_password(pw_hash) {
-                    err!("Invalid password");
+                    err!(crate::i18n::auth_invalid_password(&CONFIG.default_locale()));
                 }
             }
             (None, Some(otp)) => {
                 validate_protected_action_otp(otp, &user.uuid, delete_if_valid, conn).await?;
             }
-            _ => err!("No validation provided"),
+            _ => err!(crate::i18n::api_no_validation_provided(&CONFIG.default_locale())),
         }
         Ok(())
     }

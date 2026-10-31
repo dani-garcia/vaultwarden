@@ -1,0 +1,23 @@
+{
+  "emergency_access.not_valid": "Екстрений доступ недійсний.",
+  "emergency_access.invalid_type": "Некоректний тип екстреного доступу.",
+  "emergency_access.wait_time_out_of_bounds": "Час очікування екстреного доступу виходить за допустимі межі!",
+  "emergency_access.cannot_set_self": "Ви не можете призначити себе контактом екстреного доступу.",
+  "emergency_access.email_domain_not_eligible": "Домен електронної адреси не підходить для запрошень",
+  "emergency_access.grantee_already_accepted_or_confirmed": "Користувача grantee вже прийнято або підтверджено для екстреного доступу",
+  "emergency_access.email_not_valid": "Некоректна електронна адреса.",
+  "emergency_access.grantee_not_found": "Користувача grantee не знайдено.",
+  "emergency_access.claim_email_mismatch": "Електронна адреса claim не збігається з поточною адресою користувача",
+  "emergency_access.invited_user_not_found": "Запрошеного користувача не знайдено",
+  "emergency_access.grantor_not_found": "Користувача grantor не знайдено.",
+  "emergency_access.invitation_error": "Помилка запрошення до екстреного доступу.",
+  "emergency_access.kdf_mismatch_grantor": "Налаштування KDF не відповідають обліковому запису grantor",
+  "emergency_access.invalid_request": "Некоректний запит!",
+  "emergency_access.not_enabled": "Екстрений доступ не ввімкнено.",
+  "emergency_access.status_changed_already": "Статус екстреного доступу вже було змінено",
+  "emergency_access.error_updating_status": "Помилка оновлення статусу екстреного доступу",
+  "emergency_access.user_email_mismatch_invite": "Електронна адреса користувача не збігається із запрошенням.",
+  "emergency_access.contact_already_accepted": "Контакт екстреного доступу вже прийнято.",
+  "emergency_access.grantee_user_not_exists": "Користувач grantee не існує",
+  "emergency_access.grantee_user_already_invited": "Користувача grantee уже запрошено"
+}

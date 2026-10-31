@@ -105,9 +105,10 @@ tokio-util = { version = "0.7.20", features = ["compat"] }
 # A generic serialization/deserialization framework
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+include_dir = "0.7.4"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.3.14", features = ["chrono", "r2d2", "numeric"] }
+diesel = { version = "2.3.14", features = ["chrono", "r2d2", "numeric", "64-column-tables"] }
 diesel_migrations = "2.3.2"
 
 derive_more = { version = "2.1.1", features = [

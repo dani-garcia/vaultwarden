@@ -4,6 +4,7 @@ use diesel::prelude::*;
 use serde_json::Value;
 
 use crate::{
+    CONFIG,
     api::EmptyResult,
     db::{DbConn, schema::emergency_access},
     error::MapResult,
@@ -115,14 +116,16 @@ impl EmergencyAccess {
 
     pub fn deadline_at(&self) -> Result<NaiveDateTime, crate::Error> {
         if !(EMERGENCY_ACCESS_TIMEOUT_RANGE).contains(&self.wait_time_days) {
-            err!("Emergency access wait time is out-of-bounds!")
+            err!(crate::i18n::emergency_access_wait_time_out_of_bounds(&CONFIG.default_locale()))
         }
 
-        let initiated_at = self.recovery_initiated_at.map_res("Emergency access initiation date missing!")?;
+        let initiated_at = self
+            .recovery_initiated_at
+            .map_res(crate::i18n::db_emergency_access_initiation_date_missing(&CONFIG.default_locale()))?;
 
         TimeDelta::try_days(i64::from(self.wait_time_days))
             .and_then(|w| initiated_at.checked_add_signed(w))
-            .map_res("Emergency access deadline is invalid")
+            .map_res(crate::i18n::db_emergency_access_deadline_invalid(&CONFIG.default_locale()))
     }
 
     pub fn is_recovery_allowed(&self, now: &NaiveDateTime) -> Result<bool, crate::Error> {
@@ -171,7 +174,7 @@ impl EmergencyAccess {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving emergency access")
+                    .map_res(crate::i18n::db_error_saving_emergency_access(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(emergency_access::table)
@@ -180,7 +183,7 @@ impl EmergencyAccess {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving emergency access")
+                    .map_res(crate::i18n::db_error_saving_emergency_access(&CONFIG.default_locale()))
             }
         }
     }
@@ -213,8 +216,10 @@ impl EmergencyAccess {
 
         match res {
             Ok(1) => {} // One record updated, which is valid
-            Ok(_) => err!("Emergency access status was changed already"),
-            Err(e) => err!("Error updating emergency access status", format!("{e}")),
+            Ok(_) => err!(crate::i18n::emergency_access_status_changed_already(&CONFIG.default_locale())),
+            Err(e) => {
+                err!(crate::i18n::emergency_access_error_updating_status(&CONFIG.default_locale()), format!("{e}"))
+            }
         }
 
         self.status = to_status;
@@ -238,7 +243,7 @@ impl EmergencyAccess {
                 },
                 10,
             )
-            .map_res("Error updating emergency access status")
+            .map_res(crate::i18n::db_error_updating_emergency_access_status(&CONFIG.default_locale()))
         })
         .await
     }
@@ -266,7 +271,7 @@ impl EmergencyAccess {
         conn.run(move |conn| {
             diesel::delete(emergency_access::table.filter(emergency_access::uuid.eq(self.uuid)))
                 .execute(conn)
-                .map_res("Error removing user from emergency access")
+                .map_res(crate::i18n::db_error_removing_user_from_emergency_access(&CONFIG.default_locale()))
         })
         .await
     }
@@ -398,11 +403,11 @@ impl EmergencyAccess {
 
     pub async fn accept_invite(&mut self, grantee_uuid: &UserId, grantee_email: &str, conn: &DbConn) -> EmptyResult {
         if self.email.is_none() || self.email.as_ref().unwrap() != grantee_email {
-            err!("User email does not match invite.");
+            err!(crate::i18n::emergency_access_user_email_mismatch_invite(&CONFIG.default_locale()));
         }
 
         if self.status == EmergencyAccessStatus::Accepted as i32 {
-            err!("Emergency contact already accepted.");
+            err!(crate::i18n::emergency_access_contact_already_accepted(&CONFIG.default_locale()));
         }
 
         self.status = EmergencyAccessStatus::Accepted as i32;

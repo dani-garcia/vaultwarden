@@ -1,5 +1,5 @@
-Invitation to {{{org_name}}} accepted
+{{t "tpl.email.invite_accepted.subject_prefix" locale=lang}} {{{org_name}}} {{t "tpl.email.invite_accepted.subject_suffix" locale=lang}}
 <!---------------->
-This email is to notify you that {{email}} has accepted your invitation to join {{org_name}}.
-Please log in via {{url}} to the vaultwarden server and confirm them from the organization management page.
+{{t "tpl.email.invite_accepted.body_intro_prefix" locale=lang}} {{email}} {{t "tpl.email.invite_accepted.body_intro_mid" locale=lang}} {{org_name}}.
+{{t "tpl.email.invite_accepted.body_login_prefix" locale=lang}} {{url}} {{t "tpl.email.invite_accepted.body_login_suffix" locale=lang}}
 {{> email/email_footer_text }}

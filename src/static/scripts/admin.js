@@ -1,6 +1,8 @@
 "use strict";
 /* exported BASE_URL, _post, _delete */
 
+const tAdmin = key => (window.VW_ADMIN_I18N && window.VW_ADMIN_I18N[key]) || key;
+
 function getBaseUrl() {
     // If the base URL is `https://vaultwarden.example.com/base/path/admin/`,
     // `window.location.href` should have one of the following forms:
@@ -51,10 +53,10 @@ function _fetch(method, url, successMsg, errMsg, body, reload_page = true) {
             if (respJson.errorModel && respJson.errorModel.message) {
                 return respJson.errorModel.message;
             } else {
-                return Promise.reject({ body: `${respStatus} - ${respStatusText}\n\nUnknown error`, error: true });
+                return Promise.reject({ body: `${respStatus} - ${respStatusText}\n\n${tAdmin("unknown_error")}`, error: true });
             }
         } catch (e) {
-            return Promise.reject({ body: `${respStatus} - ${respStatusText}\n\n[Catch] ${e}`, error: true });
+            return Promise.reject({ body: `${respStatus} - ${respStatusText}\n\n[${tAdmin("catch_error")}] ${e}`, error: true });
         }
     }).then(apiMsg => {
         msg(`${errMsg}\n${apiMsg}`, reload_page);

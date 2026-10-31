@@ -1,0 +1,10 @@
+{
+  "admin.login_too_many_requests": "Too many requests, try again later.",
+  "admin.login_invalid_token": "Invalid admin token, please try again.",
+  "admin.mail_not_enabled": "Mail is not enabled",
+  "admin.cannot_change_last_owner_type": "Can't change the type of the last owner",
+  "admin.backup_only_sqlite": "Can't back up current DB (Only SQLite supports this feature)",
+  "admin.unable_save_config": "Unable to save config",
+  "admin.unable_delete_config": "Unable to delete config",
+  "admin.backup_unsuccessful": "Backup was unsuccessful"
+}

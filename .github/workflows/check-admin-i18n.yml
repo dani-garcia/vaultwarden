@@ -1,0 +1,41 @@
+name: Check admin i18n
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    paths:
+      - ".github/workflows/check-admin-i18n.yml"
+      - "src/static/scripts/admin*.js"
+      - "src/static/templates/admin/**/base.hbs"
+      - "src/static/locales/**/admin_ui.json"
+      - "tools/check_admin_i18n_keys.py"
+  pull_request:
+    paths:
+      - ".github/workflows/check-admin-i18n.yml"
+      - "src/static/scripts/admin*.js"
+      - "src/static/templates/admin/**/base.hbs"
+      - "src/static/locales/**/admin_ui.json"
+      - "tools/check_admin_i18n_keys.py"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  admin-i18n:
+    name: Validate admin i18n coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run admin i18n key coverage check
+        run: python3 tools/check_admin_i18n_keys.py

@@ -1,6 +1,6 @@
-Emergency access contact for {{{grantor_name}}} confirmed
+{{t "tpl.email.ea_invite_confirmed.subject_prefix" locale=lang}} {{{grantor_name}}} {{t "tpl.email.ea_invite_confirmed.subject_suffix" locale=lang}}
 <!---------------->
-This email is to notify you that you have been confirmed as an emergency access contact for *{{grantor_name}}*.
+{{t "tpl.email.ea_invite_confirmed.body_intro_prefix" locale=lang}} *{{grantor_name}}*.
 
-You can now initiate emergency access requests from the web vault ({{url}}).
+{{t "tpl.email.ea_invite_confirmed.body_access_prefix" locale=lang}} ({{url}}).
 {{> email/email_footer_text }}

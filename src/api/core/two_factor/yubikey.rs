@@ -92,17 +92,18 @@ fn jsonify_yubikeys(yubikeys: Vec<String>) -> Value {
 
 fn get_yubico_credentials() -> Result<(String, String), Error> {
     if !CONFIG._enable_yubico() {
-        err!("Yubico support is disabled");
+        err!(crate::i18n::two_factor_yubico_support_disabled(&CONFIG.default_locale()));
     }
 
     if let (Some(id), Some(secret)) = (CONFIG.yubico_client_id(), CONFIG.yubico_secret_key()) {
         Ok((id, secret))
     } else {
-        err!("`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled")
+        err!(crate::i18n::two_factor_yubico_credentials_not_set(&CONFIG.default_locale()))
     }
 }
 
 async fn verify_yubikey_otp(otp: String) -> EmptyResult {
+    let locale = CONFIG.default_locale();
     let (yubico_id, yubico_secret) = get_yubico_credentials()?;
 
     let mut config = Config::default().set_client_id(yubico_id).set_key(yubico_secret)?;
@@ -113,7 +114,7 @@ async fn verify_yubikey_otp(otp: String) -> EmptyResult {
     let client = HttpClientTransport::new()?;
     let verifier = Verifier::with_client(config, client)?;
 
-    verifier.verify(otp).await.map_res("Failed to verify OTP")
+    verifier.verify(otp).await.map_res(crate::i18n::two_factor_failed_verify_otp(&locale))
 }
 
 #[post("/two-factor/get-yubikey", data = "<data>")]
@@ -154,7 +155,7 @@ async fn activate_yubikey(data: Json<EnableYubikeyData>, headers: Headers, conn:
     if yubikeys.is_empty() {
         // Return an error to prevent saving empty keys which would cause users not being able to login anymore.
         // To remove all keys users should click the `Deactivate all keys` button
-        err!("A key is required.");
+        err!(crate::i18n::two_factor_key_required(&headers.locale));
     }
 
     // Check if we already have some data
@@ -174,7 +175,9 @@ async fn activate_yubikey(data: Json<EnableYubikeyData>, headers: Headers, conn:
             continue;
         }
 
-        verify_yubikey_otp(yubikey.to_owned()).await.map_res("Invalid Yubikey OTP provided")?;
+        verify_yubikey_otp(yubikey.to_owned())
+            .await
+            .map_res(crate::i18n::two_factor_invalid_yubikey_otp_provided(&headers.locale))?;
     }
 
     let yubikey_ids: Vec<String> = yubikeys.into_iter().filter_map(|x| x.get(..12).map(str::to_owned)).collect();
@@ -221,18 +224,20 @@ async fn delete_yubikeys(data: Json<VerificationTokenData>, headers: Headers, co
 
 pub async fn validate_yubikey_login(response: &str, twofactor_data: &str) -> EmptyResult {
     if response.len() != 44 {
-        err!("Invalid Yubikey OTP length");
+        err!(crate::i18n::two_factor_invalid_yubikey_otp_length(&CONFIG.default_locale()));
     }
 
     let yubikey_metadata: YubikeyMetadata = serde_json::from_str(twofactor_data).expect("Can't parse Yubikey Metadata");
     let Some(response_id) = response.get(..12) else {
-        err!("Invalid Yubikey OTP");
+        err!(crate::i18n::two_factor_invalid_yubikey_otp(&CONFIG.default_locale()));
     };
 
     if !yubikey_metadata.keys.contains(&response_id.to_owned()) {
-        err!("Given Yubikey is not registered");
+        err!(crate::i18n::two_factor_given_yubikey_not_registered(&CONFIG.default_locale()));
     }
 
-    verify_yubikey_otp(response.to_owned()).await.map_res("Failed to verify Yubikey against OTP server")?;
+    verify_yubikey_otp(response.to_owned())
+        .await
+        .map_res(crate::i18n::two_factor_failed_verify_yubikey_against_otp_server(&CONFIG.default_locale()))?;
     Ok(())
 }

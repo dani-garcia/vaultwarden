@@ -1,0 +1,10 @@
+{
+  "admin.login_too_many_requests": "Слишком много запросов, повторите позже.",
+  "admin.login_invalid_token": "Неверный токен администратора, попробуйте снова.",
+  "admin.mail_not_enabled": "Почта не включена",
+  "admin.cannot_change_last_owner_type": "Нельзя изменить тип последнего владельца",
+  "admin.backup_only_sqlite": "Нельзя сделать резервную копию текущей БД (только SQLite поддерживает эту функцию)",
+  "admin.unable_save_config": "Не удалось сохранить конфигурацию",
+  "admin.unable_delete_config": "Не удалось удалить конфигурацию",
+  "admin.backup_unsuccessful": "Резервное копирование завершилось неудачей"
+}

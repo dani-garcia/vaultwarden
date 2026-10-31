@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{#if lang}}{{lang}}{{else}}en{{/if}}">
 <head>
     <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
     <meta name="robots" content="noindex,nofollow" />
     <link rel="icon" type="image/png" href="{{urlpath}}/vw_static/vaultwarden-favicon.png">
-    <title>Page not found!</title>
+    <title>{{t "web.404.title" locale=lang}}</title>
     <link rel="stylesheet" href="{{urlpath}}/vw_static/bootstrap.css" />
     <link rel="stylesheet" href="{{urlpath}}/vw_static/404.css" />
 </head>
@@ -16,7 +16,7 @@
         <div class="container">
             <a class="navbar-brand" href="{{urlpath}}/"><img class="vaultwarden-icon" src="{{urlpath}}/vw_static/vaultwarden-icon.png" alt="V">aultwarden</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse"
-                    aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+                    aria-controls="navbarCollapse" aria-expanded="false" aria-label="{{t "web.404.toggle_navigation" locale=lang}}">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarCollapse">
@@ -26,13 +26,13 @@
     </nav>
 
     <main class="container inner content text-center">
-        <h2>Page not found!</h2>
-        <p class="lead">Sorry, but the page you were looking for could not be found.</p>
+        <h2>{{t "web.404.title" locale=lang}}</h2>
+        <p class="lead">{{t "web.404.lead" locale=lang}}</p>
         <p class="display-6">
-            <a href="{{urlpath}}/"><img class="vw-404" src="{{urlpath}}/vw_static/404.png" alt="Return to the web vault?"></a></p>
-        <p>You can <a href="{{urlpath}}/">return to the web-vault</a>, or <a href="https://github.com/dani-garcia/vaultwarden">contact us</a>.</p>
+            <a href="{{urlpath}}/"><img class="vw-404" src="{{urlpath}}/vw_static/404.png" alt="{{t "web.404.return_alt" locale=lang}}"></a></p>
+        <p>{{t "web.404.prefix" locale=lang}} <a href="{{urlpath}}/">{{t "web.404.return_link" locale=lang}}</a>, {{t "web.404.or" locale=lang}} <a href="https://github.com/dani-garcia/vaultwarden">{{t "web.404.contact_link" locale=lang}}</a>.</p>
     </main>
 
-    <div class="container footer text-muted content">Vaultwarden (unofficial Bitwarden&reg; server)</div>
+    <div class="container footer text-muted content">{{t "web.404.footer" locale=lang}}</div>
 </body>
 </html>

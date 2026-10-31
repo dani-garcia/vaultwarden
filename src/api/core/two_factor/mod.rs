@@ -144,7 +144,7 @@ pub async fn enforce_2fa_policy(
         if member.atype < MembershipType::Admin {
             if CONFIG.mail_enabled() {
                 let org = Organization::find_by_uuid(&member.org_uuid, conn).await.unwrap();
-                mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
+                mail::send_2fa_removed_from_org_for_locale(&user.email, &org.name, user.locale.as_deref()).await?;
             }
             let mut member = member;
             member.revoke();
@@ -179,7 +179,7 @@ pub async fn enforce_2fa_policy_for_org(
         if member.atype < MembershipType::Admin && TwoFactor::find_by_user(&member.user_uuid, conn).await.is_empty() {
             if CONFIG.mail_enabled() {
                 let user = User::find_by_uuid(&member.user_uuid, conn).await.unwrap();
-                mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
+                mail::send_2fa_removed_from_org_for_locale(&user.email, &org.name, user.locale.as_deref()).await?;
             }
             let mut member = member;
             member.revoke();
@@ -225,12 +225,13 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
             "User {} did not complete a 2FA login within the configured time limit. IP: {}",
             user.email, login.ip_address
         );
-        match mail::send_incomplete_2fa_login(
+        match mail::send_incomplete_2fa_login_for_locale(
             &user.email,
             &login.ip_address,
             &login.login_time,
             &login.device_name,
             &DeviceType::from_i32(login.device_type).to_string(),
+            user.locale.as_deref(),
         )
         .await
         {

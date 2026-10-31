@@ -1,8 +1,8 @@
-Emergency access contact {{{grantee_email}}} accepted
+{{t "tpl.email.ea_invite_accepted.subject_prefix" locale=lang}} {{{grantee_email}}} {{t "tpl.email.ea_invite_accepted.subject_suffix" locale=lang}}
 <!---------------->
-This email is to notify you that {{grantee_email}} has accepted your invitation to become an emergency access contact.
+{{t "tpl.email.ea_invite_accepted.body_intro_prefix" locale=lang}} {{grantee_email}} {{t "tpl.email.ea_invite_accepted.body_intro_suffix" locale=lang}}
 
-To confirm this user, log into the web vault ({{url}}), go to settings and confirm the user.
+{{t "tpl.email.ea_invite_accepted.body_confirm_prefix" locale=lang}} ({{url}}), {{t "tpl.email.ea_invite_accepted.body_confirm_suffix" locale=lang}}
 
-If you do not wish to confirm this user, you can also remove them on the same page.
+{{t "tpl.email.ea_invite_accepted.body_ignore" locale=lang}}
 {{> email/email_footer_text }}

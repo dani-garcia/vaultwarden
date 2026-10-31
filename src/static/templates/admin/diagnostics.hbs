@@ -1,48 +1,48 @@
 <main class="container-xxl">
     <div id="diagnostics-block" class="my-3 p-3 rounded shadow">
-        <h6 class="border-bottom pb-2 mb-2">Diagnostics</h6>
+        <h6 class="border-bottom pb-2 mb-2">{{t "tpl.admin.diag.title" locale=@root.lang}}</h6>
 
-        <h3>Versions</h3>
+        <h3>{{t "tpl.admin.diag.versions" locale=@root.lang}}</h3>
         <div class="row">
             <div class="col-md">
                 <dl class="row">
-                    <dt class="col-sm-5">Server Installed
-                        <span class="badge bg-success d-none abbr-badge" id="server-success" title="Latest version is installed.">Ok</span>
-                        <span class="badge bg-warning text-dark d-none abbr-badge" id="server-warning" title="An update is available.">Update</span>
-                        <span class="badge bg-info text-dark d-none abbr-badge" id="server-branch" title="This is a branched version.">Branched</span>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.server_installed" locale=@root.lang}}
+                        <span class="badge bg-success d-none abbr-badge" id="server-success" title="{{t "tpl.admin.diag.title_latest_installed" locale=@root.lang}}">{{t "tpl.admin.diag.ok" locale=@root.lang}}</span>
+                        <span class="badge bg-warning text-dark d-none abbr-badge" id="server-warning" title="{{t "tpl.admin.diag.title_update_available" locale=@root.lang}}">{{t "tpl.admin.diag.update" locale=@root.lang}}</span>
+                        <span class="badge bg-info text-dark d-none abbr-badge" id="server-branch" title="{{t "tpl.admin.diag.title_branched_version" locale=@root.lang}}">{{t "tpl.admin.diag.branched" locale=@root.lang}}</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="server-installed">{{page_data.current_release}}</span>
                     </dd>
-                    <dt class="col-sm-5">Server Latest
-                        <span class="badge bg-secondary d-none abbr-badge" id="server-failed" title="Unable to determine latest version.">Unknown</span>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.server_latest" locale=@root.lang}}
+                        <span class="badge bg-secondary d-none abbr-badge" id="server-failed" title="{{t "tpl.admin.diag.title_unable_latest" locale=@root.lang}}">{{t "tpl.admin.diag.unknown" locale=@root.lang}}</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="server-latest">{{page_data.latest_release}}<span id="server-latest-commit" class="d-none">-{{page_data.latest_commit}}</span></span>
                     </dd>
                     {{#if page_data.web_vault_enabled}}
-                    <dt class="col-sm-5">Web Installed
-                        <span class="badge bg-success d-none abbr-badge" id="web-success" title="Latest version is installed.">Ok</span>
-                        <span class="badge bg-warning text-dark d-none abbr-badge" id="web-warning" title="An update is available.">Update</span>
-                        <span class="badge bg-info text-dark d-none abbr-badge" id="web-prerelease" title="You are using a pre-release version.">Pre-Release</span>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.web_installed" locale=@root.lang}}
+                        <span class="badge bg-success d-none abbr-badge" id="web-success" title="{{t "tpl.admin.diag.title_latest_installed" locale=@root.lang}}">{{t "tpl.admin.diag.ok" locale=@root.lang}}</span>
+                        <span class="badge bg-warning text-dark d-none abbr-badge" id="web-warning" title="{{t "tpl.admin.diag.title_update_available" locale=@root.lang}}">{{t "tpl.admin.diag.update" locale=@root.lang}}</span>
+                        <span class="badge bg-info text-dark d-none abbr-badge" id="web-prerelease" title="{{t "tpl.admin.diag.title_prerelease" locale=@root.lang}}">{{t "tpl.admin.diag.prerelease" locale=@root.lang}}</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="web-installed">{{page_data.active_web_release}}</span>
                     </dd>
-                    <dt class="col-sm-5">Web Latest
-                        <span class="badge bg-secondary d-none abbr-badge" id="web-failed" title="Unable to determine latest version.">Unknown</span>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.web_latest" locale=@root.lang}}
+                        <span class="badge bg-secondary d-none abbr-badge" id="web-failed" title="{{t "tpl.admin.diag.title_unable_latest" locale=@root.lang}}">{{t "tpl.admin.diag.unknown" locale=@root.lang}}</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="web-latest">{{page_data.latest_web_release}}</span>
                     </dd>
                     {{/if}}
                     {{#unless page_data.web_vault_enabled}}
-                    <dt class="col-sm-5">Web Installed</dt>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.web_installed" locale=@root.lang}}</dt>
                     <dd class="col-sm-7">
-                        <span id="web-installed">Web Vault is disabled</span>
+                        <span id="web-installed">{{t "tpl.admin.diag.web_disabled" locale=@root.lang}}</span>
                     </dd>
                     {{/unless}}
-                    <dt class="col-sm-5">Database</dt>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.database" locale=@root.lang}}</dt>
                     <dd class="col-sm-7">
                         <span><b>{{page_data.db_type}}:</b> {{page_data.db_version}}</span>
                     </dd>
@@ -50,211 +50,211 @@
             </div>
         </div>
 
-        <h3>Checks</h3>
+        <h3>{{t "tpl.admin.diag.checks" locale=@root.lang}}</h3>
         <div class="row">
             <div class="col-md">
                 <dl class="row">
-                    <dt class="col-sm-5">OS/Arch</dt>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.os_arch" locale=@root.lang}}</dt>
                     <dd class="col-sm-7">
                         <span class="d-block"><b>{{ page_data.host_os }} / {{ page_data.host_arch }}</b></span>
                     </dd>
-                    <dt class="col-sm-5">Running within a container</dt>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.running_container" locale=@root.lang}}</dt>
                     <dd class="col-sm-7">
                     {{#if page_data.running_within_container}}
-                        <span class="d-block"><b>Yes (Base: {{ page_data.container_base_image }})</b></span>
+                        <span class="d-block"><b>{{t "tpl.admin.diag.yes" locale=@root.lang}} ({{t "tpl.admin.diag.base" locale=@root.lang}}: {{ page_data.container_base_image }})</b></span>
                     {{/if}}
                     {{#unless page_data.running_within_container}}
-                        <span class="d-block"><b>No</b></span>
+                        <span class="d-block"><b>{{t "tpl.admin.diag.no" locale=@root.lang}}</b></span>
                     {{/unless}}
                     </dd>
-                    <dt class="col-sm-5">Uses config.json</dt>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.uses_config_json" locale=@root.lang}}</dt>
                     <dd class="col-sm-7">
                     {{#if (eq page_data.config_file_status "Loaded")}}
-                        <span class="d-inline"><b>Yes</b></span>
+                        <span class="d-inline"><b>{{t "tpl.admin.diag.yes" locale=@root.lang}}</b></span>
                         {{#if page_data.overrides}}
-                        <span class="badge bg-info text-dark abbr-badge" title="Environment variables are overwritten by a config.json.&#013;&#010;{{page_data.overrides}}">Details</span>
+                        <span class="badge bg-info text-dark abbr-badge" title="{{t "tpl.admin.diag.title_env_overwritten" locale=@root.lang}}&#013;&#010;{{page_data.overrides}}">{{t "tpl.admin.diag.details" locale=@root.lang}}</span>
                         {{/if}}
                     {{~else if (eq page_data.config_file_status "Error")}}
-                        <span class="d-inline"><b>Errors</b></span>
-                        <span class="badge bg-danger abbr-badge" title="Config file could not be loaded and was ignored. Check server logs for details.">Details</span>
+                        <span class="d-inline"><b>{{t "tpl.admin.diag.errors" locale=@root.lang}}</b></span>
+                        <span class="badge bg-danger abbr-badge" title="{{t "tpl.admin.diag.title_config_load_error" locale=@root.lang}}">{{t "tpl.admin.diag.details" locale=@root.lang}}</span>
                     {{~else}}
-                        <span class="d-inline"><b>No</b></span>
+                        <span class="d-inline"><b>{{t "tpl.admin.diag.no" locale=@root.lang}}</b></span>
                     {{/if}}
                     </dd>
-                    <dt class="col-sm-5">Environment variables are valid</dt>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.env_valid" locale=@root.lang}}</dt>
                     <dd class="col-sm-7">
                     {{#if page_data.invalid_env_vars}}
-                        <span class="d-inline"><b>No</b></span>
-                        <span class="badge bg-danger abbr-badge" title="Invalid environment variables are found and defaults are used instead.&#013;&#010;{{page_data.invalid_env_vars}}">Details</span>
+                        <span class="d-inline"><b>{{t "tpl.admin.diag.no" locale=@root.lang}}</b></span>
+                        <span class="badge bg-danger abbr-badge" title="{{t "tpl.admin.diag.title_invalid_env_vars" locale=@root.lang}}&#013;&#010;{{page_data.invalid_env_vars}}">{{t "tpl.admin.diag.details" locale=@root.lang}}</span>
                     {{/if}}
                     {{#unless page_data.invalid_env_vars}}
-                        <span class="d-block"><b>Yes</b></span>
+                        <span class="d-block"><b>{{t "tpl.admin.diag.yes" locale=@root.lang}}</b></span>
                     {{/unless}}
                     </dd>
-                    <dt class="col-sm-5">Uses custom templates</dt>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.uses_custom_templates" locale=@root.lang}}</dt>
                     <dd class="col-sm-7">
                     {{#if page_data.template_overrides}}
-                        <span class="d-inline"><b>Yes</b></span>
-                        <span class="badge bg-info text-dark abbr-badge" title="Custom template files are used.&#013;&#010;{{page_data.template_overrides}}">Details</span>
+                        <span class="d-inline"><b>{{t "tpl.admin.diag.yes" locale=@root.lang}}</b></span>
+                        <span class="badge bg-info text-dark abbr-badge" title="{{t "tpl.admin.diag.title_custom_templates" locale=@root.lang}}&#013;&#010;{{page_data.template_overrides}}">{{t "tpl.admin.diag.details" locale=@root.lang}}</span>
                     {{/if}}
                     {{#unless page_data.template_overrides}}
-                        <span class="d-block"><b>No</b></span>
+                        <span class="d-block"><b>{{t "tpl.admin.diag.no" locale=@root.lang}}</b></span>
                     {{/unless}}
                     </dd>
-                    <dt class="col-sm-5">Uses a reverse proxy</dt>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.uses_reverse_proxy" locale=@root.lang}}</dt>
                     <dd class="col-sm-7">
                     {{#if page_data.ip_header_exists}}
-                        <span class="d-block" title="IP Header found."><b>Yes</b></span>
+                        <span class="d-block" title="{{t "tpl.admin.diag.title_ip_header_found" locale=@root.lang}}"><b>{{t "tpl.admin.diag.yes" locale=@root.lang}}</b></span>
                     {{/if}}
                     {{#unless page_data.ip_header_exists}}
-                        <span class="d-block" title="No IP Header found."><b>No</b></span>
+                        <span class="d-block" title="{{t "tpl.admin.diag.title_ip_header_not_found" locale=@root.lang}}"><b>{{t "tpl.admin.diag.no" locale=@root.lang}}</b></span>
                     {{/unless}}
                     </dd>
                     {{!-- Only show this if the IP Header Exists --}}
                     {{#if page_data.ip_header_exists}}
-                    <dt class="col-sm-5">IP header
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.ip_header" locale=@root.lang}}
                     {{#if page_data.ip_header_match}}
-                        <span class="badge bg-success abbr-badge" title="IP_HEADER config seems to be valid.">Match</span>
+                        <span class="badge bg-success abbr-badge" title="{{t "tpl.admin.diag.title_ip_header_valid" locale=@root.lang}}">{{t "tpl.admin.diag.match" locale=@root.lang}}</span>
                     {{/if}}
                     {{#unless page_data.ip_header_match}}
-                        <span class="badge bg-danger abbr-badge" title="IP_HEADER config seems to be invalid. IP's in the log could be invalid. Please fix.">No Match</span>
+                        <span class="badge bg-danger abbr-badge" title="{{t "tpl.admin.diag.title_ip_header_invalid" locale=@root.lang}}">{{t "tpl.admin.diag.no_match" locale=@root.lang}}</span>
                     {{/unless}}
                     </dt>
                     <dd class="col-sm-7">
                     {{#if page_data.ip_header_match}}
-                        <span class="d-block"><b>Config/Server:</b> {{ page_data.ip_header_name }}</span>
+                        <span class="d-block"><b>{{t "tpl.admin.diag.config_server" locale=@root.lang}}</b> {{ page_data.ip_header_name }}</span>
                     {{/if}}
                     {{#unless page_data.ip_header_match}}
-                        <span class="d-block"><b>Config:</b> {{ page_data.ip_header_config }}</span>
-                        <span class="d-block"><b>Server:</b> {{ page_data.ip_header_name }}</span>
+                        <span class="d-block"><b>{{t "tpl.admin.diag.config" locale=@root.lang}}</b> {{ page_data.ip_header_config }}</span>
+                        <span class="d-block"><b>{{t "tpl.admin.diag.server" locale=@root.lang}}</b> {{ page_data.ip_header_name }}</span>
                     {{/unless}}
                     </dd>
                     {{/if}}
                     {{!-- End if IP Header Exists --}}
-                    <dt class="col-sm-5">Internet access
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.internet_access" locale=@root.lang}}
                     {{#if page_data.has_http_access}}
-                        <span class="badge bg-success abbr-badge" title="We have internet access!">Ok</span>
+                        <span class="badge bg-success abbr-badge" title="{{t "tpl.admin.diag.title_internet_ok" locale=@root.lang}}">{{t "tpl.admin.diag.ok" locale=@root.lang}}</span>
                     {{/if}}
                     {{#unless page_data.has_http_access}}
-                        <span class="badge bg-danger abbr-badge" title="There seems to be no internet access. Please fix.">Error</span>
+                        <span class="badge bg-danger abbr-badge" title="{{t "tpl.admin.diag.title_internet_error" locale=@root.lang}}">{{t "tpl.admin.diag.error" locale=@root.lang}}</span>
                     {{/unless}}
                     </dt>
                     <dd class="col-sm-7">
                     {{#if page_data.has_http_access}}
-                        <span class="d-block"><b>Yes</b></span>
+                        <span class="d-block"><b>{{t "tpl.admin.diag.yes" locale=@root.lang}}</b></span>
                     {{/if}}
                     {{#unless page_data.has_http_access}}
-                        <span class="d-block"><b>No</b></span>
+                        <span class="d-block"><b>{{t "tpl.admin.diag.no" locale=@root.lang}}</b></span>
                     {{/unless}}
                     </dd>
-                    <dt class="col-sm-5">Internet access via a proxy</dt>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.internet_via_proxy" locale=@root.lang}}</dt>
                     <dd class="col-sm-7">
                     {{#if page_data.uses_proxy}}
-                        <span class="d-block" title="Internet access goes via a proxy (HTTPS_PROXY or HTTP_PROXY is configured)."><b>Yes</b></span>
+                        <span class="d-block" title="{{t "tpl.admin.diag.title_proxy_yes" locale=@root.lang}}"><b>{{t "tpl.admin.diag.yes" locale=@root.lang}}</b></span>
                     {{/if}}
                     {{#unless page_data.uses_proxy}}
-                        <span class="d-block" title="We have direct internet access, no outgoing proxy configured."><b>No</b></span>
+                        <span class="d-block" title="{{t "tpl.admin.diag.title_proxy_no" locale=@root.lang}}"><b>{{t "tpl.admin.diag.no" locale=@root.lang}}</b></span>
                     {{/unless}}
                     </dd>
-                    <dt class="col-sm-5">Websocket enabled
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.websocket_enabled" locale=@root.lang}}
                         {{#if page_data.enable_websocket}}
-                        <span class="badge bg-success d-none abbr-badge" id="websocket-success" title="Websocket connection is working.">Ok</span>
-                        <span class="badge bg-danger d-none abbr-badge" id="websocket-error" title="Websocket connection error, validate your reverse proxy configuration!">Error</span>
+                        <span class="badge bg-success d-none abbr-badge" id="websocket-success" title="{{t "tpl.admin.diag.title_websocket_ok" locale=@root.lang}}">{{t "tpl.admin.diag.ok" locale=@root.lang}}</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="websocket-error" title="{{t "tpl.admin.diag.title_websocket_error" locale=@root.lang}}">{{t "tpl.admin.diag.error" locale=@root.lang}}</span>
                         {{/if}}
                     </dt>
                     <dd class="col-sm-7">
                     {{#if page_data.enable_websocket}}
-                        <span class="d-block" title="Websocket connections are enabled (ENABLE_WEBSOCKET is true)."><b>Yes</b></span>
+                        <span class="d-block" title="{{t "tpl.admin.diag.title_websocket_enabled" locale=@root.lang}}"><b>{{t "tpl.admin.diag.yes" locale=@root.lang}}</b></span>
                     {{/if}}
                     {{#unless page_data.enable_websocket}}
-                        <span class="d-block" title="Websocket connections are disabled (ENABLE_WEBSOCKET is false)."><b>No</b></span>
+                        <span class="d-block" title="{{t "tpl.admin.diag.title_websocket_disabled" locale=@root.lang}}"><b>{{t "tpl.admin.diag.no" locale=@root.lang}}</b></span>
                     {{/unless}}
                     </dd>
 
-                    <dt class="col-sm-5">DNS (github.com)
-                        <span class="badge bg-success d-none abbr-badge" id="dns-success" title="DNS Resolving works!">Ok</span>
-                        <span class="badge bg-danger d-none abbr-badge" id="dns-warning" title="DNS Resolving failed. Please fix.">Error</span>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.dns_github" locale=@root.lang}}
+                        <span class="badge bg-success d-none abbr-badge" id="dns-success" title="{{t "tpl.admin.diag.title_dns_ok" locale=@root.lang}}">{{t "tpl.admin.diag.ok" locale=@root.lang}}</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="dns-warning" title="{{t "tpl.admin.diag.title_dns_error" locale=@root.lang}}">{{t "tpl.admin.diag.error" locale=@root.lang}}</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="dns-resolved">{{page_data.dns_resolved}}</span>
                     </dd>
-                    <dt class="col-sm-5">Date & Time (Local)
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.date_local" locale=@root.lang}}
                         {{#if page_data.tz_env}}
-                            <span class="badge bg-success abbr-badge" title="Configured TZ environment variable">{{page_data.tz_env}}</span>
+                            <span class="badge bg-success abbr-badge" title="{{t "tpl.admin.diag.title_tz_env" locale=@root.lang}}">{{page_data.tz_env}}</span>
                         {{/if}}
                     </dt>
                     <dd class="col-sm-7">
-                        <span><b>Server:</b> {{page_data.server_time_local}}</span>
+                        <span><b>{{t "tpl.admin.diag.server" locale=@root.lang}}</b> {{page_data.server_time_local}}</span>
                     </dd>
-                    <dt class="col-sm-5">Date & Time (UTC)
-                        <span class="badge bg-success d-none abbr-badge" id="time-success" title="Server and browser times are within 15 seconds of each other.">Server/Browser Ok</span>
-                        <span class="badge bg-danger d-none abbr-badge" id="time-warning" title="Server and browser times are more than 15 seconds apart.">Server/Browser Error</span>
-                        <span class="badge bg-success d-none abbr-badge" id="ntp-server-success" title="Server and NTP times are within 15 seconds of each other.">Server NTP Ok</span>
-                        <span class="badge bg-danger d-none abbr-badge" id="ntp-server-warning" title="Server and NTP times are more than 15 seconds apart.">Server NTP Error</span>
-                        <span class="badge bg-success d-none abbr-badge" id="ntp-browser-success" title="Browser and NTP times are within 15 seconds of each other.">Browser NTP Ok</span>
-                        <span class="badge bg-danger d-none abbr-badge" id="ntp-browser-warning" title="Browser and NTP times are more than 15 seconds apart.">Browser NTP Error</span>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.date_utc" locale=@root.lang}}
+                        <span class="badge bg-success d-none abbr-badge" id="time-success" title="{{t "tpl.admin.diag.title_server_browser_ok" locale=@root.lang}}">{{t "tpl.admin.diag.server_browser_ok" locale=@root.lang}}</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="time-warning" title="{{t "tpl.admin.diag.title_server_browser_error" locale=@root.lang}}">{{t "tpl.admin.diag.server_browser_error" locale=@root.lang}}</span>
+                        <span class="badge bg-success d-none abbr-badge" id="ntp-server-success" title="{{t "tpl.admin.diag.title_server_ntp_ok" locale=@root.lang}}">{{t "tpl.admin.diag.server_ntp_ok" locale=@root.lang}}</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="ntp-server-warning" title="{{t "tpl.admin.diag.title_server_ntp_error" locale=@root.lang}}">{{t "tpl.admin.diag.server_ntp_error" locale=@root.lang}}</span>
+                        <span class="badge bg-success d-none abbr-badge" id="ntp-browser-success" title="{{t "tpl.admin.diag.title_browser_ntp_ok" locale=@root.lang}}">{{t "tpl.admin.diag.browser_ntp_ok" locale=@root.lang}}</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="ntp-browser-warning" title="{{t "tpl.admin.diag.title_browser_ntp_error" locale=@root.lang}}">{{t "tpl.admin.diag.browser_ntp_error" locale=@root.lang}}</span>
                     </dt>
                     <dd class="col-sm-7">
-                        <span id="ntp-time" class="d-block"><b>NTP:</b> <span id="ntp-server-string">{{page_data.ntp_time}}</span></span>
-                        <span id="time-server" class="d-block"><b>Server:</b> <span id="time-server-string">{{page_data.server_time}}</span></span>
-                        <span id="time-browser" class="d-block"><b>Browser:</b> <span id="time-browser-string"></span></span>
+                        <span id="ntp-time" class="d-block"><b>{{t "tpl.admin.diag.ntp" locale=@root.lang}}</b> <span id="ntp-server-string">{{page_data.ntp_time}}</span></span>
+                        <span id="time-server" class="d-block"><b>{{t "tpl.admin.diag.server" locale=@root.lang}}</b> <span id="time-server-string">{{page_data.server_time}}</span></span>
+                        <span id="time-browser" class="d-block"><b>{{t "tpl.admin.diag.browser" locale=@root.lang}}</b> <span id="time-browser-string"></span></span>
                     </dd>
 
-                    <dt class="col-sm-5">Domain configuration
-                        <span class="badge bg-success d-none abbr-badge" id="domain-success" title="The domain variable matches the browser location and seems to be configured correctly.">Match</span>
-                        <span class="badge bg-danger d-none abbr-badge" id="domain-warning" title="The domain variable does not match the browser location.&#013;&#010;The domain variable does not seem to be configured correctly.&#013;&#010;Some features may not work as expected!">No Match</span>
-                        <span class="badge bg-success d-none abbr-badge" id="https-success" title="Configured to use HTTPS">HTTPS</span>
-                        <span class="badge bg-danger d-none abbr-badge" id="https-warning" title="Not configured to use HTTPS.&#013;&#010;Some features may not work as expected!">No HTTPS</span>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.domain_config" locale=@root.lang}}
+                        <span class="badge bg-success d-none abbr-badge" id="domain-success" title="{{t "tpl.admin.diag.title_domain_match" locale=@root.lang}}">{{t "tpl.admin.diag.match" locale=@root.lang}}</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="domain-warning" title="{{t "tpl.admin.diag.title_domain_no_match" locale=@root.lang}}">{{t "tpl.admin.diag.no_match" locale=@root.lang}}</span>
+                        <span class="badge bg-success d-none abbr-badge" id="https-success" title="{{t "tpl.admin.diag.title_https_configured" locale=@root.lang}}">HTTPS</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="https-warning" title="{{t "tpl.admin.diag.title_https_not_configured" locale=@root.lang}}">{{t "tpl.admin.diag.no_https" locale=@root.lang}}</span>
                     </dt>
                     <dd class="col-sm-7">
-                        <span id="domain-server" class="d-block"><b>Server:</b> <span id="domain-server-string">{{page_data.admin_url}}</span></span>
-                        <span id="domain-browser" class="d-block"><b>Browser:</b> <span id="domain-browser-string"></span></span>
+                        <span id="domain-server" class="d-block"><b>{{t "tpl.admin.diag.server" locale=@root.lang}}</b> <span id="domain-server-string">{{page_data.admin_url}}</span></span>
+                        <span id="domain-browser" class="d-block"><b>{{t "tpl.admin.diag.browser" locale=@root.lang}}</b> <span id="domain-browser-string"></span></span>
                     </dd>
 
-                    <dt class="col-sm-5">HTTP Response validation
-                        <span class="badge bg-success d-none abbr-badge" id="http-response-success" title="All headers and HTTP request responses seem to be ok.">Ok</span>
-                        <span class="badge bg-danger d-none abbr-badge" id="http-response-warning" title="Some headers or HTTP request responses return invalid data!">Error</span>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.http_validation" locale=@root.lang}}
+                        <span class="badge bg-success d-none abbr-badge" id="http-response-success" title="{{t "tpl.admin.diag.title_http_ok" locale=@root.lang}}">{{t "tpl.admin.diag.ok" locale=@root.lang}}</span>
+                        <span class="badge bg-danger d-none abbr-badge" id="http-response-warning" title="{{t "tpl.admin.diag.title_http_error" locale=@root.lang}}">{{t "tpl.admin.diag.error" locale=@root.lang}}</span>
                     </dt>
                     <dd class="col-sm-7">
                         <span id="http-response-errors" class="d-block"></span>
                     </dd>
                     {{#if page_data.invalid_feature_flags}}
-                    <dt class="col-sm-5">Invalid Feature Flags
-                        <span class="badge bg-warning text-dark abbr-badge" id="feature-flag-warning" title="Some feature flags are invalid or outdated!">Warning</span>
+                    <dt class="col-sm-5">{{t "tpl.admin.diag.invalid_feature_flags" locale=@root.lang}}
+                        <span class="badge bg-warning text-dark abbr-badge" id="feature-flag-warning" title="{{t "tpl.admin.diag.title_invalid_flags" locale=@root.lang}}">{{t "tpl.admin.diag.warning" locale=@root.lang}}</span>
                     </dt>
                     <dd class="col-sm-7">
-                        <span id="feature-flags" class="d-block"><b>Flags:</b> <span id="feature-flags-string">{{page_data.invalid_feature_flags}}</span></span>
+                        <span id="feature-flags" class="d-block"><b>{{t "tpl.admin.diag.flags" locale=@root.lang}}</b> <span id="feature-flags-string">{{page_data.invalid_feature_flags}}</span></span>
                     </dd>
                     {{/if}}
                 </dl>
             </div>
         </div>
 
-        <h3>Support</h3>
+        <h3>{{t "tpl.admin.diag.support" locale=@root.lang}}</h3>
         <div class="row">
             <div class="col-md">
                 <dl class="row">
                     <dd class="col-sm-12">
-                        If you need support please check the following links first before you create a new issue:
-                         <a href="https://vaultwarden.discourse.group/" target="_blank" rel="noreferrer noopener">Vaultwarden Forum</a>
-                         | <a href="https://github.com/dani-garcia/vaultwarden/discussions" target="_blank" rel="noreferrer noopener">Github Discussions</a>
+                        {{t "tpl.admin.diag.support_intro" locale=@root.lang}}
+                         <a href="https://vaultwarden.discourse.group/" target="_blank" rel="noreferrer noopener">{{t "tpl.admin.diag.support_forum" locale=@root.lang}}</a>
+                         | <a href="https://github.com/dani-garcia/vaultwarden/discussions" target="_blank" rel="noreferrer noopener">{{t "tpl.admin.diag.support_discussions" locale=@root.lang}}</a>
                     </dd>
                 </dl>
                 <dl class="row">
                     <dd class="col-sm-12">
-                        You can use the button below to pre-generate a string which you can copy/paste on either the Forum or when Creating a new issue at Github.<br>
-                        We try to hide the most sensitive values from the generated support string by default, but please verify if there is nothing in there which you want to hide!<br>
+                        {{t "tpl.admin.diag.support_text_1" locale=@root.lang}}<br>
+                        {{t "tpl.admin.diag.support_text_2" locale=@root.lang}}<br>
                     </dd>
                 </dl>
                 <dl class="row">
                     <dt class="col-sm-3">
-                        <button type="button" id="gen-support" class="btn btn-primary">Generate Support String</button>
+                        <button type="button" id="gen-support" class="btn btn-primary">{{t "tpl.admin.diag.generate_support" locale=@root.lang}}</button>
                         <br><br>
-                        <button type="button" id="copy-support" class="btn btn-info mb-3 d-none">Copy To Clipboard</button>
+                        <button type="button" id="copy-support" class="btn btn-info mb-3 d-none">{{t "tpl.admin.diag.copy_clipboard" locale=@root.lang}}</button>
                         <div class="toast-container position-absolute float-start vw-copy-toast">
                             <div id="toastClipboardCopy" class="toast fade hide" role="status" aria-live="polite" aria-atomic="true" data-bs-autohide="true" data-bs-delay="1500">
                                 <div class="toast-body">
-                                    Copied to clipboard!
+                                    {{t "tpl.admin.diag.copied_clipboard" locale=@root.lang}}
                                 </div>
                             </div>
                         </div>

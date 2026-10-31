@@ -9,15 +9,15 @@
 
     <div class="align-items-center p-3 mb-3 text-opacity-75 text-light bg-danger rounded shadow">
         <div>
-            <h6 class="mb-0 text-light">Authentication key needed to continue</h6>
-            <small>Please provide it below:</small>
+            <h6 class="mb-0 text-light">{{t "tpl.admin.login.auth_key_needed" locale=lang}}</h6>
+            <small>{{t "tpl.admin.login.provide_below" locale=lang}}</small>
 
             <form class="form-inline" method="post" action="{{urlpath}}/admin">
-                <input type="password" autocomplete="password" class="form-control w-50 mr-2" name="token" placeholder="Enter admin token" autofocus="autofocus">
+                <input type="password" autocomplete="password" class="form-control w-50 mr-2" name="token" placeholder="{{t "tpl.admin.login.token_placeholder" locale=lang}}" autofocus="autofocus">
                 {{#if redirect}}
                 <input type="hidden" id="redirect" name="redirect" value="/{{redirect}}">
                 {{/if}}
-                <button type="submit" class="btn btn-primary mt-2">Enter</button>
+                <button type="submit" class="btn btn-primary mt-2">{{t "tpl.admin.login.enter" locale=lang}}</button>
             </form>
         </div>
     </div>

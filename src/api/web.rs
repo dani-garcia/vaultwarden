@@ -4,10 +4,12 @@ use std::{
     sync::{Arc, LazyLock, RwLock},
 };
 
+use include_dir::{Dir, include_dir};
 use rocket::{
     Catcher, Route,
     fs::NamedFile,
     http::ContentType,
+    request::Request,
     response::{Redirect, content::RawHtml as Html},
     serde::json::Json,
 };
@@ -29,7 +31,7 @@ use crate::{
 pub fn routes() -> Vec<Route> {
     // If adding more routes here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
-    let mut routes = routes![attachments, alive, alive_head, static_files];
+    let mut routes = routes![attachments, alive, alive_head, static_files, static_locale_files];
     if CONFIG.web_vault_enabled() {
         routes.append(&mut routes![
             web_index,
@@ -44,7 +46,7 @@ pub fn routes() -> Vec<Route> {
 
     #[cfg(debug_assertions)]
     if CONFIG.reload_templates() {
-        routes.append(&mut routes![static_files_dev]);
+        routes.append(&mut routes![static_files_dev, static_locale_files_dev]);
     }
 
     routes
@@ -58,13 +60,28 @@ pub fn catchers() -> Vec<Catcher> {
     }
 }
 
+fn localized_404_template_name(locale: &str) -> String {
+    for candidate in crate::i18n::locale_candidates(locale) {
+        let localized = format!("404/{candidate}");
+        if CONFIG.has_template(&localized) {
+            return localized;
+        }
+    }
+
+    "404".to_owned()
+}
+
 #[catch(404)]
-fn not_found() -> ApiResult<Html<String>> {
+fn not_found(request: &Request<'_>) -> ApiResult<Html<String>> {
+    let locale =
+        crate::i18n::resolve_locale(None, request.headers().get_one("Accept-Language"), &CONFIG.default_locale());
     // Return the page
     let json = json!({
-        "urlpath": CONFIG.domain_path()
+        "urlpath": CONFIG.domain_path(),
+        "lang": locale,
     });
-    let text = CONFIG.render_template("404", &json)?;
+    let template_name = localized_404_template_name(&locale);
+    let text = CONFIG.render_template(&template_name, &json)?;
     Ok(Html(text))
 }
 
@@ -277,11 +294,28 @@ pub async fn static_files_dev(filename: PathBuf) -> Option<NamedFile> {
     None
 }
 
+#[cfg(debug_assertions)]
+#[get("/vw_static/locales/<locale>/<filename>", rank = 1)]
+pub async fn static_locale_files_dev(locale: &str, filename: PathBuf) -> Option<NamedFile> {
+    let file = filename.to_str().unwrap_or_default();
+    let path = tokio::fs::canonicalize(
+        Path::new(file!()).parent().unwrap().join("../static/locales/").join(locale).join(file),
+    )
+    .await;
+
+    if let Ok(path) = path {
+        return NamedFile::open(path).await.ok();
+    }
+    None
+}
+
 pub struct StaticFile {
     pub content_type: ContentType,
     pub bytes: &'static [u8],
     pub etag: String,
 }
+
+static BUILTIN_LOCALES_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/src/static/locales");
 
 pub static STATIC_FILES: LazyLock<HashMap<&'static str, StaticFile>> = LazyLock::new(|| {
     [
@@ -295,6 +329,11 @@ pub static STATIC_FILES: LazyLock<HashMap<&'static str, StaticFile>> = LazyLock:
         ("404.css", ContentType::CSS, &include_bytes!("../static/scripts/404.css")[..]),
         ("admin.css", ContentType::CSS, &include_bytes!("../static/scripts/admin.css")[..]),
         ("admin.js", ContentType::JavaScript, &include_bytes!("../static/scripts/admin.js")[..]),
+        (
+            "admin_i18n_loader.js",
+            ContentType::JavaScript,
+            &include_bytes!("../static/scripts/admin_i18n_loader.js")[..],
+        ),
         ("admin_settings.js", ContentType::JavaScript, &include_bytes!("../static/scripts/admin_settings.js")[..]),
         ("admin_users.js", ContentType::JavaScript, &include_bytes!("../static/scripts/admin_users.js")[..]),
         (
@@ -327,11 +366,51 @@ pub static STATIC_FILES: LazyLock<HashMap<&'static str, StaticFile>> = LazyLock:
     .collect()
 });
 
+pub static STATIC_LOCALE_FILES: LazyLock<HashMap<String, StaticFile>> = LazyLock::new(|| {
+    let mut files = HashMap::new();
+
+    let mut locale_dirs = BUILTIN_LOCALES_DIR.dirs().collect::<Vec<_>>();
+    locale_dirs.sort_by_key(|dir| dir.path().to_string_lossy().to_string());
+
+    for locale_dir in locale_dirs {
+        let Some(admin_ui_file) = locale_dir.get_file("admin_ui.json") else {
+            continue;
+        };
+
+        let Some(locale_name) = locale_dir.path().file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+
+        let key = format!("{locale_name}/admin_ui.json");
+        let bytes = admin_ui_file.contents();
+        files.insert(
+            key,
+            StaticFile {
+                content_type: ContentType::JSON,
+                bytes,
+                etag: sha256_hex(bytes),
+            },
+        );
+    }
+
+    files
+});
+
 #[get("/vw_static/<filename>", rank = 2)]
 pub fn static_files(filename: &str) -> Result<EtagCached<&'static [u8]>, Error> {
     if let Some(file) = STATIC_FILES.get(filename) {
         Ok(EtagCached::new(file.bytes, file.content_type.clone(), &file.etag))
     } else {
-        err!(format!("Static file not found: {filename}"))
+        err!(crate::i18n::api_static_file_not_found(&CONFIG.default_locale()), filename)
+    }
+}
+
+#[get("/vw_static/locales/<locale>/<filename>", rank = 2)]
+pub fn static_locale_files(locale: &str, filename: &str) -> Result<EtagCached<&'static [u8]>, Error> {
+    let key = format!("{locale}/{filename}");
+    if let Some(file) = STATIC_LOCALE_FILES.get(&key) {
+        Ok(EtagCached::new(file.bytes, file.content_type.clone(), &file.etag))
+    } else {
+        err!(crate::i18n::api_static_file_not_found(&CONFIG.default_locale()), key)
     }
 }

@@ -4,6 +4,7 @@ use diesel::prelude::*;
 use serde_json::Value;
 
 use crate::{
+    CONFIG,
     api::{ApiResult, EmptyResult},
     crypto::ct_eq,
     db::{DbConn, schema::auth_requests},
@@ -91,7 +92,7 @@ impl AuthRequest {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving auth_request")
+                    .map_res(crate::i18n::db_error_saving_auth_request(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(auth_requests::table)
@@ -100,7 +101,7 @@ impl AuthRequest {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving auth_request")
+                    .map_res(crate::i18n::db_error_saving_auth_request(&CONFIG.default_locale()))
             }
         }
     }
@@ -161,7 +162,7 @@ impl AuthRequest {
         conn.run(move |conn| {
             diesel::delete(auth_requests::table.filter(auth_requests::uuid.eq(&self.uuid)))
                 .execute(conn)
-                .map_res("Error deleting auth request")
+                .map_res(crate::i18n::db_error_deleting_auth_request(&CONFIG.default_locale()))
         })
         .await
     }
@@ -170,7 +171,7 @@ impl AuthRequest {
         conn.run(move |conn| {
             diesel::delete(auth_requests::table.filter(auth_requests::user_uuid.eq(user_uuid)))
                 .execute(conn)
-                .map_res("Error deleting auth requests for user")
+                .map_res(crate::i18n::db_error_deleting_auth_requests_for_user(&CONFIG.default_locale()))
         })
         .await
     }
@@ -185,7 +186,7 @@ impl AuthRequest {
                 .set(auth_requests::authentication_date.eq(now))
                 .execute(conn)
                 .map(|updated| updated == 1)
-                .map_res("Error updating auth request")
+                .map_res(crate::i18n::db_error_updating_auth_request(&CONFIG.default_locale()))
         })
         .await
     }

@@ -1,6 +1,7 @@
 use diesel::prelude::*;
 
 use crate::{
+    CONFIG,
     api::EmptyResult,
     db::{DbConn, schema::favorites},
     error::MapResult,
@@ -45,7 +46,7 @@ impl Favorite {
                     diesel::insert_into(favorites::table)
                         .values((favorites::user_uuid.eq(user_uuid), favorites::cipher_uuid.eq(cipher_uuid)))
                         .execute(conn)
-                        .map_res("Error adding favorite")
+                        .map_res(crate::i18n::db_error_adding_favorite(&CONFIG.default_locale()))
                 })
                 .await
             }
@@ -58,7 +59,7 @@ impl Favorite {
                             .filter(favorites::cipher_uuid.eq(cipher_uuid)),
                     )
                     .execute(conn)
-                    .map_res("Error removing favorite")
+                    .map_res(crate::i18n::db_error_removing_favorite(&CONFIG.default_locale()))
                 })
                 .await
             }
@@ -72,7 +73,7 @@ impl Favorite {
         conn.run(move |conn| {
             diesel::delete(favorites::table.filter(favorites::cipher_uuid.eq(cipher_uuid)))
                 .execute(conn)
-                .map_res("Error removing favorites by cipher")
+                .map_res(crate::i18n::db_error_removing_favorites_by_cipher(&CONFIG.default_locale()))
         })
         .await
     }
@@ -82,7 +83,7 @@ impl Favorite {
         conn.run(move |conn| {
             diesel::delete(favorites::table.filter(favorites::user_uuid.eq(user_uuid)))
                 .execute(conn)
-                .map_res("Error removing favorites by user")
+                .map_res(crate::i18n::db_error_removing_favorites_by_user(&CONFIG.default_locale()))
         })
         .await
     }

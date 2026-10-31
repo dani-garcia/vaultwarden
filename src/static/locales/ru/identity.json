@@ -1,0 +1,9 @@
+{
+  "identity.sso_required": "Требуется вход через SSO.",
+  "identity.sso_unavailable": "Вход через SSO недоступен.",
+  "identity.invalid_type": "Некорректный тип.",
+  "identity.unsupported_code_challenge_method": "Неподдерживаемый метод code challenge",
+  "identity.cannot_retrieve_sso_auth": "Не удалось получить sso_auth",
+  "identity.sso_session_binding_mismatch": "Несоответствие привязки SSO-сессии",
+  "identity.failed_parse_redirect_uri": "Не удалось разобрать redirect uri"
+}

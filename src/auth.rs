@@ -99,16 +99,16 @@ pub async fn initialize_keys() -> Result<(), Error> {
     let enc = EncodingKey::from_rsa_pem(&priv_key_buffer)?;
     let dec: DecodingKey = DecodingKey::from_rsa_pem(&pub_key_buffer)?;
     if PRIVATE_RSA_KEY.set(enc).is_err() {
-        err!("PRIVATE_RSA_KEY must only be initialized once")
+        err!(crate::i18n::auth_private_rsa_key_init_once(&CONFIG.default_locale()))
     }
     if PUBLIC_RSA_KEY.set(dec).is_err() {
-        err!("PUBLIC_RSA_KEY must only be initialized once")
+        err!(crate::i18n::auth_public_rsa_key_init_once(&CONFIG.default_locale()))
     }
 
     // Derived from the RSA key, so it stays the same across restarts without storing another secret
     let prelogin_kdf_key = hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, &priv_key_buffer), b"prelogin-kdf");
     if PRELOGIN_KDF_KEY.set(hmac::Key::new(hmac::HMAC_SHA256, prelogin_kdf_key.as_ref())).is_err() {
-        err!("PRELOGIN_KDF_KEY must only be initialized once")
+        err!(crate::i18n::auth_prelogin_kdf_key_init_once(&CONFIG.default_locale()))
     }
     Ok(())
 }
@@ -138,10 +138,10 @@ pub fn decode_jwt<T: DeserializeOwned>(token: &str, issuer: String) -> Result<T,
     match jsonwebtoken::decode(&token, PUBLIC_RSA_KEY.wait(), &validation) {
         Ok(d) => Ok(d.claims),
         Err(err) => match *err.kind() {
-            ErrorKind::InvalidToken => err!("Token is invalid"),
-            ErrorKind::InvalidIssuer => err!("Issuer is invalid"),
-            ErrorKind::ExpiredSignature => err!("Token has expired"),
-            _ => err!(format!("Error decoding JWT: {:?}", err)),
+            ErrorKind::InvalidToken => err!(crate::i18n::auth_token_invalid(&CONFIG.default_locale())),
+            ErrorKind::InvalidIssuer => err!(crate::i18n::auth_issuer_invalid(&CONFIG.default_locale())),
+            ErrorKind::ExpiredSignature => err!(crate::i18n::auth_token_expired(&CONFIG.default_locale())),
+            _ => err!(crate::i18n::auth_error_decoding_jwt(&CONFIG.default_locale()), format!("{err:?}")),
         },
     }
 }
@@ -317,10 +317,10 @@ impl LoginJwtClaims {
 fn calculate_invite_expire_hours(now: &DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
     let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
     let Some(hours_delta) = TimeDelta::try_hours(expire_hours) else {
-        err!("Unable to calculate time delta for invite expire hours. Check `INVITATION_EXPIRATION_HOURS`.");
+        err!(crate::i18n::auth_invite_expire_delta_calculation_failed(&CONFIG.default_locale()));
     };
     let Some(exp) = now.checked_add_signed(hours_delta) else {
-        err!("Unable to calculate invitation expire date. Check `INVITATION_EXPIRATION_HOURS`.");
+        err!(crate::i18n::auth_invite_expire_date_calculation_failed(&CONFIG.default_locale()));
     };
     Ok(exp)
 }
@@ -562,10 +562,10 @@ pub fn generate_admin_claims() -> Result<BasicJwtClaims, Error> {
     let time_now = Utc::now();
     let lifetime_minutes = i64::from(CONFIG.admin_session_lifetime());
     let Some(minutes_delta) = TimeDelta::try_minutes(lifetime_minutes) else {
-        err!("Unable to calculate time delta for admin session lifetime. Check `ADMIN_SESSION_LIFETIME`.");
+        err!(crate::i18n::auth_admin_session_delta_calculation_failed(&CONFIG.default_locale()));
     };
     let Some(exp) = time_now.checked_add_signed(minutes_delta) else {
-        err!("Unable to calculate admin session lifetime. Check `ADMIN_SESSION_LIFETIME`.");
+        err!(crate::i18n::auth_admin_session_lifetime_calculation_failed(&CONFIG.default_locale()));
     };
     Ok(BasicJwtClaims {
         nbf: time_now.timestamp(),
@@ -632,6 +632,26 @@ impl<'r> FromRequest<'r> for Host {
 pub struct ClientHeaders {
     pub device_type: i32,
     pub ip: ClientIp,
+    pub locale: String,
+}
+
+pub struct RequestLocale {
+    pub locale: String,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for RequestLocale {
+    type Error = &'static str;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        Outcome::Success(RequestLocale {
+            locale: crate::i18n::resolve_locale(
+                None,
+                request.headers().get_one("Accept-Language"),
+                &CONFIG.default_locale(),
+            ),
+        })
+    }
 }
 
 #[rocket::async_trait]
@@ -648,10 +668,13 @@ impl<'r> FromRequest<'r> for ClientHeaders {
             .get_one("device-type")
             .and_then(|d| d.parse().ok())
             .unwrap_or(DeviceType::UnknownBrowser as i32);
+        let locale =
+            crate::i18n::resolve_locale(None, request.headers().get_one("Accept-Language"), &CONFIG.default_locale());
 
         Outcome::Success(ClientHeaders {
             device_type,
             ip,
+            locale,
         })
     }
 }
@@ -661,6 +684,7 @@ pub struct Headers {
     pub device: Device,
     pub user: User,
     pub ip: ClientIp,
+    pub locale: String,
 }
 
 #[rocket::async_trait]
@@ -706,6 +730,9 @@ impl<'r> FromRequest<'r> for Headers {
             err_handler!("Device has no user associated")
         };
 
+        let locale =
+            crate::i18n::resolve_locale(None, request.headers().get_one("Accept-Language"), &CONFIG.default_locale());
+
         if user.security_stamp != claims.sstamp {
             if let Some(stamp_exception) =
                 user.stamp_exception.as_deref().and_then(|s| serde_json::from_str::<UserStampException>(s).ok())
@@ -741,6 +768,7 @@ impl<'r> FromRequest<'r> for Headers {
             device,
             user,
             ip,
+            locale,
         })
     }
 }
@@ -953,11 +981,13 @@ impl<'r> FromRequest<'r> for ManagerHeaders {
 
 impl From<ManagerHeaders> for Headers {
     fn from(h: ManagerHeaders) -> Headers {
+        let locale = crate::i18n::resolve_locale(h.user.locale.as_deref(), None, &CONFIG.default_locale());
         Headers {
             host: h.host,
             device: h.device,
             user: h.user,
             ip: h.ip,
+            locale,
         }
     }
 }
@@ -994,11 +1024,13 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
 
 impl From<ManagerHeadersLoose> for Headers {
     fn from(h: ManagerHeadersLoose) -> Headers {
+        let locale = crate::i18n::resolve_locale(h.user.locale.as_deref(), None, &CONFIG.default_locale());
         Headers {
             host: h.host,
             device: h.device,
             user: h.user,
             ip: h.ip,
+            locale,
         }
     }
 }
@@ -1011,10 +1043,19 @@ impl ManagerHeaders {
     ) -> Result<ManagerHeaders, Error> {
         for col_id in collections {
             if uuid::Uuid::parse_str(col_id.as_ref()).is_err() {
-                err!("Collection Id is malformed!");
+                err!(crate::i18n::auth_collection_id_malformed(
+                    h.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())
+                ));
             }
             if !Collection::is_coll_manageable_by_user(col_id, &h.membership.user_uuid, conn).await {
-                err!("Collection not found", "The current user isn't a manager for this collection")
+                err!(
+                    crate::i18n::auth_collection_not_found_or_not_manager(
+                        h.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())
+                    ),
+                    crate::i18n::auth_user_not_manager_for_collection(
+                        h.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())
+                    )
+                )
             }
         }
 
@@ -1084,11 +1125,13 @@ impl<'r> FromRequest<'r> for OrgMemberHeaders {
 
 impl From<OrgMemberHeaders> for Headers {
     fn from(h: OrgMemberHeaders) -> Headers {
+        let locale = crate::i18n::resolve_locale(h.user.locale.as_deref(), None, &CONFIG.default_locale());
         Headers {
             host: h.host,
             device: h.device,
             user: h.user,
             ip: h.ip,
+            locale,
         }
     }
 }
@@ -1281,9 +1324,11 @@ impl AuthMethod {
     pub fn check_scope(&self, scope: Option<&String>) -> ApiResult<String> {
         let method_scope = self.scope();
         match scope {
-            None => err!("Missing scope"),
+            None => err!(crate::i18n::auth_missing_scope(&CONFIG.default_locale())),
             Some(scope) if scope == &method_scope => Ok(method_scope),
-            Some(scope) => err!(format!("Scope ({}) not supported", scope.escape_debug())),
+            Some(scope) => {
+                err!(crate::i18n::auth_scope_not_supported(&CONFIG.default_locale()), scope.escape_debug().to_string())
+            }
         }
     }
 }
@@ -1370,21 +1415,21 @@ pub async fn refresh_tokens(
     let refresh_claims = match decode_refresh(refresh_token) {
         Err(err) => {
             error!("Failed to decode refresh_token from {}: {err:?}", ip.ip);
-            err_silent!("Invalid refresh token")
+            err_silent!(crate::i18n::auth_invalid_refresh_token(&CONFIG.default_locale()))
         }
         Ok(claims) => claims,
     };
 
     // Get device by refresh token
     let Some(mut device) = Device::find_by_refresh_token(&refresh_claims.device_token, conn).await else {
-        err!("Invalid refresh token")
+        err!(crate::i18n::auth_invalid_refresh_token(&CONFIG.default_locale()))
     };
 
     // Save to update `updated_at`.
     device.save(true, conn).await?;
 
     let Some(user) = User::find_by_uuid(&device.user_uuid, conn).await else {
-        err!("Impossible to find user")
+        err!(crate::i18n::auth_impossible_find_user(&CONFIG.default_locale()))
     };
 
     let auth_tokens = match refresh_claims.sub {
@@ -1394,10 +1439,12 @@ pub async fn refresh_tokens(
         AuthMethod::Sso if CONFIG.sso_enabled() => {
             sso::exchange_refresh_token(&device, &user, client_id, refresh_claims).await?
         }
-        AuthMethod::Sso => err!("SSO is now disabled, Login again using email and master password"),
-        AuthMethod::Password if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO is now required, Login again"),
+        AuthMethod::Sso => err!(crate::i18n::auth_sso_now_disabled_login_password(&CONFIG.default_locale())),
+        AuthMethod::Password if CONFIG.sso_enabled() && CONFIG.sso_only() => {
+            err!(crate::i18n::auth_sso_now_required_login_again(&CONFIG.default_locale()))
+        }
         AuthMethod::Password => AuthTokens::new(&device, &user, refresh_claims.sub, client_id),
-        _ => err!("Invalid auth method, cannot refresh token"),
+        _ => err!(crate::i18n::auth_invalid_auth_method_refresh(&CONFIG.default_locale())),
     };
 
     Ok((device, auth_tokens))

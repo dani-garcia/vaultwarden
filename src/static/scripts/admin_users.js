@@ -1,24 +1,26 @@
 "use strict";
 /* global DataTable, _post:readable, _delete:readable, BASE_URL:readable, reload:readable, jdenticon:readable */
 
+const tUsers = key => (window.VW_ADMIN_I18N && window.VW_ADMIN_I18N[key]) || key;
+
 function deleteUser(event) {
     event.preventDefault();
     event.stopPropagation();
     const id = event.target.parentNode.dataset.vwUserUuid;
     const email = event.target.parentNode.dataset.vwUserEmail;
     if (!id || !email) {
-        alert("Required parameters not found!");
+        alert(tUsers("required_params_not_found"));
         return false;
     }
-    const input_email = prompt(`To delete user "${email}", please type the email below`);
+    const input_email = prompt(`${tUsers("prompt_delete_user_prefix")} "${email}", ${tUsers("prompt_type_email_below")}`);
     if (input_email != null) {
         if (input_email == email) {
             _post(`${BASE_URL}/admin/users/${id}/delete`,
-                "User deleted correctly",
-                "Error deleting user"
+                tUsers("user_deleted_ok"),
+                tUsers("user_deleted_error")
             );
         } else {
-            alert("Wrong email, please try again");
+            alert(tUsers("wrong_email_retry"));
         }
     }
 }
@@ -29,18 +31,18 @@ function deleteSSOUser(event) {
     const id = event.target.parentNode.dataset.vwUserUuid;
     const email = event.target.parentNode.dataset.vwUserEmail;
     if (!id || !email) {
-        alert("Required parameters not found!");
+        alert(tUsers("required_params_not_found"));
         return false;
     }
-    const input_email = prompt(`To delete user "${email}" SSO association, please type the email below`);
+    const input_email = prompt(`${tUsers("prompt_delete_user_sso_prefix")} "${email}" ${tUsers("prompt_delete_user_sso_suffix")}`);
     if (input_email != null) {
         if (input_email == email) {
             _delete(`${BASE_URL}/admin/users/${id}/sso`,
-                "User SSO association deleted correctly",
-                "Error deleting user SSO association"
+                tUsers("user_sso_deleted_ok"),
+                tUsers("user_sso_deleted_error")
             );
         } else {
-            alert("Wrong email, please try again");
+            alert(tUsers("wrong_email_retry"));
         }
     }
 }
@@ -51,14 +53,14 @@ function remove2fa(event) {
     const id = event.target.parentNode.dataset.vwUserUuid;
     const email = event.target.parentNode.dataset.vwUserEmail;
     if (!id || !email) {
-        alert("Required parameters not found!");
+        alert(tUsers("required_params_not_found"));
         return false;
     }
-    const confirmed = confirm(`Are you sure you want to remove 2FA for "${email}"?`);
+    const confirmed = confirm(`${tUsers("confirm_remove_2fa_prefix")} "${email}"?`);
     if (confirmed) {
         _post(`${BASE_URL}/admin/users/${id}/remove-2fa`,
-            "2FA removed correctly",
-            "Error removing 2FA"
+            tUsers("remove_2fa_ok"),
+            tUsers("remove_2fa_error")
         );
     }
 }
@@ -69,14 +71,14 @@ function deauthUser(event) {
     const id = event.target.parentNode.dataset.vwUserUuid;
     const email = event.target.parentNode.dataset.vwUserEmail;
     if (!id || !email) {
-        alert("Required parameters not found!");
+        alert(tUsers("required_params_not_found"));
         return false;
     }
-    const confirmed = confirm(`Are you sure you want to deauthorize sessions for "${email}"?`);
+    const confirmed = confirm(`${tUsers("confirm_deauth_prefix")} "${email}"?`);
     if (confirmed) {
         _post(`${BASE_URL}/admin/users/${id}/deauth`,
-            "Sessions deauthorized correctly",
-            "Error deauthorizing sessions"
+            tUsers("deauth_ok"),
+            tUsers("deauth_error")
         );
     }
 }
@@ -87,14 +89,14 @@ function disableUser(event) {
     const id = event.target.parentNode.dataset.vwUserUuid;
     const email = event.target.parentNode.dataset.vwUserEmail;
     if (!id || !email) {
-        alert("Required parameters not found!");
+        alert(tUsers("required_params_not_found"));
         return false;
     }
-    const confirmed = confirm(`Are you sure you want to disable user "${email}"? This will also deauthorize their sessions.`);
+    const confirmed = confirm(`${tUsers("confirm_disable_user_prefix")} "${email}"? ${tUsers("confirm_disable_user_suffix")}`);
     if (confirmed) {
         _post(`${BASE_URL}/admin/users/${id}/disable`,
-            "User disabled successfully",
-            "Error disabling user"
+            tUsers("user_disable_ok"),
+            tUsers("user_disable_error")
         );
     }
 }
@@ -105,14 +107,14 @@ function enableUser(event) {
     const id = event.target.parentNode.dataset.vwUserUuid;
     const email = event.target.parentNode.dataset.vwUserEmail;
     if (!id || !email) {
-        alert("Required parameters not found!");
+        alert(tUsers("required_params_not_found"));
         return false;
     }
-    const confirmed = confirm(`Are you sure you want to enable user "${email}"?`);
+    const confirmed = confirm(`${tUsers("confirm_enable_user_prefix")} "${email}"?`);
     if (confirmed) {
         _post(`${BASE_URL}/admin/users/${id}/enable`,
-            "User enabled successfully",
-            "Error enabling user"
+            tUsers("user_enable_ok"),
+            tUsers("user_enable_error")
         );
     }
 }
@@ -121,8 +123,8 @@ function updateRevisions(event) {
     event.preventDefault();
     event.stopPropagation();
     _post(`${BASE_URL}/admin/users/update_revision`,
-        "Success, clients will sync next time they connect",
-        "Error forcing clients to sync"
+        tUsers("sync_clients_ok"),
+        tUsers("sync_clients_error")
     );
 }
 
@@ -135,8 +137,8 @@ function inviteUser(event) {
     });
     email.value = "";
     _post(`${BASE_URL}/admin/invite`,
-        "User invited correctly",
-        "Error inviting user",
+        tUsers("invite_user_ok"),
+        tUsers("invite_user_error"),
         data
     );
 }
@@ -147,34 +149,34 @@ function resendUserInvite(event) {
     const id = event.target.parentNode.dataset.vwUserUuid;
     const email = event.target.parentNode.dataset.vwUserEmail;
     if (!id || !email) {
-        alert("Required parameters not found!");
+        alert(tUsers("required_params_not_found"));
         return false;
     }
-    const confirmed = confirm(`Are you sure you want to resend invitation for "${email}"?`);
+    const confirmed = confirm(`${tUsers("confirm_resend_invite_prefix")} "${email}"?`);
     if (confirmed) {
         _post(`${BASE_URL}/admin/users/${id}/invite/resend`,
-            "Invite sent successfully",
-            "Error resend invite"
+            tUsers("resend_invite_ok"),
+            tUsers("resend_invite_error")
         );
     }
 }
 
 const ORG_TYPES = {
     "0": {
-        "name": "Owner",
+        "name": tUsers("role_owner"),
         "bg": "orange",
         "font": "black"
     },
     "1": {
-        "name": "Admin",
+        "name": tUsers("role_admin"),
         "bg": "blueviolet"
     },
     "2": {
-        "name": "User",
+        "name": tUsers("role_user"),
         "bg": "blue"
     },
     "4": {
-        "name": "Manager",
+        "name": tUsers("role_manager"),
         "bg": "green"
     },
 };
@@ -213,8 +215,8 @@ function updateUserOrgType(event) {
     const data = JSON.stringify(Object.fromEntries(new FormData(event.target).entries()));
 
     _post(`${BASE_URL}/admin/users/org_type`,
-        "Updated organization type of the user successfully",
-        "Error updating organization type of the user",
+        tUsers("user_org_type_update_ok"),
+        tUsers("user_org_type_update_error"),
         data
     );
 }
@@ -276,7 +278,11 @@ DataTable.ext.type.order["date-iso-pre"] = function (a) {
 };
 
 // onLoad events
-document.addEventListener("DOMContentLoaded", (/*event*/) => {
+document.addEventListener("DOMContentLoaded", async (/*event*/) => {
+    if (window.VW_ADMIN_I18N_READY) {
+        await window.VW_ADMIN_I18N_READY;
+    }
+
     DataTable.ext.type.detect.unshift(function (data) {
         if (typeof data !== "string") { return null; }
         return data.indexOf("data-sort-type=\"date-iso\"") !== -1
@@ -290,11 +296,32 @@ document.addEventListener("DOMContentLoaded", (/*event*/) => {
         "drawCallback": function () {
             initUserTable();
         },
+        "language": {
+            "search": tUsers("datatable_search"),
+            "emptyTable": tUsers("datatable_empty_table"),
+            "info": tUsers("datatable_info"),
+            "infoEmpty": tUsers("datatable_info_empty"),
+            "infoFiltered": tUsers("datatable_info_filtered"),
+            "lengthMenu": tUsers("datatable_length_menu"),
+            "loadingRecords": tUsers("datatable_loading_records"),
+            "processing": tUsers("datatable_processing"),
+            "zeroRecords": tUsers("datatable_zero_records"),
+            "paginate": {
+                "first": tUsers("datatable_paginate_first"),
+                "last": tUsers("datatable_paginate_last"),
+                "next": tUsers("datatable_paginate_next"),
+                "previous": tUsers("datatable_paginate_previous")
+            },
+            "aria": {
+                "orderable": tUsers("datatable_aria_orderable"),
+                "orderableReverse": tUsers("datatable_aria_orderable_reverse")
+            }
+        },
         "stateSave": true,
         "responsive": true,
         "lengthMenu": [
             [-1, 2, 5, 10, 25, 50],
-            ["All", 2, 5, 10, 25, 50]
+            [tUsers("datatable_all"), 2, 5, 10, 25, 50]
         ],
         "pageLength": -1, // Default show all
         "columnDefs": [{

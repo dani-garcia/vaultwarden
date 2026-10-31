@@ -1,6 +1,6 @@
-Your Email Change
+{{t "tpl.email.change_email_existing.subject" locale=lang}}
 <!---------------->
-A user ({{ acting_address }}) recently tried to change their account to use this email address ({{ existing_address }}). An account already exists with this email ({{ existing_address }}).
+{{t "tpl.email.change_email_existing.body_intro" locale=lang}} ({{ acting_address }}) {{t "tpl.email.change_email_existing.body_intro_mid" locale=lang}} ({{ existing_address }}). {{t "tpl.email.change_email_existing.body_intro_suffix" locale=lang}} ({{ existing_address }}).
 
-If you did not try to change an email address, contact your administrator.
+{{t "tpl.email.change_email_existing.body_ignore" locale=lang}}
 {{> email/email_footer_text }}

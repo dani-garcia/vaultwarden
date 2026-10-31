@@ -1,8 +1,8 @@
-Verify Your Email
+{{t "tpl.email.verify_email.subject" locale=lang}}
 <!---------------->
-Verify this email address for your account by clicking the link below.
+{{t "tpl.email.verify_email.body_intro" locale=lang}}
 
-Verify Email Address Now: {{url}}/#/verify-email/?userId={{user_id}}&token={{token}}
+{{t "tpl.email.verify_email.cta" locale=lang}}: {{url}}/#/verify-email/?userId={{user_id}}&token={{token}}
 
-If you did not request to verify your account, you can safely ignore this email.
+{{t "tpl.email.verify_email.body_ignore" locale=lang}}
 {{> email/email_footer_text }}
