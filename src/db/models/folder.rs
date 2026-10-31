@@ -4,6 +4,7 @@ use diesel::prelude::*;
 use serde_json::Value;
 
 use crate::{
+    CONFIG,
     api::EmptyResult,
     db::{
         DbConn,
@@ -84,7 +85,7 @@ impl Folder {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving folder")
+                    .map_res(crate::i18n::db_error_saving_folder(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(folders::table)
@@ -93,7 +94,7 @@ impl Folder {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving folder")
+                    .map_res(crate::i18n::db_error_saving_folder(&CONFIG.default_locale()))
             }
         }
     }
@@ -105,7 +106,7 @@ impl Folder {
         conn.run(move |conn| {
             diesel::delete(folders::table.filter(folders::uuid.eq(&self.uuid)))
                 .execute(conn)
-                .map_res("Error deleting folder")
+                .map_res(crate::i18n::db_error_deleting_folder(&CONFIG.default_locale()))
         })
         .await
     }
@@ -145,7 +146,7 @@ impl FolderCipher {
                     .on_conflict(diesel::dsl::DuplicatedKeys)
                     .do_nothing()
                     .execute(conn)
-                    .map_res("Error adding cipher to folder")
+                    .map_res(crate::i18n::db_error_adding_cipher_to_folder(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(folders_ciphers::table)
@@ -153,7 +154,7 @@ impl FolderCipher {
                     .on_conflict((folders_ciphers::cipher_uuid, folders_ciphers::folder_uuid))
                     .do_nothing()
                     .execute(conn)
-                    .map_res("Error adding cipher to folder")
+                    .map_res(crate::i18n::db_error_adding_cipher_to_folder(&CONFIG.default_locale()))
             }
         }
     }
@@ -166,7 +167,7 @@ impl FolderCipher {
                     .filter(folders_ciphers::folder_uuid.eq(self.folder_uuid)),
             )
             .execute(conn)
-            .map_res("Error removing cipher from folder")
+            .map_res(crate::i18n::db_error_removing_cipher_from_folder(&CONFIG.default_locale()))
         })
         .await
     }
@@ -175,7 +176,7 @@ impl FolderCipher {
         conn.run(move |conn| {
             diesel::delete(folders_ciphers::table.filter(folders_ciphers::cipher_uuid.eq(cipher_uuid)))
                 .execute(conn)
-                .map_res("Error removing cipher from folders")
+                .map_res(crate::i18n::db_error_removing_cipher_from_folders(&CONFIG.default_locale()))
         })
         .await
     }
@@ -184,7 +185,7 @@ impl FolderCipher {
         conn.run(move |conn| {
             diesel::delete(folders_ciphers::table.filter(folders_ciphers::folder_uuid.eq(folder_uuid)))
                 .execute(conn)
-                .map_res("Error removing ciphers from folder")
+                .map_res(crate::i18n::db_error_removing_ciphers_from_folder(&CONFIG.default_locale()))
         })
         .await
     }

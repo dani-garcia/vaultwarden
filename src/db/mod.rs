@@ -218,7 +218,7 @@ impl DbPool {
                 init_stmts: conn_type.get_init_stmts(),
             }))
             .build(manager)
-            .map_res("Failed to create pool")?;
+            .map_res(crate::i18n::db_failed_create_pool(&CONFIG.default_locale()))?;
 
         // Set a global to determine the database more easily throughout the rest of the code
         if ACTIVE_DB_TYPE.set(conn_type).is_err() {
@@ -237,14 +237,15 @@ impl DbPool {
         let permit = match timeout(duration, Arc::clone(&self.semaphore).acquire_owned()).await {
             Ok(p) => p.expect("Semaphore should be open"),
             Err(_) => {
-                err!("Timeout waiting for database connection");
+                err!(crate::i18n::api_db_timeout_waiting_connection(&CONFIG.default_locale()));
             }
         };
 
         let p = self.pool.as_ref().expect("DbPool.pool should always be Some()");
         let pool = p.clone();
-        let c =
-            run_blocking(move || pool.get_timeout(duration)).await.map_res("Error retrieving connection from pool")?;
+        let c = run_blocking(move || pool.get_timeout(duration))
+            .await
+            .map_res(crate::i18n::db_error_retrieving_connection_from_pool(&CONFIG.default_locale()))?;
         Ok(DbConn {
             conn: Arc::new(Mutex::new(Some(c))),
             permit: Some(permit),
@@ -260,7 +261,7 @@ impl DbConnType {
             return Ok(DbConnType::Mysql);
 
             #[cfg(not(mysql))]
-            err!("`DATABASE_URL` is a MySQL URL, but the 'mysql' feature is not enabled")
+            err!(crate::i18n::api_db_url_mysql_feature_not_enabled(&CONFIG.default_locale()))
 
         // Postgresql
         } else if url.len() > 11 && (&url[..11] == "postgresql:" || &url[..9] == "postgres:") {
@@ -268,7 +269,7 @@ impl DbConnType {
             return Ok(DbConnType::Postgresql);
 
             #[cfg(not(postgresql))]
-            err!("`DATABASE_URL` is a PostgreSQL URL, but the 'postgresql' feature is not enabled")
+            err!(crate::i18n::api_db_url_postgresql_feature_not_enabled(&CONFIG.default_locale()))
 
         // Sqlite (explicit)
         } else if url.len() > 7 && &url[..7] == "sqlite:" {
@@ -276,7 +277,7 @@ impl DbConnType {
             return Ok(DbConnType::Sqlite);
 
             #[cfg(not(sqlite))]
-            err!("`DATABASE_URL` is a SQLite URL, but the 'sqlite' feature is not enabled")
+            err!(crate::i18n::api_db_url_sqlite_feature_not_enabled(&CONFIG.default_locale()))
         }
 
         // No recognized scheme — assume legacy bare-path SQLite, but the database file must already exist.
@@ -286,16 +287,17 @@ impl DbConnType {
             if std::path::Path::new(url).exists() {
                 return Ok(DbConnType::Sqlite);
             }
-            err!(format!(
+            let msg = format!(
                 "`DATABASE_URL` does not match any known database scheme (mysql://, postgresql://, sqlite://) \
                     and no existing SQLite database was found at '{url}'. \
                     If you intend to use SQLite, use an explicit `sqlite://` scheme in your `DATABASE_URL`. \
                     Otherwise, check your DATABASE_URL for typos or quoting issues."
-            ))
+            );
+            err!(msg)
         }
 
         #[cfg(not(sqlite))]
-        err!("`DATABASE_URL` does not match any known database scheme (mysql://, postgresql://, sqlite://)")
+        err!(crate::i18n::api_db_url_unknown_scheme(&CONFIG.default_locale()))
     }
 
     pub fn get_init_stmts(&self) -> String {
@@ -421,7 +423,7 @@ pub fn backup_sqlite() -> Result<String, Error> {
             .bind::<diesel::sql_types::Text, _>(&backup_file)
             .execute(&mut conn)
             .map(|_| ())
-            .map_res("VACUUM INTO failed")?;
+            .map_res(crate::i18n::db_vacuum_into_failed(&CONFIG.default_locale()))?;
 
         Ok(backup_file)
     } else {

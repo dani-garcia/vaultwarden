@@ -112,12 +112,14 @@ impl Client {
         let issuer_url = CONFIG.sso_issuer_url()?;
 
         let http_client = match OidcHttpClient::new() {
-            Err(err) => err!(format!("Failed to build http client: {err}")),
+            Err(err) => err!(crate::i18n::auth_failed_build_http_client(&CONFIG.default_locale()), err.to_string()),
             Ok(client) => client,
         };
 
         let provider_metadata = match CoreProviderMetadata::discover_async(issuer_url, &http_client).await {
-            Err(err) => err!(format!("Failed to discover OpenID provider: {err}")),
+            Err(err) => {
+                err!(crate::i18n::auth_failed_discover_openid_provider(&CONFIG.default_locale()), err.to_string())
+            }
             Ok(metadata) => metadata,
         };
 
@@ -133,20 +135,20 @@ impl Client {
             } else if am.contains(&CoreClientAuthMethod::ClientSecretPost) {
                 base_client = base_client.set_auth_type(AuthType::RequestBody);
             } else {
-                err!(format!("No supported auth_methods (only basic or request body), advertised: {am:?}"));
+                err!(crate::i18n::auth_no_supported_auth_methods(&CONFIG.default_locale()), format!("{am:?}"));
             }
         }
 
         let token_uri = if let Some(uri) = base_client.token_uri() {
             uri.clone()
         } else {
-            err!("Failed to discover token_url, cannot proceed")
+            err!(crate::i18n::auth_failed_discover_token_url(&CONFIG.default_locale()))
         };
 
         let user_info_url = if let Some(url) = base_client.user_info_url() {
             url.clone()
         } else {
-            err!("Failed to discover user_info url, cannot proceed")
+            err!(crate::i18n::auth_failed_discover_user_info_url(&CONFIG.default_locale()))
         };
 
         let core_client = base_client
@@ -217,7 +219,7 @@ impl Client {
         let verifier = PkceCodeVerifier::new(client_verifier.to_string());
         let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
         if challenge.as_str() != &*sso_auth.client_challenge {
-            err!("PKCE client challenge failed")
+            err!(crate::i18n::auth_pkce_client_challenge_failed(&CONFIG.default_locale()))
         }
         Ok(())
     }
@@ -251,12 +253,14 @@ impl Client {
         }
 
         match exchange.request_async(&self.http_client).await {
-            Err(err) => err!(format!("Failed to contact token endpoint: {:?}", err)),
+            Err(err) => {
+                err!(crate::i18n::auth_failed_contact_token_endpoint(&CONFIG.default_locale()), format!("{err:?}"))
+            }
             Ok(token_response) => {
                 let oidc_nonce = Nonce::new(sso_auth.nonce.clone());
 
                 let Some(id_token) = token_response.extra_fields().id_token() else {
-                    err!("Token response did not contain an id_token")
+                    err!(crate::i18n::auth_token_response_missing_id_token(&CONFIG.default_locale()))
                 };
 
                 if CONFIG.sso_debug_tokens() {
@@ -270,7 +274,10 @@ impl Client {
                     Ok(claims) => claims.clone(),
                     Err(err) => {
                         Self::invalidate();
-                        err!(format!("Could not read id_token claims, {err}"));
+                        err!(
+                            crate::i18n::auth_could_not_read_id_token_claims(&CONFIG.default_locale()),
+                            err.to_string()
+                        );
                     }
                 };
 
@@ -281,7 +288,9 @@ impl Client {
 
     pub async fn user_info(&self, access_token: AccessToken) -> ApiResult<CoreUserInfoClaims> {
         match self.core_client.user_info(access_token, None).request_async(&self.http_client).await {
-            Err(err) => err!(format!("Request to user_info endpoint failed: {err}")),
+            Err(err) => {
+                err!(crate::i18n::auth_request_user_info_endpoint_failed(&CONFIG.default_locale()), err.to_string())
+            }
             Ok(user_info) => Ok(user_info),
         }
     }

@@ -126,14 +126,16 @@ fn validate<T: DeserializeOwned>(token: &str, user_id: &UserId, enabled: bool) -
     match decode_jwt::<TwoFactorClaims<T>>(token, JWT_2FA_AUTH_ISSUER.to_string()) {
         Ok(claims) => {
             if claims.sub != *user_id {
-                err!("Invalid verification token: Invalid user");
+                err!(crate::i18n::two_factor_invalid_verification_token_invalid_user(&CONFIG.default_locale()));
             }
             if claims.enabled != enabled {
-                err!("Invalid verification token: Invalid state");
+                err!(crate::i18n::two_factor_invalid_verification_token_invalid_state(&CONFIG.default_locale()));
             }
             Ok(claims.claims)
         }
-        Err(err) => err!(format!("Failed to decode verification token: {err}")),
+        Err(err) => {
+            err!(crate::i18n::two_factor_failed_decode_verification_token(&CONFIG.default_locale()), err.to_string())
+        }
     }
 }
 
@@ -150,7 +152,7 @@ pub fn authenticator_token(user_id: UserId, key: String, enabled: bool) -> Strin
 pub fn validate_authenticator(token: &str, user_id: &UserId, key: &str, enabled: bool) -> EmptyResult {
     let claims = validate::<AuthenticatorClaims>(token, user_id, enabled)?;
     if claims.key != key {
-        err!("Invalid verification token: Invalid key");
+        err!(crate::i18n::two_factor_invalid_verification_token_invalid_key(&CONFIG.default_locale()));
     }
     Ok(())
 }
@@ -169,7 +171,7 @@ pub fn duo_token(user_id: UserId, data: Option<DuoData>, enabled: bool) -> Strin
 pub fn validate_duo(token: &str, user_id: &UserId, data: Option<&DuoData>, enabled: bool) -> EmptyResult {
     let claims = validate::<DuoClaims>(token, user_id, enabled)?;
     if enabled && claims.data.as_ref() != data {
-        err!("Invalid verification token: Invalid duo data");
+        err!(crate::i18n::two_factor_invalid_verification_token_invalid_duo_data(&CONFIG.default_locale()));
     }
     Ok(())
 }
@@ -188,7 +190,7 @@ pub fn email_token(user_id: UserId, email: Option<String>, enabled: bool) -> Str
 pub fn validate_email(token: &str, user_id: &UserId, email: String, enabled: bool) -> EmptyResult {
     let claims = validate::<EmailClaims>(token, user_id, enabled)?;
     if enabled && claims.email != Some(email) {
-        err!("Invalid verification token: Invalid email");
+        err!(crate::i18n::two_factor_invalid_verification_token_invalid_email(&CONFIG.default_locale()));
     }
     Ok(())
 }
@@ -206,7 +208,7 @@ pub fn webauthn_token(user_id: UserId, keys: Vec<i32>, enabled: bool) -> String 
 pub fn validate_webauthn(token: &str, user_id: &UserId, keys: &[i32], enabled: bool) -> EmptyResult {
     let claims = validate::<WebauthnClaims>(token, user_id, enabled)?;
     if keys != claims.keys {
-        err!("Invalid verification token: Invalid keys");
+        err!(crate::i18n::two_factor_invalid_verification_token_invalid_keys(&CONFIG.default_locale()));
     }
     Ok(())
 }
@@ -224,7 +226,7 @@ pub fn yubikey_token(user_id: UserId, keys: Vec<String>, enabled: bool) -> Strin
 pub fn validate_yubikey(token: &str, user_id: &UserId, keys: &Vec<String>, enabled: bool) -> EmptyResult {
     let claims = validate::<YubikeyClaims>(token, user_id, enabled)?;
     if *keys != claims.keys {
-        err!("Invalid verification token: Invalid keys");
+        err!(crate::i18n::two_factor_invalid_verification_token_invalid_keys(&CONFIG.default_locale()));
     }
     Ok(())
 }

@@ -234,11 +234,11 @@ async fn get_ciphers(headers: Headers, conn: DbConn) -> JsonResult {
 #[get("/ciphers/<cipher_id>")]
 async fn get_cipher(cipher_id: CipherId, headers: Headers, conn: DbConn) -> JsonResult {
     let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     if !cipher.is_accessible_to_user(&headers.user.uuid, &conn).await {
-        err!("Cipher is not owned by user")
+        err!(crate::i18n::cipher_not_owned_by_user(&headers.locale))
     }
 
     Ok(Json(cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &conn).await?))
@@ -420,7 +420,7 @@ async fn enforce_personal_ownership_policy(data: Option<&CipherData>, headers: &
         let user_id = &headers.user.uuid;
         let policy_type = OrgPolicyType::PersonalOwnership;
         if OrgPolicy::is_applicable_to_user(user_id, policy_type, None, conn).await {
-            err!("Due to an Enterprise Policy, you are restricted from saving items to your personal vault.")
+            err!(crate::i18n::cipher_personal_vault_restricted(&headers.locale))
         }
     }
     Ok(())
@@ -460,20 +460,25 @@ pub async fn update_cipher_from_data(
             // ISO 8601 format
             Err(err) => warn!("Error parsing LastKnownRevisionDate '{dt}': {err}"),
             Ok(dt) if cipher.updated_at.signed_duration_since(dt).num_seconds() > 1 => {
-                err!("The client copy of this cipher is out of date. Resync the client and try again.")
+                err!(crate::i18n::cipher_client_copy_outdated(&headers.locale))
             }
             Ok(_) => (),
         }
     }
 
     if cipher.organization_uuid.is_some() && cipher.organization_uuid != data.organization_id {
-        err!("Organization mismatch. Please resync the client before updating the cipher")
+        err!(crate::i18n::cipher_organization_mismatch(&headers.locale))
     }
 
     if let Some(note) = &data.notes {
         let max_note_size = CONFIG._max_note_size();
         if note.len() > max_note_size {
-            err!(format!("The field Notes exceeds the maximum encrypted value length of {max_note_size} characters."))
+            let message = crate::i18n::cipher_notes_exceeds_max_len(&headers.locale).replacen(
+                "{}",
+                &max_note_size.to_string(),
+                1,
+            );
+            err!(message)
         }
     }
 
@@ -482,7 +487,7 @@ pub async fn update_cipher_from_data(
 
     if let Some(org_id) = data.organization_id {
         match Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, conn).await {
-            None => err!("You don't have permission to add item to organization"),
+            None => err!(crate::i18n::cipher_no_permission_add_item_to_org(&headers.locale)),
             Some(member) => {
                 // A non-empty list of collections implies the caller already validated the user's write
                 // access to them, so we can move the cipher into the organization on that basis.
@@ -499,7 +504,7 @@ pub async fn update_cipher_from_data(
                     // Removing the line below would fix that, but we have to check which effect this would have on the rest of the code.
                     cipher.user_uuid = None;
                 } else {
-                    err!("You don't have permission to add cipher directly to organization")
+                    err!(crate::i18n::cipher_no_permission_add_cipher_direct_to_org(&headers.locale))
                 }
             }
         }
@@ -510,7 +515,7 @@ pub async fn update_cipher_from_data(
     if let Some(ref folder_id) = data.folder_id
         && Folder::find_by_uuid_and_user(folder_id, &headers.user.uuid, conn).await.is_none()
     {
-        err!("Invalid folder", "Folder does not exist or belongs to another user");
+        err!(crate::i18n::folder_invalid(&headers.locale), crate::i18n::folder_not_found_or_not_owned(&headers.locale));
     }
 
     // Modify attachments name and keys when rotating
@@ -548,7 +553,7 @@ pub async fn update_cipher_from_data(
         6 => data.bank_account,
         7 => data.drivers_license,
         8 => data.passport,
-        _ => err!("Invalid type"),
+        _ => err!(crate::i18n::cipher_invalid_type(&headers.locale)),
     };
 
     let type_data = if let Some(mut data) = type_data_opt {
@@ -562,7 +567,7 @@ pub async fn update_cipher_from_data(
         }
         data
     } else {
-        err!("Data missing")
+        err!(crate::i18n::cipher_data_missing(&headers.locale))
     };
 
     cipher.key = data.key;
@@ -731,7 +736,7 @@ async fn put_cipher(
     let data: CipherData = data.into_inner();
 
     let Some(mut cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     // TODO: Check if only the folder ID or favorite status is being changed.
@@ -740,12 +745,12 @@ async fn put_cipher(
     // Interestingly, upstream Bitwarden doesn't properly handle this either.
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn).await {
-        err!("Cipher is not write accessible")
+        err!(crate::i18n::cipher_not_write_accessible(&headers.locale))
     }
 
     // Moving a cipher into an organization is only possible through the share endpoints
     if cipher.organization_uuid != data.organization_id {
-        err!("Organization mismatch. Please resync the client before updating the cipher")
+        err!(crate::i18n::cipher_organization_mismatch(&headers.locale))
     }
 
     update_cipher_from_data(&mut cipher, data, &headers, None, &conn, &nt, UpdateType::SyncCipherUpdate).await?;
@@ -774,17 +779,17 @@ async fn put_cipher_partial(
     let data: PartialCipherData = data.into_inner();
 
     let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await else {
-        err!("Cipher does not exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     if !cipher.is_accessible_to_user(&headers.user.uuid, &conn).await {
-        err!("Cipher does not exist", "Cipher is not accessible for the current user")
+        err!(crate::i18n::cipher_not_owned_by_user(&headers.locale))
     }
 
     if let Some(ref folder_id) = data.folder_id
         && Folder::find_by_uuid_and_user(folder_id, &headers.user.uuid, &conn).await.is_none()
     {
-        err!("Invalid folder", "Folder does not exist or belongs to another user");
+        err!(crate::i18n::folder_invalid(&headers.locale), crate::i18n::folder_not_found_or_not_owned(&headers.locale));
     }
 
     // Move cipher
@@ -851,15 +856,15 @@ async fn post_collections_update(
     let data: CollectionsAdminData = data.into_inner();
 
     let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     if !cipher.is_in_editable_collection_by_user(&headers.user.uuid, &conn).await {
-        err!("Collection cannot be changed")
+        err!(crate::i18n::cipher_collection_cannot_be_changed(&headers.locale))
     }
 
     let Some(ref org_uuid) = cipher.organization_uuid else {
-        err!("Cipher is not owned by an organization")
+        err!(crate::i18n::cipher_not_owned_by_org(&headers.locale))
     };
 
     let posted_collections = HashSet::<CollectionId>::from_iter(data.collection_ids);
@@ -868,7 +873,7 @@ async fn post_collections_update(
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
         match Collection::find_by_uuid_and_org(collection, org_uuid, &conn).await {
-            None => err!("Invalid collection ID provided"),
+            None => err!(crate::i18n::cipher_invalid_collection_id(&headers.locale)),
             Some(collection) => {
                 if collection.is_writable_by_user(&headers.user.uuid, &conn).await {
                     if posted_collections.contains(&collection.uuid) {
@@ -879,7 +884,7 @@ async fn post_collections_update(
                         CollectionCipher::delete(&cipher.uuid, &collection.uuid, &conn).await?;
                     }
                 } else {
-                    err!("No rights to modify the collection")
+                    err!(crate::i18n::cipher_no_rights_modify_collection(&headers.locale))
                 }
             }
         }
@@ -931,15 +936,15 @@ async fn post_collections_admin(
     let data: CollectionsAdminData = data.into_inner();
 
     let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     if !cipher.is_in_editable_collection_by_user(&headers.user.uuid, &conn).await {
-        err!("Collection cannot be changed")
+        err!(crate::i18n::cipher_collection_cannot_be_changed(&headers.locale))
     }
 
     let Some(ref org_uuid) = cipher.organization_uuid else {
-        err!("Cipher is not owned by an organization")
+        err!(crate::i18n::cipher_not_owned_by_org(&headers.locale))
     };
 
     let posted_collections = HashSet::<CollectionId>::from_iter(data.collection_ids);
@@ -948,7 +953,7 @@ async fn post_collections_admin(
 
     for collection in posted_collections.symmetric_difference(&current_collections) {
         match Collection::find_by_uuid_and_org(collection, org_uuid, &conn).await {
-            None => err!("Invalid collection ID provided"),
+            None => err!(crate::i18n::cipher_invalid_collection_id(&headers.locale)),
             Some(collection) => {
                 if collection.is_writable_by_user(&headers.user.uuid, &conn).await {
                     if posted_collections.contains(&collection.uuid) {
@@ -959,7 +964,7 @@ async fn post_collections_admin(
                         CollectionCipher::delete(&cipher.uuid, &collection.uuid, &conn).await?;
                     }
                 } else {
-                    err!("No rights to modify the collection")
+                    err!(crate::i18n::cipher_no_rights_modify_collection(&headers.locale))
                 }
             }
         }
@@ -1020,11 +1025,11 @@ async fn put_cipher_share(
     let data: ShareCipherData = data.into_inner();
 
     if data.cipher.organization_id.is_none() {
-        err!("Cipher OrganizationId is required.")
+        err!(crate::i18n::cipher_organization_id_required(&headers.locale))
     }
 
     if data.collection_ids.is_empty() {
-        err!("You must select at least one collection.")
+        err!(crate::i18n::cipher_at_least_one_collection_required(&headers.locale))
     }
 
     share_cipher_by_uuid(&cipher_id, data, &headers, &conn, &nt, None).await
@@ -1086,19 +1091,19 @@ async fn put_cipher_share_selected(
     let data: ShareSelectedCipherData = data.into_inner();
 
     if data.ciphers.is_empty() {
-        err!("You must select at least one cipher.")
+        err!(crate::i18n::cipher_at_least_one_cipher_required(&headers.locale))
     }
 
     if data.collection_ids.is_empty() {
-        err!("You must select at least one collection.")
+        err!(crate::i18n::cipher_at_least_one_collection_required(&headers.locale))
     }
 
     for cipher in &data.ciphers {
         if cipher.id.is_none() {
-            err!("Request missing ids field")
+            err!(crate::i18n::cipher_request_missing_ids(&headers.locale))
         }
         if cipher.organization_id.is_none() {
-            err!("Cipher OrganizationId is required.")
+            err!(crate::i18n::cipher_organization_id_required(&headers.locale))
         }
     }
 
@@ -1122,7 +1127,7 @@ async fn put_cipher_share_selected(
                 responses.push(cipher_mini_from_json(response.into_inner()));
             }
         } else {
-            err!("Request missing ids field")
+            err!(crate::i18n::cipher_request_missing_ids(&headers.locale))
         }
     }
 
@@ -1148,17 +1153,17 @@ async fn share_cipher_by_uuid(
         if cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
             cipher
         } else {
-            err!("Cipher is not write accessible")
+            err!(crate::i18n::cipher_not_write_accessible(&headers.locale))
         }
     } else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     // `update_cipher_from_data()` rejects this too, but only after the collections below were
     // already linked. There are no transactions, so that would leave the cipher linked to a
     // collection of another organization.
     if cipher.organization_uuid.is_some() && cipher.organization_uuid != data.cipher.organization_id {
-        err!("Organization mismatch. Please resync the client before updating the cipher")
+        err!(crate::i18n::cipher_organization_mismatch(&headers.locale))
     }
 
     let mut shared_to_collections = vec![];
@@ -1166,13 +1171,13 @@ async fn share_cipher_by_uuid(
     if let Some(organization_id) = &data.cipher.organization_id {
         for col_id in &data.collection_ids {
             match Collection::find_by_uuid_and_org(col_id, organization_id, conn).await {
-                None => err!("Invalid collection ID provided"),
+                None => err!(crate::i18n::cipher_invalid_collection_id(&headers.locale)),
                 Some(collection) => {
                     if collection.is_writable_by_user(&headers.user.uuid, conn).await {
                         CollectionCipher::save(&cipher.uuid, &collection.uuid, conn).await?;
                         shared_to_collections.push(collection.uuid);
                     } else {
-                        err!("No rights to modify the collection")
+                        err!(crate::i18n::cipher_no_rights_modify_collection(&headers.locale))
                     }
                 }
             }
@@ -1208,17 +1213,17 @@ async fn get_attachment(
     conn: DbConn,
 ) -> JsonResult {
     let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     if !cipher.is_accessible_to_user(&headers.user.uuid, &conn).await {
-        err!("Cipher is not accessible")
+        err!(crate::i18n::cipher_not_accessible(&headers.locale))
     }
 
     match Attachment::find_by_id(&attachment_id, &conn).await {
         Some(attachment) if cipher_id == attachment.cipher_uuid => Ok(Json(attachment.to_json(&headers.host).await?)),
-        Some(_) => err!("Attachment doesn't belong to cipher"),
-        None => err!("Attachment doesn't exist"),
+        Some(_) => err!(crate::i18n::cipher_attachment_not_belong_to_cipher(&headers.locale)),
+        None => err!(crate::i18n::cipher_attachment_not_found(&headers.locale)),
     }
 }
 
@@ -1250,21 +1255,21 @@ async fn attachment_size_limit(cipher: &Cipher, size_adjust: i64, conn: &DbConn)
         };
         (limit_kb, Attachment::size_by_org(org_id, conn).await)
     } else {
-        err!("Cipher is neither owned by a user nor an organization");
+        err!(crate::i18n::cipher_neither_user_nor_org_owned(&CONFIG.default_locale()));
     };
 
     if limit_kb == 0 {
-        err!("Attachments are disabled")
+        err!(crate::i18n::cipher_attachments_disabled(&CONFIG.default_locale()))
     }
 
     let Some(left) =
         limit_kb.checked_mul(1024).and_then(|l| l.checked_sub(already_used)).and_then(|l| l.checked_add(size_adjust))
     else {
-        err!("Attachment size overflow");
+        err!(crate::i18n::cipher_attachment_size_overflow(&CONFIG.default_locale()));
     };
 
     if left <= 0 {
-        err!("Attachment storage limit reached! Delete some attachments to free up space")
+        err!(crate::i18n::cipher_attachment_storage_limit_reached(&CONFIG.default_locale()))
     }
 
     Ok(Some(left))
@@ -1283,28 +1288,28 @@ async fn post_attachment_v2(
     nt: Notify<'_>,
 ) -> JsonResult {
     let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn).await {
-        err!("Cipher is not write accessible")
+        err!(crate::i18n::cipher_not_write_accessible(&headers.locale))
     }
 
     let data: AttachmentRequestData = data.into_inner();
     let file_size = data.file_size.into_i64()?;
 
     if file_size < 0 {
-        err!("Attachment size can't be negative")
+        err!(crate::i18n::cipher_attachment_size_negative(&headers.locale))
     }
     // Matches the "file" upload limit in main.rs, nothing larger can be uploaded
     if file_size > SIZE_525_MB {
-        err!("Max file size is 525 MB.")
+        err!(crate::i18n::cipher_max_file_size_525mb(&headers.locale))
     }
 
     if let Some(size_limit) = attachment_size_limit(&cipher, 0, &conn).await?
         && file_size > size_limit
     {
-        err!("Attachment storage limit exceeded with this file");
+        err!(crate::i18n::cipher_attachment_storage_limit_exceeded_file(&headers.locale));
     }
 
     let attachment_id = crypto::generate_attachment_id();
@@ -1353,18 +1358,18 @@ async fn save_attachment(
     let data = data.into_inner();
 
     let Some(size) = data.data.len().to_i64() else {
-        err!("Attachment data size overflow");
+        err!(crate::i18n::cipher_attachment_data_size_overflow(&headers.locale));
     };
     if size < 0 {
-        err!("Attachment size can't be negative")
+        err!(crate::i18n::cipher_attachment_size_negative(&headers.locale))
     }
 
     let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, &conn).await {
-        err!("Cipher is not write accessible")
+        err!(crate::i18n::cipher_not_write_accessible(&headers.locale))
     }
 
     // In the v2 API, the attachment record has already been created,
@@ -1377,7 +1382,7 @@ async fn save_attachment(
     if let Some(size_limit) = attachment_size_limit(&cipher, size_adjust, &conn).await?
         && size > size_limit
     {
-        err!("Attachment storage limit exceeded with this file");
+        err!(crate::i18n::cipher_attachment_storage_limit_exceeded_file(&headers.locale));
     }
 
     let file_id = match &attachment {
@@ -1393,10 +1398,10 @@ async fn save_attachment(
         // size, but it's not clear when or why this is needed.
         const LEEWAY: i64 = 1024 * 1024; // 1 MiB
         let Some(max_size) = attachment.file_size.checked_add(LEEWAY) else {
-            err!("Invalid attachment size max")
+            err!(crate::i18n::cipher_invalid_attachment_size_max(&headers.locale))
         };
         let Some(min_size) = attachment.file_size.checked_sub(LEEWAY) else {
-            err!("Invalid attachment size min")
+            err!(crate::i18n::cipher_invalid_attachment_size_min(&headers.locale))
         };
 
         if min_size <= size && size <= max_size {
@@ -1408,7 +1413,10 @@ async fn save_attachment(
         } else {
             attachment.delete(&conn).await.ok();
 
-            err!(format!("Attachment size mismatch (expected within [{min_size}, {max_size}], got {size})"));
+            err!(
+                crate::i18n::cipher_attachment_size_mismatch(&headers.locale),
+                format!("expected within [{min_size}, {max_size}], got {size}")
+            );
         }
     } else {
         // Legacy API
@@ -1419,10 +1427,10 @@ async fn save_attachment(
         let encrypted_filename = data.data.raw_name().map(|s| s.dangerous_unsafe_unsanitized_raw().to_string());
 
         if encrypted_filename.is_none() {
-            err!("No filename provided")
+            err!(crate::i18n::cipher_no_filename_provided(&headers.locale))
         }
         if data.key.is_none() {
-            err!("No attachment key provided")
+            err!(crate::i18n::cipher_no_attachment_key_provided(&headers.locale))
         }
         let attachment =
             Attachment::new(file_id.clone(), cipher_id.clone(), encrypted_filename.unwrap(), size, data.key);
@@ -1480,8 +1488,8 @@ async fn post_attachment_v2_data(
 ) -> EmptyResult {
     let attachment = match Attachment::find_by_id(&attachment_id, &conn).await {
         Some(attachment) if cipher_id == attachment.cipher_uuid => Some(attachment),
-        Some(_) => err!("Attachment doesn't belong to cipher"),
-        None => err!("Attachment doesn't exist"),
+        Some(_) => err!(crate::i18n::cipher_attachment_not_belong_to_cipher(&headers.locale)),
+        None => err!(crate::i18n::cipher_attachment_not_found(&headers.locale)),
     };
 
     save_attachment(attachment, cipher_id, data, &headers, conn, nt).await?;
@@ -1728,7 +1736,7 @@ async fn move_cipher_selected(
     if let Some(ref folder_id) = data.folder_id
         && Folder::find_by_uuid_and_user(folder_id, user_id, &conn).await.is_none()
     {
-        err!("Invalid folder", "Folder does not exist or belongs to another user");
+        err!(crate::i18n::folder_invalid(&headers.locale), crate::i18n::folder_not_found_or_not_owned(&headers.locale));
     }
 
     let cipher_count = data.ids.len();
@@ -1771,9 +1779,9 @@ async fn move_cipher_selected(
     }
 
     if cipher_count != accessible_ciphers_count {
-        err!(format!(
-            "Not all ciphers are moved! {accessible_ciphers_count} of the selected {cipher_count} were moved."
-        ))
+        let msg =
+            format!("Not all ciphers are moved! {accessible_ciphers_count} of the selected {cipher_count} were moved.");
+        err!(msg)
     }
 
     Ok(())
@@ -1807,8 +1815,9 @@ async fn purge_org_vault(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
+    let locale = headers.user.locale.clone().unwrap_or_else(|| CONFIG.default_locale());
     if organization.org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(&locale), "Organization id's do not match");
     }
 
     let data: PasswordOrOtpData = data.into_inner();
@@ -1834,7 +1843,7 @@ async fn purge_org_vault(
 
             Ok(())
         }
-        _ => err!("You don't have permission to purge the organization vault"),
+        _ => err!(crate::i18n::cipher_no_permission_purge_org_vault(&locale)),
     }
 }
 
@@ -1910,11 +1919,11 @@ async fn delete_cipher_by_uuid(
     nt: &Notify<'_>,
 ) -> EmptyResult {
     let Some(mut cipher) = Cipher::find_by_uuid(cipher_id, conn).await else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
-        err!("Cipher can't be deleted by user")
+        err!(crate::i18n::cipher_cannot_be_deleted_by_user(&headers.locale))
     }
 
     if *delete_options == CipherDeleteOptions::SoftSingle || *delete_options == CipherDeleteOptions::SoftMulti {
@@ -1997,11 +2006,11 @@ async fn restore_cipher_by_uuid(
     nt: &Notify<'_>,
 ) -> JsonResult {
     let Some(mut cipher) = Cipher::find_by_uuid(cipher_id, conn).await else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
-        err!("Cipher can't be restored by user")
+        err!(crate::i18n::cipher_cannot_be_restored_by_user(&headers.locale))
     }
 
     cipher.deleted_at = None;
@@ -2069,19 +2078,19 @@ async fn delete_cipher_attachment_by_id(
     nt: &Notify<'_>,
 ) -> JsonResult {
     let Some(attachment) = Attachment::find_by_id(attachment_id, conn).await else {
-        err!("Attachment doesn't exist")
+        err!(crate::i18n::cipher_attachment_not_found(&headers.locale))
     };
 
     if &attachment.cipher_uuid != cipher_id {
-        err!("Attachment from other cipher")
+        err!(crate::i18n::cipher_attachment_from_other_cipher(&headers.locale))
     }
 
     let Some(cipher) = Cipher::find_by_uuid(cipher_id, conn).await else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     if !cipher.is_write_accessible_to_user(&headers.user.uuid, conn).await {
-        err!("Cipher cannot be deleted by user")
+        err!(crate::i18n::cipher_cannot_delete_by_user(&headers.locale))
     }
 
     // Delete attachment
@@ -2120,11 +2129,11 @@ async fn archive_cipher(
     nt: &Notify<'_>,
 ) -> JsonResult {
     let Some(cipher) = Cipher::find_by_uuid(cipher_id, conn).await else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     if !cipher.is_accessible_to_user(&headers.user.uuid, conn).await {
-        err!("Cipher is not accessible for the current user")
+        err!(crate::i18n::cipher_not_accessible_for_current_user(&headers.locale))
     }
 
     cipher.set_archived_at(Utc::now().naive_utc(), &headers.user.uuid, conn).await?;
@@ -2152,11 +2161,11 @@ async fn unarchive_cipher(
     nt: &Notify<'_>,
 ) -> JsonResult {
     let Some(cipher) = Cipher::find_by_uuid(cipher_id, conn).await else {
-        err!("Cipher doesn't exist")
+        err!(crate::i18n::cipher_not_found(&headers.locale))
     };
 
     if !cipher.is_accessible_to_user(&headers.user.uuid, conn).await {
-        err!("Cipher is not accessible for the current user")
+        err!(crate::i18n::cipher_not_accessible_for_current_user(&headers.locale))
     }
 
     cipher.unarchive(&headers.user.uuid, conn).await?;

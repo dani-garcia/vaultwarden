@@ -1,20 +1,20 @@
-Invitation to {{{org_name}}} accepted
+{{t "tpl.email.invite_accepted.subject_prefix" locale=lang}} {{{org_name}}} {{t "tpl.email.invite_accepted.subject_suffix" locale=lang}}
 <!---------------->
 {{> email/email_header }}
 <table width="100%" cellpadding="0" cellspacing="0" style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
    <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
       <td class="content-block" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0 0 10px; -webkit-text-size-adjust: none;" valign="top">
-         This email is to notify you that {{email}} has accepted your invitation to join <b style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">{{org_name}}</b>.
+         {{t "tpl.email.invite_accepted.body_intro_prefix" locale=lang}} {{email}} {{t "tpl.email.invite_accepted.body_intro_mid" locale=lang}} <b style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">{{org_name}}</b>.
       </td>
    </tr>
    <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
       <td class="content-block" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0 0 10px; -webkit-text-size-adjust: none;" valign="top">
-         Please <a href="{{url}}/">log in</a> to the vaultwarden server and confirm them from the organization management page.
+         {{t "tpl.email.invite_accepted.body_login_html_prefix" locale=lang}} <a href="{{url}}/">{{t "tpl.email.invite_accepted.body_login_html_link" locale=lang}}</a> {{t "tpl.email.invite_accepted.body_login_suffix" locale=lang}}
       </td>
    </tr>
    <tr style="margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none;">
       <td class="content-block last" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; font-size: 16px; color: #333; line-height: 25px; margin: 0; -webkit-font-smoothing: antialiased; padding: 0; -webkit-text-size-adjust: none;" valign="top">
-         If you do not wish to confirm this user, you can also remove them from the organization on the same page.
+         {{t "tpl.email.invite_accepted.body_ignore" locale=lang}}
       </td>
    </tr>
 </table>

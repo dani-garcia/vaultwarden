@@ -103,7 +103,7 @@ async fn enforce_disable_send_policy(headers: &Headers, conn: &DbConn) -> EmptyR
     if !CONFIG.sends_allowed()
         || OrgPolicy::is_applicable_to_user(user_id, OrgPolicyType::DisableSend, None, conn).await
     {
-        err!("Due to an Enterprise Policy, you are only able to delete an existing Send.")
+        err!(crate::i18n::send_delete_only_policy(&headers.locale))
     }
     Ok(())
 }
@@ -118,10 +118,7 @@ async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, c
     let user_id = &headers.user.uuid;
     let hide_email = data.hide_email.unwrap_or(false);
     if hide_email && OrgPolicy::is_hide_email_disabled(user_id, conn).await {
-        err!(
-            "Due to an Enterprise Policy, you are not allowed to hide your email address \
-              from recipients when creating or editing a Send."
-        )
+        err!(crate::i18n::send_hide_email_policy_forbidden(&headers.locale))
     }
     Ok(())
 }
@@ -132,24 +129,22 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
     } else if data.r#type == SendType::File as i32 {
         data.file
     } else {
-        err!("Invalid Send type")
+        err!(crate::i18n::send_invalid_type(&CONFIG.default_locale()))
     };
 
     let data_str = if let Some(mut d) = data_val {
         d.as_object_mut().and_then(|o| o.remove("response"));
         serde_json::to_string(&d)?
     } else {
-        err!("Send data not provided");
+        err!(crate::i18n::send_data_not_provided(&CONFIG.default_locale()));
     };
 
     if data.deletion_date > Utc::now() + TimeDelta::try_days(31).unwrap() {
-        err!(
-            "You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again."
-        );
+        err!(crate::i18n::send_deletion_date_too_far(&CONFIG.default_locale()));
     }
 
     if data.emails.is_some() {
-        err!("Sends with email verification is not supported");
+        err!(crate::i18n::send_email_verification_not_supported(&CONFIG.default_locale()));
     }
 
     let mut send = Send::new(data.r#type, data.name, data_str, data.key, data.deletion_date.naive_utc());
@@ -186,7 +181,7 @@ async fn get_send(send_id: SendId, headers: Headers, conn: DbConn) -> JsonResult
     if let Some(send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await {
         Ok(Json(send.to_json()))
     } else {
-        err!("Send not found", "Invalid send uuid or does not belong to user")
+        err!(crate::i18n::send_not_found(&headers.locale), crate::i18n::send_invalid_uuid_or_not_owned(&headers.locale))
     }
 }
 
@@ -198,7 +193,7 @@ async fn post_send(data: Json<SendData>, headers: Headers, conn: DbConn, nt: Not
     enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
     if data.r#type == SendType::File as i32 {
-        err!("File sends should use /api/sends/file/v2")
+        err!(crate::i18n::send_file_use_v2(&headers.locale))
     }
 
     let mut send = create_send(data, headers.user.uuid)?;
@@ -228,7 +223,7 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn)
     let data = data.into_inner();
 
     if data.r#type != SendType::File as i32 {
-        err!("Send content is not a file");
+        err!(crate::i18n::send_content_not_file(&headers.locale));
     }
 
     enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
@@ -236,23 +231,23 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn)
     let file_length = if let Some(m) = &data.file_length {
         m.into_i64()?
     } else {
-        err!("Invalid send length")
+        err!(crate::i18n::send_invalid_length(&headers.locale))
     };
     if file_length < 0 {
-        err!("Send size can't be negative")
+        err!(crate::i18n::send_size_negative(&headers.locale))
     }
 
     let size_limit = match CONFIG.user_send_limit() {
-        Some(0) => err!("File uploads are disabled"),
+        Some(0) => err!(crate::i18n::send_file_uploads_disabled(&headers.locale)),
         Some(limit_kb) => {
             let Some(already_used) = Send::size_by_user(&headers.user.uuid, &conn).await else {
-                err!("Existing sends overflow")
+                err!(crate::i18n::send_existing_overflow(&headers.locale))
             };
             let Some(left) = limit_kb.checked_mul(1024).and_then(|l| l.checked_sub(already_used)) else {
-                err!("Send size overflow");
+                err!(crate::i18n::send_size_overflow(&headers.locale));
             };
             if left <= 0 {
-                err!("Send storage limit reached! Delete some sends to free up space")
+                err!(crate::i18n::send_storage_limit_reached(&headers.locale))
             }
             i64::clamp(left, 0, SIZE_525_MB)
         }
@@ -260,7 +255,7 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn)
     };
 
     if file_length > size_limit {
-        err!("Send storage limit exceeded with this file");
+        err!(crate::i18n::send_storage_limit_exceeded_file(&headers.locale));
     }
 
     let mut send = create_send(data, headers.user.uuid)?;
@@ -307,15 +302,18 @@ async fn post_send_file_v2_data(
     let data = data.into_inner();
 
     let Some(send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await else {
-        err!("Send not found. Unable to save the file.", "Invalid send uuid or does not belong to user.")
+        err!(
+            crate::i18n::send_not_found_unable_save_file(&headers.locale),
+            crate::i18n::send_invalid_uuid_or_not_owned(&headers.locale)
+        )
     };
 
     if send.atype != SendType::File as i32 {
-        err!("Send is not a file type send.");
+        err!(crate::i18n::send_not_file_type(&headers.locale));
     }
 
     let Ok(send_data) = serde_json::from_str::<SendFileData>(&send.data) else {
-        err!("Unable to decode send data as json.")
+        err!(crate::i18n::send_unable_decode_json(&headers.locale))
     };
 
     match data.data.raw_name() {
@@ -325,26 +323,32 @@ async fn post_send_file_v2_data(
             || (headers.device.is_cli() && send_data.fileName.ends_with(raw_file_name.dangerous_unsafe_unsanitized_raw().as_str())
             ) => {}
         Some(raw_file_name) => err!(
-            "Send file name does not match.",
+            crate::i18n::send_file_name_mismatch(&headers.locale),
             format!(
                 "Expected file name '{}' got '{}'",
                 send_data.fileName.escape_debug(),
                 raw_file_name.dangerous_unsafe_unsanitized_raw().as_str().escape_debug()
             )
         ),
-        _ => err!("Send file name does not match or is not provided."),
+        _ => err!(crate::i18n::send_file_name_missing_or_mismatch(&headers.locale)),
     }
 
     if file_id != send_data.id {
-        err!("Send file does not match send data.", format!("Expected id {} got {file_id}", send_data.id));
+        err!(
+            crate::i18n::send_file_mismatch_data(&headers.locale),
+            format!("Expected id {} got {file_id}", send_data.id)
+        );
     }
 
     let Some(size) = data.data.len().to_u64() else {
-        err!("Send file size overflow.");
+        err!(crate::i18n::send_file_size_overflow(&headers.locale));
     };
 
     if size != send_data.size {
-        err!("Send file size does not match.", format!("Expected a file size of {} got {size}", send_data.size));
+        err!(
+            crate::i18n::send_file_size_mismatch(&headers.locale),
+            format!("Expected a file size of {} got {size}", send_data.size)
+        );
     }
 
     let file_path = format!("{send_id}/{file_id}");
@@ -414,7 +418,7 @@ async fn post_access_file(
 
 fn check_send_file_id(send: &Send, file_id: &SendFileId) -> EmptyResult {
     if send.atype != SendType::File as i32 {
-        err!("Send is not a file type send.");
+        err!(crate::i18n::send_not_file_type(&CONFIG.default_locale()));
     }
     match serde_json::from_str::<SendFileData>(&send.data) {
         Ok(data) if &data.id == file_id => Ok(()),
@@ -470,11 +474,14 @@ async fn put_send(send_id: SendId, data: Json<SendData>, headers: Headers, conn:
     enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
     let Some(mut send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await else {
-        err!("Send not found", "Send send_id is invalid or does not belong to user")
+        err!(
+            crate::i18n::send_not_found(&headers.locale),
+            crate::i18n::send_invalid_send_id_or_not_owned(&headers.locale)
+        )
     };
 
     if data.emails.is_some() {
-        err!("Sends with email verification is not supported");
+        err!(crate::i18n::send_email_verification_not_supported(&headers.locale));
     }
 
     update_send_from_data(&mut send, data, &headers, &conn, &nt, UpdateType::SyncSendUpdate).await?;
@@ -491,17 +498,15 @@ async fn update_send_from_data(
     ut: UpdateType,
 ) -> EmptyResult {
     if send.user_uuid.as_ref() != Some(&headers.user.uuid) {
-        err!("Send is not owned by user")
+        err!(crate::i18n::send_not_owned_by_user(&headers.locale))
     }
 
     if send.atype != data.r#type {
-        err!("Sends can't change type")
+        err!(crate::i18n::send_cannot_change_type(&headers.locale))
     }
 
     if data.deletion_date > Utc::now() + TimeDelta::try_days(31).unwrap() {
-        err!(
-            "You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again."
-        );
+        err!(crate::i18n::send_deletion_date_too_far(&headers.locale));
     }
 
     // When updating a file Send, we receive nulls in the File field, as it's immutable,
@@ -511,7 +516,7 @@ async fn update_send_from_data(
             d.as_object_mut().and_then(|d| d.remove("response"));
             serde_json::to_string(&d)?
         } else {
-            err!("Send data not provided");
+            err!(crate::i18n::send_data_not_provided(&headers.locale));
         };
         send.data = data_str;
     }
@@ -543,7 +548,7 @@ async fn update_send_from_data(
 #[delete("/sends/<send_id>")]
 async fn delete_send(send_id: SendId, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let Some(send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await else {
-        err!("Send not found", "Invalid send uuid, or does not belong to user")
+        err!(crate::i18n::send_not_found(&headers.locale), crate::i18n::send_invalid_uuid_or_not_owned(&headers.locale))
     };
 
     send.delete(&conn).await?;
@@ -564,7 +569,7 @@ async fn put_remove_password(send_id: SendId, headers: Headers, conn: DbConn, nt
     enforce_disable_send_policy(&headers, &conn).await?;
 
     let Some(mut send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await else {
-        err!("Send not found", "Invalid send uuid, or does not belong to user")
+        err!(crate::i18n::send_not_found(&headers.locale), crate::i18n::send_invalid_uuid_or_not_owned(&headers.locale))
     };
 
     send.set_password(None);

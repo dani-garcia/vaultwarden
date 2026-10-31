@@ -99,7 +99,7 @@ async fn get_emergency_access(emer_id: EmergencyAccessId, headers: Headers, conn
             emergency_access.to_json_grantee_details(&conn).await.expect("Grantee user should exist but does not!"),
         ))
     } else {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     }
 }
 
@@ -137,17 +137,17 @@ async fn post_emergency_access(
     let data: EmergencyAccessUpdateData = data.into_inner();
 
     let Some(new_type) = EmergencyAccessType::from_str(&data.r#type.into_string()) else {
-        err!("Invalid emergency access type.")
+        err!(crate::i18n::emergency_access_invalid_type(&headers.locale))
     };
 
     if !(EMERGENCY_ACCESS_TIMEOUT_RANGE).contains(&data.wait_time_days) {
-        err!("Emergency access wait time is out-of-bounds!")
+        err!(crate::i18n::emergency_access_wait_time_out_of_bounds(&headers.locale))
     }
 
     let Some(mut emergency_access) =
         EmergencyAccess::find_by_uuid_and_grantor_uuid(&emer_id, &headers.user.uuid, &conn).await
     else {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     };
 
     emergency_access.atype = new_type as i32;
@@ -180,7 +180,7 @@ async fn delete_emergency_access(emer_id: EmergencyAccessId, headers: Headers, c
             info!("Grantee deleted emergency access {emer_id}");
             grantee_emer
         }
-        _ => err!("Emergency access not valid."),
+        _ => err!(crate::i18n::emergency_access_not_valid(&headers.locale)),
     };
 
     emergency_access.delete(&conn).await?;
@@ -213,28 +213,31 @@ async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, co
     let wait_time_days = data.wait_time_days;
 
     if !(EMERGENCY_ACCESS_TIMEOUT_RANGE).contains(&wait_time_days) {
-        err!("Emergency access wait time is out-of-bounds!")
+        err!(crate::i18n::emergency_access_wait_time_out_of_bounds(&headers.locale))
     }
 
     let Some(new_type) = EmergencyAccessType::from_str(&data.r#type.into_string()) else {
-        err!("Invalid emergency access type.")
+        err!(crate::i18n::emergency_access_invalid_type(&headers.locale))
     };
 
     let grantor_user = headers.user;
 
     // avoid setting yourself as emergency contact
     if email == grantor_user.email {
-        err!("You can not set yourself as an emergency contact.")
+        err!(crate::i18n::emergency_access_cannot_set_self(&headers.locale))
     }
 
     let (grantee_user, new_user) = match User::find_by_mail(&email, &conn).await {
         None => {
             if !CONFIG.invitations_allowed() {
-                err!(format!("Grantee user does not exist: {}", email.escape_debug()))
+                err!(
+                    crate::i18n::emergency_access_grantee_user_not_exists(&headers.locale),
+                    email.escape_debug().to_string()
+                )
             }
 
             if !CONFIG.is_email_domain_allowed(&email) {
-                err!("Email domain not eligible for invitations")
+                err!(crate::i18n::emergency_access_email_domain_not_eligible(&headers.locale))
             }
 
             if !CONFIG.mail_enabled() {
@@ -259,7 +262,7 @@ async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, co
     .await
     .is_some()
     {
-        err!(format!("Grantee user already invited: {}", &grantee_user.email))
+        err!(crate::i18n::emergency_access_grantee_user_already_invited(&headers.locale), grantee_user.email.clone())
     }
 
     let new_type = new_type as i32;
@@ -269,12 +272,13 @@ async fn send_invite(data: Json<EmergencyAccessInviteData>, headers: Headers, co
     new_emergency_access.save(&conn).await?;
 
     if CONFIG.mail_enabled() {
-        mail::send_emergency_access_invite(
+        mail::send_emergency_access_invite_for_locale(
             &new_emergency_access.email.expect("Grantee email does not exists"),
             grantee_user.uuid,
             new_emergency_access.uuid,
             &grantor_user.name,
             &grantor_user.email,
+            grantee_user.locale.as_deref(),
         )
         .await?;
     } else if !new_user {
@@ -292,30 +296,31 @@ async fn resend_invite(emer_id: EmergencyAccessId, headers: Headers, conn: DbCon
     let Some(mut emergency_access) =
         EmergencyAccess::find_by_uuid_and_grantor_uuid(&emer_id, &headers.user.uuid, &conn).await
     else {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     };
 
     if emergency_access.status != EmergencyAccessStatus::Invited as i32 {
-        err!("The grantee user is already accepted or confirmed for emergency access");
+        err!(crate::i18n::emergency_access_grantee_already_accepted_or_confirmed(&headers.locale));
     }
 
     let Some(email) = emergency_access.email.clone() else {
-        err!("Email not valid.")
+        err!(crate::i18n::emergency_access_email_not_valid(&headers.locale))
     };
 
     let Some(grantee_user) = User::find_by_mail(&email, &conn).await else {
-        err!("Grantee user not found.")
+        err!(crate::i18n::emergency_access_grantee_not_found(&headers.locale))
     };
 
     let grantor_user = headers.user;
 
     if CONFIG.mail_enabled() {
-        mail::send_emergency_access_invite(
+        mail::send_emergency_access_invite_for_locale(
             &email,
             grantor_user.uuid,
             emergency_access.uuid,
             &grantor_user.name,
             &grantor_user.email,
+            grantee_user.locale.as_deref(),
         )
         .await?;
     } else if !grantee_user.password_hash.is_empty() {
@@ -351,14 +356,14 @@ async fn accept_invite(
     // This can happen if the user who received the invite used a different email to signup.
     // Since we do not know if this is intended, we error out here and do nothing with the invite.
     if claims.email != headers.user.email {
-        err!("Claim email does not match current users email")
+        err!(crate::i18n::emergency_access_claim_email_mismatch(&headers.locale))
     }
 
     let grantee_user = if let Some(user) = User::find_by_mail(&claims.email, &conn).await {
         Invitation::take(&claims.email, &conn).await;
         user
     } else {
-        err!("Invited user not found")
+        err!(crate::i18n::emergency_access_invited_user_not_found(&headers.locale))
     };
 
     // We need to search for the uuid in combination with the email, since we do not yet store the uuid of the grantee in the database.
@@ -366,12 +371,12 @@ async fn accept_invite(
     let Some(mut emergency_access) =
         EmergencyAccess::find_by_uuid_and_grantee_email(&emer_id, &headers.user.email, &conn).await
     else {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     };
 
     // get grantor user to send Accepted email
     let Some(grantor_user) = User::find_by_uuid(&emergency_access.grantor_uuid, &conn).await else {
-        err!("Grantor user not found.")
+        err!(crate::i18n::emergency_access_grantor_not_found(&headers.locale))
     };
 
     if emer_id == claims.emer_id
@@ -381,12 +386,17 @@ async fn accept_invite(
         emergency_access.accept_invite(&grantee_user.uuid, &grantee_user.email, &conn).await?;
 
         if CONFIG.mail_enabled() {
-            mail::send_emergency_access_invite_accepted(&grantor_user.email, &grantee_user.email).await?;
+            mail::send_emergency_access_invite_accepted_for_locale(
+                &grantor_user.email,
+                &grantee_user.email,
+                grantor_user.locale.as_deref(),
+            )
+            .await?;
         }
 
         Ok(())
     } else {
-        err!("Emergency access invitation error.")
+        err!(crate::i18n::emergency_access_invitation_error(&headers.locale))
     }
 }
 
@@ -412,22 +422,22 @@ async fn confirm_emergency_access(
     let Some(mut emergency_access) =
         EmergencyAccess::find_by_uuid_and_grantor_uuid(&emer_id, &confirming_user.uuid, &conn).await
     else {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     };
 
     if emergency_access.status != EmergencyAccessStatus::Accepted as i32
         || emergency_access.grantor_uuid != confirming_user.uuid
     {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     }
 
     let Some(grantor_user) = User::find_by_uuid(&confirming_user.uuid, &conn).await else {
-        err!("Grantor user not found.")
+        err!(crate::i18n::emergency_access_grantor_not_found(&headers.locale))
     };
 
     if let Some(grantee_uuid) = emergency_access.grantee_uuid.as_ref() {
         let Some(grantee_user) = User::find_by_uuid(grantee_uuid, &conn).await else {
-            err!("Grantee user not found.")
+            err!(crate::i18n::emergency_access_grantee_not_found(&headers.locale))
         };
 
         emergency_access.status = EmergencyAccessStatus::Confirmed as i32;
@@ -437,11 +447,16 @@ async fn confirm_emergency_access(
         emergency_access.save(&conn).await?;
 
         if CONFIG.mail_enabled() {
-            mail::send_emergency_access_invite_confirmed(&grantee_user.email, &grantor_user.name).await?;
+            mail::send_emergency_access_invite_confirmed_for_locale(
+                &grantee_user.email,
+                &grantor_user.name,
+                grantee_user.locale.as_deref(),
+            )
+            .await?;
         }
         Ok(Json(emergency_access.to_json()))
     } else {
-        err!("Grantee user not found.")
+        err!(crate::i18n::emergency_access_grantee_not_found(&headers.locale))
     }
 }
 
@@ -458,27 +473,27 @@ async fn initiate_emergency_access(emer_id: EmergencyAccessId, headers: Headers,
         EmergencyAccess::find_by_uuid_and_grantee_uuid(&emer_id, &initiating_user.uuid, &conn).await
     else {
         err!(
-            "Emergency access not valid.",
+            crate::i18n::emergency_access_not_valid(&headers.locale),
             format!("Emergency access '{emer_id}', not found for user '{}'.", initiating_user.email)
         )
     };
 
     if emergency_access.status != EmergencyAccessStatus::Confirmed as i32 {
         err!(
-            "Emergency access not valid.",
+            crate::i18n::emergency_access_not_valid(&headers.locale),
             format!("Emergency access '{emer_id}', not confirmed for user '{}'.", initiating_user.email)
         )
     }
 
     if !EMERGENCY_ACCESS_TIMEOUT_RANGE.contains(&emergency_access.wait_time_days) {
         err!(
-            "Emergency access not valid.",
+            crate::i18n::emergency_access_not_valid(&headers.locale),
             format!("Emergency access '{emer_id}' timeout range '{}' is invalid", emergency_access.wait_time_days)
         )
     }
 
     let Some(grantor_user) = User::find_by_uuid(&emergency_access.grantor_uuid, &conn).await else {
-        err!("Grantor user not found.")
+        err!(crate::i18n::emergency_access_grantor_not_found(&headers.locale))
     };
 
     let now = Utc::now().naive_utc();
@@ -489,11 +504,12 @@ async fn initiate_emergency_access(emer_id: EmergencyAccessId, headers: Headers,
     emergency_access.save(&conn).await?;
 
     if CONFIG.mail_enabled() {
-        mail::send_emergency_access_recovery_initiated(
+        mail::send_emergency_access_recovery_initiated_for_locale(
             &grantor_user.email,
             &initiating_user.name,
             emergency_access.get_type_as_str(),
             &emergency_access.wait_time_days,
+            grantor_user.locale.as_deref(),
         )
         .await?;
     }
@@ -508,36 +524,41 @@ async fn approve_emergency_access(emer_id: EmergencyAccessId, headers: Headers, 
         EmergencyAccess::find_by_uuid_and_grantor_uuid(&emer_id, &headers.user.uuid, &conn).await
     else {
         err!(
-            "Emergency access not valid.",
+            crate::i18n::emergency_access_not_valid(&headers.locale),
             format!("Emergency access '{emer_id}', not found for user '{}'.", headers.user.email)
         )
     };
 
     if emergency_access.status != EmergencyAccessStatus::RecoveryInitiated as i32 {
         err!(
-            "Emergency access not valid.",
+            crate::i18n::emergency_access_not_valid(&headers.locale),
             format!("Emergency access '{emer_id}', not initiated for user '{}'.", headers.user.email)
         )
     }
 
     let Some(grantor_user) = User::find_by_uuid(&headers.user.uuid, &conn).await else {
-        err!("Grantor user not found.")
+        err!(crate::i18n::emergency_access_grantor_not_found(&headers.locale))
     };
 
     if let Some(grantee_uuid) = emergency_access.grantee_uuid.as_ref() {
         let Some(grantee_user) = User::find_by_uuid(grantee_uuid, &conn).await else {
-            err!("Grantee user not found.")
+            err!(crate::i18n::emergency_access_grantee_not_found(&headers.locale))
         };
 
         emergency_access.status = EmergencyAccessStatus::RecoveryApproved as i32;
         emergency_access.save(&conn).await?;
 
         if CONFIG.mail_enabled() {
-            mail::send_emergency_access_recovery_approved(&grantee_user.email, &grantor_user.name).await?;
+            mail::send_emergency_access_recovery_approved_for_locale(
+                &grantee_user.email,
+                &grantor_user.name,
+                grantee_user.locale.as_deref(),
+            )
+            .await?;
         }
         Ok(Json(emergency_access.to_json()))
     } else {
-        err!("Grantee user not found.")
+        err!(crate::i18n::emergency_access_grantee_not_found(&headers.locale))
     }
 }
 
@@ -548,29 +569,34 @@ async fn reject_emergency_access(emer_id: EmergencyAccessId, headers: Headers, c
     let Some(mut emergency_access) =
         EmergencyAccess::find_by_uuid_and_grantor_uuid(&emer_id, &headers.user.uuid, &conn).await
     else {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     };
 
     if emergency_access.status != EmergencyAccessStatus::RecoveryInitiated as i32
         && emergency_access.status != EmergencyAccessStatus::RecoveryApproved as i32
     {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     }
 
     if let Some(grantee_uuid) = emergency_access.grantee_uuid.as_ref() {
         let Some(grantee_user) = User::find_by_uuid(grantee_uuid, &conn).await else {
-            err!("Grantee user not found.")
+            err!(crate::i18n::emergency_access_grantee_not_found(&headers.locale))
         };
 
         emergency_access.status = EmergencyAccessStatus::Confirmed as i32;
         emergency_access.save(&conn).await?;
 
         if CONFIG.mail_enabled() {
-            mail::send_emergency_access_recovery_rejected(&grantee_user.email, &headers.user.name).await?;
+            mail::send_emergency_access_recovery_rejected_for_locale(
+                &grantee_user.email,
+                &headers.user.name,
+                grantee_user.locale.as_deref(),
+            )
+            .await?;
         }
         Ok(Json(emergency_access.to_json()))
     } else {
-        err!("Grantee user not found.")
+        err!(crate::i18n::emergency_access_grantee_not_found(&headers.locale))
     }
 }
 
@@ -585,11 +611,11 @@ async fn view_emergency_access(emer_id: EmergencyAccessId, headers: Headers, con
     let Some(emergency_access) =
         EmergencyAccess::find_by_uuid_and_grantee_uuid(&emer_id, &headers.user.uuid, &conn).await
     else {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     };
 
     if !is_valid_request(&emergency_access, &headers.user.uuid, EmergencyAccessType::View) {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     }
 
     let ciphers = Cipher::find_owned_by_user(&emergency_access.grantor_uuid, &conn).await;
@@ -624,15 +650,15 @@ async fn takeover_emergency_access(emer_id: EmergencyAccessId, headers: Headers,
     let Some(emergency_access) =
         EmergencyAccess::find_by_uuid_and_grantee_uuid(&emer_id, &requesting_user.uuid, &conn).await
     else {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     };
 
     if !is_valid_request(&emergency_access, &requesting_user.uuid, EmergencyAccessType::Takeover) {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     }
 
     let Some(grantor_user) = User::find_by_uuid(&emergency_access.grantor_uuid, &conn).await else {
-        err!("Grantor user not found.")
+        err!(crate::i18n::emergency_access_grantor_not_found(&headers.locale))
     };
 
     let result = json!({
@@ -675,15 +701,15 @@ async fn password_emergency_access(
     let Some(emergency_access) =
         EmergencyAccess::find_by_uuid_and_grantee_uuid(&emer_id, &requesting_user.uuid, &conn).await
     else {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     };
 
     if !is_valid_request(&emergency_access, &requesting_user.uuid, EmergencyAccessType::Takeover) {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     }
 
     let Some(mut grantor_user) = User::find_by_uuid(&emergency_access.grantor_uuid, &conn).await else {
-        err!("Grantor user not found.")
+        err!(crate::i18n::emergency_access_grantor_not_found(&headers.locale))
     };
 
     let (new_master_password_hash, new_key) =
@@ -691,14 +717,14 @@ async fn password_emergency_access(
             authentication_data.check(&grantor_user, &unlock_data)?;
 
             if !authentication_data.kdf.matches_user(&grantor_user) {
-                err!("KDF settings do not match the grantor account")
+                err!(crate::i18n::emergency_access_kdf_mismatch_grantor(&headers.locale))
             }
 
             (authentication_data.master_password_authentication_hash, unlock_data.master_key_wrapped_user_key)
         } else if let (Some(new_master_password_hash), Some(new_key)) = (data.new_master_password_hash, data.key) {
             (new_master_password_hash, new_key)
         } else {
-            err!("Invalid request!")
+            err!(crate::i18n::emergency_access_invalid_request(&headers.locale))
         };
 
     // change grantor_user password
@@ -725,15 +751,15 @@ async fn policies_emergency_access(emer_id: EmergencyAccessId, headers: Headers,
     let Some(emergency_access) =
         EmergencyAccess::find_by_uuid_and_grantee_uuid(&emer_id, &requesting_user.uuid, &conn).await
     else {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     };
 
     if !is_valid_request(&emergency_access, &requesting_user.uuid, EmergencyAccessType::Takeover) {
-        err!("Emergency access not valid.")
+        err!(crate::i18n::emergency_access_not_valid(&headers.locale))
     }
 
     let Some(grantor_user) = User::find_by_uuid(&emergency_access.grantor_uuid, &conn).await else {
-        err!("Grantor user not found.")
+        err!(crate::i18n::emergency_access_grantor_not_found(&headers.locale))
     };
 
     let policies = OrgPolicy::find_confirmed_by_user(&grantor_user.uuid, &conn);
@@ -759,7 +785,7 @@ fn is_valid_request(
 
 fn check_emergency_access_enabled() -> EmptyResult {
     if !CONFIG.emergency_access_allowed() {
-        err!("Emergency access is not enabled.")
+        err!(crate::i18n::emergency_access_not_enabled(&CONFIG.default_locale()))
     }
     Ok(())
 }
@@ -820,17 +846,23 @@ pub async fn emergency_request_timeout_job(pool: DbPool) {
         }
 
         if CONFIG.mail_enabled() {
-            if let Err(e) = mail::send_emergency_access_recovery_timed_out(
+            if let Err(e) = mail::send_emergency_access_recovery_timed_out_for_locale(
                 &grantor_user.email,
                 &grantee_user.name,
                 emer.get_type_as_str(),
+                grantor_user.locale.as_deref(),
             )
             .await
             {
                 error!("Failed to send emergency access recovery time-out email for '{}': {e}", emer.uuid);
             }
 
-            if let Err(e) = mail::send_emergency_access_recovery_approved(&grantee_user.email, &grantor_user.name).await
+            if let Err(e) = mail::send_emergency_access_recovery_approved_for_locale(
+                &grantee_user.email,
+                &grantor_user.name,
+                grantee_user.locale.as_deref(),
+            )
+            .await
             {
                 error!("Failed to send emergency access recovery approved email for '{}': {e}", emer.uuid);
             }
@@ -914,11 +946,12 @@ pub async fn emergency_notification_reminder_job(pool: DbPool) {
         }
 
         if CONFIG.mail_enabled()
-            && let Err(e) = mail::send_emergency_access_recovery_reminder(
+            && let Err(e) = mail::send_emergency_access_recovery_reminder_for_locale(
                 &grantor_user.email,
                 &grantee_user.name,
                 emer.get_type_as_str(),
                 "1", // This notification is only triggered one day before the activation
+                grantor_user.locale.as_deref(),
             )
             .await
         {

@@ -2,6 +2,7 @@ use chrono::Utc;
 use rocket::{Route, serde::json::Json};
 
 use crate::{
+    CONFIG,
     api::{
         ApiResult, EmptyResult, JsonResult, PasswordOrOtpData,
         core::log_user_event,
@@ -114,7 +115,9 @@ async fn activate_duo(data: Json<EnableDuoData>, headers: Headers, conn: DbConn)
     let (data, data_str) = if check_duo_fields_custom(&data) {
         let data_req: DuoData = data.into();
         let data_str = serde_json::to_string(&data_req)?;
-        duo_api_request("GET", "/auth/v2/check", "", &data_req).await.map_res("Failed to validate Duo credentials")?;
+        duo_api_request("GET", "/auth/v2/check", "", &data_req)
+            .await
+            .map_res(crate::i18n::two_factor_failed_validate_duo_credentials(&headers.locale))?;
         (data_req.obscure(), data_str)
     } else {
         (DuoData::secret(), String::new())
@@ -220,7 +223,7 @@ pub(crate) async fn get_duo_keys_email(email: &str, conn: &DbConn) -> ApiResult<
         Some(u) => get_user_duo_data(&u.uuid, conn).await.data(),
         _ => DuoData::global(),
     }
-    .map_res("Can't fetch Duo Keys")?;
+    .map_res(crate::i18n::two_factor_cant_fetch_duo_keys(&CONFIG.default_locale()))?;
 
     Ok((data.ik, data.sk, data.host))
 }

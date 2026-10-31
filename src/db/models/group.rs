@@ -4,6 +4,7 @@ use diesel::prelude::*;
 use serde_json::Value;
 
 use crate::{
+    CONFIG,
     api::EmptyResult,
     db::{
         DbConn,
@@ -172,7 +173,7 @@ impl Group {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving group")
+                    .map_res(crate::i18n::db_error_saving_group(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(groups::table)
@@ -181,7 +182,7 @@ impl Group {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving group")
+                    .map_res(crate::i18n::db_error_saving_group(&CONFIG.default_locale()))
             }
         }
     }
@@ -287,7 +288,7 @@ impl Group {
         conn.run(move |conn| {
             diesel::delete(groups::table.filter(groups::uuid.eq(&self.uuid)))
                 .execute(conn)
-                .map_res("Error deleting group")
+                .map_res(crate::i18n::db_error_deleting_group(&CONFIG.default_locale()))
         })
         .await
     }
@@ -308,7 +309,7 @@ impl Group {
                 },
                 10,
             )
-            .map_res("Error updating group revision")
+            .map_res(crate::i18n::db_error_updating_group_revision(&CONFIG.default_locale()))
         })
         .await
     }
@@ -337,7 +338,7 @@ impl CollectionGroup {
                     .do_update()
                     .set(values)
                     .execute(conn)
-                    .map_res("Error adding group to collection")
+                    .map_res(crate::i18n::db_error_adding_group_to_collection(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(collections_groups::table)
@@ -346,7 +347,7 @@ impl CollectionGroup {
                     .do_update()
                     .set(values)
                     .execute(conn)
-                    .map_res("Error adding group to collection")
+                    .map_res(crate::i18n::db_error_adding_group_to_collection(&CONFIG.default_locale()))
             }
         }
     }
@@ -423,7 +424,7 @@ impl CollectionGroup {
                 .filter(collections_groups::collections_uuid.eq(&self.collections_uuid))
                 .filter(collections_groups::groups_uuid.eq(&self.groups_uuid))
                 .execute(conn)
-                .map_res("Error deleting collection group")
+                .map_res(crate::i18n::db_error_deleting_collection_group(&CONFIG.default_locale()))
         })
         .await
     }
@@ -438,7 +439,7 @@ impl CollectionGroup {
             diesel::delete(collections_groups::table)
                 .filter(collections_groups::groups_uuid.eq(group_uuid))
                 .execute(conn)
-                .map_res("Error deleting collection group")
+                .map_res(crate::i18n::db_error_deleting_collection_group(&CONFIG.default_locale()))
         })
         .await
     }
@@ -460,7 +461,7 @@ impl CollectionGroup {
             diesel::delete(collections_groups::table)
                 .filter(collections_groups::collections_uuid.eq(collection_uuid))
                 .execute(conn)
-                .map_res("Error deleting collection group")
+                .map_res(crate::i18n::db_error_deleting_collection_group(&CONFIG.default_locale()))
         })
         .await
     }
@@ -482,7 +483,7 @@ impl GroupUser {
                     .on_conflict(diesel::dsl::DuplicatedKeys)
                     .do_nothing()
                     .execute(conn)
-                    .map_res("Error adding user to group")
+                    .map_res(crate::i18n::db_error_adding_user_to_group(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(groups_users::table)
@@ -490,7 +491,7 @@ impl GroupUser {
                     .on_conflict((groups_users::users_organizations_uuid, groups_users::groups_uuid))
                     .do_nothing()
                     .execute(conn)
-                    .map_res("Error adding user to group")
+                    .map_res(crate::i18n::db_error_adding_user_to_group(&CONFIG.default_locale()))
             }
         }
     }
@@ -583,7 +584,7 @@ impl GroupUser {
             diesel::delete(groups_users::table)
                 .filter(groups_users::groups_uuid.eq(group_uuid))
                 .execute(conn)
-                .map_res("Error deleting group users")
+                .map_res(crate::i18n::db_error_deleting_group_users(&CONFIG.default_locale()))
         })
         .await
     }
@@ -598,7 +599,7 @@ impl GroupUser {
             diesel::delete(groups_users::table)
                 .filter(groups_users::users_organizations_uuid.eq(member_uuid))
                 .execute(conn)
-                .map_res("Error deleting user groups")
+                .map_res(crate::i18n::db_error_deleting_user_groups(&CONFIG.default_locale()))
         })
         .await
     }

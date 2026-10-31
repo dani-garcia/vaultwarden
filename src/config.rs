@@ -396,7 +396,7 @@ macro_rules! make_config {
                     GroupData {
                         group: stringify!($group),
                         grouptoggle: stringify!($($group_enabled)?),
-                        groupdoc: (make_config! { @show $($groupdoc)? }),
+                        groupdoc: (make_config! { @show $($groupdoc)? }).trim(),
 
                         elements: vec![
                         $( // This repetition is for each element within a group
@@ -590,6 +590,8 @@ make_config! {
         /// Domain URL |> This needs to be set to the URL used to access the server, including 'http[s]://'
         /// and port, if it's different than the default. Some server functions don't work correctly without this value
         domain:                 String, true,   def,    "http://localhost".to_owned();
+        /// Default locale |> Locale used for localized templates. Supports language or language-region (for example: en, en-US, ru, uk-UA)
+        default_locale:         String, true,   def,    "en".to_owned();
         /// Domain Set |> Indicates if the domain is set by the admin. Otherwise the default will be used.
         domain_set:             bool,   false,  def,    false;
         /// Domain origin |> Domain URL origin (in https://example.com:8443/path, https://example.com:8443 is the origin)
@@ -957,6 +959,8 @@ make_config! {
 }
 
 fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
+    let locale = cfg.default_locale.as_str();
+
     // Validate connection URL is valid and DB feature is enabled
     #[cfg(sqlite)]
     {
@@ -969,10 +973,7 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                 if let Some(parent) = path.parent()
                     && !parent.is_dir()
                 {
-                    err!(format!(
-                        "SQLite database directory `{}` does not exist or is not a directory",
-                        parent.display()
-                    ));
+                    err!(crate::i18n::config_sqlite_database_directory_invalid(locale), parent.display().to_string());
                 }
             }
         }
@@ -982,43 +983,40 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     if !trusted_proxies.eq_ignore_ascii_case("all") && !trusted_proxies.eq_ignore_ascii_case("local") {
         for entry in trusted_proxies.split(',').filter(|e| !e.trim().is_empty()) {
             if crate::auth::parse_trusted_proxy(entry).is_none() {
-                err!(format!(
-                    "Invalid IP_HEADER_TRUSTED_PROXIES entry `{}`, expected an IP or CIDR range",
-                    entry.trim()
-                ));
+                err!(crate::i18n::config_ip_header_trusted_proxies_invalid_entry(locale), entry.trim());
             }
         }
     }
 
     if cfg.password_iterations < 100_000 {
-        err!("PASSWORD_ITERATIONS should be at least 100000 or higher. The default is 600000!");
+        err!(crate::i18n::config_password_iterations_min(locale));
     }
 
     let limit = 256;
     if cfg.database_max_conns < 1 || cfg.database_max_conns > limit {
-        err!(format!("`DATABASE_MAX_CONNS` contains an invalid value. Ensure it is between 1 and {limit}.",));
+        err!(crate::i18n::config_database_max_conns_invalid_range(locale));
     }
 
     if cfg.database_min_conns < 1 || cfg.database_min_conns > limit {
-        err!(format!("`DATABASE_MIN_CONNS` contains an invalid value. Ensure it is between 1 and {limit}.",));
+        err!(crate::i18n::config_database_min_conns_invalid_range(locale));
     }
 
     if cfg.database_min_conns > cfg.database_max_conns {
-        err!("`DATABASE_MIN_CONNS` must be less than or equal to `DATABASE_MAX_CONNS`.");
+        err!(crate::i18n::config_database_min_conns_lte_max(locale));
     }
 
     if cfg.database_timeout < 1 {
-        err!("`DATABASE_TIMEOUT` must be at least 1 second");
+        err!(crate::i18n::config_database_timeout_min_1(locale));
     }
 
     if cfg.database_idle_timeout < 1 {
-        err!("`DATABASE_IDLE_TIMEOUT` must be at least 1 second");
+        err!(crate::i18n::config_database_idle_timeout_min_1(locale));
     }
 
     if let Some(log_file) = &cfg.log_file
         && std::fs::OpenOptions::new().append(true).create(true).open(log_file).is_err()
     {
-        err!("Unable to write to log file", log_file);
+        err!(crate::i18n::config_unable_write_log_file(locale), log_file);
     }
 
     let dom = cfg.domain.to_lowercase();
@@ -1054,14 +1052,14 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
 
     let whitelist = &cfg.signups_domains_whitelist;
     if !whitelist.is_empty() && whitelist.split(',').any(|d| d.trim().is_empty()) {
-        err!("`SIGNUPS_DOMAINS_WHITELIST` contains empty tokens");
+        err!(crate::i18n::config_signups_domains_whitelist_empty_tokens(locale));
     }
 
     let org_creation_users = cfg.org_creation_users.trim().to_lowercase();
     if !(org_creation_users.is_empty() || org_creation_users == "all" || org_creation_users == "none")
         && org_creation_users.split(',').any(|u| !u.contains('@'))
     {
-        err!("`ORG_CREATION_USERS` contains invalid email addresses");
+        err!(crate::i18n::config_org_creation_users_invalid_emails(locale));
     }
 
     if let Some(ref token) = cfg.admin_token
@@ -1086,20 +1084,20 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     if cfg.push_enabled {
         let push_relay_uri = cfg.push_relay_uri.to_lowercase();
         if !push_relay_uri.starts_with("https://") {
-            err!("`PUSH_RELAY_URI` must start with 'https://'.")
+            err!(crate::i18n::config_push_relay_uri_must_be_https(locale))
         }
 
         if Url::parse(&push_relay_uri).is_err() {
-            err!("Invalid URL format for `PUSH_RELAY_URI`.");
+            err!(crate::i18n::config_push_relay_uri_invalid_url(locale));
         }
 
         let push_identity_uri = cfg.push_identity_uri.to_lowercase();
         if !push_identity_uri.starts_with("https://") {
-            err!("`PUSH_IDENTITY_URI` must start with 'https://'.")
+            err!(crate::i18n::config_push_identity_uri_must_be_https(locale))
         }
 
         if Url::parse(&push_identity_uri).is_err() {
-            err!("Invalid URL format for `PUSH_IDENTITY_URI`.");
+            err!(crate::i18n::config_push_identity_uri_invalid_url(locale));
         }
     }
 
@@ -1125,41 +1123,41 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     if let Some(limit) = cfg.user_attachment_limit
         && !(0i64..=MAX_FILESIZE_KB).contains(&limit)
     {
-        err!("`USER_ATTACHMENT_LIMIT` is out of bounds");
+        err!(crate::i18n::config_user_attachment_limit_out_of_bounds(locale));
     }
 
     if let Some(limit) = cfg.org_attachment_limit
         && !(0i64..=MAX_FILESIZE_KB).contains(&limit)
     {
-        err!("`ORG_ATTACHMENT_LIMIT` is out of bounds");
+        err!(crate::i18n::config_org_attachment_limit_out_of_bounds(locale));
     }
 
     if let Some(limit) = cfg.user_send_limit
         && !(0i64..=MAX_FILESIZE_KB).contains(&limit)
     {
-        err!("`USER_SEND_LIMIT` is out of bounds");
+        err!(crate::i18n::config_user_send_limit_out_of_bounds(locale));
     }
 
     if cfg._enable_duo
         && (cfg.duo_host.is_some() || cfg.duo_ikey.is_some() || cfg.duo_skey.is_some())
         && !(cfg.duo_host.is_some() && cfg.duo_ikey.is_some() && cfg.duo_skey.is_some())
     {
-        err!("All Duo options need to be set for global Duo support")
+        err!(crate::i18n::config_duo_all_options_required(locale))
     }
 
     if cfg.sso_enabled {
         if cfg.sso_client_id.is_empty() || cfg.sso_client_secret.is_empty() || cfg.sso_authority.is_empty() {
-            err!("`SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` and `SSO_AUTHORITY` must be set for SSO support")
+            err!(crate::i18n::config_sso_required_options_missing(locale))
         }
 
-        validate_internal_sso_issuer_url(&cfg.sso_authority)?;
-        validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
-        validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
+        validate_internal_sso_issuer_url(&cfg.sso_authority, locale)?;
+        validate_internal_sso_redirect_url(&cfg.sso_callback_path, locale)?;
+        validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref(), locale)?;
     }
 
     if cfg._enable_yubico {
         if cfg.yubico_client_id.is_some() != cfg.yubico_secret_key.is_some() {
-            err!("Both `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` must be set for Yubikey OTP support")
+            err!(crate::i18n::config_yubico_both_credentials_required(locale))
         }
 
         if let Some(yubico_server) = &cfg.yubico_server {
@@ -1187,32 +1185,35 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
             // Check if we can find the sendmail command to execute when no absolute path is given
             if !path.is_absolute() {
                 let Ok(which_path) = which::which(&command) else {
-                    err!(format!("sendmail command {command} not found in $PATH"))
+                    err!(crate::i18n::config_sendmail_command_not_found_in_path(locale), command)
                 };
                 path = which_path;
             }
 
             match path.metadata() {
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                    err!(format!("sendmail command not found at `{path:?}`"))
+                    err!(crate::i18n::config_sendmail_command_not_found_at_path(locale), path.display().to_string())
                 }
                 Err(err) => {
-                    err!(format!("failed to access sendmail command at `{path:?}`: {err}"))
+                    err!(
+                        crate::i18n::config_sendmail_command_access_failed(locale),
+                        format!("{}: {}", path.display(), err)
+                    )
                 }
                 Ok(metadata) => {
                     if metadata.is_dir() {
-                        err!(format!("sendmail command at `{path:?}` isn't a directory"));
+                        err!(crate::i18n::config_sendmail_command_is_directory(locale), path.display().to_string());
                     }
 
                     #[cfg(unix)]
                     if nix::unistd::access(&path, nix::unistd::AccessFlags::X_OK).is_err() {
-                        err!(format!("sendmail command at `{path:?}` isn't executable"));
+                        err!(crate::i18n::config_sendmail_command_not_executable(locale), path.display().to_string());
                     }
                 }
             }
         } else {
             if cfg.smtp_host.is_some() == cfg.smtp_from.is_empty() {
-                err!("Both `SMTP_HOST` and `SMTP_FROM` need to be set for email support without `USE_SENDMAIL`")
+                err!(crate::i18n::config_smtp_host_and_from_required(locale))
             }
 
             if cfg.smtp_username.is_some() != cfg.smtp_password.is_some() {
@@ -1223,23 +1224,23 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         }
 
         if (cfg.smtp_host.is_some() || cfg.use_sendmail) && !is_valid_email(&cfg.smtp_from) {
-            err!(format!("SMTP_FROM '{}' is not a valid email address", cfg.smtp_from))
+            err!(crate::i18n::config_smtp_from_invalid_email(locale), &cfg.smtp_from)
         }
 
         if cfg._enable_email_2fa && cfg.email_token_size < 6 {
-            err!("`EMAIL_TOKEN_SIZE` has a minimum size of 6")
+            err!(crate::i18n::config_email_token_size_min_6(locale))
         }
     }
 
     if cfg._enable_email_2fa && !(cfg.smtp_host.is_some() || cfg.use_sendmail) {
-        err!("To enable email 2FA, a mail transport must be configured")
+        err!(crate::i18n::config_email_2fa_requires_mail_transport(locale))
     }
 
     if !cfg._enable_email_2fa && cfg.email_2fa_enforce_on_verified_invite {
-        err!("To enforce email 2FA on verified invitations, email 2fa has to be enabled!");
+        err!(crate::i18n::config_email_2fa_verified_invite_requires_enable(locale));
     }
     if !cfg._enable_email_2fa && cfg.email_2fa_auto_fallback {
-        err!("To use email 2FA as automatic fallback, email 2fa has to be enabled!");
+        err!(crate::i18n::config_email_2fa_fallback_requires_enable(locale));
     }
 
     // Check if the HTTP request block regex is valid
@@ -1247,7 +1248,7 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         let validate_regex = regex::Regex::new(r);
         match validate_regex {
             Ok(_) => (),
-            Err(e) => err!(format!("`HTTP_REQUEST_BLOCK_REGEX` is invalid: {e:#?}")),
+            Err(e) => err!(crate::i18n::config_http_request_block_regex_invalid(locale), format!("{e:#?}")),
         }
     }
 
@@ -1257,12 +1258,12 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         "internal" | "bitwarden" | "duckduckgo" | "google" => (),
         _ => {
             if !icon_service.starts_with("http") {
-                err!(format!("Icon service URL `{icon_service}` must start with \"http\""))
+                err!(crate::i18n::config_icon_service_url_must_start_http(locale), icon_service)
             }
             match icon_service.matches("{}").count() {
                 1 => (), // nominal
-                0 => err!(format!("Icon service URL `{icon_service}` has no placeholder \"{{}}\"")),
-                _ => err!(format!("Icon service URL `{icon_service}` has more than one placeholder \"{{}}\"")),
+                0 => err!(crate::i18n::config_icon_service_url_missing_placeholder(locale), icon_service),
+                _ => err!(crate::i18n::config_icon_service_url_multiple_placeholders(locale), icon_service),
             }
         }
     }
@@ -1270,11 +1271,11 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     // Check if the icon redirect code is valid
     match cfg.icon_redirect_code {
         301 | 302 | 307 | 308 => (),
-        _ => err!("Only HTTP 301/302 and 307/308 redirects are supported"),
+        _ => err!(crate::i18n::config_icon_redirect_supported_codes(locale)),
     }
 
     if cfg.invitation_expiration_hours < 1 {
-        err!("`INVITATION_EXPIRATION_HOURS` has a minimum duration of 1 hour")
+        err!(crate::i18n::config_invitation_expiration_hours_min_1(locale))
     }
 
     if !(1..=90).contains(&cfg.two_factor_remember_days) {
@@ -1283,74 +1284,74 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
 
     // Validate schedule crontab format
     if !cfg.send_purge_schedule.is_empty() && cfg.send_purge_schedule.parse::<Schedule>().is_err() {
-        err!("`SEND_PURGE_SCHEDULE` is not a valid cron expression")
+        err!(crate::i18n::config_send_purge_schedule_invalid(locale))
     }
 
     if !cfg.trash_purge_schedule.is_empty() && cfg.trash_purge_schedule.parse::<Schedule>().is_err() {
-        err!("`TRASH_PURGE_SCHEDULE` is not a valid cron expression")
+        err!(crate::i18n::config_trash_purge_schedule_invalid(locale))
     }
 
     if !cfg.incomplete_2fa_schedule.is_empty() && cfg.incomplete_2fa_schedule.parse::<Schedule>().is_err() {
-        err!("`INCOMPLETE_2FA_SCHEDULE` is not a valid cron expression")
+        err!(crate::i18n::config_incomplete_2fa_schedule_invalid(locale))
     }
 
     if !cfg.emergency_notification_reminder_schedule.is_empty()
         && cfg.emergency_notification_reminder_schedule.parse::<Schedule>().is_err()
     {
-        err!("`EMERGENCY_NOTIFICATION_REMINDER_SCHEDULE` is not a valid cron expression")
+        err!(crate::i18n::config_emergency_notification_reminder_schedule_invalid(locale))
     }
 
     if !cfg.emergency_request_timeout_schedule.is_empty()
         && cfg.emergency_request_timeout_schedule.parse::<Schedule>().is_err()
     {
-        err!("`EMERGENCY_REQUEST_TIMEOUT_SCHEDULE` is not a valid cron expression")
+        err!(crate::i18n::config_emergency_request_timeout_schedule_invalid(locale))
     }
 
     if !cfg.event_cleanup_schedule.is_empty() && cfg.event_cleanup_schedule.parse::<Schedule>().is_err() {
-        err!("`EVENT_CLEANUP_SCHEDULE` is not a valid cron expression")
+        err!(crate::i18n::config_event_cleanup_schedule_invalid(locale))
     }
 
     if !cfg.auth_request_purge_schedule.is_empty() && cfg.auth_request_purge_schedule.parse::<Schedule>().is_err() {
-        err!("`AUTH_REQUEST_PURGE_SCHEDULE` is not a valid cron expression")
+        err!(crate::i18n::config_auth_request_purge_schedule_invalid(locale))
     }
 
     if !cfg.duo_context_purge_schedule.is_empty() && cfg.duo_context_purge_schedule.parse::<Schedule>().is_err() {
-        err!("`DUO_CONTEXT_PURGE_SCHEDULE` is not a valid cron expression")
+        err!(crate::i18n::config_duo_context_purge_schedule_invalid(locale))
     }
 
     if !cfg.purge_incomplete_sso_auth.is_empty() && cfg.purge_incomplete_sso_auth.parse::<Schedule>().is_err() {
-        err!("`PURGE_INCOMPLETE_SSO_AUTH` is not a valid cron expression")
+        err!(crate::i18n::config_purge_incomplete_sso_auth_invalid(locale))
     }
 
     if cfg.login_ratelimit_seconds < 1 {
-        err!("`LOGIN_RATELIMIT_SECONDS` must be at least 1 second");
+        err!(crate::i18n::config_login_ratelimit_seconds_min_1(locale));
     }
 
     if cfg.login_ratelimit_max_burst < 1 {
-        err!("`LOGIN_RATELIMIT_MAX_BURST` must be at least 1");
+        err!(crate::i18n::config_login_ratelimit_max_burst_min_1(locale));
     }
 
     if cfg.admin_ratelimit_seconds < 1 {
-        err!("`ADMIN_RATELIMIT_SECONDS` must be at least 1 second");
+        err!(crate::i18n::config_admin_ratelimit_seconds_min_1(locale));
     }
 
     if cfg.admin_ratelimit_max_burst < 1 {
-        err!("`ADMIN_RATELIMIT_MAX_BURST` must be at least 1");
+        err!(crate::i18n::config_admin_ratelimit_max_burst_min_1(locale));
     }
 
     if cfg.unauthenticated_ratelimit_seconds < 1 {
-        err!("`UNAUTHENTICATED_RATELIMIT_SECONDS` must be at least 1 second");
+        err!(crate::i18n::config_unauthenticated_ratelimit_seconds_min_1(locale));
     }
 
     if cfg.unauthenticated_ratelimit_max_burst < 1 {
-        err!("`UNAUTHENTICATED_RATELIMIT_MAX_BURST` must be at least 1");
+        err!(crate::i18n::config_unauthenticated_ratelimit_max_burst_min_1(locale));
     }
 
     if !cfg.disable_admin_token {
         match cfg.admin_token.as_ref() {
             Some(t) if t.starts_with("$argon2") => {
                 if let Err(e) = argon2::password_hash::phc::PasswordHash::new(t) {
-                    err!(format!("The configured Argon2 PHC in `ADMIN_TOKEN` is invalid: '{e}'"))
+                    err!(crate::i18n::config_admin_token_argon2_phc_invalid(locale), e.to_string())
                 }
             }
             Some(_) => {
@@ -1371,31 +1372,37 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     Ok(())
 }
 
-fn validate_internal_sso_issuer_url(sso_authority: &String) -> Result<openidconnect::IssuerUrl, Error> {
+fn validate_internal_sso_issuer_url(sso_authority: &String, locale: &str) -> Result<openidconnect::IssuerUrl, Error> {
     match openidconnect::IssuerUrl::new(sso_authority.clone()) {
-        Err(err) => err!(format!("Invalid sso_authority URL ({sso_authority}): {err}")),
+        Err(err) => err!(crate::i18n::config_sso_authority_url_invalid(locale), format!("{sso_authority}: {err}")),
         Ok(issuer_url) => Ok(issuer_url),
     }
 }
 
-fn validate_internal_sso_redirect_url(sso_callback_path: &String) -> Result<openidconnect::RedirectUrl, Error> {
+fn validate_internal_sso_redirect_url(
+    sso_callback_path: &String,
+    locale: &str,
+) -> Result<openidconnect::RedirectUrl, Error> {
     match openidconnect::RedirectUrl::new(sso_callback_path.clone()) {
-        Err(err) => err!(format!("Invalid sso_callback_path ({sso_callback_path} built using `domain`) URL: {err}")),
+        Err(err) => {
+            err!(crate::i18n::config_sso_callback_path_url_invalid(locale), format!("{sso_callback_path}: {err}"))
+        }
         Ok(redirect_url) => Ok(redirect_url),
     }
 }
 
 fn validate_sso_master_password_policy(
     sso_master_password_policy: Option<&String>,
+    locale: &str,
 ) -> Result<Option<serde_json::Value>, Error> {
     let policy = sso_master_password_policy.as_ref().map(|mpp| serde_json::from_str::<serde_json::Value>(mpp));
 
     match policy {
         None => Ok(None),
         Some(Ok(jsobject @ serde_json::Value::Object(_))) => Ok(Some(jsobject)),
-        Some(Ok(_)) => err!("Invalid sso_master_password_policy: parsed value is not a JSON object"),
+        Some(Ok(_)) => err!(crate::i18n::config_sso_master_password_policy_not_object(locale)),
         Some(Err(error)) => {
-            err!(format!("Invalid sso_master_password_policy ({error}), Ensure that it's correctly escaped with ''"))
+            err!(crate::i18n::config_sso_master_password_policy_invalid(locale), error.to_string())
         }
     }
 }
@@ -1741,6 +1748,16 @@ impl Config {
         }
     }
 
+    pub fn has_template(&self, name: &str) -> bool {
+        if self.reload_templates() {
+            let hb = load_templates(CONFIG.templates_folder());
+            hb.has_template(name)
+        } else {
+            let hb = &self.inner.read().unwrap().templates;
+            hb.has_template(name)
+        }
+    }
+
     pub fn render_fallback_template<T: serde::ser::Serialize>(&self, name: &str, data: &T) -> Result<String, Error> {
         let hb = &self.inner.read().unwrap().templates;
         hb.render(&format!("fallback_{name}"), data).map_err(Into::into)
@@ -1759,15 +1776,18 @@ impl Config {
     }
 
     pub fn sso_issuer_url(&self) -> Result<openidconnect::IssuerUrl, Error> {
-        validate_internal_sso_issuer_url(&self.sso_authority())
+        let locale = self.default_locale();
+        validate_internal_sso_issuer_url(&self.sso_authority(), &locale)
     }
 
     pub fn sso_redirect_url(&self) -> Result<openidconnect::RedirectUrl, Error> {
-        validate_internal_sso_redirect_url(&self.sso_callback_path())
+        let locale = self.default_locale();
+        validate_internal_sso_redirect_url(&self.sso_callback_path(), &locale)
     }
 
     pub fn sso_master_password_policy_value(&self) -> Option<serde_json::Value> {
-        validate_sso_master_password_policy(self.sso_master_password_policy().as_ref()).ok().flatten()
+        let locale = self.default_locale();
+        validate_sso_master_password_policy(self.sso_master_password_policy().as_ref(), &locale).ok().flatten()
     }
 
     pub fn sso_scopes_vec(&self) -> Vec<String> {
@@ -1793,6 +1813,7 @@ where
     hb.set_strict_mode(true);
     // Register helpers
     hb.register_helper("case", Box::new(case_helper));
+    hb.register_helper("t", Box::new(t_helper));
     hb.register_helper("to_json", Box::new(to_json));
     hb.register_helper("webver", Box::new(webver));
     hb.register_helper("vwver", Box::new(vwver));
@@ -1886,6 +1907,35 @@ fn case_helper<'reg, 'rc>(
     } else {
         Ok(())
     }
+}
+
+fn t_helper<'reg, 'rc>(
+    h: &Helper<'rc>,
+    _r: &'reg Handlebars<'_>,
+    ctx: &'rc Context,
+    _rc: &mut RenderContext<'reg, 'rc>,
+    out: &mut dyn Output,
+) -> HelperResult {
+    let key = h.param(0).and_then(|p| p.value().as_str()).ok_or_else(|| {
+        RenderErrorReason::Other(String::from("Expected string key as first parameter for helper \"t\""))
+    })?;
+
+    let locale = h
+        .hash_get("locale")
+        .and_then(|v| v.value().as_str())
+        .or_else(|| h.param(1).and_then(|p| p.value().as_str()))
+        .or_else(|| ctx.data().get("lang").and_then(|v| v.as_str()))
+        .or_else(|| ctx.data().get("locale").and_then(|v| v.as_str()))
+        .map_or_else(|| CONFIG.default_locale(), str::to_owned);
+
+    if let Some(value) = crate::i18n::tr_lookup(&locale, key) {
+        out.write(value)?;
+    } else {
+        // Keep rendering resilient during incremental migrations.
+        out.write(key)?;
+    }
+
+    Ok(())
 }
 
 fn to_json<'reg, 'rc>(

@@ -1,4 +1,4 @@
-Emergency access request by {{{grantee_name}}} granted
+{{t "tpl.email.ea_recovery_timed_out.subject_prefix" locale=lang}} {{{grantee_name}}} {{t "tpl.email.ea_recovery_timed_out.subject_suffix" locale=lang}}
 <!---------------->
-{{grantee_name}} has been granted emergency access to {{atype}} your account. You may login on the web vault ({{url}}) and manually revoke this request.
+{{grantee_name}} {{t "tpl.email.ea_recovery_timed_out.body_intro_mid" locale=lang}} {{atype}} {{t "tpl.email.ea_recovery_timed_out.body_intro_suffix_prefix" locale=lang}} ({{url}}) {{t "tpl.email.ea_recovery_timed_out.body_intro_suffix" locale=lang}}
 {{> email/email_footer_text }}

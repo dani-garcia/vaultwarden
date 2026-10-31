@@ -24,7 +24,7 @@ use crate::{
         push::register_push_device,
     },
     auth,
-    auth::{AuthMethod, ClientHeaders, ClientIp, Secure, generate_organization_api_key_login_claims},
+    auth::{AuthMethod, ClientHeaders, ClientIp, RequestLocale, Secure, generate_organization_api_key_login_claims},
     crypto,
     db::{
         DbConn,
@@ -66,7 +66,9 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
             check_is_some(data.refresh_token.as_ref(), "refresh_token cannot be blank")?;
             refresh_login(data, &conn, &client_header.ip).await
         }
-        "password" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
+        "password" if CONFIG.sso_enabled() && CONFIG.sso_only() => {
+            err!(crate::i18n::identity_sso_required(&client_header.locale))
+        }
         "password" => {
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
             check_is_some(data.password.as_ref(), "password cannot be blank")?;
@@ -77,14 +79,14 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
             check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
             check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
-            password_login(data, &mut user_id, &conn, &client_header.ip).await
+            password_login(data, &mut user_id, &conn, &client_header.ip, &client_header.locale).await
         }
         "client_credentials" => {
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
             check_is_some(data.client_secret.as_ref(), "client_secret cannot be blank")?;
             check_is_some(data.scope.as_ref(), "scope cannot be blank")?;
 
-            api_key_login(data, &mut user_id, &conn, &client_header.ip).await
+            api_key_login(data, &mut user_id, &conn, &client_header.ip, &client_header.locale).await
         }
         "authorization_code" if CONFIG.sso_enabled() => {
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
@@ -97,7 +99,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
 
             sso_login(data, &mut user_id, &conn, &client_header.ip).await
         }
-        "authorization_code" => err!("SSO sign-in is not available"),
+        "authorization_code" => err!(crate::i18n::identity_sso_unavailable(&client_header.locale)),
         "send_access" => {
             crate::ratelimit::check_limit_unauthenticated(&client_header.ip.ip)?;
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
@@ -112,7 +114,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
             .await?;
             Ok(Json(tokens.to_json()))
         }
-        t => err!("Invalid type", t),
+        t => err!(crate::i18n::identity_invalid_type(&client_header.locale), t),
     };
 
     if let Some(user_id) = user_id {
@@ -145,7 +147,7 @@ async fn refresh_login(data: ConnectData, conn: &DbConn, ip: &ClientIp) -> JsonR
     // https://github.com/bitwarden/clients/blob/2ee158e720a5e7dbe3641caf80b569e97a1dd91b/libs/common/src/services/api.service.ts#L1786-L1797
 
     let Some(refresh_token) = data.refresh_token else {
-        err_json!(json!({"error": "invalid_grant"}), "Missing refresh_token")
+        err_json!(json!({"error": "invalid_grant"}), crate::i18n::auth_invalid_refresh_token(&CONFIG.default_locale()))
     };
 
     // ---
@@ -350,7 +352,7 @@ async fn sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbCon
 
             if user.email != user_infos.email {
                 if CONFIG.mail_enabled() {
-                    mail::send_sso_change_email(&user_infos.email).await?;
+                    mail::send_sso_change_email_for_locale(&user_infos.email, user.locale.as_deref()).await?;
                 }
                 info!("User {} email changed in SSO provider from {} to {}", user.uuid, user.email, user_infos.email);
             }
@@ -368,7 +370,13 @@ async fn sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbCon
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
 }
 
-async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbConn, ip: &ClientIp) -> JsonResult {
+async fn password_login(
+    data: ConnectData,
+    user_id: &mut Option<UserId>,
+    conn: &DbConn,
+    ip: &ClientIp,
+    locale: &str,
+) -> JsonResult {
     // Validate scope
     AuthMethod::Password.check_scope(data.scope.as_ref())?;
 
@@ -379,7 +387,10 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
     let username = data.username.as_ref().unwrap().trim();
     let log_username = username.escape_debug();
     let Some(mut user) = User::find_by_mail(username, conn).await else {
-        err!("Username or password is incorrect. Try again", format!("IP: {}. Username: {log_username}.", ip.ip))
+        err!(
+            crate::i18n::auth_invalid_username_or_password(locale),
+            format!("IP: {}. Username: {log_username}.", ip.ip)
+        )
     };
 
     // Set the user_id here to be passed back used for event logging.
@@ -410,7 +421,7 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
             || !auth_request.check_access_code(password)
         {
             err!(
-                "Username or access code is incorrect. Try again",
+                crate::i18n::auth_invalid_username_or_access_code(locale),
                 format!("IP: {}. Username: {log_username}.", ip.ip),
                 ErrorEvent {
                     event: EventType::UserFailedLogIn,
@@ -419,7 +430,7 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
         }
     } else if !user.check_valid_password(password) {
         err!(
-            "Username or password is incorrect. Try again",
+            crate::i18n::auth_invalid_username_or_password(locale),
             format!("IP: {}. Username: {log_username}.", ip.ip),
             ErrorEvent {
                 event: EventType::UserFailedLogIn,
@@ -430,7 +441,7 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
     // Check if the user is disabled
     if !user.enabled {
         err!(
-            "This user has been disabled",
+            crate::i18n::auth_user_disabled(locale),
             format!("IP: {}. Username: {log_username}.", ip.ip),
             ErrorEvent {
                 event: EventType::UserFailedLogIn
@@ -461,7 +472,10 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
                     error!("Error updating user: {e:#?}");
                 }
 
-                if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
+                let preferred_locale = user.locale.as_deref().unwrap_or(locale);
+                if let Err(e) =
+                    mail::send_verify_email_for_locale(&user.email, &user.uuid, Some(preferred_locale)).await
+                {
                     error!("Error auto-sending email verification email: {e:#?}");
                 }
             }
@@ -469,7 +483,7 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
 
         // We still want the login to fail until they actually verified the email address
         err!(
-            "Please verify your email before trying again.",
+            crate::i18n::auth_verify_email_before_login(locale),
             format!("IP: {}. Username: {log_username}.", ip.ip),
             ErrorEvent {
                 event: EventType::UserFailedLogIn
@@ -486,7 +500,7 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
         && !AuthRequest::set_authentication_date(auth_request_id, conn).await?
     {
         err!(
-            "Username or access code is incorrect. Try again",
+            crate::i18n::auth_invalid_username_or_access_code(locale),
             format!("IP: {}. Username: {log_username}.", ip.ip),
             ErrorEvent {
                 event: EventType::UserFailedLogIn,
@@ -509,7 +523,15 @@ async fn authenticated_response(
 ) -> JsonResult {
     if CONFIG.mail_enabled() && device.is_new() {
         let now = Utc::now().naive_utc();
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, device).await {
+        if let Err(e) = mail::send_new_device_logged_in_for_locale(
+            &user.email,
+            &ip.ip.to_string(),
+            &now,
+            device,
+            user.locale.as_deref(),
+        )
+        .await
+        {
             error!("Error sending new device email: {e:#?}");
 
             if CONFIG.require_device_email() {
@@ -598,7 +620,13 @@ async fn authenticated_response(
     Ok(Json(result))
 }
 
-async fn api_key_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbConn, ip: &ClientIp) -> JsonResult {
+async fn api_key_login(
+    data: ConnectData,
+    user_id: &mut Option<UserId>,
+    conn: &DbConn,
+    ip: &ClientIp,
+    locale: &str,
+) -> JsonResult {
     // Ratelimit the login
     crate::ratelimit::check_limit_login(&ip.ip)?;
 
@@ -610,10 +638,12 @@ async fn api_key_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &D
             check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
             check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
-            user_api_key_login(data, user_id, conn, ip).await
+            user_api_key_login(data, user_id, conn, ip, locale).await
         }
-        Some(scope) if scope == &AuthMethod::OrgApiKey.scope() => organization_api_key_login(data, conn, ip).await,
-        _ => err!("Scope not supported"),
+        Some(scope) if scope == &AuthMethod::OrgApiKey.scope() => {
+            organization_api_key_login(data, conn, ip, locale).await
+        }
+        _ => err!(crate::i18n::auth_scope_not_supported(locale)),
     }
 }
 
@@ -622,15 +652,16 @@ async fn user_api_key_login(
     user_id: &mut Option<UserId>,
     conn: &DbConn,
     ip: &ClientIp,
+    locale: &str,
 ) -> JsonResult {
     // Get the user via the client_id
     let client_id = data.client_id.as_ref().unwrap();
     let Some(client_user_id) = client_id.strip_prefix("user.") else {
-        err!("Malformed client_id", format!("IP: {}.", ip.ip))
+        err!(crate::i18n::auth_malformed_client_id(locale), format!("IP: {}.", ip.ip))
     };
     let client_user_id: UserId = client_user_id.into();
-    let Some(user) = User::find_by_uuid(&client_user_id, conn).await else {
-        err!("Invalid client_id", format!("IP: {}.", ip.ip))
+    let Some(mut user) = User::find_by_uuid(&client_user_id, conn).await else {
+        err!(crate::i18n::auth_invalid_client_id(locale), format!("IP: {}.", ip.ip))
     };
 
     // Set the user_id here to be passed back used for event logging.
@@ -651,7 +682,7 @@ async fn user_api_key_login(
     let client_secret = data.client_secret.as_ref().unwrap();
     if !user.check_valid_api_key(client_secret) {
         err!(
-            "Incorrect client_secret",
+            crate::i18n::auth_incorrect_client_secret(locale),
             format!("IP: {}. Username: {}.", ip.ip, user.email),
             ErrorEvent {
                 event: EventType::UserFailedLogIn
@@ -659,11 +690,27 @@ async fn user_api_key_login(
         )
     }
 
+    // Backfill user locale for accounts that predate locale persistence.
+    if user.locale.is_none() {
+        user.locale = Some(crate::i18n::normalize_locale(locale));
+        if let Err(e) = user.save(conn).await {
+            error!("Error updating user locale: {e:#?}");
+        }
+    }
+
     let mut device = get_device(&data, conn, &user).await?;
 
     if CONFIG.mail_enabled() && device.is_new() {
         let now = Utc::now().naive_utc();
-        if let Err(e) = mail::send_new_device_logged_in(&user.email, &ip.ip.to_string(), &now, &device).await {
+        if let Err(e) = mail::send_new_device_logged_in_for_locale(
+            &user.email,
+            &ip.ip.to_string(),
+            &now,
+            &device,
+            user.locale.as_deref(),
+        )
+        .await
+        {
             error!("Error sending new device email: {e:#?}");
 
             if CONFIG.require_device_email() {
@@ -748,21 +795,24 @@ async fn user_api_key_login(
     Ok(Json(result))
 }
 
-async fn organization_api_key_login(data: ConnectData, conn: &DbConn, ip: &ClientIp) -> JsonResult {
+async fn organization_api_key_login(data: ConnectData, conn: &DbConn, ip: &ClientIp, locale: &str) -> JsonResult {
     // Get the org via the client_id
     let client_id = data.client_id.as_ref().unwrap();
     let Some(org_id) = client_id.strip_prefix("organization.") else {
-        err!("Malformed client_id", format!("IP: {}.", ip.ip))
+        err!(crate::i18n::auth_malformed_client_id(locale), format!("IP: {}.", ip.ip))
     };
     let org_id: OrganizationId = org_id.to_owned().into();
     let Some(org_api_key) = OrganizationApiKey::find_by_org_uuid(&org_id, conn).await else {
-        err!("Invalid client_id", format!("IP: {}.", ip.ip))
+        err!(crate::i18n::auth_invalid_client_id(locale), format!("IP: {}.", ip.ip))
     };
 
     // Check API key.
     let client_secret = data.client_secret.as_ref().unwrap();
     if !org_api_key.check_valid_api_key(client_secret) {
-        err!("Incorrect client_secret", format!("IP: {}. Organization: {}.", ip.ip, org_api_key.org_uuid))
+        err!(
+            crate::i18n::auth_incorrect_client_secret(locale),
+            format!("IP: {}. Organization: {}.", ip.ip, org_api_key.org_uuid)
+        )
     }
 
     let claim = generate_organization_api_key_login_claims(org_api_key.uuid, org_api_key.org_uuid);
@@ -819,8 +869,10 @@ async fn twofactor_auth(
             (tf.enabled && is_twofactor_provider_usable(&provider_type, Some(&tf.data))).then_some(tf.atype)
         })
         .collect();
+    let default_locale = CONFIG.default_locale();
+    let locale = user.locale.as_deref().unwrap_or(default_locale.as_str());
     if twofactor_ids.is_empty() {
-        err!("No enabled and usable two factor providers are available for this account")
+        err!(crate::i18n::auth_no_2fa_providers(locale))
     }
 
     let selected_id = data.two_factor_provider.unwrap_or(twofactor_ids[0]); // If we aren't given a two factor provider, assume the first one
@@ -828,17 +880,23 @@ async fn twofactor_auth(
     if ![TwoFactorType::Remember as i32, TwoFactorType::RecoveryCode as i32].contains(&selected_id)
         && !twofactor_ids.contains(&selected_id)
     {
-        err_json!(json_err_twofactor(&twofactor_ids, user, data, conn).await?, "Invalid two factor provider")
+        err_json!(
+            json_err_twofactor(&twofactor_ids, user, data, conn).await?,
+            crate::i18n::auth_invalid_twofactor_provider(locale)
+        )
     }
 
     // Like upstream, a blank token counts as not provided
     let Some(twofactor_code) = data.two_factor_token.as_deref().filter(|t| !t.trim().is_empty()) else {
-        err_json!(json_err_twofactor(&twofactor_ids, user, data, conn).await?, "2FA token not provided")
+        err_json!(
+            json_err_twofactor(&twofactor_ids, user, data, conn).await?,
+            crate::i18n::two_factor_no_token_available(locale)
+        )
     };
 
     let selected_twofactor = twofactors.into_iter().find(|tf| tf.atype == selected_id && tf.enabled);
 
-    let selected_data = selected_data(selected_twofactor);
+    let selected_data = selected_data(selected_twofactor, locale);
 
     match TwoFactorType::from_i32(selected_id) {
         Some(TwoFactorType::Authenticator) => {
@@ -887,7 +945,7 @@ async fn twofactor_auth(
             let recovery_code = twofactor_code.replace(' ', "").trim().to_lowercase();
             if !user.check_valid_recovery_code(&recovery_code) {
                 err!(
-                    "Two-step token is invalid. Try again.",
+                    crate::i18n::auth_two_step_token_invalid(locale),
                     ErrorEvent {
                         event: EventType::UserFailedLogIn2fa
                     }
@@ -907,8 +965,13 @@ async fn twofactor_auth(
             log_user_event(EventType::UserRecovered2fa, &user.uuid, device.atype, &ip.ip, conn).await;
 
             if CONFIG.mail_enabled()
-                && let Err(e) =
-                    mail::send_recover_twofactor(&user.email, &ip.ip.to_string(), &Utc::now().naive_utc()).await
+                && let Err(e) = mail::send_recover_twofactor_for_locale(
+                    &user.email,
+                    &ip.ip.to_string(),
+                    &Utc::now().naive_utc(),
+                    user.locale.as_deref(),
+                )
+                .await
             {
                 error!("Error sending two-step login recovered email: {e:#?}");
             }
@@ -918,7 +981,7 @@ async fn twofactor_auth(
             user.save(conn).await?;
         }
         _ => err!(
-            "Invalid two factor provider",
+            crate::i18n::auth_invalid_twofactor_provider(locale),
             ErrorEvent {
                 event: EventType::UserFailedLogIn2fa
             }
@@ -936,8 +999,8 @@ async fn twofactor_auth(
     Ok(two_factor)
 }
 
-fn selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
-    tf.map(|t| t.data).map_res("Two factor doesn't exist")
+fn selected_data(tf: Option<TwoFactor>, locale: &str) -> ApiResult<String> {
+    tf.map(|t| t.data).map_res(crate::i18n::two_factor_not_found(locale))
 }
 
 async fn json_err_twofactor(providers: &[i32], user: &User, data: &ConnectData, conn: &DbConn) -> ApiResult<Value> {
@@ -975,7 +1038,9 @@ async fn json_err_twofactor(providers: &[i32], user: &User, data: &ConnectData, 
 
             Some(tf_type @ TwoFactorType::YubiKey) => {
                 let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, tf_type, conn).await else {
-                    err!("No YubiKey devices registered")
+                    err!(crate::i18n::auth_no_yubikey_devices(
+                        user.locale.as_deref().unwrap_or(&CONFIG.default_locale())
+                    ))
                 };
 
                 let yubikey_metadata: yubikey::YubikeyMetadata = serde_json::from_str(&twofactor.data)?;
@@ -987,7 +1052,9 @@ async fn json_err_twofactor(providers: &[i32], user: &User, data: &ConnectData, 
 
             Some(tf_type @ TwoFactorType::Email) => {
                 let Some(twofactor) = TwoFactor::find_by_user_and_type(user_id, tf_type, conn).await else {
-                    err!("No twofactor email registered")
+                    err!(crate::i18n::auth_no_twofactor_email(
+                        user.locale.as_deref().unwrap_or(&CONFIG.default_locale())
+                    ))
                 };
 
                 let email_data = email::EmailTokenData::from_json(&twofactor.data)?;
@@ -1059,6 +1126,7 @@ fn accepts_json(accept: Option<&Accept>) -> bool {
 async fn register_verification_email(
     data: Json<RegisterVerificationData>,
     accept: Option<&Accept>,
+    locale: RequestLocale,
     ip: ClientIp,
     conn: DbConn,
 ) -> ApiResult<RegisterVerificationResponse> {
@@ -1070,7 +1138,7 @@ async fn register_verification_email(
     if !(CONFIG.is_signup_allowed(&data.email)
         || (!CONFIG.mail_enabled() && Invitation::find_by_mail(&data.email, &conn).await.is_some()))
     {
-        err!("Registration not allowed or user already exists")
+        err!(crate::i18n::accounts_registration_not_allowed_or_exists(&locale.locale))
     }
 
     let should_send_mail = CONFIG.mail_enabled() && CONFIG.signups_verify();
@@ -1089,7 +1157,7 @@ async fn register_verification_email(
             let sleep_ms: u64 = rng.random_range(900..=1100);
             tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
         } else {
-            mail::send_register_verify_email(&data.email, &token).await?;
+            mail::send_register_verify_email_for_locale(&data.email, &token, Some(&locale.locale)).await?;
         }
 
         Ok(RegisterVerificationResponse::NoContent(()))
@@ -1124,9 +1192,9 @@ async fn register_verification_email_clicked(
 }
 
 #[post("/accounts/register/finish", data = "<data>")]
-async fn register_finish(data: Json<RegisterData>, ip: ClientIp, conn: DbConn) -> JsonResult {
+async fn register_finish(data: Json<RegisterData>, locale: RequestLocale, ip: ClientIp, conn: DbConn) -> JsonResult {
     crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
-    register(data, conn).await
+    register(data, conn, &locale.locale).await
 }
 
 // https://github.com/bitwarden/jslib/blob/master/common/src/models/request/tokenRequest.ts
@@ -1201,14 +1269,15 @@ fn check_is_some<T>(value: Option<&T>, msg: &str) -> EmptyResult {
 }
 
 #[get("/sso/prevalidate")]
-fn prevalidate() -> JsonResult {
+#[allow(clippy::needless_pass_by_value)]
+fn prevalidate(locale: RequestLocale) -> JsonResult {
     if CONFIG.sso_enabled() {
         let sso_token = sso::encode_ssotoken_claims();
         Ok(Json(json!({
             "token": sso_token,
         })))
     } else {
-        err!("SSO sign-in is not available")
+        err!(crate::i18n::identity_sso_unavailable(&locale.locale))
     }
 }
 
@@ -1256,7 +1325,7 @@ async fn oidcsignin_redirect(
     let state = sso::decode_state(&base64_state)?;
 
     let Some(mut sso_auth) = SsoAuth::find(&state, conn).await else {
-        err!(format!("Cannot retrieve sso_auth for {}", state.escape_debug()))
+        err!(crate::i18n::identity_cannot_retrieve_sso_auth(&CONFIG.default_locale()), state.escape_debug().to_string())
     };
 
     // Browser-binding check
@@ -1265,7 +1334,10 @@ async fn oidcsignin_redirect(
     let provided_hash = cookie_value.as_deref().map(|v| crypto::sha256_hex(v.as_bytes()));
     match (sso_auth.binding_hash.as_deref(), provided_hash.as_deref()) {
         (Some(expected), Some(actual)) if crypto::ct_eq(expected, actual) => {}
-        _ => err!(format!("SSO session binding mismatch for {}", state.escape_debug())),
+        _ => err!(
+            crate::i18n::identity_sso_session_binding_mismatch(&CONFIG.default_locale()),
+            state.escape_debug().to_string()
+        ),
     }
     cookies
         .remove(Cookie::build(SSO_BINDING_COOKIE).path(format!("{}/identity/connect/", CONFIG.domain_path())).build());
@@ -1277,7 +1349,10 @@ async fn oidcsignin_redirect(
 
     let mut url = match url::Url::parse(&sso_auth.redirect_uri) {
         Ok(url) => url,
-        Err(err) => err!(format!("Failed to parse redirect uri ({}): {err}", sso_auth.redirect_uri)),
+        Err(err) => err!(
+            crate::i18n::identity_failed_parse_redirect_uri(&CONFIG.default_locale()),
+            format!("{}: {err}", sso_auth.redirect_uri)
+        ),
     };
 
     url.query_pairs_mut()
@@ -1317,7 +1392,13 @@ struct AuthorizeData {
 
 // The `redirect_uri` will change depending of the client (web, android, ios ..)
 #[get("/connect/authorize?<data..>")]
-async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure, conn: DbConn) -> ApiResult<Redirect> {
+async fn authorize(
+    data: AuthorizeData,
+    cookies: &CookieJar<'_>,
+    secure: Secure,
+    locale: RequestLocale,
+    conn: DbConn,
+) -> ApiResult<Redirect> {
     let AuthorizeData {
         client_id,
         redirect_uri,
@@ -1328,7 +1409,7 @@ async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure,
     } = data;
 
     if code_challenge_method != "S256" {
-        err!("Unsupported code challenge method");
+        err!(crate::i18n::identity_unsupported_code_challenge_method(&locale.locale));
     }
 
     // Generate browser-binding token. Stored hashed in DB; raw value handed to the browser as a cookie.

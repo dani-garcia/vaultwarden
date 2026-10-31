@@ -89,7 +89,7 @@ impl Attachment {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving attachment")
+                    .map_res(crate::i18n::db_error_saving_attachment(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(attachments::table)
@@ -98,7 +98,7 @@ impl Attachment {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving attachment")
+                    .map_res(crate::i18n::db_error_saving_attachment(&CONFIG.default_locale()))
             }
         }
     }
@@ -110,7 +110,7 @@ impl Attachment {
                 10,
             )
             .map(|_| ())
-            .map_res("Error deleting attachment")
+            .map_res(crate::i18n::db_error_deleting_attachment(&CONFIG.default_locale()))
         })
         .await?;
 

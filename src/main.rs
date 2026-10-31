@@ -56,6 +56,7 @@ mod crypto;
 #[macro_use]
 mod db;
 mod http_client;
+mod i18n;
 mod mail;
 mod ratelimit;
 mod sso;
@@ -262,7 +263,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
 
         (level, levels_override)
     } else {
-        err!(format!("LOG_LEVEL should follow the format info,vaultwarden::api::icons=debug, invalid: {config_str}"))
+        err!(i18n::api_log_level_format_invalid(&CONFIG.default_locale()), config_str)
     };
 
     // Depending on the main log level we either want to disable or enable logging for hickory.
@@ -386,7 +387,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
     }
 
     if let Err(err) = logger.apply() {
-        err!(format!("Failed to activate logger: {err}"))
+        err!(i18n::api_failed_activate_logger(&CONFIG.default_locale()), err.to_string())
     }
 
     // Catch panics and log them instead of default output to StdErr

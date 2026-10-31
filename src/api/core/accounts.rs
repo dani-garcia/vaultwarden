@@ -248,9 +248,9 @@ fn clean_password_hint(password_hint: Option<&String>) -> Option<String> {
     }
 }
 
-fn enforce_password_hint_setting(password_hint: Option<&String>) -> EmptyResult {
+fn enforce_password_hint_setting(password_hint: Option<&String>, locale: &str) -> EmptyResult {
     if password_hint.is_some() && !CONFIG.password_hints_allowed() {
-        err!("Password hints have been disabled by the administrator. Remove the hint and try again.");
+        err!(crate::i18n::accounts_password_hints_disabled(locale));
     }
     Ok(())
 }
@@ -267,7 +267,7 @@ async fn is_email_2fa_required(member_id: Option<MembershipId>, conn: &DbConn) -
     false
 }
 
-pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
+pub async fn register(data: Json<RegisterData>, conn: DbConn, locale: &str) -> JsonResult {
     let data: RegisterData = data.into_inner();
     let email = data.email.to_lowercase();
 
@@ -290,7 +290,7 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
         (Some(email_verification_token), None, None, None, None) => {
             let claims = crate::auth::decode_register_verify(email_verification_token)?;
             if claims.sub != data.email {
-                err!("Email verification token does not match email");
+                err!(crate::i18n::accounts_email_verification_token_mismatch(locale));
             }
 
             // During this call we don't get the name, so extract it from the claims
@@ -300,16 +300,16 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
         // Emergency access registration
         (None, Some(accept_emergency_access_id), Some(accept_emergency_access_invite_token), None, None) => {
             if !CONFIG.emergency_access_allowed() {
-                err!("Emergency access is not enabled.")
+                err!(crate::i18n::accounts_emergency_access_not_enabled(locale))
             }
 
             let claims = crate::auth::decode_emergency_access_invite(accept_emergency_access_invite_token)?;
 
             if claims.email != data.email {
-                err!("Claim email does not match email")
+                err!(crate::i18n::accounts_claim_email_mismatch(locale))
             }
             if &claims.emer_id != accept_emergency_access_id {
-                err!("Claim emer_id does not match accept_emergency_access_id")
+                err!(crate::i18n::accounts_claim_emer_id_mismatch(locale))
             }
 
             pending_emergency_access = Some((accept_emergency_access_id, claims));
@@ -320,18 +320,18 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
             let claims = decode_invite(org_invite_token)?;
 
             if claims.email != data.email {
-                err!("Claim email does not match email")
+                err!(crate::i18n::accounts_claim_email_mismatch(locale))
             }
 
             if &claims.member_id != organization_user_id {
-                err!("Claim org_user_id does not match organization_user_id")
+                err!(crate::i18n::accounts_claim_org_user_id_mismatch(locale))
             }
 
             true
         }
 
         _ => {
-            err!("Registration is missing required parameters")
+            err!(crate::i18n::accounts_registration_missing_required_params(locale))
         }
     };
 
@@ -340,18 +340,18 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
     if let Some(ref name) = name
         && name.len() > 50
     {
-        err!("The field Name must be a string with a maximum length of 50.");
+        err!(crate::i18n::accounts_name_too_long(locale));
     }
 
     // Check against the password hint setting here so if it fails, the user
     // can retry without losing their invitation below.
     let password_hint = clean_password_hint(data.master_password_hint.as_ref());
-    enforce_password_hint_setting(password_hint.as_ref())?;
+    enforce_password_hint_setting(password_hint.as_ref(), locale)?;
 
     let mut user = match User::find_by_mail(&email, &conn).await {
         Some(user) => {
             if !user.password_hash.is_empty() {
-                err!("Registration not allowed or user already exists")
+                err!(crate::i18n::accounts_registration_not_allowed_or_exists(locale))
             }
 
             if let Some(token) = data.org_invite_token.as_ref() {
@@ -361,7 +361,7 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
                     email_verified = true;
                     user
                 } else {
-                    err!("Registration email does not match invite email")
+                    err!(crate::i18n::accounts_registration_email_invite_mismatch(locale))
                 }
             } else if Invitation::take(&email, &conn).await {
                 Membership::accept_user_invitations(&user.uuid, &conn).await?;
@@ -372,7 +372,7 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
             {
                 user
             } else {
-                err!("Registration not allowed or user already exists")
+                err!(crate::i18n::accounts_registration_not_allowed_or_exists(locale))
             }
         }
         None => {
@@ -385,13 +385,15 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
             {
                 User::new(&email, None)
             } else {
-                err!("Registration not allowed or user already exists")
+                err!(crate::i18n::accounts_registration_not_allowed_or_exists(locale))
             }
         }
     };
 
     // Make sure we don't leave a lingering invitation.
     Invitation::take(&email, &conn).await;
+
+    user.locale = Some(crate::i18n::normalize_locale(locale));
 
     set_kdf_data(&mut user, data.kdf())?;
 
@@ -414,11 +416,11 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
 
     if CONFIG.mail_enabled() {
         if CONFIG.signups_verify() && !email_verified {
-            if let Err(e) = mail::send_welcome_must_verify(&user.email, &user.uuid).await {
+            if let Err(e) = mail::send_welcome_must_verify_for_locale(&user.email, &user.uuid, Some(locale)).await {
                 error!("Error sending welcome email: {e:#?}");
             }
             user.last_verifying_at = Some(user.created_at);
-        } else if let Err(e) = mail::send_welcome(&user.email).await {
+        } else if let Err(e) = mail::send_welcome_for_locale(&user.email, Some(locale)).await {
             error!("Error sending welcome email: {e:#?}");
         }
 
@@ -444,16 +446,17 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
 #[post("/accounts/set-password", data = "<data>")]
 async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: SetPasswordData = data.into_inner();
+    let locale = &headers.locale;
     let mut user = headers.user;
 
     if user.private_key.is_some() || !user.password_hash.is_empty() {
-        err!("Account already initialized, cannot set password")
+        err!(crate::i18n::accounts_account_already_initialized(locale))
     }
 
     // Check against the password hint setting here so if it fails,
     // the user can retry without losing their invitation below.
     let password_hint = clean_password_hint(data.master_password_hint.as_ref());
-    enforce_password_hint_setting(password_hint.as_ref())?;
+    enforce_password_hint_setting(password_hint.as_ref(), locale)?;
 
     set_kdf_data(&mut user, &data.kdf)?;
 
@@ -477,18 +480,18 @@ async fn post_set_password(data: Json<SetPasswordData>, headers: Headers, conn: 
         && identifier != crate::api::admin::FAKE_ADMIN_UUID
     {
         let Some(org) = Organization::find_by_uuid(&identifier.into(), &conn).await else {
-            err!("Failed to retrieve the associated organization")
+            err!(crate::i18n::accounts_associated_org_not_found(locale))
         };
 
         let Some(membership) = Membership::find_by_user_and_org(&user.uuid, &org.uuid, &conn).await else {
-            err!("Failed to retrieve the invitation")
+            err!(crate::i18n::accounts_invitation_not_found(locale))
         };
 
         accept_org_invite(&user, membership, None, &conn).await?;
     }
 
     if CONFIG.mail_enabled() {
-        mail::send_welcome(&user.email.to_lowercase()).await?;
+        mail::send_welcome_for_locale(&user.email.to_lowercase(), Some(locale)).await?;
     } else {
         Membership::accept_user_invitations(&user.uuid, &conn).await?;
     }
@@ -510,7 +513,7 @@ async fn profile(headers: Headers, conn: DbConn) -> Json<Value> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProfileData {
-    // culture: String, // Ignored, always use en-US
+    culture: Option<String>,
     name: String,
 }
 
@@ -526,11 +529,14 @@ async fn post_profile(data: Json<ProfileData>, headers: Headers, conn: DbConn) -
     // Check if the length of the username exceeds 50 characters (Same is Upstream Bitwarden)
     // This also prevents issues with very long usernames causing to large JWT's. See #2419
     if data.name.len() > 50 {
-        err!("The field Name must be a string with a maximum length of 50.");
+        err!(crate::i18n::accounts_name_too_long(&headers.locale));
     }
 
     let mut user = headers.user;
     user.name = data.name;
+    if let Some(culture) = data.culture {
+        user.locale = Some(crate::i18n::normalize_locale(&culture));
+    }
 
     user.save(&conn).await?;
     Ok(Json(user.to_json(&conn).await))
@@ -552,7 +558,7 @@ async fn put_avatar(data: Json<AvatarData>, headers: Headers, conn: DbConn) -> J
     if let Some(color) = &data.avatar_color
         && color.len() != 7
     {
-        err!("The field AvatarColor must be a HTML/Hex color code with a length of 7 characters")
+        err!(crate::i18n::accounts_avatar_color_invalid(&headers.locale))
     }
 
     let mut user = headers.user;
@@ -602,7 +608,7 @@ async fn post_keys(data: Json<KeysData>, headers: Headers, conn: DbConn) -> Json
     let mut user = headers.user;
 
     if user.private_key.is_some() || user.public_key.is_some() {
-        err!("User has existing keypair")
+        err!(crate::i18n::accounts_existing_keypair(&headers.locale))
     }
 
     user.private_key = Some(data.encrypted_private_key);
@@ -636,7 +642,7 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
     let user = headers.user;
 
     if !user.check_valid_password(&data.master_password_hash) {
-        err!("Invalid password")
+        err!(crate::i18n::auth_invalid_password(&headers.locale))
     }
 
     log_user_event(EventType::UserChangedPassword, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
@@ -644,24 +650,24 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
     let (new_master_password_hash, new_key) =
         if let (Some(unlock_data), Some(authentication_data)) = (data.unlock_data, data.authentication_data) {
             if authentication_data.kdf != unlock_data.kdf {
-                err!("KDF settings must be equal for authentication and unlock")
+                err!(crate::i18n::accounts_kdf_auth_unlock_mismatch(&headers.locale))
             }
 
             if user.email != authentication_data.salt || user.email != unlock_data.salt {
-                err!("Invalid master password salt")
+                err!(crate::i18n::accounts_invalid_master_password_salt(&headers.locale))
             }
 
             (authentication_data.master_password_authentication_hash, unlock_data.master_key_wrapped_user_key)
         } else if let (Some(new_master_password_hash), Some(new_key)) = (data.new_master_password_hash, data.key) {
             (new_master_password_hash, new_key)
         } else {
-            err!("Invalid request!")
+            err!(crate::i18n::accounts_invalid_request(&headers.locale))
         };
 
     let mut user = user;
 
     user.password_hint = clean_password_hint(data.master_password_hint.as_ref());
-    enforce_password_hint_setting(user.password_hint.as_ref())?;
+    enforce_password_hint_setting(user.password_hint.as_ref(), &headers.locale)?;
 
     user.set_password(
         &new_master_password_hash,
@@ -688,29 +694,30 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
 }
 
 fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
+    let locale = &CONFIG.default_locale();
     if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < 100_000 {
-        err!("PBKDF2 KDF iterations must be at least 100000.")
+        err!(crate::i18n::accounts_pbkdf2_min_iterations(locale))
     }
 
     if data.kdf == UserKdfType::Argon2id as i32 {
         if data.kdf_iterations < 1 {
-            err!("Argon2 KDF iterations must be at least 1.")
+            err!(crate::i18n::accounts_argon2_min_iterations(locale))
         }
         if let Some(m) = data.kdf_memory {
             if !(15..=1024).contains(&m) {
-                err!("Argon2 memory must be between 15 MB and 1024 MB.")
+                err!(crate::i18n::accounts_argon2_memory_range(locale))
             }
             user.client_kdf_memory = data.kdf_memory;
         } else {
-            err!("Argon2 memory parameter is required.")
+            err!(crate::i18n::accounts_argon2_memory_required(locale))
         }
         if let Some(p) = data.kdf_parallelism {
             if !(1..=16).contains(&p) {
-                err!("Argon2 parallelism must be between 1 and 16.")
+                err!(crate::i18n::accounts_argon2_parallelism_range(locale))
             }
             user.client_kdf_parallelism = data.kdf_parallelism;
         } else {
-            err!("Argon2 parallelism parameter is required.")
+            err!(crate::i18n::accounts_argon2_parallelism_required(locale))
         }
     } else {
         user.client_kdf_memory = None;
@@ -735,12 +742,13 @@ pub(super) struct AuthenticationData {
 
 impl AuthenticationData {
     pub(super) fn check(&self, user: &User, unlock: &UnlockData) -> EmptyResult {
+        let locale = &CONFIG.default_locale();
         if self.kdf != unlock.kdf {
-            err!("KDF settings must be equal for authentication and unlock")
+            err!(crate::i18n::accounts_kdf_auth_unlock_mismatch(locale))
         }
 
         if self.salt != user.master_password_salt() || self.salt != unlock.salt {
-            err!("Invalid master password salt")
+            err!(crate::i18n::accounts_invalid_master_password_salt(locale))
         }
 
         Ok(())
@@ -768,7 +776,7 @@ async fn post_kdf(data: Json<ChangeKdfData>, headers: Headers, conn: DbConn, nt:
     let data: ChangeKdfData = data.into_inner();
 
     if !headers.user.check_valid_password(&data.master_password_hash) {
-        err!("Invalid password")
+        err!(crate::i18n::auth_invalid_password(&headers.locale))
     }
 
     data.authentication_data.check(&headers.user, &data.unlock_data)?;
@@ -870,16 +878,17 @@ fn validate_keydata(
     existing_sends: &[Send],
     user: &User,
 ) -> EmptyResult {
+    let locale = &CONFIG.default_locale();
     if user.client_kdf_type != data.account_unlock_data.master_password_unlock_data.kdf_type
         || user.client_kdf_iter != data.account_unlock_data.master_password_unlock_data.kdf_iterations
         || user.client_kdf_memory != data.account_unlock_data.master_password_unlock_data.kdf_memory
         || user.client_kdf_parallelism != data.account_unlock_data.master_password_unlock_data.kdf_parallelism
         || user.email != data.account_unlock_data.master_password_unlock_data.email
     {
-        err!("Changing the kdf variant or email is not supported during key rotation");
+        err!(crate::i18n::accounts_rotate_kdf_or_email_change_not_supported(locale));
     }
     if user.public_key.as_ref() != Some(&data.account_keys.account_public_key) {
-        err!("Changing the asymmetric keypair is not possible during key rotation")
+        err!(crate::i18n::accounts_rotate_asymmetric_keypair_change_not_supported(locale))
     }
 
     // Check that we're correctly rotating all the user's ciphers
@@ -892,7 +901,7 @@ fn validate_keydata(
         .filter_map(|c| c.id.as_ref())
         .collect::<HashSet<&CipherId>>();
     if !provided_cipher_ids.is_superset(&existing_cipher_ids) {
-        err!("All existing ciphers must be included in the rotation")
+        err!(crate::i18n::accounts_rotate_all_ciphers_required(locale))
     }
 
     // Check that we're correctly rotating all the user's folders
@@ -900,7 +909,7 @@ fn validate_keydata(
     let provided_folder_ids =
         data.account_data.folders.iter().filter_map(|f| f.id.as_ref()).collect::<HashSet<&FolderId>>();
     if !provided_folder_ids.is_superset(&existing_folder_ids) {
-        err!("All existing folders must be included in the rotation")
+        err!(crate::i18n::accounts_rotate_all_folders_required(locale))
     }
 
     // Check that we're correctly rotating all the user's emergency access keys
@@ -913,7 +922,7 @@ fn validate_keydata(
         .map(|ea| &ea.id)
         .collect::<HashSet<&EmergencyAccessId>>();
     if !provided_emergency_access_ids.is_superset(&existing_emergency_access_ids) {
-        err!("All existing emergency access keys must be included in the rotation")
+        err!(crate::i18n::accounts_rotate_all_emergency_access_required(locale))
     }
 
     // Check that we're correctly rotating all the user's reset password keys
@@ -926,14 +935,14 @@ fn validate_keydata(
         .map(|rp| &rp.organization_id)
         .collect::<HashSet<&OrganizationId>>();
     if !provided_reset_password_ids.is_superset(&existing_reset_password_ids) {
-        err!("All existing reset password keys must be included in the rotation")
+        err!(crate::i18n::accounts_rotate_all_reset_password_required(locale))
     }
 
     // Check that we're correctly rotating all the user's sends
     let existing_send_ids = existing_sends.iter().map(|s| &s.uuid).collect::<HashSet<&SendId>>();
     let provided_send_ids = data.account_data.sends.iter().filter_map(|s| s.id.as_ref()).collect::<HashSet<&SendId>>();
     if !provided_send_ids.is_superset(&existing_send_ids) {
-        err!("All existing sends must be included in the rotation")
+        err!(crate::i18n::accounts_rotate_all_sends_required(locale))
     }
 
     Ok(())
@@ -945,7 +954,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     let data: KeyData = data.into_inner();
 
     if !headers.user.check_valid_password(&data.old_master_key_authentication_hash) {
-        err!("Invalid password")
+        err!(crate::i18n::auth_invalid_password(&headers.locale))
     }
 
     // Validate the import before continuing
@@ -982,7 +991,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         // See: https://github.com/bitwarden/clients/issues/8453
         if let Some(folder_id) = folder_data.id {
             let Some(saved_folder) = existing_folders.iter_mut().find(|f| f.uuid == folder_id) else {
-                err!("Folder doesn't exist")
+                err!(crate::i18n::accounts_folder_not_found(&headers.locale))
             };
 
             saved_folder.name = folder_data.name;
@@ -995,7 +1004,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         let Some(saved_emergency_access) =
             existing_emergency_access.iter_mut().find(|ea| ea.uuid == emergency_access_data.id)
         else {
-            err!("Emergency access doesn't exist or is not owned by the user")
+            err!(crate::i18n::accounts_emergency_access_not_found_or_not_owned(&headers.locale))
         };
 
         saved_emergency_access.key_encrypted = Some(emergency_access_data.key_encrypted);
@@ -1007,7 +1016,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
         let Some(membership) =
             existing_memberships.iter_mut().find(|m| m.org_uuid == reset_password_data.organization_id)
         else {
-            err!("Reset password doesn't exist")
+            err!(crate::i18n::accounts_reset_password_not_found(&headers.locale))
         };
 
         membership.reset_password_key = Some(reset_password_data.reset_password_key);
@@ -1017,7 +1026,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
     // Update send data
     for send_data in data.account_data.sends {
         let Some(send) = send_data.id.as_ref().and_then(|id| existing_sends.iter_mut().find(|s| &s.uuid == id)) else {
-            err!("Send doesn't exist")
+            err!(crate::i18n::accounts_send_not_found(&headers.locale))
         };
 
         // Like upstream, only the key changes on rotation
@@ -1031,7 +1040,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
             let Some(saved_cipher) =
                 cipher_data.id.as_ref().and_then(|id| existing_ciphers.iter_mut().find(|c| &c.uuid == id))
             else {
-                err!("Cipher doesn't exist")
+                err!(crate::i18n::accounts_cipher_not_found(&headers.locale))
             };
 
             // Prevent triggering cipher updates via WebSockets by settings UpdateType::None
@@ -1108,14 +1117,14 @@ struct EmailTokenData {
 #[post("/accounts/email-token", data = "<data>")]
 async fn post_email_token(data: Json<EmailTokenData>, headers: Headers, conn: DbConn) -> EmptyResult {
     if !CONFIG.email_change_allowed() {
-        err!("Email change is not allowed.");
+        err!(crate::i18n::accounts_email_change_not_allowed(&headers.locale));
     }
 
     let data: EmailTokenData = data.into_inner();
     let mut user = headers.user;
 
     if !user.check_valid_password(&data.master_password_hash) {
-        err!("Invalid password")
+        err!(crate::i18n::auth_invalid_password(&headers.locale))
     }
 
     if let Some(existing_user) = User::find_by_mail(&data.new_email, &conn).await {
@@ -1124,27 +1133,33 @@ async fn post_email_token(data: Json<EmailTokenData>, headers: Headers, conn: Db
             if existing_user.password_hash.is_empty() {
                 // inform an invited user about how to delete their temporary account if the
                 // request was done intentionally and they want to update their mail address
-                if let Err(e) = mail::send_change_email_invited(&data.new_email, &user.email).await {
+                if let Err(e) =
+                    mail::send_change_email_invited_for_locale(&data.new_email, &user.email, Some(&headers.locale))
+                        .await
+                {
                     error!("Error sending change-email-invited email: {e:#?}");
                 }
             } else {
                 // inform existing user about the failed attempt to change their mail address
-                if let Err(e) = mail::send_change_email_existing(&data.new_email, &user.email).await {
+                if let Err(e) =
+                    mail::send_change_email_existing_for_locale(&data.new_email, &user.email, Some(&headers.locale))
+                        .await
+                {
                     error!("Error sending change-email-existing email: {e:#?}");
                 }
             }
         }
-        err!("Email already in use");
+        err!(crate::i18n::accounts_email_already_in_use(&headers.locale));
     }
 
     if !CONFIG.is_email_domain_allowed(&data.new_email) {
-        err!("Email domain not allowed");
+        err!(crate::i18n::accounts_email_domain_not_allowed(&headers.locale));
     }
 
     let token = crypto::generate_email_token(6);
 
     if CONFIG.mail_enabled() {
-        if let Err(e) = mail::send_change_email(&data.new_email, &token).await {
+        if let Err(e) = mail::send_change_email_for_locale(&data.new_email, &token, Some(&headers.locale)).await {
             error!("Error sending change-email email: {e:#?}");
         }
     } else {
@@ -1170,36 +1185,36 @@ struct ChangeEmailData {
 #[post("/accounts/email", data = "<data>")]
 async fn post_email(data: Json<ChangeEmailData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     if !CONFIG.email_change_allowed() {
-        err!("Email change is not allowed.");
+        err!(crate::i18n::accounts_email_change_not_allowed(&headers.locale));
     }
 
     let data: ChangeEmailData = data.into_inner();
     let mut user = headers.user;
 
     if !user.check_valid_password(&data.master_password_hash) {
-        err!("Invalid password")
+        err!(crate::i18n::auth_invalid_password(&headers.locale))
     }
 
     if User::find_by_mail(&data.new_email, &conn).await.is_some() {
-        err!("Email already in use");
+        err!(crate::i18n::accounts_email_already_in_use(&headers.locale));
     }
 
     if let Some(ref val) = user.email_new {
         if val != &data.new_email {
-            err!("Email change mismatch");
+            err!(crate::i18n::accounts_email_change_mismatch(&headers.locale));
         }
     } else {
-        err!("No email change pending")
+        err!(crate::i18n::accounts_no_email_change_pending(&headers.locale))
     }
 
     if CONFIG.mail_enabled() {
         // Only check the token if we sent out an email...
         if let Some(ref val) = user.email_new_token {
             if *val != data.token.into_string() {
-                err!("Token mismatch");
+                err!(crate::i18n::accounts_token_mismatch(&headers.locale));
             }
         } else {
-            err!("No email change pending")
+            err!(crate::i18n::accounts_no_email_change_pending(&headers.locale))
         }
         user.verified_at = Some(Utc::now().naive_utc());
     } else {
@@ -1224,10 +1239,10 @@ async fn post_verify_email(headers: Headers) -> EmptyResult {
     let user = headers.user;
 
     if !CONFIG.mail_enabled() {
-        err!("Cannot verify email address");
+        err!(crate::i18n::accounts_cannot_verify_email(&headers.locale));
     }
 
-    if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
+    if let Err(e) = mail::send_verify_email_for_locale(&user.email, &user.uuid, Some(&headers.locale)).await {
         error!("Error sending verify_email email: {e:#?}");
     }
 
@@ -1246,14 +1261,14 @@ async fn post_verify_email_token(data: Json<VerifyEmailTokenData>, conn: DbConn)
     let data: VerifyEmailTokenData = data.into_inner();
 
     let Some(mut user) = User::find_by_uuid(&data.user_id, &conn).await else {
-        err!("User doesn't exist")
+        err!(crate::i18n::accounts_user_not_found(&CONFIG.default_locale()))
     };
 
     let Ok(claims) = decode_verify_email(&data.token) else {
-        err!("Invalid claim")
+        err!(crate::i18n::accounts_invalid_claim(&CONFIG.default_locale()))
     };
     if claims.sub != *user.uuid {
-        err!("Invalid claim");
+        err!(crate::i18n::accounts_invalid_claim(&CONFIG.default_locale()));
     }
     user.verified_at = Some(Utc::now().naive_utc());
     user.last_verifying_at = None;
@@ -1279,7 +1294,7 @@ async fn post_delete_recover(data: Json<DeleteRecoverData>, ip: ClientIp, conn: 
 
     if CONFIG.mail_enabled() {
         if let Some(user) = User::find_by_mail(&data.email, &conn).await
-            && let Err(e) = mail::send_delete_account(&user.email, &user.uuid).await
+            && let Err(e) = mail::send_delete_account_for_locale(&user.email, &user.uuid, user.locale.as_deref()).await
         {
             error!("Error sending delete account email: {e:#?}");
         }
@@ -1289,7 +1304,7 @@ async fn post_delete_recover(data: Json<DeleteRecoverData>, ip: ClientIp, conn: 
         // to delete accounts without at least logging in... And if the user
         // cannot remember their password then they will need to contact
         // the administrator to delete it...
-        err!("Please contact the administrator to delete your account");
+        err!(crate::i18n::accounts_contact_admin_to_delete(&CONFIG.default_locale()));
     }
 }
 
@@ -1305,15 +1320,15 @@ async fn post_delete_recover_token(data: Json<DeleteRecoverTokenData>, conn: DbC
     let data: DeleteRecoverTokenData = data.into_inner();
 
     let Ok(claims) = decode_delete(&data.token) else {
-        err!("Invalid claim")
+        err!(crate::i18n::accounts_invalid_claim(&CONFIG.default_locale()))
     };
 
     let Some(user) = User::find_by_uuid(&data.user_id, &conn).await else {
-        err!("User doesn't exist")
+        err!(crate::i18n::accounts_user_not_found(&CONFIG.default_locale()))
     };
 
     if claims.sub != *user.uuid {
-        err!("Invalid claim");
+        err!(crate::i18n::accounts_invalid_claim(&CONFIG.default_locale()));
     }
 
     // The devices are deleted together with the user, so check for push devices beforehand
@@ -1375,7 +1390,7 @@ async fn password_hint(data: Json<PasswordHintData>, ip: ClientIp, conn: DbConn)
     crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
 
     if !CONFIG.password_hints_allowed() || (!CONFIG.mail_enabled() && !CONFIG.show_password_hint()) {
-        err!("This server is not configured to provide password hints.");
+        err!(crate::i18n::accounts_password_hint_not_configured(&CONFIG.default_locale()));
     }
 
     let data: PasswordHintData = data.into_inner();
@@ -1400,10 +1415,11 @@ async fn password_hint(data: Json<PasswordHintData>, ip: ClientIp, conn: DbConn)
         Some(user) => {
             let hint: Option<String> = user.password_hint;
             if CONFIG.mail_enabled() {
-                mail::send_password_hint(email, hint).await?;
+                mail::send_password_hint_for_locale(email, hint, user.locale.as_deref()).await?;
                 Ok(())
             } else if let Some(hint) = hint {
-                err!(format!("Your password hint is: {hint}"));
+                let message = crate::i18n::accounts_password_hint_is(&CONFIG.default_locale()).replacen("{}", &hint, 1);
+                err!(message);
             } else {
                 err!(NO_HINT);
             }
@@ -1487,7 +1503,7 @@ async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers
     let mut user = headers.user;
 
     if !user.check_valid_password(&data.master_password_hash) {
-        err!("Invalid password")
+        err!(crate::i18n::auth_invalid_password(&headers.locale))
     }
 
     kdf_upgrade(&mut user, &data.master_password_hash, &conn).await?;
@@ -1590,7 +1606,7 @@ async fn get_all_devices(headers: Headers, conn: DbConn) -> JsonResult {
 #[get("/devices/identifier/<device_id>")]
 async fn get_device(device_id: DeviceId, headers: Headers, conn: DbConn) -> JsonResult {
     let Some(device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &conn).await else {
-        err!("No device found");
+        err!(crate::i18n::accounts_no_device_found(&headers.locale));
     };
     Ok(Json(device.to_json()))
 }
@@ -1612,7 +1628,10 @@ async fn put_device_token(device_id: DeviceId, data: Json<PushToken>, headers: H
     let token = data.push_token;
 
     let Some(mut device) = Device::find_by_uuid_and_user(&headers.device.uuid, &headers.user.uuid, &conn).await else {
-        err!(format!("Error: device {device_id} should be present before a token can be assigned"))
+        err!(
+            crate::i18n::accounts_device_should_be_present_before_token_assigned(&headers.locale),
+            device_id.to_string()
+        )
     };
 
     // Check if the new token is the same as the registered token
@@ -1625,7 +1644,7 @@ async fn put_device_token(device_id: DeviceId, data: Json<PushToken>, headers: H
 
     device.push_token = Some(token);
     if let Err(e) = device.save(true, &conn).await {
-        err!(format!("An error occurred while trying to save the device push token: {e}"));
+        err!(crate::i18n::accounts_error_saving_device_push_token(&headers.locale), e.to_string());
     }
 
     register_push_device(&mut device, &conn).await?;
@@ -1694,13 +1713,19 @@ async fn post_auth_request(
     let data = data.into_inner();
 
     let Some(user) = User::find_by_mail(&data.email, &conn).await else {
-        err!("AuthRequest doesn't exist", "User not found")
+        err!(
+            crate::i18n::accounts_auth_request_not_found(&client_headers.locale),
+            crate::i18n::org_user_not_found(&client_headers.locale)
+        )
     };
 
     // Validate device uuid and type
     let device = match Device::find_by_uuid_and_user(&data.device_identifier, &user.uuid, &conn).await {
         Some(device) if device.atype == client_headers.device_type => device,
-        _ => err!("AuthRequest doesn't exist", "Device verification failed"),
+        _ => err!(
+            crate::i18n::accounts_auth_request_not_found(&client_headers.locale),
+            crate::i18n::accounts_device_verification_failed(&client_headers.locale)
+        ),
     };
 
     let auth_request = AuthRequest::new(
@@ -1743,7 +1768,10 @@ async fn post_auth_request(
 async fn get_auth_request(auth_request_id: AuthRequestId, headers: Headers, conn: DbConn) -> JsonResult {
     let Some(auth_request) = AuthRequest::find_by_uuid_and_user(&auth_request_id, &headers.user.uuid, &conn).await
     else {
-        err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
+        err!(
+            crate::i18n::accounts_auth_request_not_found(&headers.locale),
+            crate::i18n::accounts_auth_request_not_found_or_mismatch(&headers.locale)
+        )
     };
 
     let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
@@ -1784,15 +1812,21 @@ async fn put_auth_request(
     let data = data.into_inner();
     let Some(mut auth_request) = AuthRequest::find_by_uuid_and_user(&auth_request_id, &headers.user.uuid, &conn).await
     else {
-        err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
+        err!(
+            crate::i18n::accounts_auth_request_not_found(&headers.locale),
+            crate::i18n::accounts_auth_request_not_found_or_mismatch(&headers.locale)
+        )
     };
 
     if headers.device.uuid != data.device_identifier {
-        err!("AuthRequest doesn't exist", "Device verification failed")
+        err!(
+            crate::i18n::accounts_auth_request_not_found(&headers.locale),
+            crate::i18n::accounts_device_verification_failed(&headers.locale)
+        )
     }
 
     if auth_request.approved.is_some() {
-        err!("An authentication request with the same device already exists")
+        err!(crate::i18n::accounts_auth_request_duplicate_device(&headers.locale))
     }
 
     let response_date = Utc::now().naive_utc();
@@ -1855,14 +1889,20 @@ async fn get_auth_request_response(
     crate::ratelimit::check_limit_unauthenticated(&client_headers.ip.ip)?;
 
     let Some(auth_request) = AuthRequest::find_by_uuid(&auth_request_id, &conn).await else {
-        err!("AuthRequest doesn't exist", "User not found")
+        err!(
+            crate::i18n::accounts_auth_request_not_found(&client_headers.locale),
+            crate::i18n::org_user_not_found(&client_headers.locale)
+        )
     };
 
     if auth_request.device_type != client_headers.device_type
         || auth_request.request_ip != client_headers.ip.ip.to_string()
         || !auth_request.check_access_code(code)
     {
-        err!("AuthRequest doesn't exist", "Invalid device, IP or code")
+        err!(
+            crate::i18n::accounts_auth_request_not_found(&client_headers.locale),
+            crate::i18n::accounts_auth_request_invalid_device_ip_or_code(&client_headers.locale)
+        )
     }
 
     let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));

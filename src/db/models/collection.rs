@@ -175,7 +175,7 @@ impl Collection {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving collection")
+                    .map_res(crate::i18n::db_error_saving_collection(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(collections::table)
@@ -184,7 +184,7 @@ impl Collection {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving collection")
+                    .map_res(crate::i18n::db_error_saving_collection(&CONFIG.default_locale()))
             }
         }
     }
@@ -198,7 +198,7 @@ impl Collection {
         conn.run(move |conn| {
             diesel::delete(collections::table.filter(collections::uuid.eq(self.uuid)))
                 .execute(conn)
-                .map_res("Error deleting collection")
+                .map_res(crate::i18n::db_error_deleting_collection(&CONFIG.default_locale()))
         })
         .await
     }
@@ -743,7 +743,7 @@ impl CollectionUser {
                     .do_update()
                     .set(values)
                     .execute(conn)
-                    .map_res("Error adding user to collection")
+                    .map_res(crate::i18n::db_error_adding_user_to_collection(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(users_collections::table)
@@ -752,7 +752,7 @@ impl CollectionUser {
                     .do_update()
                     .set(values)
                     .execute(conn)
-                    .map_res("Error adding user to collection")
+                    .map_res(crate::i18n::db_error_adding_user_to_collection(&CONFIG.default_locale()))
             }
         }
     }
@@ -767,7 +767,7 @@ impl CollectionUser {
                     .filter(users_collections::collection_uuid.eq(&self.collection_uuid)),
             )
             .execute(conn)
-            .map_res("Error removing user from collection")
+            .map_res(crate::i18n::db_error_removing_user_from_collection(&CONFIG.default_locale()))
         })
         .await
     }
@@ -853,7 +853,7 @@ impl CollectionUser {
         conn.run(move |conn| {
             diesel::delete(users_collections::table.filter(users_collections::collection_uuid.eq(collection_uuid)))
                 .execute(conn)
-                .map_res("Error deleting users from collection")
+                .map_res(crate::i18n::db_error_deleting_users_from_collection(&CONFIG.default_locale()))
         })
         .await
     }
@@ -875,7 +875,7 @@ impl CollectionUser {
                     ),
                 )
                 .execute(conn)
-                .map_res("Error removing user from collections")?;
+                .map_res(crate::i18n::db_error_removing_user_from_collections(&CONFIG.default_locale()))?;
             }
             Ok(())
         })
@@ -902,7 +902,7 @@ impl CollectionCipher {
                     .on_conflict(diesel::dsl::DuplicatedKeys)
                     .do_nothing()
                     .execute(conn)
-                    .map_res("Error adding cipher to collection")
+                    .map_res(crate::i18n::db_error_adding_cipher_to_collection(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(ciphers_collections::table)
@@ -913,7 +913,7 @@ impl CollectionCipher {
                     .on_conflict((ciphers_collections::cipher_uuid, ciphers_collections::collection_uuid))
                     .do_nothing()
                     .execute(conn)
-                    .map_res("Error adding cipher to collection")
+                    .map_res(crate::i18n::db_error_adding_cipher_to_collection(&CONFIG.default_locale()))
             }
         }
     }
@@ -928,7 +928,7 @@ impl CollectionCipher {
                     .filter(ciphers_collections::collection_uuid.eq(collection_uuid)),
             )
             .execute(conn)
-            .map_res("Error deleting cipher from collection")
+            .map_res(crate::i18n::db_error_deleting_cipher_from_collection(&CONFIG.default_locale()))
         })
         .await
     }
@@ -937,7 +937,7 @@ impl CollectionCipher {
         conn.run(move |conn| {
             diesel::delete(ciphers_collections::table.filter(ciphers_collections::cipher_uuid.eq(cipher_uuid)))
                 .execute(conn)
-                .map_res("Error removing cipher from collections")
+                .map_res(crate::i18n::db_error_removing_cipher_from_collections(&CONFIG.default_locale()))
         })
         .await
     }
@@ -946,7 +946,7 @@ impl CollectionCipher {
         conn.run(move |conn| {
             diesel::delete(ciphers_collections::table.filter(ciphers_collections::collection_uuid.eq(collection_uuid)))
                 .execute(conn)
-                .map_res("Error removing ciphers from collection")
+                .map_res(crate::i18n::db_error_removing_ciphers_from_collection(&CONFIG.default_locale()))
         })
         .await
     }

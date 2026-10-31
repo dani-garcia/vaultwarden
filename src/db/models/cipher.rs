@@ -97,10 +97,11 @@ impl Cipher {
     }
 
     pub fn validate_cipher_data(cipher_data: &[CipherData]) -> EmptyResult {
+        let locale = CONFIG.default_locale();
         let mut validation_errors = serde_json::Map::new();
         let max_note_size = CONFIG._max_note_size();
         let max_note_size_msg =
-            format!("The field Notes exceeds the maximum encrypted value length of {max_note_size} characters.");
+            crate::i18n::cipher_notes_exceeds_max_len(&locale).replacen("{}", &max_note_size.to_string(), 1);
         for (index, cipher) in cipher_data.iter().enumerate() {
             // Validate the note size and if it is exceeded return a warning
             if let Some(note) = &cipher.notes
@@ -118,10 +119,8 @@ impl Cipher {
                     {
                         validation_errors.insert(
                             format!("Ciphers[{index}].Notes"),
-                            serde_json::to_value([
-                                "The password history contains a `null` value. Only strings are allowed.",
-                            ])
-                            .unwrap(),
+                            serde_json::to_value([crate::i18n::cipher_password_history_null_only_strings(&locale)])
+                                .unwrap(),
                         );
                         break;
                     }
@@ -131,11 +130,11 @@ impl Cipher {
 
         if !validation_errors.is_empty() {
             let err_json = json!({
-                "message": "The model state is invalid.",
+                "message": crate::i18n::cipher_model_state_invalid(&locale),
                 "validationErrors" : validation_errors,
                 "object": "error"
             });
-            err_json!(err_json, "Import validation errors")
+            err_json!(err_json, crate::i18n::cipher_import_validation_errors(&locale))
         }
 
         Ok(())
@@ -400,7 +399,10 @@ impl Cipher {
             6 => "bankAccount",
             7 => "driversLicense",
             8 => "passport",
-            _ => err!(format!("Cipher {} has an invalid type {}", self.uuid, self.atype)),
+            _ => err!(
+                crate::i18n::db_cipher_invalid_type(&CONFIG.default_locale()),
+                format!("{}, {}", self.uuid, self.atype)
+            ),
         };
 
         json_object[key] = type_data_json;
@@ -447,7 +449,7 @@ impl Cipher {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving cipher")
+                    .map_res(crate::i18n::db_error_saving_cipher(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(ciphers::table)
@@ -456,7 +458,7 @@ impl Cipher {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving cipher")
+                    .map_res(crate::i18n::db_error_saving_cipher(&CONFIG.default_locale()))
             }
         }
     }
@@ -472,7 +474,7 @@ impl Cipher {
         conn.run(move |conn| {
             diesel::delete(ciphers::table.filter(ciphers::uuid.eq(&self.uuid)))
                 .execute(conn)
-                .map_res("Error deleting cipher")
+                .map_res(crate::i18n::db_error_deleting_cipher(&CONFIG.default_locale()))
         })
         .await
     }
@@ -543,7 +545,7 @@ impl Cipher {
                 if let Some(old_folder) = FolderCipher::find_by_folder_and_cipher(&old_folder, &self.uuid, conn).await {
                     old_folder.delete(conn).await
                 } else {
-                    err!("Couldn't move from previous folder")
+                    err!(crate::i18n::cipher_couldnt_move_from_previous_folder(&CONFIG.default_locale()))
                 }
             }
 

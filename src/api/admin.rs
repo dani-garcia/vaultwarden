@@ -19,7 +19,7 @@ use crate::{
         core::{log_event, two_factor},
         push_logout_to_relay, unregister_push_device,
     },
-    auth::{ClientIp, Secure, decode_admin, encode_jwt, generate_admin_claims},
+    auth::{ClientIp, RequestLocale, Secure, decode_admin, encode_jwt, generate_admin_claims},
     config::ConfigBuilder,
     db::{
         ACTIVE_DB_TYPE, DbConn, DbConnType, backup_sqlite, get_sql_server_version,
@@ -141,6 +141,21 @@ fn admin_url() -> String {
     format!("{}{}", CONFIG.domain_origin(), admin_path())
 }
 
+fn localized_admin_template_name(template_name: &str, locale: &str) -> String {
+    for candidate in crate::i18n::locale_candidates(locale) {
+        let Some(rest) = template_name.strip_prefix("admin/") else {
+            return template_name.to_owned();
+        };
+
+        let localized = format!("admin/{candidate}/{rest}");
+        if CONFIG.has_template(&localized) {
+            return localized;
+        }
+    }
+
+    template_name.to_owned()
+}
+
 #[derive(Responder)]
 enum AdminResponse {
     #[response(status = 200)]
@@ -153,25 +168,36 @@ enum AdminResponse {
 
 #[catch(401)]
 fn admin_login(request: &Request<'_>) -> ApiResult<Html<String>> {
+    let locale =
+        crate::i18n::resolve_locale(None, request.headers().get_one("Accept-Language"), &CONFIG.default_locale());
     if request.format() == Some(&MediaType::JSON) {
-        err_code!("Authorization failed.", Status::Unauthorized.code);
+        err_code!(crate::i18n::authorization_failed(&locale), Status::Unauthorized.code);
     }
     let redirect = request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
-    render_admin_login(None, Some(&redirect))
+    render_admin_login(None, Some(&redirect), &locale)
 }
 
-fn render_admin_login(msg: Option<&str>, redirect: Option<&str>) -> ApiResult<Html<String>> {
+fn render_admin_login(msg: Option<&str>, redirect: Option<&str>, locale: &str) -> ApiResult<Html<String>> {
     // If there is an error, show it
-    let msg = msg.map(|msg| format!("Error: {msg}"));
+    let msg = msg.map(|msg| {
+        if crate::i18n::is_russian(locale) {
+            format!("Ошибка: {msg}")
+        } else {
+            format!("Error: {msg}")
+        }
+    });
+    let page_content = localized_admin_template_name("admin/login", locale);
     let json = json!({
-        "page_content": "admin/login",
+        "page_content": page_content,
         "error": msg,
         "redirect": redirect,
-        "urlpath": CONFIG.domain_path()
+        "urlpath": CONFIG.domain_path(),
+        "lang": locale,
     });
 
     // Return the page
-    let text = CONFIG.render_template(BASE_TEMPLATE, &json)?;
+    let template_name = localized_admin_template_name(BASE_TEMPLATE, locale);
+    let text = CONFIG.render_template(&template_name, &json)?;
     Ok(Html(text))
 }
 
@@ -182,10 +208,12 @@ struct LoginForm {
 }
 
 #[post("/", format = "application/x-www-form-urlencoded", data = "<data>")]
+#[allow(clippy::needless_pass_by_value)]
 fn post_admin_login(
     data: Form<LoginForm>,
     cookies: &CookieJar<'_>,
     ip: ClientIp,
+    locale: RequestLocale,
     secure: Secure,
 ) -> Result<Redirect, AdminResponse> {
     let data = data.into_inner();
@@ -193,8 +221,9 @@ fn post_admin_login(
 
     if crate::ratelimit::check_limit_admin(&ip.ip).is_err() {
         return Err(AdminResponse::TooManyRequests(render_admin_login(
-            Some("Too many requests, try again later."),
+            Some(crate::i18n::admin_login_too_many_requests(&locale.locale)),
             redirect.as_deref(),
+            &locale.locale,
         )));
     }
 
@@ -203,7 +232,13 @@ fn post_admin_login(
         // If the token received is valid, generate JWT and save it as a cookie
         let claims = match generate_admin_claims() {
             Ok(claims) => claims,
-            Err(e) => return Err(AdminResponse::Ok(render_admin_login(Some(e.message()), redirect.as_deref()))),
+            Err(e) => {
+                return Err(AdminResponse::Ok(render_admin_login(
+                    Some(e.message()),
+                    redirect.as_deref(),
+                    &locale.locale,
+                )));
+            }
         };
         let jwt = encode_jwt(&claims);
 
@@ -218,13 +253,14 @@ fn post_admin_login(
         if let Some(redirect) = redirect {
             Ok(Redirect::to(format!("{}{redirect}", admin_path())))
         } else {
-            Err(AdminResponse::Ok(render_admin_page()))
+            Err(AdminResponse::Ok(render_admin_page(&locale.locale)))
         }
     } else {
         error!("Invalid admin token. IP: {}", ip.ip);
         Err(AdminResponse::Unauthorized(render_admin_login(
-            Some("Invalid admin token, please try again."),
+            Some(crate::i18n::admin_login_invalid_token(&locale.locale)),
             redirect.as_deref(),
+            &locale.locale,
         )))
     }
 }
@@ -256,41 +292,46 @@ struct AdminTemplateData {
     logged_in: bool,
     urlpath: String,
     sso_enabled: bool,
+    lang: String,
 }
 
 impl AdminTemplateData {
-    fn new(page_content: &str, page_data: Value) -> Self {
+    fn new(page_content: &str, page_data: Value, locale: &str) -> Self {
         Self {
-            page_content: String::from(page_content),
+            page_content: localized_admin_template_name(page_content, locale),
             page_data: Some(page_data),
             logged_in: true,
             urlpath: CONFIG.domain_path(),
             sso_enabled: CONFIG.sso_enabled(),
+            lang: locale.to_owned(),
         }
     }
 
     fn render(self) -> Result<String, Error> {
-        CONFIG.render_template(BASE_TEMPLATE, &self)
+        let template_name = localized_admin_template_name(BASE_TEMPLATE, &self.lang);
+        CONFIG.render_template(&template_name, &self)
     }
 }
 
-fn render_admin_page() -> ApiResult<Html<String>> {
+fn render_admin_page(locale: &str) -> ApiResult<Html<String>> {
     let settings_json = json!({
         "config": CONFIG.prepare_json(),
         "can_backup": *CAN_BACKUP,
     });
-    let text = AdminTemplateData::new("admin/settings", settings_json).render()?;
+    let text = AdminTemplateData::new("admin/settings", settings_json, locale).render()?;
     Ok(Html(text))
 }
 
 #[get("/")]
-fn admin_page(_token: AdminToken) -> ApiResult<Html<String>> {
-    render_admin_page()
+#[allow(clippy::needless_pass_by_value)]
+fn admin_page(_token: AdminToken, locale: RequestLocale) -> ApiResult<Html<String>> {
+    render_admin_page(&locale.locale)
 }
 
 #[get("/", rank = 2)]
-fn admin_page_login() -> ApiResult<Html<String>> {
-    render_admin_login(None, None)
+#[allow(clippy::needless_pass_by_value)]
+fn admin_page_login(locale: RequestLocale) -> ApiResult<Html<String>> {
+    render_admin_login(None, None, &locale.locale)
 }
 
 #[derive(Debug, Deserialize)]
@@ -338,13 +379,13 @@ async fn invite_user(data: Json<InviteData>, _token: AdminToken, conn: DbConn) -
 }
 
 #[post("/test/smtp", format = "application/json", data = "<data>")]
-async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
+async fn test_smtp(data: Json<InviteData>, _token: AdminToken, locale: RequestLocale) -> EmptyResult {
     let data: InviteData = data.into_inner();
 
     if CONFIG.mail_enabled() {
-        mail::send_test(&data.email).await
+        mail::send_test_for_locale(&data.email, Some(&locale.locale)).await
     } else {
-        err!("Mail is not enabled")
+        err!(crate::i18n::admin_mail_not_enabled(&locale.locale))
     }
 }
 
@@ -373,7 +414,7 @@ async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
 }
 
 #[get("/users/overview")]
-async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
+async fn users_overview(_token: AdminToken, locale: RequestLocale, conn: DbConn) -> ApiResult<Html<String>> {
     let users = User::get_all(&conn).await;
     let mut users_json = Vec::with_capacity(users.len());
     for (u, sso_u) in users {
@@ -393,7 +434,7 @@ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<Stri
         users_json.push(usr);
     }
 
-    let text = AdminTemplateData::new("admin/users", json!(users_json)).render()?;
+    let text = AdminTemplateData::new("admin/users", json!(users_json), &locale.locale).render()?;
     Ok(Html(text))
 }
 
@@ -557,24 +598,29 @@ struct MembershipTypeData {
 }
 
 #[post("/users/org_type", format = "application/json", data = "<data>")]
-async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToken, conn: DbConn) -> EmptyResult {
+async fn update_membership_type(
+    data: Json<MembershipTypeData>,
+    token: AdminToken,
+    locale: RequestLocale,
+    conn: DbConn,
+) -> EmptyResult {
     let data: MembershipTypeData = data.into_inner();
 
     let Some(mut member_to_edit) = Membership::find_by_user_and_org(&data.user_uuid, &data.org_uuid, &conn).await
     else {
-        err!("The specified user isn't member of the organization")
+        err!(crate::i18n::org_user_not_member(&locale.locale))
     };
 
     let new_type = if let Some(new_type) = MembershipType::from_str(&data.user_type.into_string()) {
         new_type as i32
     } else {
-        err!("Invalid type")
+        err!(crate::i18n::org_invalid_type(&locale.locale))
     };
 
     if member_to_edit.atype == MembershipType::Owner && new_type != MembershipType::Owner {
         // Removing owner permission, check that there is at least one other confirmed owner
         if Membership::count_confirmed_by_org_and_type(&data.org_uuid, MembershipType::Owner, &conn).await <= 1 {
-            err!("Can't change the type of the last owner")
+            err!(crate::i18n::admin_cannot_change_last_owner_type(&locale.locale))
         }
     }
 
@@ -602,7 +648,7 @@ async fn update_revision_users(_token: AdminToken, conn: DbConn) -> EmptyResult 
 }
 
 #[get("/organizations/overview")]
-async fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
+async fn organizations_overview(_token: AdminToken, locale: RequestLocale, conn: DbConn) -> ApiResult<Html<String>> {
     let organizations = Organization::get_all(&conn).await;
     let mut organizations_json = Vec::with_capacity(organizations.len());
     for o in organizations {
@@ -617,13 +663,14 @@ async fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<H
         organizations_json.push(org);
     }
 
-    let text = AdminTemplateData::new("admin/organizations", json!(organizations_json)).render()?;
+    let text = AdminTemplateData::new("admin/organizations", json!(organizations_json), &locale.locale).render()?;
     Ok(Html(text))
 }
 
 #[post("/organizations/<org_id>/delete", format = "application/json")]
 async fn delete_organization(org_id: OrganizationId, _token: AdminToken, conn: DbConn) -> EmptyResult {
-    let org = Organization::find_by_uuid(&org_id, &conn).await.map_res("Organization doesn't exist")?;
+    let locale = CONFIG.default_locale();
+    let org = Organization::find_by_uuid(&org_id, &conn).await.map_res(crate::i18n::org_not_found_short(&locale))?;
     org.delete(&conn).await
 }
 
@@ -759,7 +806,12 @@ fn folder_has_hbs_files(dir: &std::path::Path) -> bool {
 }
 
 #[get("/diagnostics")]
-async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResult<Html<String>> {
+async fn diagnostics(
+    _token: AdminToken,
+    locale: RequestLocale,
+    ip_header: IpHeader,
+    conn: DbConn,
+) -> ApiResult<Html<String>> {
     use chrono::prelude::*;
     use std::net::ToSocketAddrs;
 
@@ -826,7 +878,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
         "ntp_time": get_ntp_time(has_http_access).await, // Run the ntp check as late as possible to minimize the time difference
     });
 
-    let text = AdminTemplateData::new("admin/diagnostics", diagnostics_json).render()?;
+    let text = AdminTemplateData::new("admin/diagnostics", diagnostics_json, &locale.locale).render()?;
     Ok(Html(text))
 }
 
@@ -845,7 +897,7 @@ fn get_diagnostics_http(code: u16, _token: AdminToken) -> EmptyResult {
 async fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResult {
     let data: ConfigBuilder = data.into_inner();
     if let Err(e) = CONFIG.update_config(data, true).await {
-        err!(format!("Unable to save config: {e:?}"))
+        err!(crate::i18n::admin_unable_save_config(&CONFIG.default_locale()), format!("{e:?}"))
     }
     Ok(())
 }
@@ -853,20 +905,21 @@ async fn post_config(data: Json<ConfigBuilder>, _token: AdminToken) -> EmptyResu
 #[post("/config/delete", format = "application/json")]
 async fn delete_config(_token: AdminToken) -> EmptyResult {
     if let Err(e) = CONFIG.delete_user_config().await {
-        err!(format!("Unable to delete config: {e:?}"))
+        err!(crate::i18n::admin_unable_delete_config(&CONFIG.default_locale()), format!("{e:?}"))
     }
     Ok(())
 }
 
 #[post("/config/backup_db", format = "application/json")]
-fn backup_db(_token: AdminToken) -> ApiResult<String> {
+#[allow(clippy::needless_pass_by_value)]
+fn backup_db(_token: AdminToken, locale: RequestLocale) -> ApiResult<String> {
     if *CAN_BACKUP {
         match backup_sqlite() {
             Ok(f) => Ok(format!("Backup to '{f}' was successful")),
-            Err(e) => err!(format!("Backup was unsuccessful {e}")),
+            Err(e) => err!(crate::i18n::admin_backup_unsuccessful(&locale.locale), e.to_string()),
         }
     } else {
-        err!("Can't back up current DB (Only SQLite supports this feature)");
+        err!(crate::i18n::admin_backup_only_sqlite(&locale.locale));
     }
 }
 

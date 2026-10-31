@@ -215,7 +215,7 @@ impl Event {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving event")
+                    .map_res(crate::i18n::db_error_saving_event(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(event::table)
@@ -224,7 +224,7 @@ impl Event {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving event")
+                    .map_res(crate::i18n::db_error_saving_event(&CONFIG.default_locale()))
             }
         }
     }
@@ -266,7 +266,9 @@ impl Event {
 
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
         conn.run(move |conn| {
-            diesel::delete(event::table.filter(event::uuid.eq(self.uuid))).execute(conn).map_res("Error deleting event")
+            diesel::delete(event::table.filter(event::uuid.eq(self.uuid)))
+                .execute(conn)
+                .map_res(crate::i18n::db_error_deleting_event(&CONFIG.default_locale()))
         })
         .await
     }
@@ -352,16 +354,16 @@ impl Event {
         };
 
         let Some(days_to_retain) = TimeDelta::try_days(i64::from(days_to_retain)) else {
-            err!("Unable to calculate the event retention date, check 'EVENTS_DAYS_RETAIN'")
+            err!(crate::i18n::api_event_retention_date_calculation_failed(&CONFIG.default_locale()))
         };
 
         let Some(dt) = Utc::now().naive_utc().checked_sub_signed(days_to_retain) else {
-            err!("Unable to calculate the event retention date, check 'EVENTS_DAYS_RETAIN'")
+            err!(crate::i18n::api_event_retention_date_calculation_failed(&CONFIG.default_locale()))
         };
         conn.run(move |conn| {
             diesel::delete(event::table.filter(event::event_date.lt(dt)))
                 .execute(conn)
-                .map_res("Error cleaning old events")
+                .map_res(crate::i18n::db_error_cleaning_old_events(&CONFIG.default_locale()))
         })
         .await
     }

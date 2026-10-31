@@ -140,7 +140,7 @@ impl DuoClient {
             &EncodingKey::from_secret(self.client_secret.as_bytes()),
         ) {
             Ok(token) => Ok(token),
-            Err(e) => err!(format!("Error encoding Duo JWT: {e:?}")),
+            Err(e) => err!(crate::i18n::two_factor_duo_error_encoding_jwt(&CONFIG.default_locale()), format!("{e:?}")),
         }
     }
 
@@ -168,12 +168,17 @@ impl DuoClient {
             .await
         {
             Ok(r) => r,
-            Err(e) => err!(format!("Error requesting Duo health check: {e:?}")),
+            Err(e) => err!(
+                crate::i18n::two_factor_duo_error_requesting_health_check(&CONFIG.default_locale()),
+                format!("{e:?}")
+            ),
         };
 
         let response: HealthCheckResponse = match res.json::<HealthCheckResponse>().await {
             Ok(r) => r,
-            Err(e) => err!(format!("Duo health check response decode error: {e:?}")),
+            Err(e) => {
+                err!(crate::i18n::two_factor_duo_health_check_decode_error(&CONFIG.default_locale()), format!("{e:?}"))
+            }
         };
 
         let health_stat: String = match response {
@@ -183,11 +188,14 @@ impl DuoClient {
             HealthCheckResponse::HealthFail {
                 message,
                 message_detail,
-            } => err!(format!("Duo health check FAIL response, msg: {message}, detail: {message_detail}")),
+            } => err!(
+                crate::i18n::two_factor_duo_health_check_fail_response(&CONFIG.default_locale()),
+                format!("msg={message}, detail={message_detail}")
+            ),
         };
 
         if health_stat != "OK" {
-            err!(format!("Duo health check failed, got OK-like body with stat {health_stat}"));
+            err!(crate::i18n::two_factor_duo_health_check_failed_stat(&CONFIG.default_locale()), health_stat);
         }
 
         Ok(())
@@ -217,7 +225,10 @@ impl DuoClient {
         let authz_endpoint = format!("https://{}/oauth/v1/authorize", self.api_host);
         let mut auth_url = match Url::parse(authz_endpoint.as_str()) {
             Ok(url) => url,
-            Err(e) => err!(format!("Error parsing Duo authorization URL: {e:?}")),
+            Err(e) => err!(
+                crate::i18n::two_factor_duo_error_parsing_authorization_url(&CONFIG.default_locale()),
+                format!("{e:?}")
+            ),
         };
 
         {
@@ -241,7 +252,7 @@ impl DuoClient {
         nonce: &str,
     ) -> Result<(), Error> {
         if duo_code.is_empty() {
-            err!("Empty Duo authorization code")
+            err!(crate::i18n::two_factor_empty_duo_authorization_code(&CONFIG.default_locale()))
         }
 
         let token_url = format!("https://{}/oauth/v1/token", self.api_host);
@@ -271,17 +282,22 @@ impl DuoClient {
             .await
         {
             Ok(r) => r,
-            Err(e) => err!(format!("Error exchanging Duo code: {e:?}")),
+            Err(e) => {
+                err!(crate::i18n::two_factor_duo_error_exchanging_code(&CONFIG.default_locale()), format!("{e:?}"))
+            }
         };
 
         let status_code = res.status();
         if status_code != StatusCode::OK {
-            err!(format!("Failure response from Duo: {status_code}"))
+            err!(crate::i18n::two_factor_duo_failure_response(&CONFIG.default_locale()), status_code.to_string())
         }
 
         let response: IdTokenResponse = match res.json::<IdTokenResponse>().await {
             Ok(r) => r,
-            Err(e) => err!(format!("Error decoding ID token response: {e:?}")),
+            Err(e) => err!(
+                crate::i18n::two_factor_duo_error_decoding_id_token_response(&CONFIG.default_locale()),
+                format!("{e:?}")
+            ),
         };
 
         let mut validation = Validation::new(DUO_RESP_SIGNATURE_ALG);
@@ -295,14 +311,14 @@ impl DuoClient {
             &validation,
         ) {
             Ok(c) => c,
-            Err(e) => err!(format!("Failed to decode Duo token {e:?}")),
+            Err(e) => err!(crate::i18n::two_factor_duo_failed_decode_token(&CONFIG.default_locale()), format!("{e:?}")),
         };
 
         let matching_nonces = crypto::ct_eq(nonce, &token_data.claims.nonce);
         let matching_usernames = crypto::ct_eq(duo_username, &token_data.claims.preferred_username);
 
         if !(matching_nonces && matching_usernames) {
-            err!("Error validating Duo authorization, nonce or username mismatch.")
+            err!(crate::i18n::two_factor_duo_validation_mismatch(&CONFIG.default_locale()))
         }
 
         Ok(())
@@ -357,13 +373,19 @@ fn make_callback_url(client_name: &str) -> Result<String, Error> {
     // Get the location of this application as defined in the config.
     let base = match Url::parse(&format!("{}/", CONFIG.domain())) {
         Ok(url) => url,
-        Err(e) => err!(format!("Error parsing configured domain URL (check your domain configuration): {e:?}")),
+        Err(e) => err!(
+            crate::i18n::two_factor_duo_error_parsing_configured_domain_url(&CONFIG.default_locale()),
+            format!("{e:?}")
+        ),
     };
 
     // Add the client redirect bridge location
     let mut callback = match base.join(DUO_REDIRECT_LOCATION) {
         Ok(url) => url,
-        Err(e) => err!(format!("Error constructing Duo redirect URL (check your domain configuration): {e:?}")),
+        Err(e) => err!(
+            crate::i18n::two_factor_duo_error_constructing_redirect_url(&CONFIG.default_locale()),
+            format!("{e:?}")
+        ),
     };
 
     // Add the 'client' string with the authenticating device type. The callback connector uses this
@@ -408,7 +430,9 @@ pub async fn get_duo_auth_url(
 
     match TwoFactorDuoContext::save(state.as_str(), email, nonce.as_str(), CTX_VALIDITY_SECS, conn).await {
         Ok(()) => client.make_authz_req_url(email, state, hash),
-        Err(e) => err!(format!("Error saving Duo authentication context: {e:?}")),
+        Err(e) => {
+            err!(crate::i18n::two_factor_duo_error_saving_auth_context(&CONFIG.default_locale()), format!("{e:?}"))
+        }
     }
 }
 

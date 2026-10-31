@@ -119,7 +119,7 @@ impl WebauthnRegistration {
 #[post("/two-factor/get-webauthn", data = "<data>")]
 async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     if !CONFIG.is_webauthn_2fa_supported() {
-        err!("Configured `DOMAIN` is not compatible with Webauthn")
+        err!(crate::i18n::two_factor_webauthn_domain_incompatible(&headers.locale))
     }
 
     let data: PasswordOrOtpData = data.into_inner();
@@ -282,7 +282,7 @@ async fn activate_webauthn(data: Json<EnableWebauthnData>, headers: Headers, con
         tf.delete(&conn).await?;
         state
     } else {
-        err!("Can't recover challenge")
+        err!(crate::i18n::two_factor_cannot_recover_challenge(&headers.locale))
     };
 
     // Verify the credentials with the saved state
@@ -344,7 +344,7 @@ async fn inner_delete_webauthns(
     let user = headers.user;
 
     let Some(mut tf) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Webauthn, conn).await else {
-        err!("Webauthn data not found!")
+        err!(crate::i18n::two_factor_webauthn_data_not_found(&headers.locale))
     };
 
     let mut keys: Vec<WebauthnRegistration> = serde_json::from_str(&tf.data)?;
@@ -365,7 +365,7 @@ async fn inner_delete_webauthns(
     });
 
     if removed.is_empty() {
-        err!("Webauthn entry not found")
+        err!(crate::i18n::two_factor_webauthn_entry_not_found(&headers.locale))
     }
 
     if keys.is_empty() {
@@ -380,7 +380,7 @@ async fn inner_delete_webauthns(
     // If entry is migrated from u2f, delete the u2f entry as well
     if migrated && let Some(mut u2f) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::U2f, conn).await {
         let Ok(mut data) = serde_json::from_str::<Vec<U2FRegistration>>(&u2f.data) else {
-            err!("Error parsing U2F data")
+            err!(crate::i18n::two_factor_error_parsing_u2f_data(&headers.locale))
         };
 
         data.retain(|old| !removed.contains(&old.reg.key_handle));
@@ -420,7 +420,7 @@ pub async fn generate_webauthn_login(user_id: &UserId, conn: &DbConn) -> JsonRes
         get_webauthn_registrations(user_id, conn).await?.1.into_iter().map(|r| r.credential).collect();
 
     if creds.is_empty() {
-        err!("No Webauthn devices registered")
+        err!(crate::i18n::two_factor_no_webauthn_devices_registered(&CONFIG.default_locale()))
     }
 
     // Generate a challenge based on the credentials

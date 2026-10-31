@@ -1,11 +1,11 @@
-Incomplete Two-Step Login From {{{device_name}}}
+{{t "tpl.email.incomplete_2fa.subject_prefix" locale=lang}} {{{device_name}}}
 <!---------------->
-Someone attempted to log into your account with the correct master password, but did not provide the correct token or action required to complete the two-step login process within {{time_limit}} minutes of the initial login attempt.
+{{t "tpl.email.incomplete_2fa.body_intro_prefix" locale=lang}} {{time_limit}} {{t "tpl.email.incomplete_2fa.body_intro_suffix" locale=lang}}
 
-* Date: {{datetime}}
-* IP Address: {{ip}}
-* Device Name: {{device_name}}
-* Device Type: {{device_type}}
+* {{t "tpl.email.incomplete_2fa.label_date" locale=lang}}: {{datetime}}
+* {{t "tpl.email.incomplete_2fa.label_ip" locale=lang}}: {{ip}}
+* {{t "tpl.email.incomplete_2fa.label_device_name" locale=lang}}: {{device_name}}
+* {{t "tpl.email.incomplete_2fa.label_device_type" locale=lang}}: {{device_type}}
 
-If this was not you or someone you authorized, then you should change your master password as soon as possible, as it is likely to be compromised.
+{{t "tpl.email.incomplete_2fa.body_warning" locale=lang}}
 {{> email/email_footer_text }}

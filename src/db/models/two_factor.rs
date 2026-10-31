@@ -5,6 +5,7 @@ use webauthn_rs_core::proto::CredentialV3;
 use webauthn_rs_proto::{AttestationFormat, RegisteredExtensions};
 
 use crate::{
+    CONFIG,
     api::{EmptyResult, core::two_factor::webauthn::WebauthnRegistration},
     db::{DbConn, schema::twofactor},
     error::MapResult,
@@ -93,10 +94,10 @@ impl TwoFactor {
                             .filter(twofactor::uuid.eq(&self.uuid))
                             .set(self)
                             .execute(conn)
-                            .map_res("Error saving twofactor")
+                            .map_res(crate::i18n::db_error_saving_twofactor(&CONFIG.default_locale()))
                     }
                     Err(e) => Err(e.into()),
-                }.map_res("Error saving twofactor")
+                }.map_res(crate::i18n::db_error_saving_twofactor(&CONFIG.default_locale()))
             }
             postgresql {
                 // We need to make sure we're not going to violate the unique constraint on user_uuid and atype.
@@ -104,7 +105,7 @@ impl TwoFactor {
                 // not support multiple constraints on ON CONFLICT clauses.
                 let _: () = diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(&self.user_uuid)).filter(twofactor::atype.eq(&self.atype)))
                     .execute(conn)
-                    .map_res("Error deleting twofactor for insert")?;
+                    .map_res(crate::i18n::db_error_deleting_twofactor_for_insert(&CONFIG.default_locale()))?;
 
                 diesel::insert_into(twofactor::table)
                     .values(self)
@@ -112,7 +113,7 @@ impl TwoFactor {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving twofactor")
+                    .map_res(crate::i18n::db_error_saving_twofactor(&CONFIG.default_locale()))
             }
         }
     }
@@ -121,7 +122,7 @@ impl TwoFactor {
         conn.run(move |conn| {
             diesel::delete(twofactor::table.filter(twofactor::uuid.eq(self.uuid)))
                 .execute(conn)
-                .map_res("Error deleting twofactor")
+                .map_res(crate::i18n::db_error_deleting_twofactor(&CONFIG.default_locale()))
         })
         .await
     }
@@ -152,7 +153,7 @@ impl TwoFactor {
         conn.run(move |conn| {
             diesel::delete(twofactor::table.filter(twofactor::user_uuid.eq(user_uuid)))
                 .execute(conn)
-                .map_res("Error deleting twofactors")
+                .map_res(crate::i18n::db_error_deleting_twofactors(&CONFIG.default_locale()))
         })
         .await
     }

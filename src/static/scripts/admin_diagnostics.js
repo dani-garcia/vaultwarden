@@ -1,6 +1,8 @@
 "use strict";
 /* global BASE_URL:readable, bootstrap:readable */
 
+const tDiag = key => (window.VW_ADMIN_I18N && window.VW_ADMIN_I18N[key]) || key;
+
 var dnsCheck = false;
 var timeCheck = false;
 var ntpTimeCheck = false;
@@ -80,83 +82,83 @@ async function generateSupportString(event, dj) {
     event.stopPropagation();
 
     // Health check Markdown emoji, if something is a failure or not
-    const chk = v => v ? "true :white_check_mark:" : "false :x:";
+    const chk = v => v ? tDiag("check_true") : tDiag("check_false");
     // Yes/No Markdown emoji, if something is not a failure, but just yes or no
-    const yn = v => v ? "yes :heavy_plus_sign:" : "no :heavy_minus_sign:";
+    const yn = v => v ? tDiag("yes_emoji") : tDiag("no_emoji");
 
     const template_overrides = dj.template_overrides !== "" ? ` (${dj.template_overrides})` : "";
-    let supportString = "### Your environment (Generated via diagnostics page)\n\n";
+    let supportString = `${tDiag("support_title")}\n\n`;
 
-    supportString += `* Vaultwarden version: v${dj.current_release}\n`;
-    supportString += `* Web-vault version: v${dj.active_web_release}\n`;
-    supportString += `* OS/Arch: ${dj.host_os}/${dj.host_arch}\n`;
-    supportString += `* Running within a container: ${yn(dj.running_within_container)} (Base: ${dj.container_base_image})\n`;
-    supportString += `* Database type: ${dj.db_type}\n`;
-    supportString += `* Database version: ${dj.db_version}\n`;
-    supportString += `* Uses config.json: ${yn(dj.config_file_status !== "NotFound")}`;
+    supportString += `${tDiag("vw_version")}: v${dj.current_release}\n`;
+    supportString += `${tDiag("web_vault_version")}: v${dj.active_web_release}\n`;
+    supportString += `${tDiag("os_arch")}: ${dj.host_os}/${dj.host_arch}\n`;
+    supportString += `${tDiag("running_container")}: ${yn(dj.running_within_container)} (Base: ${dj.container_base_image})\n`;
+    supportString += `${tDiag("db_type")}: ${dj.db_type}\n`;
+    supportString += `${tDiag("db_version")}: ${dj.db_version}\n`;
+    supportString += `${tDiag("uses_config_json")}: ${yn(dj.config_file_status !== "NotFound")}`;
     supportString += dj.config_file_status !== "NotFound" ? ` (Valid: ${chk(dj.config_file_status === "Loaded")})\n` : "\n";
-    supportString += `* Environment variables are valid: ${chk(dj.invalid_env_vars == "")}\n`;
-    supportString += `* Uses custom templates: ${yn(dj.template_overrides !== "")}${template_overrides}\n`;
-    supportString += `* Uses a reverse proxy: ${yn(dj.ip_header_exists)}\n`;
+    supportString += `${tDiag("env_valid")}: ${chk(dj.invalid_env_vars == "")}\n`;
+    supportString += `${tDiag("uses_custom_templates")}: ${yn(dj.template_overrides !== "")}${template_overrides}\n`;
+    supportString += `${tDiag("uses_reverse_proxy")}: ${yn(dj.ip_header_exists)}\n`;
     if (dj.ip_header_exists) {
-        supportString += `* IP Header check: ${chk(dj.ip_header_match)} (${dj.ip_header_name})\n`;
+        supportString += `${tDiag("ip_header_check")}: ${chk(dj.ip_header_match)} (${dj.ip_header_name})\n`;
     }
-    supportString += `* Internet access: ${chk(dj.has_http_access)}\n`;
-    supportString += `* Internet access via a proxy: ${yn(dj.uses_proxy)}\n`;
-    supportString += `* DNS Check: ${chk(dnsCheck)}\n`;
+    supportString += `${tDiag("internet_access")}: ${chk(dj.has_http_access)}\n`;
+    supportString += `${tDiag("internet_access_proxy")}: ${yn(dj.uses_proxy)}\n`;
+    supportString += `${tDiag("dns_check")}: ${chk(dnsCheck)}\n`;
     if (dj.tz_env !== "") {
-        supportString += `* TZ environment: ${dj.tz_env}\n`;
+        supportString += `${tDiag("tz_env")}: ${dj.tz_env}\n`;
     }
-    supportString += `* Browser/Server Time Check: ${chk(timeCheck)}\n`;
-    supportString += `* Server/NTP Time Check: ${chk(ntpTimeCheck)}\n`;
-    supportString += `* Domain Configuration Check: ${chk(domainCheck)}\n`;
-    supportString += `* HTTPS Check: ${chk(httpsCheck)}\n`;
+    supportString += `${tDiag("browser_server_time_check")}: ${chk(timeCheck)}\n`;
+    supportString += `${tDiag("server_ntp_time_check")}: ${chk(ntpTimeCheck)}\n`;
+    supportString += `${tDiag("domain_check")}: ${chk(domainCheck)}\n`;
+    supportString += `${tDiag("https_check")}: ${chk(httpsCheck)}\n`;
     if (dj.enable_websocket) {
-        supportString += `* Websocket Check: ${chk(websocketCheck)}\n`;
+        supportString += `${tDiag("websocket_check")}: ${chk(websocketCheck)}\n`;
     } else {
-        supportString += "* Websocket Check: disabled\n";
+        supportString += `${tDiag("websocket_check")}: ${tDiag("websocket_disabled")}\n`;
     }
-    supportString += `* HTTP Response Checks: ${chk(httpResponseCheck)}\n`;
+    supportString += `${tDiag("http_response_checks")}: ${chk(httpResponseCheck)}\n`;
     if (dj.invalid_feature_flags != "") {
-        supportString += "* Invalid feature flags: true :x:\n";
+        supportString += `${tDiag("invalid_feature_flags_line")}\n`;
     }
 
     const jsonResponse = await fetch(`${BASE_URL}/admin/diagnostics/config`, {
         "headers": { "Accept": "application/json" }
     });
     if (!jsonResponse.ok) {
-        alert("Generation failed: " + jsonResponse.statusText);
+        alert(`${tDiag("generation_failed_prefix")} ${jsonResponse.statusText}`);
         throw new Error(jsonResponse);
     }
     const configJson = await jsonResponse.json();
 
     // Start Config and Details section within a details block which is collapsed by default
-    supportString += "\n### Config & Details (Generated via diagnostics page)\n\n";
-    supportString += "<details><summary>Show Config & Details</summary>\n";
+    supportString += `\n${tDiag("support_details_title")}\n\n`;
+    supportString += `${tDiag("support_details_summary")}\n`;
 
     // Show invalid environment variables if they exists
     if (dj.invalid_env_vars != "") {
-        supportString += `\n**Invalid environment variables:** ${dj.invalid_env_vars}\n`;
+        supportString += `\n${tDiag("invalid_env_vars")} ${dj.invalid_env_vars}\n`;
     }
 
     // Add overrides if they exists
     if (dj.overrides != "") {
-        supportString += `\n**Environment settings which are overridden:** ${dj.overrides}\n`;
+        supportString += `\n${tDiag("overridden_env_settings")} ${dj.overrides}\n`;
     }
 
     if (dj.invalid_feature_flags != "") {
-        supportString += `\n**Invalid feature flags:** ${dj.invalid_feature_flags}\n`;
+        supportString += `\n${tDiag("invalid_feature_flags")} ${dj.invalid_feature_flags}\n`;
     }
 
     // Add http response check messages if they exists
     if (httpResponseCheck === false) {
-        supportString += "\n**Failed HTTP Checks:**\n";
+        supportString += `\n${tDiag("failed_http_checks")}\n`;
         // We use `innerText` here since that will convert <br> into new-lines
         supportString += "\n```yaml\n" + document.getElementById("http-response-errors").innerText.trim() + "\n```\n";
     }
 
     // Add the current config in json form
-    supportString += "\n**Config:**\n";
+    supportString += `\n${tDiag("config_header")}\n`;
     supportString += "\n```json\n" + JSON.stringify(configJson, undefined, 2) + "\n```\n";
 
     supportString += "\n</details>\n";
@@ -314,9 +316,9 @@ async function checkHttpResponse() {
     // Check and validate the default API header responses
     let apiErrors = checkSecurityHeaders(apiConfig.headers);
     if (apiErrors.length >= 1) {
-        respErrorElm.innerHTML += "<b>API calls:</b><br>";
+        respErrorElm.innerHTML += `<b>${tDiag("api_calls")}:</b><br>`;
         apiErrors.forEach((errMsg) => {
-            respErrorElm.innerHTML += `<b>Header:</b> ${errMsg}<br>`;
+            respErrorElm.innerHTML += `<b>${tDiag("header_prefix")}:</b> ${errMsg}<br>`;
         });
     }
 
@@ -329,38 +331,38 @@ async function checkHttpResponse() {
         }
     });
     if (connectorErrors.length >= 1) {
-        respErrorElm.innerHTML += "<b>2FA Connector calls:</b><br>";
+        respErrorElm.innerHTML += `<b>${tDiag("connector_calls")}:</b><br>`;
         connectorErrors.forEach((errMsg) => {
-            respErrorElm.innerHTML += `<b>Header:</b> ${errMsg}<br>`;
+            respErrorElm.innerHTML += `<b>${tDiag("header_prefix")}:</b> ${errMsg}<br>`;
         });
     }
 
     // Check specific error code responses if they are not re-written by a reverse proxy
     let responseErrors = [];
     if (notFound.status !== 404 || notFound.text.indexOf("return to the web-vault") === -1) {
-        responseErrors.push("404 (Not Found) HTML is invalid");
+        responseErrors.push(tDiag("err_404_html_invalid"));
     }
 
     if (notFoundApi.status !== 404 || notFoundApi.text.indexOf("\"message\":\"Testing error 404 response\",") === -1) {
-        responseErrors.push("404 (Not Found) JSON is invalid");
+        responseErrors.push(tDiag("err_404_json_invalid"));
     }
 
     if (badRequest.status !== 400 || badRequest.text.indexOf("\"message\":\"Testing error 400 response\",") === -1) {
-        responseErrors.push("400 (Bad Request) is invalid");
+        responseErrors.push(tDiag("err_400_invalid"));
     }
 
     if (unauthorized.status !== 401 || unauthorized.text.indexOf("\"message\":\"Testing error 401 response\",") === -1) {
-        responseErrors.push("401 (Unauthorized) is invalid");
+        responseErrors.push(tDiag("err_401_invalid"));
     }
 
     if (forbidden.status !== 403 || forbidden.text.indexOf("\"message\":\"Testing error 403 response\",") === -1) {
-        responseErrors.push("403 (Forbidden) is invalid");
+        responseErrors.push(tDiag("err_403_invalid"));
     }
 
     if (responseErrors.length >= 1) {
-        respErrorElm.innerHTML += "<b>HTTP error responses:</b><br>";
+        respErrorElm.innerHTML += `<b>${tDiag("http_error_responses")}:</b><br>`;
         responseErrors.forEach((errMsg) => {
-            respErrorElm.innerHTML += `<b>Response to:</b> ${errMsg}<br>`;
+            respErrorElm.innerHTML += `<b>${tDiag("response_to_prefix")}:</b> ${errMsg}<br>`;
         });
     }
 

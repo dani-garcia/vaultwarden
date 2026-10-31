@@ -2,6 +2,7 @@ use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
 use crate::{
+    CONFIG,
     api::EmptyResult,
     db::{DbConn, schema::archives},
     error::MapResult,
@@ -52,7 +53,7 @@ impl Archive {
                     .do_update()
                     .set(archives::archived_at.eq(archived_at))
                     .execute(conn)
-                    .map_res("Error saving archive")
+                    .map_res(crate::i18n::db_error_saving_archive(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(archives::table)
@@ -65,7 +66,7 @@ impl Archive {
                     .do_update()
                     .set(archives::archived_at.eq(archived_at))
                     .execute(conn)
-                    .map_res("Error saving archive")
+                    .map_res(crate::i18n::db_error_saving_archive(&CONFIG.default_locale()))
             }
         }
     }
@@ -78,7 +79,7 @@ impl Archive {
                 archives::table.filter(archives::user_uuid.eq(user_uuid)).filter(archives::cipher_uuid.eq(cipher_uuid)),
             )
             .execute(conn)
-            .map_res("Error deleting archive")
+            .map_res(crate::i18n::db_error_deleting_archive(&CONFIG.default_locale()))
         })
         .await
     }

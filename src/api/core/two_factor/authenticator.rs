@@ -62,11 +62,11 @@ async fn activate_authenticator(data: Json<EnableAuthenticatorData>, headers: He
     let decoded_key: Vec<u8> = if let Ok(decoded) = BASE32.decode(key.as_bytes()) {
         decoded
     } else {
-        err!("Invalid totp secret")
+        err!(crate::i18n::two_factor_invalid_totp_secret(&headers.locale))
     };
 
     if decoded_key.len() != 20 {
-        err!("Invalid key length")
+        err!(crate::i18n::two_factor_invalid_key_length(&headers.locale))
     }
 
     // Validate the token provided with the key, and save new twofactor
@@ -97,7 +97,7 @@ pub async fn validate_totp_code_str(
     conn: &DbConn,
 ) -> EmptyResult {
     if !totp_code.chars().all(char::is_numeric) {
-        err!("TOTP code is not a number");
+        err!(crate::i18n::two_factor_totp_code_not_number(&CONFIG.default_locale()));
     }
 
     validate_totp_code(user_id, totp_code, secret, ip, conn).await
@@ -113,7 +113,7 @@ pub async fn validate_totp_code(
     use totp_lite::{Sha1, totp_custom};
 
     let Ok(decoded_secret) = BASE32.decode(secret.as_bytes()) else {
-        err!("Invalid TOTP secret")
+        err!(crate::i18n::two_factor_invalid_totp_secret(&CONFIG.default_locale()))
     };
 
     let mut twofactor = match TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Authenticator, conn).await {
@@ -188,7 +188,7 @@ async fn disable_authenticator(data: Json<DisableAuthenticatorData>, headers: He
             twofactor.delete(&conn).await?;
             log_user_event(EventType::UserDisabled2fa, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
         } else {
-            err!(format!("TOTP key for user {} does not match recorded value, cannot deactivate", &user.email));
+            err!(crate::i18n::two_factor_totp_key_mismatch_cannot_deactivate(&headers.locale), user.email.clone());
         }
     }
 

@@ -32,7 +32,7 @@ async fn get_folder(folder_id: FolderId, headers: Headers, conn: DbConn) -> Json
     if let Some(folder) = Folder::find_by_uuid_and_user(&folder_id, &headers.user.uuid, &conn).await {
         Ok(Json(folder.to_json()))
     } else {
-        err!("Invalid folder", "Folder does not exist or belongs to another user")
+        err!(crate::i18n::folder_invalid(&headers.locale), crate::i18n::folder_not_found_or_not_owned(&headers.locale))
     }
 }
 
@@ -78,7 +78,7 @@ async fn put_folder(
     let data: FolderData = data.into_inner();
 
     let Some(mut folder) = Folder::find_by_uuid_and_user(&folder_id, &headers.user.uuid, &conn).await else {
-        err!("Invalid folder", "Folder does not exist or belongs to another user")
+        err!(crate::i18n::folder_invalid(&headers.locale), crate::i18n::folder_not_found_or_not_owned(&headers.locale))
     };
 
     folder.name = data.name;
@@ -97,7 +97,7 @@ async fn delete_folder_post(folder_id: FolderId, headers: Headers, conn: DbConn,
 #[delete("/folders/<folder_id>")]
 async fn delete_folder(folder_id: FolderId, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let Some(folder) = Folder::find_by_uuid_and_user(&folder_id, &headers.user.uuid, &conn).await else {
-        err!("Invalid folder", "Folder does not exist or belongs to another user")
+        err!(crate::i18n::folder_invalid(&headers.locale), crate::i18n::folder_not_found_or_not_owned(&headers.locale))
     };
 
     // Delete the actual folder entry

@@ -342,7 +342,10 @@ impl OrganizationApiKey {
 impl Organization {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         if !crate::util::is_valid_email(&self.billing_email) {
-            err!(format!("BillingEmail {} is not a valid email address", self.billing_email.escape_debug()))
+            err!(
+                crate::i18n::db_billing_email_not_valid(&CONFIG.default_locale()),
+                self.billing_email.escape_debug().to_string()
+            )
         }
 
         for member in &Membership::find_by_org(&self.uuid, conn).await {
@@ -357,7 +360,7 @@ impl Organization {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving organization")
+                    .map_res(crate::i18n::db_error_saving_organization(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(organizations::table)
@@ -366,7 +369,7 @@ impl Organization {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving organization")
+                    .map_res(crate::i18n::db_error_saving_organization(&CONFIG.default_locale()))
             }
         }
     }
@@ -382,7 +385,7 @@ impl Organization {
         conn.run(move |conn| {
             diesel::delete(organizations::table.filter(organizations::uuid.eq(self.uuid)))
                 .execute(conn)
-                .map_res("Error saving organization")
+                .map_res(crate::i18n::db_error_saving_organization(&CONFIG.default_locale()))
         })
         .await
     }
@@ -722,7 +725,7 @@ impl Membership {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error adding user to organization")
+                    .map_res(crate::i18n::db_error_adding_user_to_organization(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(users_organizations::table)
@@ -731,7 +734,7 @@ impl Membership {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error adding user to organization")
+                    .map_res(crate::i18n::db_error_adding_user_to_organization(&CONFIG.default_locale()))
             }
         }
     }
@@ -745,7 +748,7 @@ impl Membership {
         conn.run(move |conn| {
             diesel::delete(users_organizations::table.filter(users_organizations::uuid.eq(self.uuid)))
                 .execute(conn)
-                .map_res("Error removing user from organization")
+                .map_res(crate::i18n::db_error_removing_user_from_organization(&CONFIG.default_locale()))
         })
         .await
     }
@@ -850,7 +853,7 @@ impl Membership {
                 .filter(users_organizations::status.eq(MembershipStatus::Invited as i32))
                 .set(users_organizations::status.eq(MembershipStatus::Accepted as i32))
                 .execute(conn)
-                .map_res("Error confirming invitations")
+                .map_res(crate::i18n::db_error_confirming_invitations(&CONFIG.default_locale()))
         })
         .await
     }
@@ -1154,7 +1157,7 @@ impl OrganizationApiKey {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving organization")
+                    .map_res(crate::i18n::db_error_saving_organization(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(organization_api_key::table)
@@ -1163,7 +1166,7 @@ impl OrganizationApiKey {
                     .do_update()
                     .set(self)
                     .execute(conn)
-                    .map_res("Error saving organization")
+                    .map_res(crate::i18n::db_error_saving_organization(&CONFIG.default_locale()))
             }
         }
     }
@@ -1179,7 +1182,9 @@ impl OrganizationApiKey {
         conn.run(move |conn| {
             diesel::delete(organization_api_key::table.filter(organization_api_key::org_uuid.eq(org_uuid)))
                 .execute(conn)
-                .map_res("Error removing organization api key from organization")
+                .map_res(crate::i18n::db_error_removing_organization_api_key_from_organization(
+                    &CONFIG.default_locale(),
+                ))
         })
         .await
     }

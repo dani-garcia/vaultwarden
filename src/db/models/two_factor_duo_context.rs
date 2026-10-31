@@ -2,6 +2,7 @@ use chrono::Utc;
 use diesel::prelude::*;
 
 use crate::{
+    CONFIG,
     api::EmptyResult,
     db::{DbConn, schema::twofactor_duo_ctx},
     error::MapResult,
@@ -43,7 +44,7 @@ impl TwoFactorDuoContext {
                     twofactor_duo_ctx::exp.eq(exp),
                 ))
                 .execute(conn)
-                .map_res("Error saving context to twofactor_duo_ctx")
+                .map_res(crate::i18n::db_error_saving_context_twofactor_duo_ctx(&CONFIG.default_locale()))
         })
         .await
     }
@@ -63,7 +64,7 @@ impl TwoFactorDuoContext {
         conn.run(move |conn| {
             diesel::delete(twofactor_duo_ctx::table.filter(twofactor_duo_ctx::state.eq(&self.state)))
                 .execute(conn)
-                .map_res("Error deleting from twofactor_duo_ctx")
+                .map_res(crate::i18n::db_error_deleting_from_twofactor_duo_ctx(&CONFIG.default_locale()))
         })
         .await
     }

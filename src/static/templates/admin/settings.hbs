@@ -1,48 +1,48 @@
 <main class="container-xxl">
     <div id="admin_token_warning" class="alert alert-warning alert-dismissible fade show d-none">
-        <button type="button" class="btn-close" data-bs-target="admin_token_warning" data-bs-dismiss="alert" aria-label="Close"></button>
-        You are using a plain text `ADMIN_TOKEN` which is insecure.<br>
-        Please generate a secure Argon2 PHC string by using `vaultwarden hash` or `argon2`.<br>
-        See: <a href="https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page#secure-the-admin_token" target="_blank" rel="noopener noreferrer">Enabling admin page - Secure the `ADMIN_TOKEN`</a>
+        <button type="button" class="btn-close" data-bs-target="admin_token_warning" data-bs-dismiss="alert" aria-label="{{t "tpl.admin.settings.close" locale=lang}}"></button>
+        {{t "tpl.admin.settings.admin_token_warning_1" locale=lang}}<br>
+        {{t "tpl.admin.settings.admin_token_warning_2" locale=lang}}<br>
+        {{t "tpl.admin.settings.note" locale=lang}} <a href="https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page#secure-the-admin_token" target="_blank" rel="noopener noreferrer">{{t "tpl.admin.settings.admin_token_warning_3" locale=lang}}</a>
     </div>
     <div id="config-block" class="align-items-center p-3 mb-3 bg-secondary rounded shadow">
         <div>
-            <h6 class="text-white mb-3">Configuration</h6>
+            <h6 class="text-white mb-3">{{t "tpl.admin.settings.configuration" locale=lang}}</h6>
             <div class="small text-white mb-3">
-                <span class="font-weight-bolder">NOTE:</span> The settings here override the environment variables. Once saved, it's recommended to stop setting them to avoid confusion.<br>
-                This does not apply to the read-only section, which can only be set via environment variables.<br>
-                Settings which are overridden are shown with <span class="is-overridden-true alert-row px-1">a yellow colored background</span>.
+                <span class="font-weight-bolder">{{t "tpl.admin.settings.note" locale=lang}}</span> {{t "tpl.admin.settings.note_line_1" locale=lang}}<br>
+                {{t "tpl.admin.settings.note_line_2" locale=lang}}<br>
+                {{t "tpl.admin.settings.note_line_3" locale=lang}} <span class="is-overridden-true alert-row px-1">{{t "tpl.admin.settings.note_line_3_suffix" locale=lang}}</span>.
             </div>
 
             <form class="form needs-validation" id="config-form" novalidate>
                 {{#each page_data.config}}
                 {{#if groupdoc}}
                 <div class="card mb-3">
-                    <button id="b_{{group}}" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_{{group}}" data-bs-toggle="collapse" data-bs-target="#g_{{group}}">{{groupdoc}}</button>
+                    <button id="b_{{group}}" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_{{group}}" data-bs-toggle="collapse" data-bs-target="#g_{{group}}">{{t groupdoc locale=lang}}</button>
                     <div id="g_{{group}}" class="card-body collapse">
                         {{#each elements}}
                         {{#if editable}}
-                        <div class="row my-2 align-items-center is-overridden-{{overridden}} alert-row" title="[{{name}}] {{doc.description}}">
+                        <div class="row my-2 align-items-center is-overridden-{{overridden}} alert-row" title="[{{name}}] {{t doc.description locale=../../lang}}">
                             {{#case type "text" "number" "password"}}
-                            <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
+                            <label for="input_{{name}}" class="col-sm-3 col-form-label">{{t doc.name locale=../../lang}}</label>
                             <div class="col-sm-8">
                                 <div class="input-group">
                                 <input class="form-control conf-{{type}}" id="input_{{name}}" type="{{type}}"
-                                    name="{{name}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}"{{/if}}>
+                                    name="{{name}}" value="{{value}}" {{#if default}} placeholder="{{t "tpl.admin.settings.default_prefix" locale=../../lang}} {{default}}"{{/if}}>
                                 {{#case type "password"}}
-                                    <button class="btn btn-outline-secondary input-group-text" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
+                                    <button class="btn btn-outline-secondary input-group-text" type="button" data-vw-pw-toggle="input_{{name}}">{{t "tpl.admin.settings.show_hide" locale=../../lang}}</button>
                                 {{/case}}
                                 </div>
                             </div>
                             {{/case}}
                             {{#case type "checkbox"}}
-                            <div class="col-sm-3 col-form-label">{{doc.name}}</div>
+                            <div class="col-sm-3 col-form-label">{{t doc.name locale=../../lang}}</div>
                             <div class="col-sm-8">
                                 <div class="form-check">
                                     <input class="form-check-input conf-{{type}}" type="checkbox" id="input_{{name}}"
                                         name="{{name}}" {{#if value}} checked {{/if}}>
 
-                                    <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                                    <label class="form-check-label" for="input_{{name}}"> {{t "tpl.admin.settings.default_prefix" locale=../../lang}} {{default}} </label>
                                 </div>
                             </div>
                             {{/case}}
@@ -50,12 +50,12 @@
                         {{/if}}
                         {{/each}}
                         {{#case group "smtp"}}
-                            <div class="row my-2 align-items-center pt-3 border-top" title="Send a test email to given email address">
-                                <label for="smtp-test-email" class="col-sm-3 col-form-label">Test SMTP</label>
+                            <div class="row my-2 align-items-center pt-3 border-top" title="{{t "tpl.admin.settings.smtp_test_title" locale=../../lang}}">
+                                <label for="smtp-test-email" class="col-sm-3 col-form-label">{{t "tpl.admin.settings.smtp_test" locale=../../lang}}</label>
                                 <div class="col-sm-8 input-group">
-                                    <input class="form-control" id="smtp-test-email" type="email" placeholder="Enter test email" required spellcheck="false">
-                                    <button type="button" class="btn btn-outline-primary input-group-text" id="smtpTest">Send test email</button>
-                                    <div class="invalid-tooltip">Please provide a valid email address</div>
+                                    <input class="form-control" id="smtp-test-email" type="email" placeholder="{{t "tpl.admin.settings.smtp_placeholder" locale=../../lang}}" required spellcheck="false">
+                                    <button type="button" class="btn btn-outline-primary input-group-text" id="smtpTest">{{t "tpl.admin.settings.smtp_send" locale=../../lang}}</button>
+                                    <div class="invalid-tooltip">{{t "tpl.admin.settings.smtp_invalid" locale=../../lang}}</div>
                                 </div>
                             </div>
                         {{/case}}
@@ -66,20 +66,18 @@
 
                 <div class="card mb-3">
                     <button id="b_readonly" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_readonly"
-                            data-bs-toggle="collapse" data-bs-target="#g_readonly">Read-Only Config</button>
+                            data-bs-toggle="collapse" data-bs-target="#g_readonly">{{t "tpl.admin.settings.readonly" locale=lang}}</button>
                     <div id="g_readonly" class="card-body collapse">
                         <div class="small mb-3">
-                            NOTE: These options can't be modified in the editor because they would require the server
-                            to be restarted. To modify them, you need to set the correct environment variables when
-                            launching the server. You can check the variable names in the tooltips of each option.
+                            {{t "tpl.admin.settings.readonly_note" locale=lang}}
                         </div>
 
                         {{#each page_data.config}}
                         {{#each elements}}
                         {{#unless editable}}
-                        <div class="row my-2 align-items-center alert-row" title="[{{name}}] {{doc.description}}">
+                        <div class="row my-2 align-items-center alert-row" title="[{{name}}] {{t doc.description locale=../../lang}}">
                             {{#case type "text" "number" "password"}}
-                            <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
+                            <label for="input_{{name}}" class="col-sm-3 col-form-label">{{t doc.name locale=../../lang}}</label>
                             <div class="col-sm-8">
                                 <div class="input-group">
                                 {{!--
@@ -88,25 +86,25 @@
                                       And sometimes this is more useful for providing support than just 3 asterisk.
                                 --}}
                                 {{#if (eq name "database_url")}}
-                                    <input readonly class="form-control" id="input_{{name}}" type="password" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}}>
-                                    <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
+                                    <input readonly class="form-control" id="input_{{name}}" type="password" value="{{value}}" {{#if default}} placeholder="{{t "tpl.admin.settings.default_prefix" locale=../../lang}} {{default}}" {{/if}}>
+                                    <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">{{t "tpl.admin.settings.show_hide" locale=../../lang}}</button>
                                 {{else}}
-                                    <input readonly class="form-control" id="input_{{name}}" type="{{type}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}" {{/if}} spellcheck="false">
+                                    <input readonly class="form-control" id="input_{{name}}" type="{{type}}" value="{{value}}" {{#if default}} placeholder="{{t "tpl.admin.settings.default_prefix" locale=../../lang}} {{default}}" {{/if}} spellcheck="false">
                                     {{#case type "password"}}
-                                    <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
+                                    <button class="btn btn-outline-secondary" type="button" data-vw-pw-toggle="input_{{name}}">{{t "tpl.admin.settings.show_hide" locale=../../lang}}</button>
                                     {{/case}}
                                 {{/if}}
                                 </div>
                             </div>
                             {{/case}}
                             {{#case type "checkbox"}}
-                            <div class="col-sm-3 col-form-label">{{doc.name}}</div>
+                            <div class="col-sm-3 col-form-label">{{t doc.name locale=../../lang}}</div>
                             <div class="col-sm-8">
                                 <div class="form-check align-middle">
                                     <input disabled class="form-check-input" type="checkbox" id="input_{{name}}"
                                         {{#if value}} checked {{/if}}>
 
-                                    <label class="form-check-label" for="input_{{name}}"> Default: {{default}} </label>
+                                    <label class="form-check-label" for="input_{{name}}"> {{t "tpl.admin.settings.default_prefix" locale=../../lang}} {{default}} </label>
                                 </div>
                             </div>
                             {{/case}}
@@ -121,22 +119,19 @@
                 {{#if page_data.can_backup}}
                 <div class="card mb-3">
                     <button id="b_database" type="button" class="card-header text-start btn btn-link text-decoration-none" aria-expanded="false" aria-controls="g_database"
-                            data-bs-toggle="collapse" data-bs-target="#g_database">Backup Database</button>
+                            data-bs-toggle="collapse" data-bs-target="#g_database">{{t "tpl.admin.settings.backup_db" locale=lang}}</button>
                     <div id="g_database" class="card-body collapse">
                         <div class="small mb-3">
-                            WARNING: This function only creates a backup copy of the SQLite database.
-                            This does not include any configuration or file attachment data that may
-                            also be needed to fully restore a vaultwarden instance. For details on
-                            how to perform complete backups, refer to the wiki page on
-                            <a href="https://github.com/dani-garcia/vaultwarden/wiki/Backing-up-your-vault" target="_blank" rel="noopener noreferrer">backups</a>.
+                            {{t "tpl.admin.settings.backup_warning" locale=lang}}
+                            <a href="https://github.com/dani-garcia/vaultwarden/wiki/Backing-up-your-vault" target="_blank" rel="noopener noreferrer">{{t "tpl.admin.settings.backup_link" locale=lang}}</a>.
                         </div>
-                        <button type="button" class="btn btn-primary" id="backupDatabase">Backup Database</button>
+                        <button type="button" class="btn btn-primary" id="backupDatabase">{{t "tpl.admin.settings.backup_button" locale=lang}}</button>
                     </div>
                 </div>
                 {{/if}}
 
-                <button type="submit" class="btn btn-primary">Save</button>
-                <button type="button" class="btn btn-danger float-end" id="deleteConf">Reset defaults</button>
+                <button type="submit" class="btn btn-primary">{{t "tpl.admin.settings.save" locale=lang}}</button>
+                <button type="button" class="btn btn-danger float-end" id="deleteConf">{{t "tpl.admin.settings.reset_defaults" locale=lang}}</button>
             </form>
         </div>
     </div>

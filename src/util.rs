@@ -745,7 +745,7 @@ impl NumberOrString {
                 if let Some(n) = n.to_i32() {
                     Ok(n)
                 } else {
-                    err!("Number does not fit in i32")
+                    err!(crate::i18n::api_number_not_fit_i32(&CONFIG.default_locale()))
                 }
             }
             NumberOrString::String(s) => {

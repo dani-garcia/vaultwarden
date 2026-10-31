@@ -47,7 +47,7 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
     let data: SendEmailLoginData = data.into_inner();
 
     if !CONFIG._enable_email_2fa() {
-        err!("Email 2FA is disabled")
+        err!(crate::i18n::two_factor_email_disabled(&client_headers.locale))
     }
 
     // Ratelimit the login
@@ -85,17 +85,23 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
             }
         } else if let Some(auth_request_id) = auth_request_id {
             let Some(auth_request) = AuthRequest::find_by_uuid(auth_request_id, &conn).await else {
-                err!("AuthRequest doesn't exist", "User not found")
+                err!(
+                    crate::i18n::two_factor_auth_request_not_found(&client_headers.locale),
+                    crate::i18n::two_factor_user_not_found(&client_headers.locale)
+                )
             };
             let Some(code) = &data.auth_request_access_code else {
-                err!("no auth request access code")
+                err!(crate::i18n::two_factor_no_auth_request_access_code(&client_headers.locale))
             };
 
             if auth_request.device_type != client_headers.device_type
                 || auth_request.request_ip != client_headers.ip.ip.to_string()
                 || !auth_request.check_access_code(code)
             {
-                err!("AuthRequest doesn't exist", "Invalid device, IP or code")
+                err!(
+                    crate::i18n::two_factor_auth_request_not_found(&client_headers.locale),
+                    crate::i18n::two_factor_invalid_device_ip_or_code(&client_headers.locale)
+                )
             }
         } else if let Some(device_identifier) = &data.device_identifier {
             // iOS/Android SSO logins send the email and device id but no password hash,
@@ -112,13 +118,13 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
                 device_identifier.to_string().escape_debug()
             );
         } else {
-            err!("No password hash has been submitted.")
+            err!(crate::i18n::two_factor_no_password_hash_submitted(&client_headers.locale))
         }
 
         user
     } else {
         let Some(device_identifier) = &data.device_identifier else {
-            err!("No device identifier has been submitted.")
+            err!(crate::i18n::two_factor_no_device_identifier_submitted(&client_headers.locale))
         };
         // SSO login only sends device id, so we get the user by the most recently used device
         let Some(user) = User::find_by_device_for_email2fa(device_identifier, &conn).await else {
@@ -131,13 +137,16 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
         user
     };
 
-    send_token(&user.uuid, &conn).await
+    send_token(&user.uuid, &conn, Some(&client_headers.locale)).await
 }
 
 /// Generate the token, save the data for later verification and send email to user
-pub async fn send_token(user_id: &UserId, conn: &DbConn) -> EmptyResult {
-    let mut twofactor =
-        TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Email, conn).await.map_res("Two factor not found")?;
+pub async fn send_token(user_id: &UserId, conn: &DbConn, locale: Option<&str>) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = locale.unwrap_or(default_locale.as_str());
+    let mut twofactor = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Email, conn)
+        .await
+        .map_res(crate::i18n::two_factor_not_found(locale))?;
 
     let generated_token = crypto::generate_email_token(CONFIG.email_token_size());
 
@@ -146,7 +155,12 @@ pub async fn send_token(user_id: &UserId, conn: &DbConn) -> EmptyResult {
     twofactor.data = twofactor_data.to_json();
     twofactor.save(conn).await?;
 
-    mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?).await?;
+    mail::send_token_for_locale(
+        &twofactor_data.email,
+        &twofactor_data.last_token.map_res(crate::i18n::two_factor_token_empty(locale))?,
+        Some(locale),
+    )
+    .await?;
 
     Ok(())
 }
@@ -193,7 +207,7 @@ async fn send_email(data: Json<SendEmailData>, headers: Headers, conn: DbConn) -
     two_factor::validate_email(&data.user_verification_token, &user.uuid, data.email.clone(), false)?;
 
     if !CONFIG._enable_email_2fa() {
-        err!("Email 2FA is disabled")
+        err!(crate::i18n::two_factor_email_disabled(&headers.locale))
     }
 
     if let Some(tf) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await {
@@ -208,7 +222,12 @@ async fn send_email(data: Json<SendEmailData>, headers: Headers, conn: DbConn) -
         TwoFactor::new(user.uuid.clone(), TwoFactorType::EmailVerificationChallenge, twofactor_data.to_json());
     twofactor.save(&conn).await?;
 
-    mail::send_token(&twofactor_data.email, &twofactor_data.last_token.map_res("Token is empty")?).await?;
+    mail::send_token_for_locale(
+        &twofactor_data.email,
+        &twofactor_data.last_token.map_res(crate::i18n::two_factor_token_empty(&headers.locale))?,
+        Some(&headers.locale),
+    )
+    .await?;
 
     Ok(Json(json!({})))
 }
@@ -231,16 +250,16 @@ async fn email(data: Json<EmailData>, headers: Headers, conn: DbConn) -> JsonRes
 
     let mut twofactor = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::EmailVerificationChallenge, &conn)
         .await
-        .map_res("Two factor not found")?;
+        .map_res(crate::i18n::two_factor_not_found(&headers.locale))?;
 
     let mut email_data = EmailTokenData::from_json(&twofactor.data)?;
 
     let Some(issued_token) = &email_data.last_token else {
-        err!("No token available")
+        err!(crate::i18n::two_factor_no_token_available(&headers.locale))
     };
 
     if !crypto::ct_eq(issued_token, data.token) {
-        err!("Token is invalid")
+        err!(crate::i18n::two_factor_token_invalid(&headers.locale))
     }
 
     email_data.reset_token();
@@ -281,8 +300,10 @@ pub async fn validate_email_code_str(
     conn: &DbConn,
 ) -> EmptyResult {
     let mut email_data = EmailTokenData::from_json(data)?;
-    let mut twofactor =
-        TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Email, conn).await.map_res("Two factor not found")?;
+    let locale = CONFIG.default_locale();
+    let mut twofactor = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Email, conn)
+        .await
+        .map_res(crate::i18n::two_factor_not_found(&locale))?;
     let Some(issued_token) = &email_data.last_token else {
         err!(
             format!("No token available! IP: {ip}"),
@@ -373,14 +394,14 @@ impl EmailTokenData {
         if let Ok(x) = res {
             Ok(x)
         } else {
-            err!("Could not decode EmailTokenData from string")
+            err!(crate::i18n::two_factor_decode_email_token_data_failed(&CONFIG.default_locale()))
         }
     }
 }
 
 pub async fn activate_email_2fa(user: &User, conn: &DbConn) -> EmptyResult {
     if user.verified_at.is_none() {
-        err!("Auto-enabling of email 2FA failed because the users email address has not been verified!");
+        err!(crate::i18n::two_factor_auto_enable_email_requires_verified(&CONFIG.default_locale()));
     }
     // The token is set when the first code is sent
     let twofactor_data = EmailTokenData::new(user.email.clone(), None);
@@ -412,7 +433,7 @@ pub async fn find_and_activate_email_2fa(user_id: &UserId, conn: &DbConn) -> Emp
     if let Some(user) = User::find_by_uuid(user_id, conn).await {
         activate_email_2fa(&user, conn).await
     } else {
-        err!("User not found!");
+        err!(crate::i18n::two_factor_user_not_found_exclam(&CONFIG.default_locale()));
     }
 }
 

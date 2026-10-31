@@ -1,4 +1,4 @@
-Emergency access request for {{{grantor_name}}} approved
+{{t "tpl.email.ea_recovery_approved.subject_prefix" locale=lang}} {{{grantor_name}}} {{t "tpl.email.ea_recovery_approved.subject_suffix" locale=lang}}
 <!---------------->
-{{grantor_name}} has approved your emergency access request. You may now login on the web vault ({{url}}) and access their account.
+{{grantor_name}} {{t "tpl.email.ea_recovery_approved.body_intro_mid" locale=lang}} ({{url}}) {{t "tpl.email.ea_recovery_approved.body_intro_suffix" locale=lang}}
 {{> email/email_footer_text }}

@@ -24,10 +24,10 @@ pub fn make_http_request(method: reqwest::Method, url: &str) -> Result<reqwest::
         LazyLock::new(|| get_reqwest_client_builder(true).build().expect("Failed to build client"));
 
     let Ok(url) = url::Url::parse(url) else {
-        err!("Invalid URL");
+        err!(crate::i18n::api_invalid_url(&CONFIG.default_locale()));
     };
     let Some(host) = url.host() else {
-        err!("Invalid host");
+        err!(crate::i18n::api_invalid_host(&CONFIG.default_locale()));
     };
 
     should_block_host(&host)?;

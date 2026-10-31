@@ -31,9 +31,10 @@ struct EventRange {
 }
 
 impl EventRange {
-    fn date_range(&self) -> ApiResult<(NaiveDateTime, NaiveDateTime)> {
-        let start_date = parse_date(&self.start).map_res("Invalid start date")?;
-        let end_date = parse_date(self.continuation_token.as_ref().unwrap_or(&self.end)).map_res("Invalid end date")?;
+    fn date_range(&self, locale: &str) -> ApiResult<(NaiveDateTime, NaiveDateTime)> {
+        let start_date = parse_date(&self.start).map_res(crate::i18n::api_invalid_start_date(locale))?;
+        let end_date = parse_date(self.continuation_token.as_ref().unwrap_or(&self.end))
+            .map_res(crate::i18n::api_invalid_end_date(locale))?;
         Ok((start_date, end_date))
     }
 }
@@ -41,14 +42,16 @@ impl EventRange {
 // Upstream: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Controllers/EventsController.cs#L87
 #[get("/organizations/<org_id>/events?<data..>")]
 async fn get_org_events(org_id: OrganizationId, data: EventRange, headers: AdminHeaders, conn: DbConn) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
 
     // Return an empty vec when we org events are disabled.
     // This prevents client errors
     let events_json: Vec<Value> = if CONFIG.org_events_enabled() {
-        let (start_date, end_date) = data.date_range()?;
+        let (start_date, end_date) = data.date_range(locale)?;
 
         Event::find_by_organization_uuid(&org_id, &start_date, &end_date, &conn)
             .await
@@ -73,7 +76,7 @@ async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Heade
     let events_json: Vec<Value> = if CONFIG.org_events_enabled()
         && Membership::user_has_ge_admin_access_to_cipher(&headers.user.uuid, &cipher_id, &conn).await
     {
-        let (start_date, end_date) = data.date_range()?;
+        let (start_date, end_date) = data.date_range(&headers.locale)?;
 
         Event::find_by_cipher_uuid(&cipher_id, &start_date, &end_date, &conn).await.iter().map(Event::to_json).collect()
     } else {
@@ -95,13 +98,15 @@ async fn get_user_events(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     // Return an empty vec when we org events are disabled.
     // This prevents client errors
     let events_json: Vec<Value> = if CONFIG.org_events_enabled() {
-        let (start_date, end_date) = data.date_range()?;
+        let (start_date, end_date) = data.date_range(locale)?;
 
         Event::find_by_org_and_member(&org_id, &member_id, &start_date, &end_date, &conn)
             .await
@@ -162,7 +167,7 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
     }
 
     for event in data.iter() {
-        let event_date = parse_date(&event.date).map_res("Invalid event date")?;
+        let event_date = parse_date(&event.date).map_res(crate::i18n::api_invalid_event_date(&headers.locale))?;
         // Only the event types upstream accepts from clients, the rest are written server-side.
         match event.r#type {
             t if t == EventType::UserClientExportedVault as i32 => {

@@ -70,6 +70,7 @@ pub struct User {
     pub avatar_color: Option<String>,
 
     pub external_id: Option<String>, // Todo: Needs to be removed in the future, this is not used anymore.
+    pub locale: Option<String>,
 
     pub key_id: Option<KeyId>,
 }
@@ -157,6 +158,7 @@ impl User {
             avatar_color: None,
 
             external_id: None, // Todo: Needs to be removed in the future, this is not used anymore.
+            locale: None,
 
             key_id: None,
         }
@@ -316,7 +318,10 @@ impl User {
             "emailVerified": self.verified(),
             "premium": true,
             "premiumFromOrganization": false,
-            "culture": "en-US",
+            "culture": self
+                .locale
+                .as_deref()
+                .map_or_else(|| "en-US".to_owned(), crate::i18n::to_client_culture),
             "twoFactorEnabled": twofactor_enabled,
             "key": self.akey,
             "privateKey": self.private_key,
@@ -335,7 +340,7 @@ impl User {
 
     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
         if !crate::util::is_valid_email(&self.email) {
-            err!(format!("User email {} is not a valid email address", self.email.escape_debug()))
+            err!(crate::i18n::db_user_email_not_valid(&CONFIG.default_locale()), self.email.escape_debug().to_string())
         }
 
         self.updated_at = Utc::now().naive_utc();
@@ -348,7 +353,7 @@ impl User {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving user")
+                    .map_res(crate::i18n::db_error_saving_user(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(users::table) // Insert or update
@@ -357,7 +362,7 @@ impl User {
                     .do_update()
                     .set(&*self)
                     .execute(conn)
-                    .map_res("Error saving user")
+                    .map_res(crate::i18n::db_error_saving_user(&CONFIG.default_locale()))
             }
         }
     }
@@ -367,7 +372,7 @@ impl User {
             if member.atype == MembershipType::Owner
                 && Membership::count_confirmed_by_org_and_type(&member.org_uuid, MembershipType::Owner, conn).await <= 1
             {
-                err!("Can't delete last owner")
+                err!(crate::i18n::org_cannot_delete_last_owner(&CONFIG.default_locale()))
             }
         }
 
@@ -385,7 +390,9 @@ impl User {
         Invitation::take(&self.email, conn).await; // Delete invitation if any
 
         conn.run(move |conn| {
-            diesel::delete(users::table.filter(users::uuid.eq(&self.uuid))).execute(conn).map_res("Error deleting user")
+            diesel::delete(users::table.filter(users::uuid.eq(self.uuid)))
+                .execute(conn)
+                .map_res(crate::i18n::db_error_deleting_user(&CONFIG.default_locale()))
         })
         .await
     }
@@ -401,7 +408,7 @@ impl User {
 
         conn.run(move |conn| {
             retry(|| diesel::update(users::table).set(users::updated_at.eq(updated_at)).execute(conn), 10)
-                .map_res("Error updating revision date for all users")
+                .map_res(crate::i18n::db_error_updating_revision_date_for_all_users(&CONFIG.default_locale()))
         })
         .await
     }
@@ -422,7 +429,7 @@ impl User {
                 },
                 10,
             )
-            .map_res("Error updating user revision")
+            .map_res(crate::i18n::db_error_updating_user_revision(&CONFIG.default_locale()))
         })
         .await
     }
@@ -484,7 +491,10 @@ impl Invitation {
 
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         if !crate::util::is_valid_email(&self.email) {
-            err!(format!("Invitation email {} is not a valid email address", self.email.escape_debug()))
+            err!(
+                crate::i18n::db_invitation_email_not_valid(&CONFIG.default_locale()),
+                self.email.escape_debug().to_string()
+            )
         }
 
         db_run! { conn:
@@ -496,7 +506,7 @@ impl Invitation {
                     .on_conflict(diesel::dsl::DuplicatedKeys)
                     .do_nothing()
                     .execute(conn)
-                    .map_res("Error saving invitation")
+                    .map_res(crate::i18n::db_error_saving_invitation(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(invitations::table)
@@ -504,7 +514,7 @@ impl Invitation {
                     .on_conflict(invitations::email)
                     .do_nothing()
                     .execute(conn)
-                    .map_res("Error saving invitation")
+                    .map_res(crate::i18n::db_error_saving_invitation(&CONFIG.default_locale()))
             }
         }
     }
@@ -513,7 +523,7 @@ impl Invitation {
         conn.run(move |conn| {
             diesel::delete(invitations::table.filter(invitations::email.eq(self.email)))
                 .execute(conn)
-                .map_res("Error deleting invitation")
+                .map_res(crate::i18n::db_error_deleting_invitation(&CONFIG.default_locale()))
         })
         .await
     }
@@ -579,13 +589,13 @@ impl SsoUser {
                 diesel::insert_into(sso_users::table)
                     .values(self)
                     .execute(conn)
-                    .map_res("Error saving SSO user")
+                    .map_res(crate::i18n::db_error_saving_sso_user(&CONFIG.default_locale()))
             }
             postgresql, sqlite {
                 diesel::insert_into(sso_users::table)
                     .values(self)
                     .execute(conn)
-                    .map_res("Error saving SSO user")
+                    .map_res(crate::i18n::db_error_saving_sso_user(&CONFIG.default_locale()))
             }
         }
     }
@@ -620,7 +630,7 @@ impl SsoUser {
         conn.run(move |conn| {
             diesel::delete(sso_users::table.filter(sso_users::user_uuid.eq(user_uuid)))
                 .execute(conn)
-                .map_res("Error deleting sso user")
+                .map_res(crate::i18n::db_error_deleting_sso_user(&CONFIG.default_locale()))
         })
         .await
     }

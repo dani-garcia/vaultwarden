@@ -1,6 +1,6 @@
-Emergency access request by {{{grantee_name}}} initiated
+{{t "tpl.email.ea_recovery_initiated.subject_prefix" locale=lang}} {{{grantee_name}}} {{t "tpl.email.ea_recovery_initiated.subject_suffix" locale=lang}}
 <!---------------->
-{{grantee_name}} has initiated an emergency access request to {{atype}} your account. You may login on the web vault ({{url}}) and manually approve or reject this request.
+{{grantee_name}} {{t "tpl.email.ea_recovery_initiated.body_intro_mid" locale=lang}} {{atype}} {{t "tpl.email.ea_recovery_initiated.body_intro_suffix_prefix" locale=lang}} ({{url}}) {{t "tpl.email.ea_recovery_initiated.body_intro_suffix" locale=lang}}
 
-If you do nothing, the request will automatically be approved after {{wait_time_days}} day(s).
+{{t "tpl.email.ea_recovery_initiated.body_wait_prefix" locale=lang}} {{wait_time_days}} {{t "tpl.email.ea_recovery_initiated.body_wait_suffix" locale=lang}}
 {{> email/email_footer_text }}

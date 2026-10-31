@@ -60,7 +60,7 @@ impl TwoFactorIncomplete {
                     twofactor_incomplete::ip_address.eq(ip.ip.to_string()),
                 ))
                 .execute(conn)
-                .map_res("Error adding twofactor_incomplete record")
+                .map_res(crate::i18n::db_error_adding_twofactor_incomplete_record(&CONFIG.default_locale()))
         })
         .await
     }
@@ -106,7 +106,7 @@ impl TwoFactorIncomplete {
                     .filter(twofactor_incomplete::device_uuid.eq(device_uuid)),
             )
             .execute(conn)
-            .map_res("Error in twofactor_incomplete::delete_by_user_and_device()")
+            .map_res(crate::i18n::db_error_delete_by_user_and_device_twofactor_incomplete(&CONFIG.default_locale()))
         })
         .await
     }
@@ -115,7 +115,7 @@ impl TwoFactorIncomplete {
         conn.run(move |conn| {
             diesel::delete(twofactor_incomplete::table.filter(twofactor_incomplete::user_uuid.eq(user_uuid)))
                 .execute(conn)
-                .map_res("Error in twofactor_incomplete::delete_all_by_user()")
+                .map_res(crate::i18n::db_error_delete_all_by_user_twofactor_incomplete(&CONFIG.default_locale()))
         })
         .await
     }

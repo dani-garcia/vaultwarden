@@ -1,12 +1,12 @@
-Admin account recovery from {{org_name}} organization
+{{t "tpl.email.admin_account_recovery.subject_prefix" locale=lang}} {{org_name}} {{t "tpl.email.admin_account_recovery.subject_suffix" locale=lang}}
 <!---------------->
 {{#if reset_password}}
-The master password for {{user_name}} has been changed.
+{{t "tpl.email.admin_account_recovery.body_reset_password_prefix" locale=lang}} {{user_name}} {{t "tpl.email.admin_account_recovery.body_reset_password_suffix" locale=lang}}
 {{/if}}
 {{#if reset_2fa}}
-Your two-step verification providers have been reset.{{#if fallback_2fa_email}} Email two factor has been activated as a fallback.{{/if}}
+{{t "tpl.email.admin_account_recovery.body_reset_2fa" locale=lang}}{{#if fallback_2fa_email}} {{t "tpl.email.admin_account_recovery.body_fallback_2fa" locale=lang}}{{/if}}
 {{/if}}
 
-If you did not initiate this request, please reach out to your administrator immediately.
+{{t "tpl.email.admin_account_recovery.body_ignore" locale=lang}}
 
 {{> email/email_footer_text }}

@@ -128,16 +128,23 @@ struct FullCollectionData {
 
 impl FullCollectionData {
     pub async fn validate(&self, org_id: &OrganizationId, conn: &DbConn) -> EmptyResult {
+        let locale = &CONFIG.default_locale();
         let org_groups = Group::find_by_organization(org_id, conn).await;
         let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
-            err!("Invalid group", format!("Group {} does not belong to organization {}!", e.id, org_id))
+            err!(
+                crate::i18n::org_invalid_group(locale),
+                format!("Group {} does not belong to organization {}!", e.id, org_id)
+            )
         }
 
         let org_memberships = Membership::find_by_org(org_id, conn).await;
         let org_membership_ids: HashSet<&MembershipId> = org_memberships.iter().map(|m| &m.uuid).collect();
         if let Some(e) = self.users.iter().find(|m| !org_membership_ids.contains(&m.id)) {
-            err!("Invalid member", format!("Member {} does not belong to organization {}!", e.id, org_id))
+            err!(
+                crate::i18n::org_invalid_member(locale),
+                format!("Member {} does not belong to organization {}!", e.id, org_id)
+            )
         }
 
         Ok(())
@@ -183,13 +190,13 @@ struct BulkMembershipIds {
 
 #[post("/organizations", data = "<data>")]
 async fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if !CONFIG.is_org_creation_allowed(&headers.user.email) {
-        err!("User not allowed to create organizations")
+        err!(crate::i18n::org_user_not_allowed_create(locale))
     }
     if OrgPolicy::is_applicable_to_user(&headers.user.uuid, OrgPolicyType::SingleOrg, None, &conn).await {
-        err!(
-            "You may not create an organization. You belong to an organization which has a policy that prohibits you from being a member of any other organization."
-        )
+        err!(crate::i18n::org_single_org_policy_prohibits_membership(locale))
     }
 
     let data: OrgData = data.into_inner();
@@ -222,30 +229,34 @@ async fn delete_organization(
     headers: OwnerHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let data: PasswordOrOtpData = data.into_inner();
 
     data.validate(&headers.user, true, &conn).await?;
 
     match Organization::find_by_uuid(&org_id, &conn).await {
-        None => err!("Organization not found"),
+        None => err!(crate::i18n::org_not_found(locale)),
         Some(org) => org.delete(&conn).await,
     }
 }
 
 #[post("/organizations/<org_id>/leave")]
 async fn leave_organization(org_id: OrganizationId, headers: OrgMemberHeaders, conn: DbConn) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if headers.membership.status != MembershipStatus::Confirmed as i32 {
-        err!("You need to be a Member of the Organization to call this endpoint")
+        err!(crate::i18n::org_member_required(locale))
     }
     let membership = headers.membership;
 
     if membership.atype == MembershipType::Owner
         && Membership::count_confirmed_by_org_and_type(&org_id, MembershipType::Owner, &conn).await <= 1
     {
-        err!("The last owner can't leave")
+        err!(crate::i18n::org_cannot_leave_last_owner(locale))
     }
 
     log_event(
@@ -264,13 +275,15 @@ async fn leave_organization(org_id: OrganizationId, headers: OrgMemberHeaders, c
 
 #[get("/organizations/<org_id>")]
 async fn get_organization(org_id: OrganizationId, headers: OwnerHeaders, conn: DbConn) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     if let Some(organization) = Organization::find_by_uuid(&org_id, &conn).await {
         Ok(Json(organization.to_json()))
     } else {
-        err!("Can't find organization details")
+        err!(crate::i18n::org_not_found(locale))
     }
 }
 
@@ -281,14 +294,16 @@ async fn put_organization(
     data: Json<OrganizationUpdateData>,
     conn: DbConn,
 ) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
 
     let data: OrganizationUpdateData = data.into_inner();
 
     let Some(mut org) = Organization::find_by_uuid(&org_id, &conn).await else {
-        err!("Organization not found")
+        err!(crate::i18n::org_not_found(locale))
     };
 
     org.name = data.name;
@@ -356,8 +371,10 @@ async fn get_auto_enroll_status(identifier: &str, headers: Headers, conn: DbConn
 
 #[get("/organizations/<org_id>/collections")]
 async fn get_org_collections(org_id: OrganizationId, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
 
     if !headers.membership.has_full_access() {
@@ -373,12 +390,14 @@ async fn get_org_collections(org_id: OrganizationId, headers: ManagerHeadersLoos
 
 #[get("/organizations/<org_id>/collections/details")]
 async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
 
     let Some(member) = Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await else {
-        err!("User is not part of organization")
+        err!(crate::i18n::org_user_not_part(locale))
     };
 
     // get all collection memberships for the current organization
@@ -471,14 +490,16 @@ async fn post_organization_collections(
     data: Json<FullCollectionData>,
     conn: DbConn,
 ) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let data: FullCollectionData = data.into_inner();
     data.validate(&org_id, &conn).await?;
 
     if headers.membership.atype == MembershipType::Manager && !headers.membership.access_all {
-        err!("You don't have permission to create collections")
+        err!(crate::i18n::org_no_permission_create_collections(locale))
     }
 
     let collection = Collection::new(org_id.clone(), data.name, data.external_id);
@@ -503,7 +524,7 @@ async fn post_organization_collections(
 
     for user in data.users {
         let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await else {
-            err!("User is not part of organization")
+            err!(crate::i18n::org_user_not_part(locale))
         };
 
         if member.access_all {
@@ -539,29 +560,34 @@ async fn post_bulk_access_collections(
     data: Json<BulkCollectionAccessData>,
     conn: DbConn,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let data: BulkCollectionAccessData = data.into_inner();
 
     if Organization::find_by_uuid(&org_id, &conn).await.is_none() {
-        err!("Can't find organization details")
+        err!(crate::i18n::org_not_found(locale))
     }
 
     // The collections and members are checked below, the groups only here.
     let org_groups = Group::find_by_organization(&org_id, &conn).await;
     let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
     if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
-        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id, org_id))
+        err!(
+            crate::i18n::org_invalid_group(locale),
+            format!("Group {} does not belong to organization {}!", g.id, org_id)
+        )
     }
 
     for col_id in data.collection_ids {
         let Some(collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &conn).await else {
-            err!("Collection not found")
+            err!(crate::i18n::org_collection_not_found(locale))
         };
 
         if !collection.is_manageable_by_user(&headers.membership.user_uuid, &conn).await {
-            err!("Collection not found", "The current user isn't a manager for this collection")
+            err!(crate::i18n::org_collection_not_found(locale), "The current user isn't a manager for this collection")
         }
 
         // update collection modification date
@@ -588,7 +614,7 @@ async fn post_bulk_access_collections(
         CollectionUser::delete_all_by_collection(&col_id, &conn).await?;
         for user in &data.users {
             let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await else {
-                err!("User is not part of organization")
+                err!(crate::i18n::org_user_not_part(locale))
             };
 
             if member.access_all {
@@ -611,18 +637,20 @@ async fn put_organization_collection_update(
     data: Json<FullCollectionData>,
     conn: DbConn,
 ) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let data: FullCollectionData = data.into_inner();
     data.validate(&org_id, &conn).await?;
 
     if Organization::find_by_uuid(&org_id, &conn).await.is_none() {
-        err!("Can't find organization details")
+        err!(crate::i18n::org_not_found(locale))
     }
 
     let Some(mut collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &conn).await else {
-        err!("Collection not found")
+        err!(crate::i18n::org_collection_not_found(locale))
     };
 
     collection.name = data.name;
@@ -656,7 +684,7 @@ async fn put_organization_collection_update(
 
     for user in data.users {
         let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await else {
-            err!("User is not part of organization")
+            err!(crate::i18n::org_user_not_part(locale))
         };
 
         if member.access_all {
@@ -676,11 +704,16 @@ async fn delete_organization_collection_impl(
     headers: &ManagerHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != &headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let Some(collection) = Collection::find_by_uuid_and_org(col_id, org_id, conn).await else {
-        err!("Collection not found", "Collection does not exist or does not belong to this organization")
+        err!(
+            crate::i18n::org_collection_not_found(locale),
+            "Collection does not exist or does not belong to this organization"
+        )
     };
     log_event(
         EventType::CollectionDeleted,
@@ -718,8 +751,10 @@ async fn bulk_delete_organization_collections(
     data: Json<BulkCollectionIds>,
     conn: DbConn,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let data: BulkCollectionIds = data.into_inner();
 
@@ -740,18 +775,20 @@ async fn get_org_collection_detail(
     headers: ManagerHeaders,
     conn: DbConn,
 ) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     match Collection::find_by_uuid_and_user(&col_id, headers.user.uuid.clone(), &conn).await {
-        None => err!("Collection not found"),
+        None => err!(crate::i18n::org_collection_not_found(locale)),
         Some(collection) => {
             if collection.org_uuid != org_id {
-                err!("Collection is not owned by organization")
+                err!(crate::i18n::org_collection_not_found(locale), "Collection is not owned by organization")
             }
 
             let Some(member) = Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await else {
-                err!("User is not part of organization")
+                err!(crate::i18n::org_user_not_part(locale))
             };
 
             let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
@@ -805,12 +842,17 @@ async fn get_collection_users(
     headers: ManagerHeaders,
     conn: DbConn,
 ) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     // Get org and collection, check that collection is from org
     let Some(collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &conn).await else {
-        err!("Collection not found in Organization")
+        err!(crate::i18n::org_collection_not_found(locale), "Collection not found in Organization")
     };
 
     let mut member_list = Vec::new();
@@ -899,7 +941,10 @@ async fn get_members(
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
 
     if !headers.membership.has_full_access() {
@@ -934,17 +979,22 @@ async fn post_org_keys(
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     let data: OrgKeyData = data.into_inner();
 
     let mut org = if let Some(organization) = Organization::find_by_uuid(&org_id, &conn).await {
         if organization.private_key.is_some() && organization.public_key.is_some() {
-            err!("Organization Keys already exist")
+            err!(crate::i18n::org_keys_already_exist(
+                headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())
+            ))
         }
         organization
     } else {
-        err!("Can't find organization details")
+        err!(crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())))
     };
 
     org.private_key = Some(data.encrypted_private_key);
@@ -972,16 +1022,23 @@ struct InviteData {
 
 impl InviteData {
     async fn validate(&self, org_id: &OrganizationId, conn: &DbConn) -> EmptyResult {
+        let locale = &CONFIG.default_locale();
         let org_collections = Collection::find_by_organization(org_id, conn).await;
         let org_collection_ids: HashSet<&CollectionId> = org_collections.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.collections.iter().flatten().find(|c| !org_collection_ids.contains(&c.id)) {
-            err!("Invalid collection", format!("Collection {} does not belong to organization {}!", e.id, org_id))
+            err!(
+                crate::i18n::org_invalid_collection(locale),
+                format!("Collection {} does not belong to organization {}!", e.id, org_id)
+            )
         }
 
         let org_groups = Group::find_by_organization(org_id, conn).await;
         let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.groups.iter().find(|g| !org_group_ids.contains(g)) {
-            err!("Invalid group", format!("Group {} does not belong to organization {}!", e, org_id))
+            err!(
+                crate::i18n::org_invalid_group(locale),
+                format!("Group {} does not belong to organization {}!", e, org_id)
+            )
         }
 
         Ok(())
@@ -995,8 +1052,10 @@ async fn send_invite(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let data: InviteData = data.into_inner();
     data.validate(&org_id, &conn).await?;
@@ -1008,11 +1067,11 @@ async fn send_invite(
     let new_type = if let Some(new_type) = MembershipType::from_str(raw_type) {
         new_type as i32
     } else {
-        err!("Invalid type")
+        err!(crate::i18n::org_invalid_type(locale))
     };
 
     if new_type != MembershipType::User && headers.membership_type != MembershipType::Owner {
-        err!("Only Owners can invite Managers, Admins or Owners")
+        err!(crate::i18n::org_only_owners_invite_privileged(locale))
     }
 
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
@@ -1030,11 +1089,14 @@ async fn send_invite(
         let user = match User::find_by_mail(email, &conn).await {
             None => {
                 if !CONFIG.invitations_allowed() {
-                    err!(format!("User does not exist: {}", email.escape_debug()))
+                    err!(crate::i18n::org_user_not_found(locale), email.escape_debug().to_string())
                 }
 
                 if !CONFIG.is_email_domain_allowed(email) {
-                    err!("Email domain not eligible for invitations")
+                    err!(
+                        crate::i18n::accounts_email_domain_not_allowed(locale),
+                        "Email domain not eligible for invitations"
+                    )
                 }
 
                 if !CONFIG.mail_enabled() {
@@ -1048,7 +1110,7 @@ async fn send_invite(
             }
             Some(user) => {
                 if Membership::find_by_user_and_org(&user.uuid, &org_id, &conn).await.is_some() {
-                    err!(format!("User already in organization: {}", email.escape_debug()))
+                    err!(crate::i18n::org_user_already_in_organization(locale), email.escape_debug().to_string())
                 }
 
                 if !CONFIG.mail_enabled() {
@@ -1074,7 +1136,7 @@ async fn send_invite(
             let org_name = if let Some(org) = Organization::find_by_uuid(&org_id, &conn).await {
                 org.name
             } else {
-                err!("Error looking up organization")
+                err!(crate::i18n::org_error_lookup_organization(locale), "Error looking up organization")
             };
 
             if let Err(e) = mail::send_invite(
@@ -1093,7 +1155,7 @@ async fn send_invite(
                     new_member.delete(&conn).await?;
                 }
 
-                err!(format!("Error sending invite: {e:?} "));
+                err!(crate::i18n::org_error_sending_invite(locale), format!("{e:?}"));
             }
         }
 
@@ -1112,7 +1174,9 @@ async fn send_invite(
         if !access_all {
             for col in data.collections.iter().flatten() {
                 match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn).await {
-                    None => err!("Collection not found in Organization"),
+                    None => {
+                        err!(crate::i18n::org_collection_not_found(locale), "Collection not found in Organization")
+                    }
                     Some(collection) => {
                         CollectionUser::save(
                             &user.uuid,
@@ -1130,7 +1194,7 @@ async fn send_invite(
 
         for group_id in &data.groups {
             if Group::find_by_uuid_and_org(group_id, &org_id, &conn).await.is_none() {
-                err!("Group not found in Organization")
+                err!(crate::i18n::org_group_not_found(locale), "Group not found in Organization")
             }
             let mut group_entry = GroupUser::new(group_id.clone(), new_member.uuid.clone());
             group_entry.save(&conn).await?;
@@ -1147,8 +1211,10 @@ async fn bulk_reinvite_members(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let data: BulkMembershipIds = data.into_inner();
 
@@ -1185,8 +1251,10 @@ async fn reinvite_member(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     reinvite_member_impl(&org_id, &member_id, &headers.user.email, &conn).await
 }
@@ -1197,26 +1265,30 @@ async fn reinvite_member_impl(
     invited_by_email: &str,
     conn: &DbConn,
 ) -> EmptyResult {
+    let locale = User::find_by_mail(invited_by_email, conn)
+        .await
+        .and_then(|u| u.locale)
+        .unwrap_or_else(|| crate::i18n::normalize_locale(&CONFIG.default_locale()));
     let Some(member) = Membership::find_by_uuid_and_org(member_id, org_id, conn).await else {
-        err!("The user hasn't been invited to the organization.")
+        err!(crate::i18n::org_user_not_invited(&locale))
     };
 
     if member.status != MembershipStatus::Invited as i32 {
-        err!("The user is already accepted or confirmed to the organization")
+        err!(crate::i18n::org_user_already_accepted_or_confirmed(&locale))
     }
 
     let Some(user) = User::find_by_uuid(&member.user_uuid, conn).await else {
-        err!("User not found.")
+        err!(crate::i18n::org_user_not_found(&locale))
     };
 
     if !CONFIG.invitations_allowed() && user.password_hash.is_empty() {
-        err!("Invitations are not allowed.")
+        err!(crate::i18n::org_invitations_not_allowed(&locale))
     }
 
     let org_name = if let Some(org) = Organization::find_by_uuid(org_id, conn).await {
         org.name
     } else {
-        err!("Error looking up organization.")
+        err!(crate::i18n::org_error_lookup_organization(&locale))
     };
 
     if CONFIG.mail_enabled() {
@@ -1251,21 +1323,26 @@ async fn accept_invite(
 ) -> EmptyResult {
     // The web-vault passes org_id and member_id in the URL, but we are just reading them from the JWT instead
     let data: AcceptData = data.into_inner();
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     let claims = decode_invite(&data.token)?;
 
     // Don't allow other users from accepting an invitation.
     if !claims.email.eq(&headers.user.email) {
-        err!("Invitation was issued to a different account", "Claim does not match user_id")
+        err!(
+            crate::i18n::org_invitation_issued_to_different_account(locale),
+            crate::i18n::org_claim_mismatch_user_id(locale)
+        )
     }
 
     // If a claim org_id does not match the one in from the URI, something is wrong.
     if !claims.org_id.eq(&org_id) {
-        err!("Error accepting the invitation", "Claim does not match the org_id")
+        err!(crate::i18n::org_error_accepting_invitation(locale), crate::i18n::org_claim_mismatch_org_id(locale))
     }
 
     // If a claim does not have a member_id or it does not match the one in from the URI, something is wrong.
     if !claims.member_id.eq(&member_id) {
-        err!("Error accepting the invitation", "Claim does not match the member_id")
+        err!(crate::i18n::org_error_accepting_invitation(locale), crate::i18n::org_claim_mismatch_member_id(locale))
     }
 
     let member_id = &claims.member_id;
@@ -1274,11 +1351,11 @@ async fn accept_invite(
     // skip invitation logic when we were invited via the /admin panel
     if **member_id != FAKE_ADMIN_UUID {
         let Some(mut membership) = Membership::find_by_uuid_and_org(member_id, &claims.org_id, &conn).await else {
-            err!("Error accepting the invitation")
+            err!(crate::i18n::org_error_accepting_invitation(locale))
         };
 
         let reset_password_key = match OrgPolicy::org_is_reset_password_auto_enroll(&membership.org_uuid, &conn).await {
-            true if data.reset_password_key.is_none() => err!("Reset password key is required, but not provided."),
+            true if data.reset_password_key.is_none() => err!(crate::i18n::org_reset_password_key_required(locale)),
             true => data.reset_password_key,
             false => None,
         };
@@ -1290,7 +1367,8 @@ async fn accept_invite(
     } else if CONFIG.mail_enabled() {
         // User was invited from /admin, so they are automatically confirmed
         let org_name = CONFIG.invitation_org_name();
-        mail::send_invite_confirmed(&claims.email, &org_name).await?;
+        let locale = User::find_by_mail(&claims.email, &conn).await.and_then(|u| u.locale);
+        mail::send_invite_confirmed_for_locale(&claims.email, &org_name, locale.as_deref()).await?;
     }
 
     Ok(())
@@ -1317,8 +1395,10 @@ async fn bulk_confirm_invite(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let data = data.into_inner();
 
@@ -1327,7 +1407,7 @@ async fn bulk_confirm_invite(
         Some(keys) => {
             for invite in keys {
                 let Some(member_id) = invite.id else {
-                    err!("Member id is required")
+                    err!(crate::i18n::org_member_id_required(locale))
                 };
                 let user_key = invite.key.unwrap_or_default();
                 let err_msg = match confirm_invite_impl(&org_id, &member_id, &user_key, &headers, &conn, &nt).await {
@@ -1379,23 +1459,25 @@ async fn confirm_invite_impl(
     conn: &DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != &headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     if key.is_empty() || member_id.is_empty() {
-        err!("Key or UserId is not set, unable to process request");
+        err!(crate::i18n::org_key_or_userid_not_set(locale));
     }
 
     let Some(mut member_to_confirm) = Membership::find_by_uuid_and_org(member_id, org_id, conn).await else {
-        err!("The specified user isn't a member of the organization")
+        err!(crate::i18n::org_user_not_member(locale))
     };
 
     if member_to_confirm.atype != MembershipType::User && headers.membership_type != MembershipType::Owner {
-        err!("Only Owners can confirm Managers, Admins or Owners")
+        err!(crate::i18n::org_only_owners_confirm_privileged(locale))
     }
 
     if member_to_confirm.status != MembershipStatus::Accepted as i32 {
-        err!("User in invalid state")
+        err!(crate::i18n::org_user_invalid_state(locale))
     }
 
     member_to_confirm.status = MembershipStatus::Confirmed as i32;
@@ -1419,14 +1501,12 @@ async fn confirm_invite_impl(
         let org_name = if let Some(org) = Organization::find_by_uuid(org_id, conn).await {
             org.name
         } else {
-            err!("Error looking up organization.")
+            err!(crate::i18n::org_error_lookup_organization(locale))
         };
-        let address = if let Some(user) = User::find_by_uuid(&member_to_confirm.user_uuid, conn).await {
-            user.email
-        } else {
-            err!("Error looking up user.")
+        let Some(user) = User::find_by_uuid(&member_to_confirm.user_uuid, conn).await else {
+            err!(crate::i18n::org_error_lookup_user(locale))
         };
-        mail::send_invite_confirmed(&address, &org_name).await?;
+        mail::send_invite_confirmed_for_locale(&user.email, &org_name, user.locale.as_deref()).await?;
     }
 
     let save_result = member_to_confirm.save(conn).await;
@@ -1440,8 +1520,10 @@ async fn confirm_invite_impl(
 
 #[get("/organizations/<org_id>/users/mini-details", rank = 1)]
 async fn get_org_user_mini_details(org_id: OrganizationId, headers: ManagerHeadersLoose, conn: DbConn) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let mut members_json = Vec::new();
     for m in Membership::find_by_org(&org_id, &conn).await {
@@ -1463,11 +1545,13 @@ async fn get_user(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let Some(user) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
-        err!("The specified user isn't a member of the organization")
+        err!(crate::i18n::org_user_not_member(locale))
     };
 
     // In this case, when groups are requested we also need to include collections.
@@ -1496,8 +1580,10 @@ async fn edit_member(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let data: EditUserData = data.into_inner();
 
@@ -1506,7 +1592,7 @@ async fn edit_member(
     let raw_type = &data.r#type.into_string();
     // MembershipType::from_str will convert custom (4) to manager (3)
     let Some(new_type) = MembershipType::from_str(raw_type) else {
-        err!("Invalid type")
+        err!(crate::i18n::org_invalid_type(locale))
     };
 
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
@@ -1519,18 +1605,18 @@ async fn edit_member(
             && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
     let Some(mut member_to_edit) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
-        err!("The specified user isn't member of the organization")
+        err!(crate::i18n::org_user_not_member(locale))
     };
 
     if new_type != member_to_edit.atype
         && (member_to_edit.atype >= MembershipType::Admin || new_type >= MembershipType::Admin)
         && headers.membership_type != MembershipType::Owner
     {
-        err!("Only Owners can grant and remove Admin or Owner privileges")
+        err!(crate::i18n::org_only_owners_grant_remove_privileged(locale))
     }
 
     if member_to_edit.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
-        err!("Only Owners can edit Owner users")
+        err!(crate::i18n::org_only_owners_edit_owner_users(locale))
     }
 
     if member_to_edit.atype == MembershipType::Owner
@@ -1539,7 +1625,7 @@ async fn edit_member(
     {
         // Removing owner permission, check that there is at least one other confirmed owner
         if Membership::count_confirmed_by_org_and_type(&org_id, MembershipType::Owner, &conn).await <= 1 {
-            err!("Can't delete the last owner")
+            err!(crate::i18n::org_cannot_delete_last_owner(locale))
         }
     }
 
@@ -1559,7 +1645,7 @@ async fn edit_member(
     if !access_all {
         for col in data.collections.iter().flatten() {
             match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn).await {
-                None => err!("Collection not found in Organization"),
+                None => err!(crate::i18n::org_collection_not_found(locale), "Collection not found in Organization"),
                 Some(collection) => {
                     CollectionUser::save(
                         &member_to_edit.user_uuid,
@@ -1579,7 +1665,7 @@ async fn edit_member(
 
     for group_id in data.groups.iter().flatten() {
         if Group::find_by_uuid_and_org(group_id, &org_id, &conn).await.is_none() {
-            err!("Group not found in Organization")
+            err!(crate::i18n::org_group_not_found(locale), "Group not found in Organization")
         }
         let mut group_entry = GroupUser::new(group_id.clone(), member_to_edit.uuid.clone());
         group_entry.save(&conn).await?;
@@ -1607,8 +1693,10 @@ async fn bulk_delete_member(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let data: BulkMembershipIds = data.into_inner();
 
@@ -1656,22 +1744,24 @@ async fn delete_member_impl(
     conn: &DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != &headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let Some(member_to_delete) = Membership::find_by_uuid_and_org(member_id, org_id, conn).await else {
-        err!("User to delete isn't member of the organization")
+        err!(crate::i18n::org_user_to_delete_not_member(locale))
     };
 
     if member_to_delete.atype != MembershipType::User && headers.membership_type != MembershipType::Owner {
-        err!("Only Owners can delete Admins or Owners")
+        err!(crate::i18n::org_only_owners_delete_admin_owner(locale))
     }
 
     if member_to_delete.atype == MembershipType::Owner && member_to_delete.status == MembershipStatus::Confirmed as i32
     {
         // Removing owner, check that there is at least one other confirmed owner
         if Membership::count_confirmed_by_org_and_type(org_id, MembershipType::Owner, conn).await <= 1 {
-            err!("Can't delete the last owner")
+            err!(crate::i18n::org_cannot_delete_last_owner(locale))
         }
     }
 
@@ -1710,7 +1800,10 @@ async fn bulk_public_keys(
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     let data: BulkMembershipIds = data.into_inner();
 
@@ -1784,11 +1877,14 @@ async fn post_org_import(
 ) -> EmptyResult {
     let org_id = query.organization_id;
     if org_id != headers.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     // OrgMemberHeaders also allows invited and accepted members, which are not allowed to import
     if headers.membership.status != MembershipStatus::Confirmed as i32 {
-        err!("You need to be a Member of the Organization to call this endpoint")
+        err!(crate::i18n::org_member_required(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())))
     }
     let data: ImportData = data.into_inner();
 
@@ -1883,7 +1979,7 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
     let data: BulkCollectionsData = data.into_inner();
 
     if Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &data.organization_id, &conn).await.is_none() {
-        err!("You need to be a Member of the Organization to call this endpoint")
+        err!(crate::i18n::org_member_required(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())))
     }
 
     // Get all the collection available to the user in one query
@@ -1935,7 +2031,10 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
 #[get("/organizations/<org_id>/policies")]
 async fn list_policies(org_id: OrganizationId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     let policies = OrgPolicy::find_by_org(&org_id, &conn).await;
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
@@ -1949,10 +2048,11 @@ async fn list_policies(org_id: OrganizationId, headers: AdminHeaders, conn: DbCo
 
 #[get("/organizations/<org_id>/policies/token?<token>")]
 async fn list_policies_token(org_id: OrganizationId, token: &str, conn: DbConn) -> JsonResult {
+    let locale = &CONFIG.default_locale();
     let invite = decode_invite(token)?;
 
     if invite.org_id != org_id {
-        err!("Token doesn't match request organization");
+        err!(crate::i18n::org_token_org_mismatch(locale));
     }
 
     // exit early when we have been invited via /admin panel
@@ -2001,11 +2101,14 @@ async fn get_master_password_policy(org_id: OrganizationId, _headers: OrgMemberH
 #[get("/organizations/<org_id>/policies/<pol_type>", rank = 3)]
 async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
 
     let Some(pol_type_enum) = OrgPolicyType::from_i32(pol_type) else {
-        err!("Invalid or unsupported policy type")
+        err!(crate::i18n::org_invalid_type(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())))
     };
 
     let policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await {
@@ -2040,12 +2143,15 @@ async fn put_policy(
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     let data: PolicyData = data.into_inner().policy;
 
     let Some(pol_type_enum) = OrgPolicyType::from_i32(pol_type) else {
-        err!("Invalid or unsupported policy type")
+        err!(crate::i18n::org_invalid_type(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())))
     };
 
     let current_policy = OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await;
@@ -2085,7 +2191,9 @@ async fn put_policy(
                 };
 
             if !single_org_policy_enabled {
-                err!("Single Organization policy is not enabled. It is mandatory for this policy to be enabled.")
+                err!(crate::i18n::org_single_org_policy_required_for_reset(
+                    headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())
+                ))
             }
         }
 
@@ -2098,7 +2206,9 @@ async fn put_policy(
                 };
 
             if reset_pw_policy_enabled {
-                err!("Account recovery policy is enabled. It is not allowed to disable this policy.")
+                err!(crate::i18n::org_account_recovery_policy_blocks_disable(
+                    headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())
+                ))
             }
         }
     }
@@ -2161,7 +2271,8 @@ async fn put_policy(
                     let org = Organization::find_by_uuid(&member.org_uuid, &conn).await.unwrap();
                     let user = User::find_by_uuid(&member.user_uuid, &conn).await.unwrap();
 
-                    mail::send_single_org_removed_from_org(&user.email, &org.name).await?;
+                    mail::send_single_org_removed_from_org_for_locale(&user.email, &org.name, user.locale.as_deref())
+                        .await?;
                 }
 
                 log_event(
@@ -2274,8 +2385,10 @@ async fn bulk_revoke_members(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let data = data.into_inner();
 
@@ -2316,21 +2429,23 @@ async fn revoke_member_impl(
     headers: &AdminHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != &headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     match Membership::find_by_uuid_and_org(member_id, org_id, conn).await {
         Some(mut member) if member.status > MembershipStatus::Revoked as i32 => {
             if member.user_uuid == headers.user.uuid {
-                err!("You cannot revoke yourself")
+                err!(crate::i18n::org_cannot_revoke_yourself(locale))
             }
             if member.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
-                err!("Only owners can revoke other owners")
+                err!(crate::i18n::org_only_owners_revoke_owners(locale))
             }
             if member.atype == MembershipType::Owner
                 && Membership::count_confirmed_by_org_and_type(org_id, MembershipType::Owner, conn).await <= 1
             {
-                err!("Organization must have at least one confirmed owner")
+                err!(crate::i18n::org_must_have_confirmed_owner(locale))
             }
 
             member.revoke();
@@ -2347,8 +2462,8 @@ async fn revoke_member_impl(
             )
             .await;
         }
-        Some(_) => err!("User is already revoked"),
-        None => err!("User not found in organization"),
+        Some(_) => err!(crate::i18n::org_user_already_revoked(locale)),
+        None => err!(crate::i18n::org_user_not_found_in_org(locale)),
     }
     Ok(())
 }
@@ -2382,8 +2497,10 @@ async fn bulk_restore_members(
     headers: AdminHeaders,
     conn: DbConn,
 ) -> JsonResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     let data = data.into_inner();
 
@@ -2419,16 +2536,18 @@ async fn restore_member_impl(
     headers: &AdminHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if org_id != &headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(crate::i18n::org_not_found(locale), "Organization id's do not match");
     }
     match Membership::find_by_uuid_and_org(member_id, org_id, conn).await {
         Some(mut member) if member.status < MembershipStatus::Accepted as i32 => {
             if member.user_uuid == headers.user.uuid {
-                err!("You cannot restore yourself")
+                err!(crate::i18n::org_cannot_restore_yourself(locale))
             }
             if member.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
-                err!("Only owners can restore other owners")
+                err!(crate::i18n::org_only_owners_restore_owners(locale))
             }
 
             member.restore();
@@ -2448,8 +2567,8 @@ async fn restore_member_impl(
             )
             .await;
         }
-        Some(_) => err!("User is already active"),
-        None => err!("User not found in organization"),
+        Some(_) => err!(crate::i18n::org_user_already_active(locale)),
+        None => err!(crate::i18n::org_user_not_found_in_org(locale)),
     }
     Ok(())
 }
@@ -2461,7 +2580,10 @@ async fn get_groups_data(
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
 
     // The details view (group→collection/user mappings) needs full org access; the plain list only
@@ -2544,16 +2666,23 @@ impl GroupRequest {
 
     /// Validate if all the collections and members belong to the provided organization
     pub async fn validate(&self, org_id: &OrganizationId, conn: &DbConn) -> EmptyResult {
+        let locale = &CONFIG.default_locale();
         let org_collections = Collection::find_by_organization(org_id, conn).await;
         let org_collection_ids: HashSet<&CollectionId> = org_collections.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.collections.iter().find(|c| !org_collection_ids.contains(&c.id)) {
-            err!("Invalid collection", format!("Collection {} does not belong to organization {}!", e.id, org_id))
+            err!(
+                crate::i18n::org_invalid_collection(locale),
+                format!("Collection {} does not belong to organization {}!", e.id, org_id)
+            )
         }
 
         let org_memberships = Membership::find_by_org(org_id, conn).await;
         let org_membership_ids: HashSet<&MembershipId> = org_memberships.iter().map(|m| &m.uuid).collect();
         if let Some(e) = self.users.iter().find(|m| !org_membership_ids.contains(m)) {
-            err!("Invalid member", format!("Member {} does not belong to organization {}!", e, org_id))
+            err!(
+                crate::i18n::org_invalid_member(locale),
+                format!("Member {} does not belong to organization {}!", e, org_id)
+            )
         }
 
         Ok(())
@@ -2583,10 +2712,13 @@ async fn post_groups(
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     if !CONFIG.org_groups_enabled() {
-        err!("Group support is disabled");
+        err!(crate::i18n::org_groups_disabled(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())));
     }
 
     let group_request = data.into_inner();
@@ -2617,14 +2749,20 @@ async fn put_group(
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     if !CONFIG.org_groups_enabled() {
-        err!("Group support is disabled");
+        err!(crate::i18n::org_groups_disabled(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())));
     }
 
     let Some(group) = Group::find_by_uuid_and_org(&group_id, &org_id, &conn).await else {
-        err!("Group not found", "Group uuid is invalid or does not belong to the organization")
+        err!(
+            crate::i18n::org_group_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Group uuid is invalid or does not belong to the organization"
+        )
     };
 
     let group_request = data.into_inner();
@@ -2697,14 +2835,20 @@ async fn get_group_details(
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     if !CONFIG.org_groups_enabled() {
-        err!("Group support is disabled");
+        err!(crate::i18n::org_groups_disabled(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())));
     }
 
     let Some(group) = Group::find_by_uuid_and_org(&group_id, &org_id, &conn).await else {
-        err!("Group not found", "Group uuid is invalid or does not belong to the organization")
+        err!(
+            crate::i18n::org_group_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Group uuid is invalid or does not belong to the organization"
+        )
     };
 
     Ok(Json(group.to_json_details(&conn).await))
@@ -2722,14 +2866,20 @@ async fn delete_group_impl(
     conn: &DbConn,
 ) -> EmptyResult {
     if org_id != &headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     if !CONFIG.org_groups_enabled() {
-        err!("Group support is disabled");
+        err!(crate::i18n::org_groups_disabled(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())));
     }
 
     let Some(group) = Group::find_by_uuid_and_org(group_id, org_id, conn).await else {
-        err!("Group not found", "Group uuid is invalid or does not belong to the organization")
+        err!(
+            crate::i18n::org_group_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Group uuid is invalid or does not belong to the organization"
+        )
     };
 
     log_event(
@@ -2754,10 +2904,13 @@ async fn bulk_delete_groups(
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     if !CONFIG.org_groups_enabled() {
-        err!("Group support is disabled");
+        err!(crate::i18n::org_groups_disabled(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())));
     }
 
     let data: BulkGroupIds = data.into_inner();
@@ -2771,14 +2924,20 @@ async fn bulk_delete_groups(
 #[get("/organizations/<org_id>/groups/<group_id>", rank = 2)]
 async fn get_group(org_id: OrganizationId, group_id: GroupId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     if !CONFIG.org_groups_enabled() {
-        err!("Group support is disabled");
+        err!(crate::i18n::org_groups_disabled(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())));
     }
 
     let Some(group) = Group::find_by_uuid_and_org(&group_id, &org_id, &conn).await else {
-        err!("Group not found", "Group uuid is invalid or does not belong to the organization")
+        err!(
+            crate::i18n::org_group_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Group uuid is invalid or does not belong to the organization"
+        )
     };
 
     Ok(Json(group.to_json()))
@@ -2792,14 +2951,20 @@ async fn get_group_members(
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     if !CONFIG.org_groups_enabled() {
-        err!("Group support is disabled");
+        err!(crate::i18n::org_groups_disabled(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())));
     }
 
     if Group::find_by_uuid_and_org(&group_id, &org_id, &conn).await.is_none() {
-        err!("Group could not be found!", "Group uuid is invalid or does not belong to the organization")
+        err!(
+            crate::i18n::org_group_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Group uuid is invalid or does not belong to the organization"
+        )
     }
 
     let group_members: Vec<MembershipId> = GroupUser::find_by_group(&group_id, &org_id, &conn)
@@ -2842,10 +3007,13 @@ struct OrganizationUserRecoverAccountRequest {
 #[get("/organizations/<org_id>/public-key")]
 async fn get_organization_public_key(org_id: OrganizationId, headers: OrgMemberHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     let Some(org) = Organization::find_by_uuid(&org_id, &conn).await else {
-        err!("Organization not found")
+        err!(crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())))
     };
 
     Ok(Json(json!({
@@ -2884,27 +3052,34 @@ async fn recover_account(
     nt: Notify<'_>,
 ) -> EmptyResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     let Some(org) = Organization::find_by_uuid(&org_id, &conn).await else {
-        err!("Required organization not found")
+        err!(crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())))
     };
 
     let Some(member) = Membership::find_by_uuid_and_org(&member_id, &org.uuid, &conn).await else {
-        err!("User to reset isn't member of required organization")
+        err!(crate::i18n::org_user_not_member(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())))
     };
 
     let Some(mut user) = User::find_by_uuid(&member.user_uuid, &conn).await else {
-        err!("User not found")
+        err!(crate::i18n::org_user_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())))
     };
 
     check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers, &conn).await?;
 
     if member.reset_password_key.is_none() {
-        err!("Password reset not or not correctly enrolled");
+        err!(crate::i18n::org_password_reset_not_enrolled(
+            headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())
+        ));
     }
     if member.status != (MembershipStatus::Confirmed as i32) {
-        err!("Organization user must be confirmed for password reset functionality");
+        err!(crate::i18n::org_user_must_be_confirmed_for_reset(
+            headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())
+        ));
     }
 
     let fallback_2fa_email =
@@ -2923,7 +3098,9 @@ async fn recover_account(
             authentication_data.check(&user, &unlock_data)?;
 
             if !authentication_data.kdf.matches_user(&user) {
-                err!("KDF settings do not match the user account")
+                err!(crate::i18n::org_kdf_settings_do_not_match_user(
+                    headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())
+                ))
             }
 
             (authentication_data.master_password_authentication_hash, unlock_data.master_key_wrapped_user_key)
@@ -2939,17 +3116,23 @@ async fn recover_account(
 
     // Sending email first ensure working email configuration and the resulting user notification.
     // Also this might add some protection against security flaws and misuse
-    if let Err(e) = mail::send_admin_account_recovery(
+    if let Err(e) = mail::send_admin_account_recovery_for_locale(
         &user.email,
         user.display_name(),
         &org.name,
         req.reset_master_password,
         req.reset_two_factor,
         fallback_2fa_email,
+        user.locale.as_deref(),
     )
     .await
     {
-        err!(format!("Error sending user reset password email: {e:#?}"));
+        err!(
+            crate::i18n::org_error_sending_user_reset_password_email(
+                headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())
+            ),
+            format!("{e:#?}")
+        );
     }
 
     if let Some((new_master_password_hash, new_key)) = new_password {
@@ -2988,18 +3171,21 @@ async fn get_reset_password_details(
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     let Some(org) = Organization::find_by_uuid(&org_id, &conn).await else {
-        err!("Required organization not found")
+        err!(crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())))
     };
 
     let Some(member) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
-        err!("User to reset isn't member of required organization")
+        err!(crate::i18n::org_user_not_member(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())))
     };
 
     let Some(user) = User::find_by_uuid(&member.user_uuid, &conn).await else {
-        err!("User not found")
+        err!(crate::i18n::org_user_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())))
     };
 
     check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers, &conn).await?;
@@ -3024,31 +3210,33 @@ async fn check_reset_password_applicable_and_permissions(
     headers: &AdminHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
-    check_reset_password_applicable(org_id, conn).await?;
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
+    check_reset_password_applicable(org_id, conn, locale).await?;
 
     let Some(target_user) = Membership::find_by_uuid_and_org(member_id, org_id, conn).await else {
-        err!("Reset target user not found")
+        err!(crate::i18n::org_user_not_found_in_org(locale))
     };
 
     // Resetting user must be higher/equal to user to reset
     match headers.membership_type {
         MembershipType::Owner => Ok(()),
         MembershipType::Admin if target_user.atype <= MembershipType::Admin => Ok(()),
-        _ => err!("No permission to reset this user's password"),
+        _ => err!(crate::i18n::org_no_permission_reset_user_password(locale)),
     }
 }
 
-async fn check_reset_password_applicable(org_id: &OrganizationId, conn: &DbConn) -> EmptyResult {
+async fn check_reset_password_applicable(org_id: &OrganizationId, conn: &DbConn, locale: &str) -> EmptyResult {
     if !CONFIG.mail_enabled() {
-        err!("Password reset is not supported on an email-disabled instance.");
+        err!(crate::i18n::org_password_reset_not_supported_email_disabled(locale));
     }
 
     let Some(policy) = OrgPolicy::find_by_org_and_type(org_id, OrgPolicyType::ResetPassword, conn).await else {
-        err!("Policy not found")
+        err!(crate::i18n::org_policy_not_found(locale))
     };
 
     if !policy.enabled {
-        err!("Reset password policy not enabled");
+        err!(crate::i18n::org_reset_password_policy_not_enabled(locale));
     }
 
     Ok(())
@@ -3062,13 +3250,15 @@ async fn put_reset_password_enrollment(
     data: Json<OrganizationUserResetPasswordEnrollmentRequest>,
     conn: DbConn,
 ) -> EmptyResult {
+    let default_locale = CONFIG.default_locale();
+    let locale = headers.user.locale.as_deref().unwrap_or(default_locale.as_str());
     if user_id != headers.user.uuid {
-        err!("User to enroll isn't member of required organization", "The user_id and acting user do not match");
+        err!(crate::i18n::org_user_not_member(locale), "The user_id and acting user do not match");
     }
 
     let mut membership = headers.membership;
 
-    check_reset_password_applicable(&org_id, &conn).await?;
+    check_reset_password_applicable(&org_id, &conn, locale).await?;
 
     let reset_request = data.into_inner();
 
@@ -3079,7 +3269,7 @@ async fn put_reset_password_enrollment(
     };
 
     if reset_password_key.is_none() && OrgPolicy::org_is_reset_password_auto_enroll(&org_id, &conn).await {
-        err!("Reset password can't be withdrawn due to an enterprise policy");
+        err!(crate::i18n::org_reset_password_withdraw_blocked_by_policy(locale));
     }
 
     if reset_password_key.is_some() {
@@ -3115,7 +3305,10 @@ async fn put_reset_password_enrollment(
 #[get("/organizations/<org_id>/export")]
 async fn get_org_export(org_id: OrganizationId, headers: AdminHeaders, conn: DbConn) -> JsonResult {
     if org_id != headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
 
     Ok(Json(json!({
@@ -3132,7 +3325,10 @@ async fn api_key(
     conn: DbConn,
 ) -> JsonResult {
     if org_id != &headers.org_id {
-        err!("Organization not found", "Organization id's do not match");
+        err!(
+            crate::i18n::org_not_found(headers.user.locale.as_deref().unwrap_or(&CONFIG.default_locale())),
+            "Organization id's do not match"
+        );
     }
     let data: PasswordOrOtpData = data.into_inner();
     let user = headers.user;

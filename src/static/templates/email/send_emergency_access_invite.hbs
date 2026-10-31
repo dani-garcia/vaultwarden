@@ -1,8 +1,8 @@
-Emergency access for {{{grantor_name}}}
+{{t "tpl.email.ea_invite.subject_prefix" locale=lang}} {{{grantor_name}}}
 <!---------------->
-You have been invited to become an emergency contact for {{grantor_name}}. To accept this invite, click the following link:
+{{t "tpl.email.ea_invite.body_intro_prefix" locale=lang}} {{grantor_name}}. {{t "tpl.email.ea_invite.body_intro_suffix" locale=lang}}
 
-Click here to join: {{{url}}}
+{{t "tpl.email.ea_invite.body_cta" locale=lang}}: {{{url}}}
 
-If you do not wish to become an emergency contact for {{grantor_name}}, you can safely ignore this email.
+{{t "tpl.email.ea_invite.body_ignore_prefix" locale=lang}} {{grantor_name}}, {{t "tpl.email.ea_invite.body_ignore_suffix" locale=lang}}
 {{> email/email_footer_text }}
