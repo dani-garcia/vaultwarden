@@ -214,8 +214,8 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                     .await;
                 }
             }
-            // Client-side cipher events (viewed, copied, toggled, autofilled).
-            1107..=1114 | 1117 | 1119..=1132 => {
+            // Client-side cipher events (viewed, copied, toggled, autofilled, HTTP auth).
+            1107..=1114 | 1117 | 1119..=1133 => {
                 // The cipher determines the organization the event is logged to, so make sure the
                 // user can actually access it instead of trusting the provided cipher uuid.
                 if let Some(cipher_uuid) = &event.cipher_id
