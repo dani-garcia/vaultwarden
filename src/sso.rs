@@ -266,8 +266,8 @@ pub async fn exchange_code(
         (_, Some(re)) => {
             let error_msg = format!(
                 "SSO authorization failed: {}, {}",
-                re.error,
-                re.error_description.as_ref().unwrap_or(&String::new())
+                re.error.escape_debug(),
+                re.error_description.as_deref().unwrap_or_default().escape_debug()
             );
             sso_auth.delete(conn).await?;
             err!(error_msg);

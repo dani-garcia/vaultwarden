@@ -131,13 +131,16 @@ impl FullCollectionData {
         let org_groups = Group::find_by_organization(org_id, conn).await;
         let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
-            err!("Invalid group", format!("Group {} does not belong to organization {}!", e.id, org_id))
+            err!("Invalid group", format!("Group {} does not belong to organization {}!", e.id.escape_debug(), org_id))
         }
 
         let org_memberships = Membership::find_by_org(org_id, conn).await;
         let org_membership_ids: HashSet<&MembershipId> = org_memberships.iter().map(|m| &m.uuid).collect();
         if let Some(e) = self.users.iter().find(|m| !org_membership_ids.contains(&m.id)) {
-            err!("Invalid member", format!("Member {} does not belong to organization {}!", e.id, org_id))
+            err!(
+                "Invalid member",
+                format!("Member {} does not belong to organization {}!", e.id.escape_debug(), org_id)
+            )
         }
 
         Ok(())
@@ -552,7 +555,7 @@ async fn post_bulk_access_collections(
     let org_groups = Group::find_by_organization(&org_id, &conn).await;
     let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
     if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
-        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id, org_id))
+        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id.escape_debug(), org_id))
     }
 
     for col_id in data.collection_ids {
@@ -975,13 +978,16 @@ impl InviteData {
         let org_collections = Collection::find_by_organization(org_id, conn).await;
         let org_collection_ids: HashSet<&CollectionId> = org_collections.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.collections.iter().flatten().find(|c| !org_collection_ids.contains(&c.id)) {
-            err!("Invalid collection", format!("Collection {} does not belong to organization {}!", e.id, org_id))
+            err!(
+                "Invalid collection",
+                format!("Collection {} does not belong to organization {}!", e.id.escape_debug(), org_id)
+            )
         }
 
         let org_groups = Group::find_by_organization(org_id, conn).await;
         let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.groups.iter().find(|g| !org_group_ids.contains(g)) {
-            err!("Invalid group", format!("Group {} does not belong to organization {}!", e, org_id))
+            err!("Invalid group", format!("Group {} does not belong to organization {}!", e.escape_debug(), org_id))
         }
 
         Ok(())
@@ -1157,7 +1163,7 @@ async fn bulk_reinvite_members(
         let err_msg = match reinvite_member_impl(&org_id, &member_id, &headers.user.email, &conn).await {
             Ok(()) => String::new(),
             Err(e) => {
-                warn!("Unable to reinvite member {member_id}: {e:?}");
+                warn!("Unable to reinvite member {}: {e:?}", member_id.escape_debug());
                 e.message().to_owned()
             }
         };
@@ -1333,7 +1339,7 @@ async fn bulk_confirm_invite(
                 let err_msg = match confirm_invite_impl(&org_id, &member_id, &user_key, &headers, &conn, &nt).await {
                     Ok(()) => String::new(),
                     Err(e) => {
-                        warn!("Unable to confirm member {member_id}: {e:?}");
+                        warn!("Unable to confirm member {}: {e:?}", member_id.escape_debug());
                         e.message().to_owned()
                     }
                 };
@@ -1617,7 +1623,7 @@ async fn bulk_delete_member(
         let err_msg = match delete_member_impl(&org_id, &member_id, &headers, &conn, &nt).await {
             Ok(()) => String::new(),
             Err(e) => {
-                warn!("Unable to delete member {member_id}: {e:?}");
+                warn!("Unable to delete member {}: {e:?}", member_id.escape_debug());
                 e.message().to_owned()
             }
         };
@@ -2286,7 +2292,7 @@ async fn bulk_revoke_members(
                 let err_msg = match revoke_member_impl(&org_id, &member_id, &headers, &conn).await {
                     Ok(()) => String::new(),
                     Err(e) => {
-                        warn!("Unable to revoke member {member_id}: {e:?}");
+                        warn!("Unable to revoke member {}: {e:?}", member_id.escape_debug());
                         e.message().to_owned()
                     }
                 };
@@ -2392,7 +2398,7 @@ async fn bulk_restore_members(
         let err_msg = match restore_member_impl(&org_id, &member_id, &headers, &conn).await {
             Ok(()) => String::new(),
             Err(e) => {
-                warn!("Unable to restore member {member_id}: {e:?}");
+                warn!("Unable to restore member {}: {e:?}", member_id.escape_debug());
                 e.message().to_owned()
             }
         };
@@ -2547,13 +2553,16 @@ impl GroupRequest {
         let org_collections = Collection::find_by_organization(org_id, conn).await;
         let org_collection_ids: HashSet<&CollectionId> = org_collections.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.collections.iter().find(|c| !org_collection_ids.contains(&c.id)) {
-            err!("Invalid collection", format!("Collection {} does not belong to organization {}!", e.id, org_id))
+            err!(
+                "Invalid collection",
+                format!("Collection {} does not belong to organization {}!", e.id.escape_debug(), org_id)
+            )
         }
 
         let org_memberships = Membership::find_by_org(org_id, conn).await;
         let org_membership_ids: HashSet<&MembershipId> = org_memberships.iter().map(|m| &m.uuid).collect();
         if let Some(e) = self.users.iter().find(|m| !org_membership_ids.contains(m)) {
-            err!("Invalid member", format!("Member {} does not belong to organization {}!", e, org_id))
+            err!("Invalid member", format!("Member {} does not belong to organization {}!", e.escape_debug(), org_id))
         }
 
         Ok(())

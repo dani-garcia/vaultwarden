@@ -332,6 +332,6 @@ pub fn static_files(filename: &str) -> Result<EtagCached<&'static [u8]>, Error> 
     if let Some(file) = STATIC_FILES.get(filename) {
         Ok(EtagCached::new(file.bytes, file.content_type.clone(), &file.etag))
     } else {
-        err!(format!("Static file not found: {filename}"))
+        err!(format!("Static file not found: {}", filename.escape_debug()))
     }
 }

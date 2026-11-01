@@ -458,7 +458,7 @@ pub async fn update_cipher_from_data(
     {
         match NaiveDateTime::parse_from_str(&dt, "%+") {
             // ISO 8601 format
-            Err(err) => warn!("Error parsing LastKnownRevisionDate '{dt}': {err}"),
+            Err(err) => warn!("Error parsing LastKnownRevisionDate '{}': {err}", dt.escape_debug()),
             Ok(dt) if cipher.updated_at.signed_duration_since(dt).num_seconds() > 1 => {
                 err!("The client copy of this cipher is out of date. Resync the client and try again.")
             }
@@ -521,7 +521,7 @@ pub async fn update_cipher_from_data(
                 // A missing attachment means it was removed via an other client.
                 // Also the Desktop Client supports removing attachments and save an update afterwards.
                 // Bitwarden it self ignores these mismatches server side.
-                warn!("Attachment {id} doesn't exist");
+                warn!("Attachment {} doesn't exist", id.escape_debug());
                 continue;
             };
 
@@ -580,7 +580,7 @@ pub async fn update_cipher_from_data(
     match data.archived_date {
         Some(dt_str) => match NaiveDateTime::parse_from_str(&dt_str, "%+") {
             Ok(dt) => cipher.set_archived_at(dt, &headers.user.uuid, conn).await?,
-            Err(err) => warn!("Error parsing ArchivedDate '{dt_str}': {err}"),
+            Err(err) => warn!("Error parsing ArchivedDate '{}': {err}", dt_str.escape_debug()),
         },
         None => cipher.unarchive(&headers.user.uuid, conn).await?,
     }
