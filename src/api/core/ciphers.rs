@@ -159,14 +159,19 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     let sends_json: Vec<Value> =
         Send::find_by_user(&headers.user.uuid, &conn).await.iter().map(Send::to_json).collect();
 
-    let policies_json: Vec<Value> =
+    let mut policies_json: Vec<Value> =
         OrgPolicy::find_confirmed_by_user(&headers.user.uuid, &conn).await.iter().map(OrgPolicy::to_json).collect();
 
-    let policies_new_json: Vec<Value> = OrgPolicy::find_accepted_and_confirmed_by_user(&headers.user.uuid, &conn)
+    let mut policies_new_json: Vec<Value> = OrgPolicy::find_accepted_and_confirmed_by_user(&headers.user.uuid, &conn)
         .await
         .iter()
         .map(OrgPolicy::to_json)
         .collect();
+
+    if let Some(global_policy) = OrgPolicy::global_password_generator_policy() {
+        policies_json.push(global_policy.clone());
+        policies_new_json.push(global_policy);
+    }
 
     let domains_json = if data.exclude_domains {
         Value::Null

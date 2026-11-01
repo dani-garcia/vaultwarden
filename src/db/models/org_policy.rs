@@ -29,6 +29,9 @@ pub struct OrgPolicy {
     pub revision_date: NaiveDateTime,
 }
 
+// Fake organization id for the synthetic server-wide policy, analogous to FAKE_SSO_IDENTIFIER
+pub static FAKE_GLOBAL_POLICY_ORG_ID: &str = "00000000-01DC-01DC-01DC-000000000001";
+
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Enums/PolicyType.cs
 #[derive(Copy, Clone, Eq, PartialEq, num_derive::FromPrimitive)]
 pub enum OrgPolicyType {
@@ -119,6 +122,15 @@ impl OrgPolicy {
         }
 
         policy
+    }
+
+    // Synthetic policy built from the PASSWORD_GENERATOR_POLICY setting. It is served alongside
+    // the organization policies so the clients enforce it without requiring an organization.
+    pub fn global_password_generator_policy() -> Option<Value> {
+        CONFIG.password_generator_policy_value().map(|data| {
+            OrgPolicy::new(FAKE_GLOBAL_POLICY_ORG_ID.into(), OrgPolicyType::PasswordGenerator, true, data.to_string())
+                .to_json()
+        })
     }
 }
 
