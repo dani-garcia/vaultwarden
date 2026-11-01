@@ -628,6 +628,12 @@ make_config! {
         /// This setting applies globally to all users.
         incomplete_2fa_time_limit: u16, true,   def,    3;
 
+        /// Failed login email threshold |> Number of consecutive failed login attempts (wrong master
+        /// password) after which the affected user is notified by email. The counter resets on a
+        /// successful login, or after an hour without further attempts. Set to 0 to disable this
+        /// notification. This setting applies globally to all users.
+        failed_login_email_threshold: u32, true, def,   0;
+
         /// Disable icon downloads |> Set to true to disable icon downloading in the internal icon service.
         /// This still serves existing icons from $ICON_CACHE_FOLDER, without generating any external
         /// network requests. $ICON_CACHE_TTL must also be set to 0; otherwise, the existing icons
@@ -1830,6 +1836,7 @@ where
     reg!("email/emergency_access_recovery_rejected", ".html");
     reg!("email/emergency_access_recovery_reminder", ".html");
     reg!("email/emergency_access_recovery_timed_out", ".html");
+    reg!("email/failed_login_attempts", ".html");
     reg!("email/incomplete_2fa_login", ".html");
     reg!("email/invite_accepted", ".html");
     reg!("email/invite_confirmed", ".html");

@@ -546,6 +546,22 @@ pub async fn send_recover_twofactor(address: &str, ip: &str, dt: &NaiveDateTime)
     send_email(address, &subject, body_html, body_text).await
 }
 
+pub async fn send_failed_login_attempts(address: &str, ip: &str, dt: &NaiveDateTime, attempts: u32) -> EmptyResult {
+    let fmt = "%A, %B %_d, %Y at %r %Z";
+    let (subject, body_html, body_text) = get_text(
+        "email/failed_login_attempts",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "ip": ip,
+            "attempts": attempts,
+            "datetime": crate::util::format_naive_datetime_local(dt, fmt),
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_incomplete_2fa_login(
     address: &str,
     ip: &str,
