@@ -772,6 +772,10 @@ make_config! {
         /// Max database connection retries |> Number of times to retry the database connection during startup, with 1 second between each retry, set to 0 to retry indefinitely
         db_connection_retries:  u32,    false,  def,    15;
 
+        /// Legacy User access_all migration |> Defines how the Custom-role migration handles a legacy access_all flag.
+        /// "refuse" stops startup, "drop" clears the flag, and "materialize" creates explicit collection assignments.
+        legacy_user_access_all_migration: String, false, def, "refuse".to_owned();
+
         /// Timeout in seconds when acquiring database connection
         database_timeout:       u32,    false,  def,    30;
 
@@ -988,6 +992,13 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                 ));
             }
         }
+    }
+
+    if crate::db::LegacyUserAccessAllPolicy::from_config(&cfg.legacy_user_access_all_migration).is_none() {
+        err!(format!(
+            "Invalid LEGACY_USER_ACCESS_ALL_MIGRATION value `{}`, expected `refuse`, `drop` or `materialize`",
+            cfg.legacy_user_access_all_migration
+        ));
     }
 
     if cfg.password_iterations < 100_000 {
