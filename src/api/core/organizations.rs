@@ -2907,12 +2907,11 @@ async fn recover_account(
         err!("Organization user must be confirmed for password reset functionality");
     }
 
-    let fallback_2fa_email =
-        if req.reset_two_factor && CONFIG.mail_enabled() && CONFIG.email_2fa_auto_fallback() && user.verified() {
-            TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await.is_none()
-        } else {
-            false
-        };
+    let fallback_2fa_email = req.reset_two_factor
+        && CONFIG.mail_enabled()
+        && CONFIG.email_2fa_auto_fallback()
+        && user.verified()
+        && TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await.is_none();
 
     // Check the new password before the email below, so that a rejected request doesn't tell the user
     // their password was reset
