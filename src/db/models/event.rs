@@ -109,7 +109,7 @@ pub enum EventType {
     OrganizationUserDeleted = 1515, // Both user and organization user data were deleted
     OrganizationUserLeft = 1516,    // User voluntarily left the organization
     // OrganizationUserAutomaticallyConfirmed = 1517,
-    // OrganizationUserSelfRevoked = 1518, // User self-revoked due to declining organization data ownership policy
+    OrganizationUserSelfRevoked = 1518, // User self-revoked due to declining organization data ownership policy
     OrganizationUserAdminResetTwoFactor = 1519,
     // OrganizationUserRevoked_TwoFactorNonCompliance = 1520,
     // OrganizationUserRevoked_SingleOrganizationNonCompliance = 1521,
