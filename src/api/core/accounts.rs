@@ -1148,7 +1148,11 @@ async fn post_email_token(data: Json<EmailTokenData>, headers: Headers, conn: Db
             error!("Error sending change-email email: {e:#?}");
         }
     } else {
-        debug!("Email change request for user ({}) to email ({}) with token ({token})", user.uuid, data.new_email);
+        debug!(
+            "Email change request for user ({}) to email ({}) with token ({token})",
+            user.uuid,
+            data.new_email.escape_debug()
+        );
     }
 
     user.email_new = Some(data.new_email);
@@ -1403,7 +1407,7 @@ async fn password_hint(data: Json<PasswordHintData>, ip: ClientIp, conn: DbConn)
                 mail::send_password_hint(email, hint).await?;
                 Ok(())
             } else if let Some(hint) = hint {
-                err!(format!("Your password hint is: {hint}"));
+                err_silent!(format!("Your password hint is: {hint}"));
             } else {
                 err!(NO_HINT);
             }

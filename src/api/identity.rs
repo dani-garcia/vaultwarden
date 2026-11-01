@@ -112,7 +112,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
             .await?;
             Ok(Json(tokens.to_json()))
         }
-        t => err!("Invalid type", t),
+        t => err!("Invalid type", t.escape_debug().to_string()),
     };
 
     if let Some(user_id) = user_id {

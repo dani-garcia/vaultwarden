@@ -264,7 +264,7 @@ fn get_favicons_node(dom: Tokenizer<StringReader<'_>, FaviconEmitter>, icons: &m
             TAG_BASE => {
                 base_url = if let Some(href) = token.tag.attributes.get(ATTR_HREF) {
                     let href = std::str::from_utf8(href).unwrap_or_default();
-                    debug!("Found base href: {href}");
+                    debug!("Found base href: {}", href.escape_debug());
                     match base_url.join(href) {
                         Ok(inner_url) => inner_url,
                         _ => continue,
