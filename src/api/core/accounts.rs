@@ -385,7 +385,8 @@ impl ValidatedAccountKeys {
         self.v2.is_some()
     }
 
-    /// Sets the keys on the user, which then needs saving before [`Self::save_signature_key_pair`].
+    /// Sets the keys on the user. Save [`Self::save_signature_key_pair`] before the user: a v2 user without its key
+    /// pair can't unlock, while a key pair is ignored until its user is v2, and replaced on the next try.
     fn apply(&self, user: &mut User) -> EmptyResult {
         user.private_key = Some(self.private_key.clone());
         user.public_key = Some(self.public_key.clone());
@@ -571,7 +572,9 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
     enforce_password_hint_setting(password_hint.as_ref())?;
     let account_keys = ValidatedAccountKeys::for_registration(data.account_keys, data.keys)?;
 
-    let mut user = match User::find_by_mail(&email, &conn).await {
+    let existing_user = User::find_by_mail(&email, &conn).await;
+    let is_new_user = existing_user.is_none();
+    let mut user = match existing_user {
         Some(user) => {
             if !user.password_hash.is_empty() {
                 err!("Registration not allowed or user already exists")
@@ -651,8 +654,15 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
         }
     }
 
-    user.save(&conn).await?;
+    // The key pair first, as in a rotation, but its foreign key needs the user: a new one is saved before without a
+    // password or keys, like an invited user, so a failure in between leaves a registration that can be retried.
+    if is_new_user && account_keys.is_v2() {
+        let mut unregistered = User::new(&user.email, None);
+        unregistered.uuid.clone_from(&user.uuid);
+        unregistered.save(&conn).await?;
+    }
     account_keys.save_signature_key_pair(&user.uuid, &conn).await?;
+    user.save(&conn).await?;
 
     // accept any open emergency access invitations
     if !CONFIG.mail_enabled() && CONFIG.emergency_access_allowed() {
@@ -779,11 +789,11 @@ async fn post_set_password(data: Json<Value>, headers: Headers, conn: DbConn) ->
 
     log_user_event(EventType::UserChangedPassword, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
-    user.save(&conn).await?;
-
+    // The key pair first, as in a rotation: if saving the user then fails, the password isn't set either
     if let Some(account_keys) = account_keys {
         account_keys.save_signature_key_pair(&user.uuid, &conn).await?;
     }
+    user.save(&conn).await?;
 
     Ok(Json(json!({
       "object": "set-password",
@@ -941,8 +951,9 @@ async fn post_keys(data: Json<PostKeysData>, headers: Headers, conn: DbConn) -> 
     };
 
     account_keys.apply(&mut user)?;
-    user.save(&conn).await?;
+    // The key pair first, as in a rotation: if saving the user then fails, the account stays without keys
     account_keys.save_signature_key_pair(&user.uuid, &conn).await?;
+    user.save(&conn).await?;
 
     Ok(Json(json!({
         "key": (!user.akey.is_empty()).then_some(&user.akey),
