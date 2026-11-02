@@ -44,6 +44,17 @@
                             <span class="d-block"><strong>Events:</strong> {{event_count}}</span>
                         </td>
                         <td class="text-end px-1 small">
+                            <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right"
+                                data-bs-toggle="modal" data-bs-target="#orgPoliciesModal"
+                                data-vw-edit-org-policies
+                                data-vw-org-uuid="{{id}}"
+                                data-vw-org-name="{{name}}"
+                                data-vw-single-org-enabled="{{policies.singleOrgEnabled}}"
+                                data-vw-timeout-enabled="{{policies.maximumVaultTimeout.enabled}}"
+                                data-vw-timeout-type="{{policies.maximumVaultTimeout.data.type}}"
+                                data-vw-timeout-minutes="{{policies.maximumVaultTimeout.data.minutes}}"
+                                data-vw-timeout-action="{{policies.maximumVaultTimeout.data.action}}"
+                                data-vw-export-disabled="{{policies.disablePersonalVaultExport}}">Policies</button><br>
                             <button type="button" class="btn btn-sm btn-link p-0 border-0 float-right" vw-delete-organization data-vw-org-uuid="{{id}}" data-vw-org-name="{{name}}" data-vw-billing-email="{{billingEmail}}">Delete Organization</button><br>
                         </td>
                     </tr>
@@ -57,6 +68,88 @@
         </div>
     </div>
 </main>
+
+<div class="modal fade" id="orgPoliciesModal" tabindex="-1" aria-labelledby="orgPoliciesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form id="org-policies-form" novalidate>
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title" id="orgPoliciesModalLabel">Enterprise policies</h5>
+                        <div class="small text-body-secondary" id="org-policies-org-name"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="org-policies-org-uuid">
+
+                    <div class="alert alert-warning d-none" id="vault-timeout-single-org-warning" role="alert">
+                        The Single Organization policy must be enabled in the organization before Vault Timeout can be enabled.
+                    </div>
+
+                    <fieldset class="border rounded p-3 mb-3">
+                        <legend class="float-none w-auto px-2 fs-6">Vault timeout</legend>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" role="switch" id="vault-timeout-enabled">
+                            <label class="form-check-label" for="vault-timeout-enabled">Enable policy</label>
+                        </div>
+                        <p class="small text-body-secondary">
+                            Sets the maximum session timeout for organization members. The policy applies to administrators and users, but not owners.
+                        </p>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label" for="vault-timeout-type">Maximum allowed timeout</label>
+                                <select class="form-select" id="vault-timeout-type" required>
+                                    <option value="immediately">Immediately</option>
+                                    <option value="custom">Custom</option>
+                                    <option value="onSystemLock">On system lock</option>
+                                    <option value="onAppRestart">On app restart</option>
+                                    <option value="never">Never (no maximum)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="vault-timeout-action">Session timeout action</label>
+                                <select class="form-select" id="vault-timeout-action">
+                                    <option value="">User preference</option>
+                                    <option value="lock">Lock</option>
+                                    <option value="logOut">Log out</option>
+                                </select>
+                            </div>
+                            <div class="col-12" id="vault-timeout-custom-fields">
+                                <div class="row g-3">
+                                    <div class="col-sm-6">
+                                        <label class="form-label" for="vault-timeout-hours">Hours</label>
+                                        <input class="form-control" type="number" min="0" step="1" id="vault-timeout-hours" required>
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label" for="vault-timeout-minutes">Minutes</label>
+                                        <input class="form-control" type="number" min="0" max="59" step="1" id="vault-timeout-minutes" required>
+                                        <div class="invalid-feedback">Use 0–59 minutes; the total timeout must be at least one minute.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="border rounded p-3">
+                        <legend class="float-none w-auto px-2 fs-6">Remove individual vault export</legend>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="disable-personal-vault-export">
+                            <label class="form-check-label" for="disable-personal-vault-export">Enable policy</label>
+                        </div>
+                        <p class="small text-body-secondary mt-2 mb-0">
+                            Prevents non-owner and non-admin members from exporting their individual vault. Organization exports are not affected.
+                        </p>
+                    </fieldset>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save policies</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <link rel="stylesheet" href="{{urlpath}}/vw_static/datatables.css" />
 <script src="{{urlpath}}/vw_static/datatables.js"></script>
