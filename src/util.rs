@@ -302,6 +302,20 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for EtagC
 // Effectively ignores, any static file route, and the alive endpoint
 const LOGGED_ROUTES: [&str; 7] = ["/api", "/admin", "/identity", "/icons", "/attachments", "/events", "/notifications"];
 
+const MAX_LOGGED_QUERY_BYTES: usize = 100;
+
+// Query values can hold secrets, like the access code of a login request, so we don't log them
+fn redact_query_values(query: &str) -> String {
+    query
+        .split('&')
+        .map(|param| match param.split_once('=') {
+            Some((name, _)) => format!("{name}=…"),
+            None => param.to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
 // When extra is true, we ignore the whitelist above and also print the mounts
 pub struct BetterLogging {
     extra: bool,
@@ -381,8 +395,9 @@ impl Fairing for BetterLogging {
         };
         match uri.query() {
             Some(q) => {
-                let q = q.as_str();
-                info!(target: "request", "{method} {}?{}", path.escape_debug(), q[..q.floor_char_boundary(30)].escape_debug());
+                let query = redact_query_values(q.as_str());
+                let query = &query[..query.floor_char_boundary(MAX_LOGGED_QUERY_BYTES)];
+                info!(target: "request", "{method} {}?{}", path.escape_debug(), query.escape_debug());
             }
             None => info!(target: "request", "{method} {}", path.escape_debug()),
         }
@@ -1025,5 +1040,30 @@ mod tests {
                 });
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod query_log_tests {
+    use super::{MAX_LOGGED_QUERY_BYTES, redact_query_values};
+
+    #[test]
+    fn test_redact_query_values() {
+        assert_eq!(redact_query_values("code=SECRET"), "code=…");
+        assert_eq!(redact_query_values("code=SECRET&other=SECRET"), "code=…&other=…");
+        assert_eq!(redact_query_values("a=1&b=2&flag"), "a=…&b=…&flag");
+        assert_eq!(redact_query_values("a=b=SECRET"), "a=…");
+        assert_eq!(redact_query_values("a=1&&=SECRET"), "a=…&&=…");
+        assert_eq!(redact_query_values("a=x%26b%3DSECRET"), "a=…");
+        assert_eq!(redact_query_values("a=1;b=SECRET"), "a=…");
+        assert_eq!(redact_query_values("a=1&a=SECRET"), "a=…&a=…");
+        assert_eq!(redact_query_values(""), "");
+    }
+
+    #[test]
+    fn test_redacted_query_truncates_on_a_char_boundary() {
+        let name = "a".repeat(MAX_LOGGED_QUERY_BYTES - 1);
+        let query = redact_query_values(&format!("{name}=SECRET"));
+        assert_eq!(&query[..query.floor_char_boundary(MAX_LOGGED_QUERY_BYTES)], format!("{name}="));
     }
 }
