@@ -518,13 +518,13 @@ async fn password_login(
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
 }
 
-/// Like upstream's `ClientVersionValidator`, a V2 account logs in only from a client that sends its version and is at
-/// least 2025.11.0 (upstream also refuses a missing header for V1 accounts). Called right after the credentials are
-/// checked, like upstream, so that it doesn't tell anyone else which accounts are V2.
+/// Like upstream's `ClientVersionValidator`, a V2 account ([`User::has_v2_encryption`]) logs in only from a client that
+/// sends its version and is at least 2025.11.0 (upstream also refuses a missing header for V1 accounts). Called right
+/// after the credentials are checked, like upstream, so that it doesn't tell anyone else which accounts are V2.
 ///
-/// Ref: <https://github.com/bitwarden/server/blob/2028f0a5cc9d8ab8ff8475029085f29f81483598/src/Identity/IdentityServer/RequestValidators/ClientVersionValidator.cs#L42-L69>
+/// Ref: <https://github.com/bitwarden/server/blob/8da186ad73f80d37157fe6fd42323e4284e83ec1/src/Identity/IdentityServer/RequestValidators/ClientVersionValidator.cs#L31-L72>
 fn check_client_version(user: &User, client_version: Option<&semver::Version>, ip: &ClientIp) -> EmptyResult {
-    let Some((error, description)) = client_version_error(user.is_v2(), client_version) else {
+    let Some((error, description)) = client_version_error(user.has_v2_encryption(), client_version) else {
         return Ok(());
     };
     Err(crate::error::Error::from((
