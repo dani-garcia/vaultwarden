@@ -194,6 +194,19 @@ impl User {
         self.signed_public_key.is_some() && self.security_state.is_some() && self.security_version.is_some()
     }
 
+    /// Upstream's `HasV2Encryption`: a private key wrapped as `CoseEncrypt0B64` (type 7) and security version 2.
+    /// Upstream only uses it to decide which accounts need a v2-capable client.
+    ///
+    /// Ref: <https://github.com/bitwarden/server/blob/8da186ad73f80d37157fe6fd42323e4284e83ec1/src/Core/Entities/User.cs#L245-L278>
+    pub fn has_v2_encryption(&self) -> bool {
+        self.security_version == Some(2)
+            && self
+                .private_key
+                .as_deref()
+                .and_then(|private_key| private_key.split_once('.'))
+                .is_some_and(|(enc_type, _)| enc_type.parse::<u8>() == Ok(7))
+    }
+
     pub fn check_valid_password(&self, password: &str) -> bool {
         crypto::verify_password_hash(
             password.as_bytes(),
@@ -750,5 +763,22 @@ mod tests {
 
         // An absent key id stays optional
         assert_eq!(serde_json::from_str::<Option<KeyId>>("null").unwrap(), None);
+    }
+
+    #[test]
+    fn test_has_v2_encryption() {
+        let user = |private_key: Option<&str>, security_version: Option<i32>| {
+            let mut user = User::new("user@example.com", None);
+            user.private_key = private_key.map(String::from);
+            user.security_version = security_version;
+            user
+        };
+
+        assert!(user(Some("7.cose"), Some(2)).has_v2_encryption());
+        assert!(!user(Some("7.cose"), Some(1)).has_v2_encryption());
+        assert!(!user(Some("7.cose"), None).has_v2_encryption());
+        assert!(!user(Some("2.iv|data|mac"), Some(2)).has_v2_encryption());
+        assert!(!user(Some("7"), Some(2)).has_v2_encryption());
+        assert!(!user(None, Some(2)).has_v2_encryption());
     }
 }
