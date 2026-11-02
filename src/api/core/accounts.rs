@@ -1775,7 +1775,8 @@ async fn rotate_account(data: RotateData, headers: Headers, conn: DbConn, nt: No
     // Prevent logging out the client where the user requested this endpoint from.
     // If you do logout the user it will causes issues at the client side.
     // Adding the device uuid will prevent this.
-    // On an upgrade, the reason lets clients with `pm-31050-no-logout-key-upgrade-rotation` sync instead
+    // On an upgrade, the reason lets clients sync instead: always from 2026.10.1 (Desktop 2026.10.2), before only
+    // with `pm-31050-no-logout-key-upgrade-rotation`
     let reason = is_upgrade.then_some(LogOutReason::KeyRotation);
     nt.send_logout_with_reason(&user, Some(&headers.device), reason, &conn).await;
 
