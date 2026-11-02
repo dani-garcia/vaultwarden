@@ -115,6 +115,7 @@ pub enum EventType {
     OrganizationUserRevokedTwoFactorNonCompliance = 1520,
     OrganizationUserRevokedSingleOrganizationNonCompliance = 1521,
     OrganizationUserNotificationBannerActionClicked = 1522,
+    OrganizationUserStaged = 1523,
 
     // Organization
     OrganizationUpdated = 1600,
