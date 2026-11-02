@@ -26,6 +26,40 @@
                             {{#case type "text" "number" "password"}}
                             <label for="input_{{name}}" class="col-sm-3 col-form-label">{{doc.name}}</label>
                             <div class="col-sm-8">
+                                {{#if write_only}}
+                                <div class="input-group">
+                                    <input class="form-control conf-write-only" id="input_{{name}}" type="password"
+                                        name="{{name}}" value="" autocomplete="off" spellcheck="false"
+                                        {{#if configured}}
+                                        placeholder="Configured — enter a new value to replace it"
+                                        {{else}}
+                                        placeholder="Enter a new value"
+                                        {{/if}}>
+                                    {{#if (eq name "admin_totp_secret")}}
+                                    <button class="btn btn-outline-primary input-group-text" type="button"
+                                        data-bs-toggle="modal" data-bs-target="#adminTotpQrDialog">Generate QR</button>
+                                    {{/if}}
+                                    <button class="btn btn-outline-secondary input-group-text" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
+                                </div>
+                                {{#if user_configured}}
+                                <div class="form-check mt-1">
+                                    <input class="form-check-input conf-write-only-clear" type="checkbox" id="clear_{{name}}"
+                                        data-vw-clear-target="input_{{name}}">
+                                    <label class="form-check-label" for="clear_{{name}}">
+                                        {{#if overridden}}
+                                        Remove saved override (the environment value will become active)
+                                        {{else}}
+                                        Remove saved value
+                                        {{/if}}
+                                    </label>
+                                </div>
+                                {{else}}
+                                {{#if configured}}
+                                <div class="form-text">Set by the environment. Enter a value to save a config override.</div>
+                                {{/if}}
+                                {{/if}}
+                                <div class="form-text">When replacing this secret, add the new value to your authenticator before saving. Closing the current session before testing it may lock you out.</div>
+                                {{else}}
                                 <div class="input-group">
                                 <input class="form-control conf-{{type}}" id="input_{{name}}" type="{{type}}"
                                     name="{{name}}" value="{{value}}" {{#if default}} placeholder="Default: {{default}}"{{/if}}>
@@ -33,6 +67,7 @@
                                     <button class="btn btn-outline-secondary input-group-text" type="button" data-vw-pw-toggle="input_{{name}}">Show/hide</button>
                                 {{/case}}
                                 </div>
+                                {{/if}}
                             </div>
                             {{/case}}
                             {{#case type "checkbox"}}
@@ -140,6 +175,39 @@
             </form>
         </div>
     </div>
+
+    <div id="adminTotpQrDialog" class="modal fade" tabindex="-1" aria-labelledby="adminTotpQrDialogTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="adminTotpQrDialogTitle">Set up Admin TOTP</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>
+                        A new 20-byte secret and QR code are generated only in this browser. Nothing is sent or saved
+                        until you use the generated secret and save the configuration.
+                    </p>
+                    <div id="adminTotpQrError" class="alert alert-danger d-none" role="alert"></div>
+                    <div class="text-center mb-3">
+                        <img id="adminTotpQrCode" class="d-none img-fluid border rounded" alt="QR code for the generated Admin TOTP secret">
+                    </div>
+                    <label for="adminTotpQrSecret" class="form-label">Manual setup key</label>
+                    <input id="adminTotpQrSecret" class="form-control font-monospace" type="text" value="" readonly
+                        autocomplete="off" spellcheck="false">
+                    <div class="alert alert-warning mt-3 mb-0">
+                        Scan the QR code before using this secret. This helper does not verify your authenticator.
+                        Keep the current admin session open and test the new code before logging out.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" id="adminTotpQrRegenerate">Generate another</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="adminTotpQrUse" data-bs-dismiss="modal" disabled>Use generated secret</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </main>
 <style>
     #config-block ::placeholder {
@@ -152,5 +220,11 @@
         --bs-alert-bg: #fff3cd;
         --bs-alert-border-color: #ffecb5;
     }
+
+    #adminTotpQrCode {
+        width: 285px;
+        height: auto;
+    }
 </style>
+<script src="{{urlpath}}/vw_static/qrcode-generator-2.0.4.js"></script>
 <script src="{{urlpath}}/vw_static/admin_settings.js"></script>

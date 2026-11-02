@@ -296,6 +296,11 @@ pub static STATIC_FILES: LazyLock<HashMap<&'static str, StaticFile>> = LazyLock:
         ("admin.css", ContentType::CSS, &include_bytes!("../static/scripts/admin.css")[..]),
         ("admin.js", ContentType::JavaScript, &include_bytes!("../static/scripts/admin.js")[..]),
         ("admin_settings.js", ContentType::JavaScript, &include_bytes!("../static/scripts/admin_settings.js")[..]),
+        (
+            "qrcode-generator-2.0.4.js",
+            ContentType::JavaScript,
+            &include_bytes!("../static/scripts/qrcode-generator-2.0.4.js")[..],
+        ),
         ("admin_users.js", ContentType::JavaScript, &include_bytes!("../static/scripts/admin_users.js")[..]),
         (
             "admin_organizations.js",
