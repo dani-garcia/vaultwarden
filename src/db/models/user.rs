@@ -660,24 +660,25 @@ impl Invitation {
 pub struct UserId(String);
 
 #[derive(
-    Clone,
-    Debug,
-    DieselNewType,
-    FromForm,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    AsRef,
-    Deref,
-    Display,
-    From,
-    UuidFromParam,
+    Clone, Debug, DieselNewType, FromForm, PartialEq, Eq, Hash, Serialize, AsRef, Deref, Display, From, UuidFromParam,
 )]
 #[deref(forward)]
 #[from(forward)]
 pub struct KeyId(String);
+
+/// Like upstream, a key id is 32 lowercase hex characters. Key ids are compared as strings, so one in any other
+/// format would never match the id the clients send.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/8da186ad73f80d37157fe6fd42323e4284e83ec1/src/Core/KeyManagement/Models/Data/KeyId.cs#L20-L42>
+impl<'de> serde::Deserialize<'de> for KeyId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let key_id = String::deserialize(deserializer)?;
+        if key_id.len() != 32 || !key_id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+            return Err(serde::de::Error::custom("Key id must be 32 lowercase hex characters"));
+        }
+        Ok(Self(key_id))
+    }
+}
 
 impl SsoUser {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
@@ -730,5 +731,24 @@ impl SsoUser {
                 .map_res("Error deleting sso user")
         })
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_key_id_format() {
+        let key_id: KeyId = serde_json::from_str(r#""0123456789abcdef0123456789abcdef""#).unwrap();
+        assert_eq!(key_id.as_ref(), "0123456789abcdef0123456789abcdef");
+
+        for invalid in ["", "0123456789ABCDEF0123456789ABCDEF", "0123456789abcdef", "0123456789abcdef0123456789abcdeg"]
+        {
+            assert!(serde_json::from_str::<KeyId>(&format!("\"{invalid}\"")).is_err(), "{invalid:?}");
+        }
+
+        // An absent key id stays optional
+        assert_eq!(serde_json::from_str::<Option<KeyId>>("null").unwrap(), None);
     }
 }
