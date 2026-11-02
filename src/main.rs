@@ -51,6 +51,8 @@ use rocket::data::{Limits, ToByteUnit};
 mod error;
 mod api;
 mod auth;
+#[cfg(any(dsql, s3, ses))]
+mod aws;
 mod config;
 mod crypto;
 #[macro_use]
