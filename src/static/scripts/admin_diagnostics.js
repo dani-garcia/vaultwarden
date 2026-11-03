@@ -93,7 +93,9 @@ async function generateSupportString(event, dj) {
     supportString += `* Running within a container: ${yn(dj.running_within_container)} (Base: ${dj.container_base_image})\n`;
     supportString += `* Database type: ${dj.db_type}\n`;
     supportString += `* Database version: ${dj.db_version}\n`;
-    supportString += `* Uses config.json: ${yn(dj.overrides !== "")}\n`;
+    supportString += `* Uses config.json: ${yn(dj.config_file_status !== "NotFound")}`;
+    supportString += dj.config_file_status !== "NotFound" ? ` (Valid: ${chk(dj.config_file_status === "Loaded")})\n` : "\n";
+    supportString += `* Environment variables are valid: ${chk(dj.invalid_env_vars == "")}\n`;
     supportString += `* Uses custom templates: ${yn(dj.template_overrides !== "")}${template_overrides}\n`;
     supportString += `* Uses a reverse proxy: ${yn(dj.ip_header_exists)}\n`;
     if (dj.ip_header_exists) {
@@ -116,7 +118,7 @@ async function generateSupportString(event, dj) {
     }
     supportString += `* HTTP Response Checks: ${chk(httpResponseCheck)}\n`;
     if (dj.invalid_feature_flags != "") {
-        supportString += "* Invalid feature flags: true\n";
+        supportString += "* Invalid feature flags: true :x:\n";
     }
 
     const jsonResponse = await fetch(`${BASE_URL}/admin/diagnostics/config`, {
@@ -131,6 +133,11 @@ async function generateSupportString(event, dj) {
     // Start Config and Details section within a details block which is collapsed by default
     supportString += "\n### Config & Details (Generated via diagnostics page)\n\n";
     supportString += "<details><summary>Show Config & Details</summary>\n";
+
+    // Show invalid environment variables if they exists
+    if (dj.invalid_env_vars != "") {
+        supportString += `\n**Invalid environment variables:** ${dj.invalid_env_vars}\n`;
+    }
 
     // Add overrides if they exists
     if (dj.overrides != "") {

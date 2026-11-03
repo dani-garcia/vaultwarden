@@ -84,18 +84,26 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
                 )
             }
         } else if let Some(auth_request_id) = auth_request_id {
-            let Some(auth_request) = AuthRequest::find_by_uuid(auth_request_id, &conn).await else {
-                err!("AuthRequest doesn't exist", "User not found")
-            };
             let Some(code) = &data.auth_request_access_code else {
                 err!("no auth request access code")
             };
+            let Some(auth_request) = AuthRequest::find_by_uuid_and_user(auth_request_id, &user.uuid, &conn).await
+            else {
+                err!("AuthRequest doesn't exist", "Invalid auth request or does not belong to user")
+            };
 
-            if auth_request.device_type != client_headers.device_type
+            let request_expired = Utc::now().naive_utc() >= auth_request.creation_date + TimeDelta::minutes(5);
+            if !auth_request.approved.unwrap_or(false)
+                || auth_request.authentication_date.is_some()
+                || request_expired
+                || auth_request.device_type != client_headers.device_type
                 || auth_request.request_ip != client_headers.ip.ip.to_string()
                 || !auth_request.check_access_code(code)
             {
-                err!("AuthRequest doesn't exist", "Invalid device, IP or code")
+                err!(
+                    "AuthRequest doesn't exist",
+                    "Auth request not approved, already used or expired, or invalid device, IP or code"
+                )
             }
         } else if let Some(device_identifier) = &data.device_identifier {
             // iOS/Android SSO logins send the email and device id but no password hash,
@@ -294,7 +302,7 @@ pub async fn validate_email_code_str(
 
     if !crypto::ct_eq(issued_token, token) {
         email_data.add_attempt();
-        if email_data.attempts >= CONFIG.email_attempts_limit() {
+        if email_data.attempts >= u64::from(CONFIG.email_attempts_limit()) {
             email_data.reset_token();
         }
         twofactor.data = email_data.to_json();
@@ -313,7 +321,7 @@ pub async fn validate_email_code_str(
     twofactor.save(conn).await?;
 
     let dt = DateTime::from_timestamp(email_data.token_sent, 0).expect("Email token timestamp invalid.").naive_utc();
-    let max_time = CONFIG.email_expiration_time().cast_signed();
+    let max_time = i64::from(CONFIG.email_expiration_time());
     if dt + TimeDelta::try_seconds(max_time).unwrap() < Utc::now().naive_utc() {
         err!(
             "Token has expired",

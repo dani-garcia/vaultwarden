@@ -166,6 +166,15 @@ impl AuthRequest {
         .await
     }
 
+    pub async fn delete_all_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
+        conn.run(move |conn| {
+            diesel::delete(auth_requests::table.filter(auth_requests::user_uuid.eq(user_uuid)))
+                .execute(conn)
+                .map_res("Error deleting auth requests for user")
+        })
+        .await
+    }
+
     /// Marks the request as used to log in. Returns false when it already was, so it only works once.
     pub async fn set_authentication_date(uuid: &AuthRequestId, conn: &DbConn) -> ApiResult<bool> {
         let now = Utc::now().naive_utc();
@@ -188,7 +197,7 @@ impl AuthRequest {
     pub async fn purge_expired_auth_requests(conn: &DbConn) {
         // delete auth requests older than 15 minutes which is functionally equivalent to upstream:
         // https://github.com/bitwarden/server/blob/f8ee2270409f7a13125cd414c450740af605a175/src/Sql/dbo/Auth/Stored%20Procedures/AuthRequest_DeleteIfExpired.sql
-        let expiry_time = Utc::now().naive_utc() - chrono::TimeDelta::try_minutes(15).unwrap();
+        let expiry_time = Utc::now().naive_utc() - chrono::TimeDelta::minutes(15);
         for auth_request in Self::find_created_before(&expiry_time, conn).await {
             auth_request.delete(conn).await.ok();
         }

@@ -151,7 +151,7 @@ pub async fn enforce_2fa_policy(
             member.save(conn).await?;
 
             log_event(
-                EventType::OrganizationUserRevoked,
+                EventType::OrganizationUserRevokedTwoFactorNonCompliance,
                 &member.uuid,
                 &member.org_uuid,
                 act_user_id,
@@ -185,8 +185,16 @@ pub async fn enforce_2fa_policy_for_org(
             member.revoke();
             member.save(conn).await?;
 
-            log_event(EventType::OrganizationUserRevoked, &member.uuid, org_id, act_user_id, device_type, ip, conn)
-                .await;
+            log_event(
+                EventType::OrganizationUserRevokedTwoFactorNonCompliance,
+                &member.uuid,
+                org_id,
+                act_user_id,
+                device_type,
+                ip,
+                conn,
+            )
+            .await;
         }
     }
 
@@ -196,7 +204,7 @@ pub async fn enforce_2fa_policy_for_org(
 pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
     debug!("Sending notifications for incomplete 2FA logins");
 
-    if CONFIG.incomplete_2fa_time_limit() <= 0 || !CONFIG.mail_enabled() {
+    if CONFIG.incomplete_2fa_time_limit() == 0 || !CONFIG.mail_enabled() {
         return;
     }
 
@@ -206,11 +214,21 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
     };
 
     let now = Utc::now().naive_utc();
-    let time_limit = TimeDelta::try_minutes(CONFIG.incomplete_2fa_time_limit()).unwrap();
-    let time_before = now - time_limit;
+    let Some(time_limit) = TimeDelta::try_minutes(i64::from(CONFIG.incomplete_2fa_time_limit())) else {
+        error!("Failed to calculate the time limit for sending incomplete 2fa attempts");
+        return;
+    };
+    let Some(time_before) = now.checked_sub_signed(time_limit) else {
+        error!("Failed to calculate the timestamp for sending incomplete 2fa attempts");
+        return;
+    };
+
     let incomplete_logins = TwoFactorIncomplete::find_logins_before(&time_before, &conn).await;
     for login in incomplete_logins {
-        let user = User::find_by_uuid(&login.user_uuid, &conn).await.expect("User not found");
+        let Some(user) = User::find_by_uuid(&login.user_uuid, &conn).await else {
+            error!("User '{}', not found!", login.user_uuid);
+            continue;
+        };
         info!(
             "User {} did not complete a 2FA login within the configured time limit. IP: {}",
             user.email, login.ip_address

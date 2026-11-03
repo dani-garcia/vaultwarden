@@ -268,11 +268,12 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn)
     let file_id = crate::crypto::generate_send_file_id();
 
     let mut data_value: Value = serde_json::from_str(&send.data)?;
-    if let Some(o) = data_value.as_object_mut() {
-        o.insert(String::from("id"), Value::String(file_id.clone()));
-        o.insert(String::from("size"), Value::Number(file_length.into()));
-        o.insert(String::from("sizeName"), Value::String(crate::util::get_display_size(file_length)));
-    }
+    let Some(o) = data_value.as_object_mut() else {
+        err!("Invalid Send file data")
+    };
+    o.insert(String::from("id"), Value::String(file_id.clone()));
+    o.insert(String::from("size"), Value::Number(file_length.into()));
+    o.insert(String::from("sizeName"), Value::String(crate::util::get_display_size(file_length)));
     send.data = serde_json::to_string(&data_value)?;
     send.save(&conn).await?;
 

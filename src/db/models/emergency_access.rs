@@ -1,4 +1,4 @@
-use chrono::{NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
 use serde_json::Value;
@@ -112,7 +112,25 @@ impl EmergencyAccess {
             "object": "emergencyAccessGranteeDetails",
         }))
     }
+
+    pub fn deadline_at(&self) -> Result<NaiveDateTime, crate::Error> {
+        if !(EMERGENCY_ACCESS_TIMEOUT_RANGE).contains(&self.wait_time_days) {
+            err!("Emergency access wait time is out-of-bounds!")
+        }
+
+        let initiated_at = self.recovery_initiated_at.map_res("Emergency access initiation date missing!")?;
+
+        TimeDelta::try_days(i64::from(self.wait_time_days))
+            .and_then(|w| initiated_at.checked_add_signed(w))
+            .map_res("Emergency access deadline is invalid")
+    }
+
+    pub fn is_recovery_allowed(&self, now: &NaiveDateTime) -> Result<bool, crate::Error> {
+        Ok(self.deadline_at()?.le(now))
+    }
 }
+
+pub const EMERGENCY_ACCESS_TIMEOUT_RANGE: std::ops::RangeInclusive<i32> = 1..=90;
 
 #[derive(Copy, Clone)]
 pub enum EmergencyAccessType {
@@ -169,27 +187,42 @@ impl EmergencyAccess {
 
     pub async fn update_access_status_and_save(
         &mut self,
-        status: i32,
+        from_status: i32,
+        to_status: i32,
         date: &NaiveDateTime,
         conn: &DbConn,
     ) -> EmptyResult {
+        let uuid = self.uuid.clone();
+        let updated_at = *date;
+        let res = conn
+            .run(move |conn| {
+                crate::util::retry(
+                    || {
+                        diesel::update(
+                            emergency_access::table
+                                .filter(emergency_access::uuid.eq(&uuid))
+                                .filter(emergency_access::status.eq(from_status)),
+                        )
+                        .set((emergency_access::status.eq(to_status), emergency_access::updated_at.eq(updated_at)))
+                        .execute(conn)
+                    },
+                    10,
+                )
+            })
+            .await;
+
+        match res {
+            Ok(1) => {} // One record updated, which is valid
+            Ok(_) => err!("Emergency access status was changed already"),
+            Err(e) => err!("Error updating emergency access status", format!("{e}")),
+        }
+
+        self.status = to_status;
+        self.updated_at = updated_at;
+
         // Update the grantee so that it will refresh it's status.
         User::update_uuid_revision(self.grantee_uuid.as_ref().expect("Error getting grantee"), conn).await;
-        self.status = status;
-        date.clone_into(&mut self.updated_at);
-
-        conn.run(move |conn| {
-            crate::util::retry(
-                || {
-                    diesel::update(emergency_access::table.filter(emergency_access::uuid.eq(&self.uuid)))
-                        .set((emergency_access::status.eq(status), emergency_access::updated_at.eq(date)))
-                        .execute(conn)
-                },
-                10,
-            )
-            .map_res("Error updating emergency access status")
-        })
-        .await
+        Ok(())
     }
 
     pub async fn update_last_notification_date_and_save(&mut self, date: &NaiveDateTime, conn: &DbConn) -> EmptyResult {

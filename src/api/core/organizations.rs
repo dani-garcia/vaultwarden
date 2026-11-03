@@ -16,9 +16,9 @@ use crate::{
         DbConn,
         models::{
             Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser, Device,
-            EventType, Group, GroupId, GroupUser, Invitation, Membership, MembershipId, MembershipStatus,
-            MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, TwoFactor,
-            TwoFactorType, User, UserId,
+            EventType, FillAssistPolicyData, Group, GroupId, GroupUser, Invitation, Membership, MembershipId,
+            MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey,
+            OrganizationId, TwoFactor, TwoFactorType, User, UserId,
         },
     },
     mail,
@@ -131,13 +131,16 @@ impl FullCollectionData {
         let org_groups = Group::find_by_organization(org_id, conn).await;
         let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
-            err!("Invalid group", format!("Group {} does not belong to organization {}!", e.id, org_id))
+            err!("Invalid group", format!("Group {} does not belong to organization {}!", e.id.escape_debug(), org_id))
         }
 
         let org_memberships = Membership::find_by_org(org_id, conn).await;
         let org_membership_ids: HashSet<&MembershipId> = org_memberships.iter().map(|m| &m.uuid).collect();
         if let Some(e) = self.users.iter().find(|m| !org_membership_ids.contains(&m.id)) {
-            err!("Invalid member", format!("Member {} does not belong to organization {}!", e.id, org_id))
+            err!(
+                "Invalid member",
+                format!("Member {} does not belong to organization {}!", e.id.escape_debug(), org_id)
+            )
         }
 
         Ok(())
@@ -552,7 +555,7 @@ async fn post_bulk_access_collections(
     let org_groups = Group::find_by_organization(&org_id, &conn).await;
     let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
     if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
-        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id, org_id))
+        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id.escape_debug(), org_id))
     }
 
     for col_id in data.collection_ids {
@@ -975,13 +978,16 @@ impl InviteData {
         let org_collections = Collection::find_by_organization(org_id, conn).await;
         let org_collection_ids: HashSet<&CollectionId> = org_collections.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.collections.iter().flatten().find(|c| !org_collection_ids.contains(&c.id)) {
-            err!("Invalid collection", format!("Collection {} does not belong to organization {}!", e.id, org_id))
+            err!(
+                "Invalid collection",
+                format!("Collection {} does not belong to organization {}!", e.id.escape_debug(), org_id)
+            )
         }
 
         let org_groups = Group::find_by_organization(org_id, conn).await;
         let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.groups.iter().find(|g| !org_group_ids.contains(g)) {
-            err!("Invalid group", format!("Group {} does not belong to organization {}!", e, org_id))
+            err!("Invalid group", format!("Group {} does not belong to organization {}!", e.escape_debug(), org_id))
         }
 
         Ok(())
@@ -1156,7 +1162,10 @@ async fn bulk_reinvite_members(
     for member_id in data.ids {
         let err_msg = match reinvite_member_impl(&org_id, &member_id, &headers.user.email, &conn).await {
             Ok(()) => String::new(),
-            Err(e) => format!("{e:?}"),
+            Err(e) => {
+                warn!("Unable to reinvite member {}: {e:?}", member_id.escape_debug());
+                e.message().to_owned()
+            }
         };
 
         bulk_response.push(json!(
@@ -1329,7 +1338,10 @@ async fn bulk_confirm_invite(
                 let user_key = invite.key.unwrap_or_default();
                 let err_msg = match confirm_invite_impl(&org_id, &member_id, &user_key, &headers, &conn, &nt).await {
                     Ok(()) => String::new(),
-                    Err(e) => format!("{e:?}"),
+                    Err(e) => {
+                        warn!("Unable to confirm member {}: {e:?}", member_id.escape_debug());
+                        e.message().to_owned()
+                    }
                 };
 
                 bulk_response.push(json!(
@@ -1610,7 +1622,10 @@ async fn bulk_delete_member(
     for member_id in data.ids {
         let err_msg = match delete_member_impl(&org_id, &member_id, &headers, &conn, &nt).await {
             Ok(()) => String::new(),
-            Err(e) => format!("{e:?}"),
+            Err(e) => {
+                warn!("Unable to delete member {}: {e:?}", member_id.escape_debug());
+                e.message().to_owned()
+            }
         };
 
         bulk_response.push(json!(
@@ -2039,6 +2054,29 @@ async fn put_policy(
         err!("Invalid or unsupported policy type")
     };
 
+    let current_policy = OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await;
+    let is_currently_enabled = current_policy.as_ref().is_some_and(|policy| policy.enabled);
+
+    // Fill Assist depends on Single Organization. Match Bitwarden's dependency checks by only checking when the
+    // policy changes state.
+    if pol_type_enum == OrgPolicyType::FillAssist && data.enabled && !is_currently_enabled {
+        let single_org_policy_enabled =
+            OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::SingleOrg, &conn).await.is_some_and(|p| p.enabled);
+
+        if !single_org_policy_enabled {
+            err!("Turn on the Single organization policy because it is required for the Activate fill assist policy.")
+        }
+    }
+
+    if pol_type_enum == OrgPolicyType::SingleOrg && !data.enabled && is_currently_enabled {
+        let fill_assist_policy_enabled =
+            OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::FillAssist, &conn).await.is_some_and(|p| p.enabled);
+
+        if fill_assist_policy_enabled {
+            err!("Turn off the Activate fill assist policy because it requires the Single organization policy.")
+        }
+    }
+
     // Bitwarden only allows the Reset Password policy when Single Org policy is enabled
     // Vaultwarden encouraged to use multiple orgs instead of groups because groups were not available in the past
     // Now that groups are available we can enforce this option when wanted.
@@ -2067,6 +2105,37 @@ async fn put_policy(
 
             if reset_pw_policy_enabled {
                 err!("Account recovery policy is enabled. It is not allowed to disable this policy.")
+            }
+        }
+    }
+
+    if pol_type_enum == OrgPolicyType::FillAssist {
+        let fill_assist_data = match data.data.as_ref() {
+            None | Some(Value::Null) => FillAssistPolicyData {
+                rules_url: None,
+            },
+            Some(data) => {
+                let Ok(data) = serde_json::from_value::<FillAssistPolicyData>(data.clone()) else {
+                    err!("Invalid data for FillAssist policy: rulesUrl has an invalid value.")
+                };
+                data
+            }
+        };
+
+        if data.enabled {
+            let Some(rules_url) = fill_assist_data.rules_url.filter(|url| !url.trim().is_empty()) else {
+                err!("The RulesUrl field is required.")
+            };
+            let Ok(rules_url) = url::Url::parse(&rules_url) else {
+                err!("The RulesUrl field is not a valid fully-qualified http, https, or ftp URL.")
+            };
+
+            if !rules_url.has_host() || !matches!(rules_url.scheme(), "http" | "https" | "ftp") {
+                err!("The RulesUrl field is not a valid fully-qualified http, https, or ftp URL.")
+            }
+
+            if rules_url.scheme() != "https" {
+                err!("RulesUrl must use HTTPS.")
             }
         }
     }
@@ -2102,7 +2171,7 @@ async fn put_policy(
                 }
 
                 log_event(
-                    EventType::OrganizationUserRemoved,
+                    EventType::OrganizationUserRevokedSingleOrganizationNonCompliance,
                     &member.uuid,
                     &org_id,
                     &headers.user.uuid,
@@ -2118,7 +2187,7 @@ async fn put_policy(
         }
     }
 
-    let mut policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await {
+    let mut policy = match current_policy {
         Some(p) => p,
         None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "{}".to_owned()),
     };
@@ -2222,7 +2291,10 @@ async fn bulk_revoke_members(
             for member_id in members {
                 let err_msg = match revoke_member_impl(&org_id, &member_id, &headers, &conn).await {
                     Ok(()) => String::new(),
-                    Err(e) => format!("{e:?}"),
+                    Err(e) => {
+                        warn!("Unable to revoke member {}: {e:?}", member_id.escape_debug());
+                        e.message().to_owned()
+                    }
                 };
 
                 bulk_response.push(json!(
@@ -2325,7 +2397,10 @@ async fn bulk_restore_members(
     for member_id in data.ids {
         let err_msg = match restore_member_impl(&org_id, &member_id, &headers, &conn).await {
             Ok(()) => String::new(),
-            Err(e) => format!("{e:?}"),
+            Err(e) => {
+                warn!("Unable to restore member {}: {e:?}", member_id.escape_debug());
+                e.message().to_owned()
+            }
         };
 
         bulk_response.push(json!(
@@ -2478,13 +2553,16 @@ impl GroupRequest {
         let org_collections = Collection::find_by_organization(org_id, conn).await;
         let org_collection_ids: HashSet<&CollectionId> = org_collections.iter().map(|c| &c.uuid).collect();
         if let Some(e) = self.collections.iter().find(|c| !org_collection_ids.contains(&c.id)) {
-            err!("Invalid collection", format!("Collection {} does not belong to organization {}!", e.id, org_id))
+            err!(
+                "Invalid collection",
+                format!("Collection {} does not belong to organization {}!", e.id.escape_debug(), org_id)
+            )
         }
 
         let org_memberships = Membership::find_by_org(org_id, conn).await;
         let org_membership_ids: HashSet<&MembershipId> = org_memberships.iter().map(|m| &m.uuid).collect();
         if let Some(e) = self.users.iter().find(|m| !org_membership_ids.contains(m)) {
-            err!("Invalid member", format!("Member {} does not belong to organization {}!", e, org_id))
+            err!("Invalid member", format!("Member {} does not belong to organization {}!", e.escape_debug(), org_id))
         }
 
         Ok(())
@@ -2838,12 +2916,11 @@ async fn recover_account(
         err!("Organization user must be confirmed for password reset functionality");
     }
 
-    let fallback_2fa_email =
-        if req.reset_two_factor && CONFIG.mail_enabled() && CONFIG.email_2fa_auto_fallback() && user.verified() {
-            TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await.is_none()
-        } else {
-            false
-        };
+    let fallback_2fa_email = req.reset_two_factor
+        && CONFIG.mail_enabled()
+        && CONFIG.email_2fa_auto_fallback()
+        && user.verified()
+        && TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await.is_none();
 
     // Check the new password before the email below, so that a rejected request doesn't tell the user
     // their password was reset

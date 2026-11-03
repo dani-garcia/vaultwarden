@@ -214,8 +214,8 @@ async fn post_events_collect(data: Json<Vec<EventCollection>>, headers: Headers,
                     .await;
                 }
             }
-            // Client-side cipher events (viewed, copied, toggled, autofilled).
-            1107..=1114 | 1117 | 1119..=1132 => {
+            // Client-side cipher events (viewed, copied, toggled, autofilled, HTTP auth).
+            1107..=1114 | 1117 | 1119..=1133 => {
                 // The cipher determines the organization the event is logged to, so make sure the
                 // user can actually access it instead of trusting the provided cipher uuid.
                 if let Some(cipher_uuid) = &event.cipher_id
@@ -347,14 +347,17 @@ async fn log_event_impl(
 
 pub async fn event_cleanup_job(pool: DbPool) {
     debug!("Start events cleanup job");
-    if CONFIG.events_days_retain().is_none() {
-        debug!("events_days_retain is not configured, abort");
+    if CONFIG.events_days_retain().is_none_or(|d| d == 0) {
+        debug!("events_days_retain is not configured or set to 0, skipping");
         return;
     }
 
-    if let Ok(conn) = pool.get().await {
-        Event::clean_events(&conn).await.ok();
-    } else {
+    let Ok(conn) = pool.get().await else {
         error!("Failed to get DB connection while trying to cleanup the events table");
+        return;
+    };
+
+    if let Err(e) = Event::clean_events(&conn).await {
+        error!("Failed to cleanup the events table: {e}");
     }
 }

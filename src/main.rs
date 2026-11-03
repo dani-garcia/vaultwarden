@@ -595,7 +595,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .manage(Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS))
         .attach(util::AppHeaders())
         .attach(util::Cors())
-        .attach(util::BetterLogging(extra_debug))
+        .attach(util::BetterLogging::new(extra_debug, basepath))
         .ignite()
         .await?;
 
@@ -729,7 +729,7 @@ fn schedule_jobs(pool: db::DbPool) {
             // Cleanup the event table of records x days old.
             if CONFIG.org_events_enabled()
                 && !CONFIG.event_cleanup_schedule().is_empty()
-                && CONFIG.events_days_retain().is_some()
+                && CONFIG.events_days_retain().is_some_and(|d| d != 0)
             {
                 sched.add(Job::new(CONFIG.event_cleanup_schedule().parse().unwrap(), || {
                     runtime.spawn(api::event_cleanup_job(pool.clone()));
@@ -754,7 +754,9 @@ fn schedule_jobs(pool: db::DbPool) {
             // tick, the one that was added earlier will run first.
             loop {
                 sched.tick();
-                runtime.block_on(tokio::time::sleep(tokio::time::Duration::from_millis(CONFIG.job_poll_interval_ms())));
+                runtime.block_on(tokio::time::sleep(tokio::time::Duration::from_millis(u64::from(
+                    CONFIG.job_poll_interval_ms(),
+                ))));
             }
         })
         .expect("Error spawning job scheduler thread");

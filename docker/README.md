@@ -15,6 +15,7 @@ Some unsupported platforms for Debian based images. These are not built and test
 - 386     (linux/386)
 - ppc64le (linux/ppc64le)
 - s390x   (linux/s390x)
+- riscv64 (linux/riscv64)
 
 To build these containers you need to enable QEMU binfmt support to be able to run/emulate architectures which are different then your host.<br>
 This ensures the container build process can run binaries from other architectures.<br>

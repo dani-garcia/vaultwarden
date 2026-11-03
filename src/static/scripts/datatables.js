@@ -4,13 +4,13 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-3.1.3
+ *   https://datatables.net/download/#bs5/dt-3.1.4
  *
  * Included libraries:
- *   DataTables 3.1.3
+ *   DataTables 3.1.4
  */
 
-/*! DataTables 3.1.3
+/*! DataTables 3.1.4
  * Copyright (c) SpryMedia Ltd - datatables.net/license
  */
 
@@ -453,6 +453,9 @@ function assignDeep(out, ...inputs) {
             continue;
         }
         for (const [key, value] of Object.entries(input)) {
+            if (key === '__proto__') {
+                continue;
+            }
             if (Array.isArray(value)) {
                 if (!Array.isArray(out[key])) {
                     out[key] = [];
@@ -489,6 +492,9 @@ function assignDeep(out, ...inputs) {
 function assignDeepObjects(out, extender, breakRefs = false) {
     let val;
     for (let prop in extender) {
+        if (prop === '__proto__') {
+            continue;
+        }
         if (Object.prototype.hasOwnProperty.call(extender, prop)) {
             val = extender[prop];
             if (plainObject(val)) {
@@ -2694,7 +2700,7 @@ class Dom {
      */
     prepend(content) {
         return this.each(el => {
-            if (content instanceof Dom) {
+            if (arrayLike(content) || dom(content)) {
                 // Reverse the array, so if there are multiple elements, they
                 // end up being added sequentially, just like jQuery
                 let itemsReversed = Array.from(content).reverse();
@@ -8714,7 +8720,7 @@ const ext = {
     /**
      * DataTables build type (expanded by the download builder)
      */
-    builder: 'bs5/dt-3.1.3',
+    builder: 'bs5/dt-3.1.4',
     /**
      * Buttons. For use with the Buttons extension for DataTables. This is
      * defined here so other extensions can define buttons regardless of load
@@ -8860,7 +8866,7 @@ const ext = {
      * Software version
      *  @type string
      */
-    version: '3.1.3'
+    version: '3.1.4'
 };
 //
 // Backwards compatibility. Alias to pre 1.10 Hungarian notation counter parts
@@ -9559,7 +9565,7 @@ register('destroy()', function (remove) {
         callbackFire(settings, 'destroy', 'destroy', [settings], true);
         // If not being removed from the document, make all columns visible
         if (!remove) {
-            new Api(settings).columns().visible();
+            new Api(settings).columns().visible(true);
         }
         // Container width change listener
         if (settings.resizeObserver) {
