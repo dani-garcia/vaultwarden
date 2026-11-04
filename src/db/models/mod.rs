@@ -36,7 +36,7 @@ pub use self::organization::{
     CustomPermission, Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, Organization,
     OrganizationApiKey, OrganizationId, custom_roles_enabled,
 };
-pub use self::send::{Send, SendFileId, SendId, SendType};
+pub use self::send::{Send, SendAuthType, SendFileId, SendId, SendOTP, SendType};
 pub use self::sso_auth::{OIDCAuthenticatedUser, OIDCCodeResponseError, SsoAuth};
 pub use self::two_factor::{TwoFactor, TwoFactorType};
 pub use self::two_factor_duo_context::TwoFactorDuoContext;
