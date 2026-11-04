@@ -6,6 +6,7 @@ use serde_json::Value;
 use crate::{
     CONFIG,
     api::EmptyResult,
+    auth::DEFAULT_ACCESS_VALIDITY,
     crypto,
     db::{
         DbConn,
@@ -77,6 +78,8 @@ pub struct User {
     pub signed_public_key: Option<String>,
     pub security_state: Option<String>,
     pub security_version: Option<i32>,
+    /// JSON `{"wrappedUserKey1", "wrappedUserKey2"}` for sessions that still hold the v1 user key. Opaque to us.
+    pub v2_upgrade_token: Option<String>,
 }
 
 #[derive(Identifiable, Queryable, Insertable)]
@@ -105,11 +108,26 @@ enum UserStatus {
     _Disabled = 2,
 }
 
+/// A previous security stamp that is still accepted, until `expire`.
 #[derive(Serialize, Deserialize)]
 pub struct UserStampException {
-    pub routes: Vec<String>,
+    /// The routes the stamp is still accepted on, or `None` for any route.
+    pub routes: Option<Vec<String>>,
     pub security_stamp: String,
     pub expire: i64,
+}
+
+impl UserStampException {
+    pub fn is_expired(&self) -> bool {
+        Utc::now().timestamp() > self.expire
+    }
+
+    /// Whether this exception lets a token carrying `security_stamp` through on `route`.
+    pub fn allows(&self, security_stamp: &str, route: &str) -> bool {
+        !self.is_expired()
+            && self.security_stamp == security_stamp
+            && self.routes.as_ref().is_none_or(|routes| routes.iter().any(|r| r == route))
+    }
 }
 
 /// Local methods
@@ -168,11 +186,25 @@ impl User {
             signed_public_key: None,
             security_state: None,
             security_version: None,
+            v2_upgrade_token: None,
         }
     }
 
     pub fn is_v2(&self) -> bool {
         self.signed_public_key.is_some() && self.security_state.is_some() && self.security_version.is_some()
+    }
+
+    /// Upstream's `HasV2Encryption`: a private key wrapped as `CoseEncrypt0B64` (type 7) and security version 2.
+    /// Upstream only uses it to decide which accounts need a v2-capable client.
+    ///
+    /// Ref: <https://github.com/bitwarden/server/blob/8da186ad73f80d37157fe6fd42323e4284e83ec1/src/Core/Entities/User.cs#L245-L278>
+    pub fn has_v2_encryption(&self) -> bool {
+        self.security_version == Some(2)
+            && self
+                .private_key
+                .as_deref()
+                .and_then(|private_key| private_key.split_once('.'))
+                .is_some_and(|(enc_type, _)| enc_type.parse::<u8>() == Ok(7))
     }
 
     pub fn check_valid_password(&self, password: &str) -> bool {
@@ -184,6 +216,7 @@ impl User {
         )
     }
 
+    /// Upstream's `GetMasterPasswordSalt`: there is no separate salt, so the normalized email
     pub fn master_password_salt(&self) -> String {
         self.email.trim().to_lowercase()
     }
@@ -238,7 +271,30 @@ impl User {
 
     pub async fn reset_security_stamp(&mut self, conn: &DbConn) -> EmptyResult {
         self.security_stamp = get_uuid();
+        // Keeps the unexpired route exceptions, set for the stamp being replaced, and drops a rotation's grace
+        let mut exceptions = self.stamp_exceptions();
+        exceptions.retain(|e| e.routes.is_some() && !e.is_expired());
+        self.set_stamp_exceptions(&exceptions);
         Device::rotate_refresh_tokens_by_user(&self.uuid, conn).await?;
+        Ok(())
+    }
+
+    /// Resets the stamp but lets issued access tokens run out, as upstream only checks it on refresh.
+    pub async fn reset_security_stamp_after_key_rotation(&mut self, conn: &DbConn) -> EmptyResult {
+        let previous_stamp = self.security_stamp.clone();
+        let mut grace: Vec<UserStampException> =
+            self.stamp_exceptions().into_iter().filter(|e| e.routes.is_none() && !e.is_expired()).collect();
+
+        self.reset_security_stamp(conn).await?;
+
+        grace.push(UserStampException {
+            routes: None,
+            security_stamp: previous_stamp,
+            expire: (Utc::now() + *DEFAULT_ACCESS_VALIDITY).timestamp(),
+        });
+        let mut exceptions = self.stamp_exceptions();
+        exceptions.extend(grace);
+        self.set_stamp_exceptions(&exceptions);
         Ok(())
     }
 
@@ -250,17 +306,30 @@ impl User {
     ///   After these 2 minutes this stamp will expire.
     ///
     pub fn set_stamp_exception(&mut self, route_exception: Vec<String>) {
-        let stamp_exception = UserStampException {
-            routes: route_exception,
+        self.set_stamp_exceptions(&[UserStampException {
+            routes: Some(route_exception),
             security_stamp: self.security_stamp.clone(),
             expire: (Utc::now() + TimeDelta::try_minutes(2).unwrap()).timestamp(),
-        };
-        self.stamp_exception = Some(serde_json::to_string(&stamp_exception).unwrap_or_default());
+        }]);
     }
 
-    /// Resets the stamp_exception to prevent re-use of the previous security-stamp
-    pub fn reset_stamp_exception(&mut self) {
-        self.stamp_exception = None;
+    /// The previous security stamps that are still accepted, expired ones included.
+    pub fn stamp_exceptions(&self) -> Vec<UserStampException> {
+        let Some(stored) = self.stamp_exception.as_deref() else {
+            return Vec::new();
+        };
+        // Before key rotations kept sessions alive, only a single route exception was stored.
+        serde_json::from_str::<Vec<UserStampException>>(stored)
+            .or_else(|_| serde_json::from_str::<UserStampException>(stored).map(|e| vec![e]))
+            .unwrap_or_default()
+    }
+
+    fn set_stamp_exceptions(&mut self, exceptions: &[UserStampException]) {
+        self.stamp_exception = if exceptions.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&exceptions).unwrap_or_default())
+        };
     }
 
     pub fn display_name(&self) -> &str {
@@ -329,6 +398,10 @@ impl User {
             "verifyingKey": verifying_key,
             "object": "publicKeys"
         })
+    }
+
+    pub fn v2_upgrade_token_json(&self) -> Option<Value> {
+        self.v2_upgrade_token.as_ref().and_then(|token| serde_json::from_str(token).ok())
     }
 
     pub async fn to_json(&self, conn: &DbConn) -> Value {
@@ -600,24 +673,25 @@ impl Invitation {
 pub struct UserId(String);
 
 #[derive(
-    Clone,
-    Debug,
-    DieselNewType,
-    FromForm,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    AsRef,
-    Deref,
-    Display,
-    From,
-    UuidFromParam,
+    Clone, Debug, DieselNewType, FromForm, PartialEq, Eq, Hash, Serialize, AsRef, Deref, Display, From, UuidFromParam,
 )]
 #[deref(forward)]
 #[from(forward)]
 pub struct KeyId(String);
+
+/// Like upstream, a key id is 32 lowercase hex characters. Key ids are compared as strings, so one in any other
+/// format would never match the id the clients send.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/8da186ad73f80d37157fe6fd42323e4284e83ec1/src/Core/KeyManagement/Models/Data/KeyId.cs#L20-L42>
+impl<'de> serde::Deserialize<'de> for KeyId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let key_id = String::deserialize(deserializer)?;
+        if key_id.len() != 32 || !key_id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+            return Err(serde::de::Error::custom("Key id must be 32 lowercase hex characters"));
+        }
+        Ok(Self(key_id))
+    }
+}
 
 impl SsoUser {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
@@ -670,5 +744,41 @@ impl SsoUser {
                 .map_res("Error deleting sso user")
         })
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_key_id_format() {
+        let key_id: KeyId = serde_json::from_str(r#""0123456789abcdef0123456789abcdef""#).unwrap();
+        assert_eq!(key_id.as_ref(), "0123456789abcdef0123456789abcdef");
+
+        for invalid in ["", "0123456789ABCDEF0123456789ABCDEF", "0123456789abcdef", "0123456789abcdef0123456789abcdeg"]
+        {
+            assert!(serde_json::from_str::<KeyId>(&format!("\"{invalid}\"")).is_err(), "{invalid:?}");
+        }
+
+        // An absent key id stays optional
+        assert_eq!(serde_json::from_str::<Option<KeyId>>("null").unwrap(), None);
+    }
+
+    #[test]
+    fn test_has_v2_encryption() {
+        let user = |private_key: Option<&str>, security_version: Option<i32>| {
+            let mut user = User::new("user@example.com", None);
+            user.private_key = private_key.map(String::from);
+            user.security_version = security_version;
+            user
+        };
+
+        assert!(user(Some("7.cose"), Some(2)).has_v2_encryption());
+        assert!(!user(Some("7.cose"), Some(1)).has_v2_encryption());
+        assert!(!user(Some("7.cose"), None).has_v2_encryption());
+        assert!(!user(Some("2.iv|data|mac"), Some(2)).has_v2_encryption());
+        assert!(!user(Some("7"), Some(2)).has_v2_encryption());
+        assert!(!user(None, Some(2)).has_v2_encryption());
     }
 }

@@ -69,6 +69,9 @@ pub struct Membership {
     access_event_logs: bool,
     access_import_export: bool,
     access_reports: bool,
+
+    /// The user's v2 upgrade token, for the org to unwrap the v2 user key after an upgrade. Opaque to us.
+    pub v2_upgrade_token: Option<String>,
 }
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -407,6 +410,8 @@ impl Membership {
             access_event_logs: false,
             access_import_export: false,
             access_reports: false,
+
+            v2_upgrade_token: None,
         }
     }
 

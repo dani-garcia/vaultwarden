@@ -445,7 +445,7 @@ async fn delete_user(user_id: UserId, token: AdminToken, conn: DbConn, nt: Notif
     if res.is_ok() {
         nt.send_logout(&user, None, &conn).await;
         if has_push_device {
-            push_logout_to_relay(&user, None);
+            push_logout_to_relay(&user, None, None);
         }
     }
 
