@@ -219,6 +219,7 @@ table! {
         avatar_color -> Nullable<Text>,
         external_id -> Nullable<Text>,
         key_id -> Nullable<Text>,
+        verify_devices -> Bool,
     }
 }
 

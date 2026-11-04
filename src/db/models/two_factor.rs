@@ -45,6 +45,8 @@ pub enum TwoFactorType {
 
     // Special type for Protected Actions verification via email
     ProtectedActions = 2000,
+    // Special type for New Device Verification via email
+    NewDeviceVerification = 2001,
 }
 
 /// Local methods
@@ -115,6 +117,21 @@ impl TwoFactor {
                     .map_res("Error saving twofactor")
             }
         }
+    }
+
+    /// Atomically consume a code only if its stored content still matches what was validated.
+    /// A newer code can replace the row between the lookup and this delete.
+    pub async fn delete_if_data_matches(self, expected_data: &str, conn: &DbConn) -> Result<bool, crate::error::Error> {
+        let expected_data = expected_data.to_owned();
+        conn.run(move |conn| {
+            diesel::delete(
+                twofactor::table.filter(twofactor::uuid.eq(self.uuid)).filter(twofactor::data.eq(expected_data)),
+            )
+            .execute(conn)
+            .map(|deleted| deleted == 1)
+            .map_res("Error consuming new device verification code")
+        })
+        .await
     }
 
     pub async fn delete(self, conn: &DbConn) -> EmptyResult {
