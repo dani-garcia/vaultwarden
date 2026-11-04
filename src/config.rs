@@ -628,6 +628,11 @@ make_config! {
         /// This setting applies globally to all users.
         incomplete_2fa_time_limit: u16, true,   def,    3;
 
+        /// Password generator policy |> Optional global password generator policy, enforced for all
+        /// users as if set by an organization. Uses the Bitwarden policy data format. Ex format:
+        /// '{"overridePasswordType":null,"minLength":16,"useUpper":true,"useLower":true,"useNumbers":true,"useSpecial":false,"minNumbers":1,"minSpecial":1,"minNumberWords":3,"capitalize":false,"includeNumber":false}'
+        password_generator_policy: String, true, option;
+
         /// Disable icon downloads |> Set to true to disable icon downloading in the internal icon service.
         /// This still serves existing icons from $ICON_CACHE_FOLDER, without generating any external
         /// network requests. $ICON_CACHE_TTL must also be set to 0; otherwise, the existing icons
@@ -1161,6 +1166,8 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
     }
 
+    validate_password_generator_policy(cfg.password_generator_policy.as_ref())?;
+
     if cfg._enable_yubico {
         if cfg.yubico_client_id.is_some() != cfg.yubico_secret_key.is_some() {
             err!("Both `YUBICO_CLIENT_ID` and `YUBICO_SECRET_KEY` must be set for Yubikey OTP support")
@@ -1400,6 +1407,21 @@ fn validate_sso_master_password_policy(
         Some(Ok(_)) => err!("Invalid sso_master_password_policy: parsed value is not a JSON object"),
         Some(Err(error)) => {
             err!(format!("Invalid sso_master_password_policy ({error}), Ensure that it's correctly escaped with ''"))
+        }
+    }
+}
+
+fn validate_password_generator_policy(
+    password_generator_policy: Option<&String>,
+) -> Result<Option<serde_json::Value>, Error> {
+    let policy = password_generator_policy.as_ref().map(|pgp| serde_json::from_str::<serde_json::Value>(pgp));
+
+    match policy {
+        None => Ok(None),
+        Some(Ok(jsobject @ serde_json::Value::Object(_))) => Ok(Some(jsobject)),
+        Some(Ok(_)) => err!("Invalid password_generator_policy: parsed value is not a JSON object"),
+        Some(Err(error)) => {
+            err!(format!("Invalid password_generator_policy ({error}), Ensure that it's correctly escaped with ''"))
         }
     }
 }
@@ -1772,6 +1794,10 @@ impl Config {
 
     pub fn sso_master_password_policy_value(&self) -> Option<serde_json::Value> {
         validate_sso_master_password_policy(self.sso_master_password_policy().as_ref()).ok().flatten()
+    }
+
+    pub fn password_generator_policy_value(&self) -> Option<serde_json::Value> {
+        validate_password_generator_policy(self.password_generator_policy().as_ref()).ok().flatten()
     }
 
     pub fn sso_scopes_vec(&self) -> Vec<String> {
