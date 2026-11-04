@@ -1,4 +1,7 @@
+use std::sync::LazyLock;
+
 use chrono::Utc;
+use dashmap::DashMap;
 use num_traits::FromPrimitive;
 use rocket::{
     Route,
@@ -368,6 +371,40 @@ async fn sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbCon
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
 }
 
+// Consecutive wrong-password attempts per user, as (count, unix timestamp of the last attempt).
+// A streak expires after an hour without attempts and is cleared on successful login.
+static FAILED_LOGIN_ATTEMPTS: LazyLock<DashMap<UserId, (u32, i64)>> = LazyLock::new(DashMap::new);
+
+const FAILED_LOGIN_STREAK_SECS: i64 = 3600;
+
+async fn track_failed_login(user: &User, ip: &ClientIp) {
+    let threshold = CONFIG.failed_login_email_threshold();
+    if threshold == 0 || !CONFIG.mail_enabled() {
+        return;
+    }
+
+    let now = Utc::now();
+    let attempts = {
+        let mut entry = FAILED_LOGIN_ATTEMPTS.entry(user.uuid.clone()).or_insert((0, now.timestamp()));
+        let (count, last_attempt) = *entry;
+        let count = if now.timestamp() - last_attempt > FAILED_LOGIN_STREAK_SECS {
+            1
+        } else {
+            count + 1
+        };
+        *entry = (count, now.timestamp());
+        count
+    };
+
+    // Only notify when the threshold is hit, not on every attempt past it
+    if attempts == threshold
+        && let Err(e) =
+            mail::send_failed_login_attempts(&user.email, &ip.ip.to_string(), &now.naive_utc(), attempts).await
+    {
+        error!("Error sending failed login notification: {e:#?}");
+    }
+}
+
 async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbConn, ip: &ClientIp) -> JsonResult {
     // Validate scope
     AuthMethod::Password.check_scope(data.scope.as_ref())?;
@@ -418,6 +455,7 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
             )
         }
     } else if !user.check_valid_password(password) {
+        track_failed_login(&user, ip).await;
         err!(
             "Username or password is incorrect. Try again",
             format!("IP: {}. Username: {log_username}.", ip.ip),
@@ -425,6 +463,8 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
                 event: EventType::UserFailedLogIn,
             }
         )
+    } else {
+        FAILED_LOGIN_ATTEMPTS.remove(&user.uuid);
     }
 
     // Check if the user is disabled
