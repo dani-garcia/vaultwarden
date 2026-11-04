@@ -565,6 +565,21 @@ pub async fn update_cipher_from_data(
         err!("Data missing")
     };
 
+    // For SSH keys, ensure the required members are present and non-null.
+    // Bitwarden's server rejects an sshKey object with a `null`
+    // privateKey/publicKey/keyFingerprint, but without this check the null
+    // members are accepted and then silently dropped on read (data loss).
+    // A presence check (not key-material validation) matches the upstream
+    // behaviour. See https://github.com/dani-garcia/vaultwarden/issues/7514
+    if data.r#type == 5 {
+        for field in ["privateKey", "publicKey", "keyFingerprint"] {
+            match type_data.get(field) {
+                Some(value) if value.is_string() => {}
+                _ => err!(format!("SSH key is missing the required '{field}' field")),
+            }
+        }
+    }
+
     cipher.key = data.key;
     cipher.name = data.name;
     cipher.notes = data.notes;
