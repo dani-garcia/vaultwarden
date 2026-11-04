@@ -108,19 +108,22 @@ impl Collection {
                 // Owners and Admins always have true. Users are not able to have full access
                 Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Manager),
                 Some(m) => {
-                    // Only let a manager manage collections when the have full read/write access
+                    // The explicit per-collection "Manage" permission applies regardless of the
+                    // member's org-level role. Additionally, a Manager with full (non-restricted)
+                    // read/write access to a collection is also allowed to manage it, even without
+                    // that flag explicitly set.
                     let is_manager = m.atype == MembershipType::Manager;
                     if let Some(cu) = cipher_sync_data.user_collections.get(&self.uuid) {
                         (
                             cu.read_only,
                             cu.hide_passwords,
-                            is_manager && (cu.manage || (!cu.read_only && !cu.hide_passwords)),
+                            cu.manage || (is_manager && !cu.read_only && !cu.hide_passwords),
                         )
                     } else if let Some(cg) = cipher_sync_data.user_collections_groups.get(&self.uuid) {
                         (
                             cg.read_only,
                             cg.hide_passwords,
-                            is_manager && (cg.manage || (!cg.read_only && !cg.hide_passwords)),
+                            cg.manage || (is_manager && !cg.read_only && !cg.hide_passwords),
                         )
                     } else {
                         (false, false, false)
@@ -138,7 +141,9 @@ impl Collection {
                     let is_manager = m.atype == MembershipType::Manager;
                     let read_only = !self.is_writable_by_user(user_uuid, conn).await;
                     let hide_passwords = self.hide_passwords_for_user(user_uuid, conn).await;
-                    (read_only, hide_passwords, is_manager && !read_only && !hide_passwords)
+                    let manage = self.is_manageable_by_user(user_uuid, conn).await
+                        || (is_manager && !read_only && !hide_passwords);
+                    (read_only, hide_passwords, manage)
                 }
                 _ => (true, true, false),
             }
