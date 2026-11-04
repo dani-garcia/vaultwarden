@@ -18,7 +18,7 @@ use macros::UuidFromParam;
 
 use super::{
     CipherId, CollectionGroup, GroupUser, Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId,
-    User, UserId,
+    User, UserId, organization::ORG_ADMIN_ATYPES,
 };
 
 // See (v2026.7.0): https://github.com/bitwarden/server/blob/5d4461aa42cadbacfef8fe2166c5453a5c52773a/src/Core/AdminConsole/Entities/Collection.cs
@@ -375,7 +375,7 @@ impl Collection {
                                 // Directly accessed collection
                                 users_organizations::access_all.eq(true).or(
                                     // access_all in Organization
-                                    users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
+                                    users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin or owner
                                 ),
                             )
                             .or(
@@ -412,7 +412,7 @@ impl Collection {
                         // Directly accessed collection
                         users_organizations::access_all.eq(true).or(
                             // access_all in Organization
-                            users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
+                            users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin or owner
                         ),
                     ))
                     .select(collections::all_columns)
@@ -455,7 +455,7 @@ impl Collection {
                     )
                     .filter(
                         users_organizations::atype
-                            .le(MembershipType::Admin as i32) // Org admin or owner
+                            .eq_any(ORG_ADMIN_ATYPES) // Org admin or owner
                             .or(users_organizations::access_all.eq(true)) // access_all via membership
                             .or(users_collections::collection_uuid
                                 .eq(&self.uuid) // write access given to collection
@@ -489,7 +489,7 @@ impl Collection {
                     )
                     .filter(
                         users_organizations::atype
-                            .le(MembershipType::Admin as i32) // Org admin or owner
+                            .eq_any(ORG_ADMIN_ATYPES) // Org admin or owner
                             .or(users_organizations::access_all.eq(true)) // access_all via membership
                             .or(users_collections::collection_uuid
                                 .eq(&self.uuid) // write access given to collection
@@ -540,7 +540,7 @@ impl Collection {
                             // Directly accessed collection
                             users_organizations::access_all.eq(true).or(
                                 // access_all in Organization
-                                users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
+                                users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin or owner
                             ),
                         )
                         .or(
@@ -600,7 +600,7 @@ impl Collection {
                             // Directly accessed collection
                             users_organizations::access_all.eq(true).or(
                                 // access_all in Organization
-                                users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
+                                users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin or owner
                             ),
                         )
                         .or(
