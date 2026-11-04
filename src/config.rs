@@ -261,6 +261,10 @@ macro_rules! make_config {
             }
 
             async fn from_file() -> Result<Option<Self>, Error> {
+                // The Fs operator would create the folder if it doesn't exist, which we never want
+                if !CONFIG_FILE_PARENT_DIR.starts_with("s3://") && !std::path::Path::new(&*CONFIG_FILE_PARENT_DIR).is_dir() {
+                    return Ok(None);
+                }
                 let operator = storage::operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
                 let config_bytes = match operator.read(&CONFIG_FILENAME).await {
                     Ok(bytes) => bytes,
