@@ -5,6 +5,35 @@ import * as OTPAuth from "otpauth";
 import * as utils from '../../global-utils';
 import { retrieveEmailCode } from './2fa';
 
+export async function landing(
+    test: Test,
+    page: Page,
+    user: { email: string, name: string, password: string },
+    options: { noReset?: bool } = {}
+){
+    await test.step('Landing page', async () => {
+        if( !options.noReset ) {
+            await utils.cleanLanding(page);
+        }
+        await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
+        await page.locator("input[type=email].vw-email-sso").fill(user.email);
+        await page.getByRole('button', { name: /Use single sign-on/ }).click();
+    });
+}
+
+export async function keycloak(
+    test: Test,
+    page: Page,
+    user: { name: string, password: string }
+){
+    await test.step('Keycloak login', async () => {
+        await expect(page.getByRole('heading', { name: 'Sign in to your account' })).toBeVisible();
+        await page.getByLabel(/Username/).fill(user.name);
+        await page.getByLabel('Password', { exact: true }).fill(user.password);
+        await page.getByRole('button', { name: 'Sign In' }).click();
+    });
+}
+
 /**
  * If a MailBuffer is passed it will be used and consume the expected emails
  */
@@ -15,18 +44,9 @@ export async function logNewUser(
     options: { mailBuffer?: MailBuffer } = {}
 ) {
     await test.step(`Create user ${user.name}`, async () => {
-        await test.step('Landing page', async () => {
-            await utils.cleanLanding(page);
-            await page.locator("input[type=email].vw-email-sso").fill(user.email);
-            await page.getByRole('button', { name: /Use single sign-on/ }).click();
-        });
+        await landing(test, page, user);
 
-        await test.step('Keycloak login', async () => {
-            await expect(page.getByRole('heading', { name: 'Sign in to your account' })).toBeVisible();
-            await page.getByLabel(/Username/).fill(user.name);
-            await page.getByLabel('Password', { exact: true }).fill(user.password);
-            await page.getByRole('button', { name: 'Sign In' }).click();
-        });
+        await keycloak(test, page, user);
 
         await test.step('Create Vault account', async () => {
             await expect(page.getByRole('heading', { name: 'Join organisation' })).toBeVisible();
@@ -70,18 +90,9 @@ export async function logUser(
     let mailBuffer = options.mailBuffer;
 
     await test.step(`Log user ${user.email}`, async () => {
-        await test.step('Landing page', async () => {
-            await utils.cleanLanding(page);
-            await page.locator("input[type=email].vw-email-sso").fill(user.email);
-            await page.getByRole('button', { name: /Use single sign-on/ }).click();
-        });
+        await landing(test, page, user);
 
-        await test.step('Keycloak login', async () => {
-            await expect(page.getByRole('heading', { name: 'Sign in to your account' })).toBeVisible();
-            await page.getByLabel(/Username/).fill(user.name);
-            await page.getByLabel('Password', { exact: true }).fill(user.password);
-            await page.getByRole('button', { name: 'Sign In' }).click();
-        });
+        await keycloak(test, page, user);
 
         if( options.totp || options.mail2fa ){
             let code;
