@@ -2000,8 +2000,8 @@ async fn list_policies_token(org_id: OrganizationId, token: &str, conn: DbConn) 
 // Called during the SSO enrollment return the default policy
 #[get("/organizations/00000000-01DC-01DC-01DC-000000000000/policies/master-password", rank = 1)]
 fn get_dummy_master_password_policy() -> JsonResult {
-    let (enabled, data) = match CONFIG.sso_master_password_policy_value() {
-        Some(policy) if CONFIG.sso_enabled() => (true, policy.to_string()),
+    let (enabled, data) = match config_master_password_policy() {
+        Some(policy) => (true, policy.to_string()),
         _ => (false, "null".to_owned()),
     };
     let policy = OrgPolicy::new(FAKE_SSO_IDENTIFIER.into(), OrgPolicyType::MasterPassword, enabled, data);
@@ -2013,8 +2013,8 @@ fn get_dummy_master_password_policy() -> JsonResult {
 async fn get_master_password_policy(org_id: OrganizationId, _headers: OrgMemberHeaders, conn: DbConn) -> JsonResult {
     let policy =
         OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::MasterPassword, &conn).await.unwrap_or_else(|| {
-            let (enabled, data) = match CONFIG.sso_master_password_policy_value() {
-                Some(policy) if CONFIG.sso_enabled() => (true, policy.to_string()),
+            let (enabled, data) = match config_master_password_policy() {
+                Some(policy) => (true, policy.to_string()),
                 _ => (false, "null".to_owned()),
             };
 
@@ -2022,6 +2022,17 @@ async fn get_master_password_policy(org_id: OrganizationId, _headers: OrgMemberH
         });
 
     Ok(Json(policy.to_json()))
+}
+
+// The global policy wins over the SSO one since it applies to all users
+fn config_master_password_policy() -> Option<Value> {
+    CONFIG.master_password_policy_value().or_else(|| {
+        if CONFIG.sso_enabled() {
+            CONFIG.sso_master_password_policy_value()
+        } else {
+            None
+        }
+    })
 }
 
 #[get("/organizations/<org_id>/policies/<pol_type>", rank = 3)]
