@@ -483,6 +483,35 @@ impl Membership {
         )
     }
 
+    fn custom_permission(&self, permission: CustomPermission) -> bool {
+        match permission {
+            CustomPermission::ManageUsers => self.manage_users,
+            CustomPermission::ManageGroups => self.manage_groups,
+            CustomPermission::ManagePolicies => self.manage_policies,
+            CustomPermission::CreateNewCollections => self.create_new_collections,
+            CustomPermission::EditAnyCollection => self.edit_any_collection,
+            CustomPermission::DeleteAnyCollection => self.delete_any_collection,
+            CustomPermission::AccessEventLogs => self.access_event_logs,
+            CustomPermission::AccessImportExport => self.access_import_export,
+            CustomPermission::AccessReports => self.access_reports,
+        }
+    }
+
+    /// Whether the role of this member grants `permission`. Only a Custom role grants any, only while Custom roles
+    /// are enabled, and only the permissions this version enforces.
+    fn grants_custom_permission(&self, permission: CustomPermission) -> bool {
+        custom_roles_enabled()
+            && permission.is_supported()
+            && self.has_type(MembershipType::Custom)
+            && self.custom_permission(permission)
+    }
+
+    /// Whether this member may act with `permission`, granted by their Custom role. Like the authority of any
+    /// other role, it needs a confirmed membership.
+    pub fn has_custom_permission(&self, permission: CustomPermission) -> bool {
+        self.has_status(MembershipStatus::Confirmed) && self.grants_custom_permission(permission)
+    }
+
     pub fn restore(&mut self) -> bool {
         if self.status < MembershipStatus::Invited as i32 {
             self.status += ACTIVATE_REVOKE_DIFF;
@@ -999,6 +1028,13 @@ impl Membership {
 
     pub fn has_full_access(&self) -> bool {
         (self.access_all || self.atype >= MembershipType::Admin) && self.has_status(MembershipStatus::Confirmed)
+    }
+
+    /// Whether this member may edit every collection and the items in them in the Admin Console: every member with
+    /// full access, and a Custom member with Edit any collection. Unlike full access, the permission does not add
+    /// anything to the member's own vault.
+    pub fn can_edit_any_collection(&self) -> bool {
+        self.has_full_access() || self.has_custom_permission(CustomPermission::EditAnyCollection)
     }
 
     pub async fn find_by_uuid(uuid: &MembershipId, conn: &DbConn) -> Option<Self> {

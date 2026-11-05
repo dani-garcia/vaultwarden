@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashSet};
 
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
@@ -66,6 +66,47 @@ pub struct Cipher {
 pub enum RepromptType {
     None = 0,
     Password = 1,
+}
+
+/// Which access a cipher operation is authorized with.
+///
+/// The administrative cipher routes (`/ciphers/<id>/admin` and friends) are served by the same handlers as the
+/// regular vault routes, so the handlers state which one applies. They only differ for a Custom member with Edit
+/// any collection, who reaches every cipher of the organization on the administrative routes, but keeps their
+/// own vault limited to the collections they are assigned to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CipherAccessScope {
+    User,
+    OrganizationAdmin,
+}
+
+impl CipherAccessScope {
+    /// Whether `member` reaches every cipher of their organization with this access.
+    fn reaches_all_ciphers(self, member: &Membership) -> bool {
+        match self {
+            CipherAccessScope::User => member.has_full_access(),
+            CipherAccessScope::OrganizationAdmin => member.can_edit_any_collection(),
+        }
+    }
+
+    /// The access the v2 attachment upload asks for with `adminRequest`. It only picks which check runs, the
+    /// administrative one still needs a member who may edit any collection.
+    pub fn requested(admin_request: Option<bool>) -> Self {
+        if admin_request == Some(true) {
+            CipherAccessScope::OrganizationAdmin
+        } else {
+            CipherAccessScope::User
+        }
+    }
+
+    /// The access for a route that does not tell which one it is, from the member's own membership.
+    pub fn for_member(member: Option<&Membership>) -> Self {
+        if member.is_some_and(Membership::can_edit_any_collection) {
+            CipherAccessScope::OrganizationAdmin
+        } else {
+            CipherAccessScope::User
+        }
+    }
 }
 
 /// Local methods
@@ -152,6 +193,29 @@ impl Cipher {
         sync_type: CipherSyncType,
         conn: &DbConn,
     ) -> Result<Value, crate::Error> {
+        self.to_json_scoped(host, user_uuid, cipher_sync_data, sync_type, CipherAccessScope::User, conn).await
+    }
+
+    /// [`Cipher::to_json`] for an administrative route, telling what the member may do with the cipher there.
+    pub async fn to_json_org_admin(
+        &self,
+        host: &str,
+        user_uuid: &UserId,
+        conn: &DbConn,
+    ) -> Result<Value, crate::Error> {
+        self.to_json_scoped(host, user_uuid, None, CipherSyncType::User, CipherAccessScope::OrganizationAdmin, conn)
+            .await
+    }
+
+    async fn to_json_scoped(
+        &self,
+        host: &str,
+        user_uuid: &UserId,
+        cipher_sync_data: Option<&CipherSyncData>,
+        sync_type: CipherSyncType,
+        scope: CipherAccessScope,
+        conn: &DbConn,
+    ) -> Result<Value, crate::Error> {
         use crate::util::{format_date, validate_and_format_date};
 
         let mut attachments_json: Value = Value::Null;
@@ -179,7 +243,7 @@ impl Cipher {
         // We don't need these values at all for Organizational syncs
         // Skip any other database calls if this is the case and just return false.
         let (read_only, hide_passwords, _) = if sync_type == CipherSyncType::User {
-            if let Some((ro, hp, mn)) = self.get_access_restrictions(user_uuid, cipher_sync_data, conn).await {
+            if let Some((ro, hp, mn)) = self.get_access_restrictions(user_uuid, scope, cipher_sync_data, conn).await {
                 (ro, hp, mn)
             } else {
                 error!("Cipher ownership assertion failure");
@@ -562,20 +626,21 @@ impl Cipher {
         self.user_uuid.is_some() && self.user_uuid.as_ref().unwrap() == user_uuid
     }
 
-    /// Returns whether this cipher is owned by an org in which the user has full access.
+    /// Returns whether this cipher is owned by an org in which the user reaches every cipher with `scope`.
     async fn is_in_full_access_org(
         &self,
         user_uuid: &UserId,
+        scope: CipherAccessScope,
         cipher_sync_data: Option<&CipherSyncData>,
         conn: &DbConn,
     ) -> bool {
         if let Some(ref org_uuid) = self.organization_uuid {
             if let Some(cipher_sync_data) = cipher_sync_data {
                 if let Some(cached_member) = cipher_sync_data.members.get(org_uuid) {
-                    return cached_member.has_full_access();
+                    return scope.reaches_all_ciphers(cached_member);
                 }
             } else if let Some(member) = Membership::find_confirmed_by_user_and_org(user_uuid, org_uuid, conn).await {
-                return member.has_full_access();
+                return scope.reaches_all_ciphers(&member);
             }
         }
         false
@@ -608,6 +673,7 @@ impl Cipher {
     pub async fn get_access_restrictions(
         &self,
         user_uuid: &UserId,
+        scope: CipherAccessScope,
         cipher_sync_data: Option<&CipherSyncData>,
         conn: &DbConn,
     ) -> Option<(bool, bool, bool)> {
@@ -615,7 +681,7 @@ impl Cipher {
         // a collection that the user has full access to. If so, there are no
         // access restrictions.
         if self.is_owned_by_user(user_uuid)
-            || self.is_in_full_access_org(user_uuid, cipher_sync_data, conn).await
+            || self.is_in_full_access_org(user_uuid, scope, cipher_sync_data, conn).await
             || self.is_in_full_access_group(user_uuid, cipher_sync_data, conn).await
         {
             return Some((false, false, true));
@@ -738,8 +804,13 @@ impl Cipher {
         .await
     }
 
-    pub async fn is_write_accessible_to_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
-        match self.get_access_restrictions(user_uuid, None, conn).await {
+    pub async fn is_write_accessible_to_user(
+        &self,
+        user_uuid: &UserId,
+        scope: CipherAccessScope,
+        conn: &DbConn,
+    ) -> bool {
+        match self.get_access_restrictions(user_uuid, scope, None, conn).await {
             Some((read_only, _hide_passwords, manage)) => !read_only || manage,
             None => false,
         }
@@ -747,15 +818,20 @@ impl Cipher {
 
     // used for checking if collection can be edited (only if user has access to a collection they
     // can write to and also passwords are not hidden to prevent privilege escalation)
-    pub async fn is_in_editable_collection_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
-        match self.get_access_restrictions(user_uuid, None, conn).await {
+    pub async fn is_in_editable_collection_by_user(
+        &self,
+        user_uuid: &UserId,
+        scope: CipherAccessScope,
+        conn: &DbConn,
+    ) -> bool {
+        match self.get_access_restrictions(user_uuid, scope, None, conn).await {
             Some((read_only, hide_passwords, manage)) => (!read_only && !hide_passwords) || manage,
             None => false,
         }
     }
 
-    pub async fn is_accessible_to_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
-        self.get_access_restrictions(user_uuid, None, conn).await.is_some()
+    pub async fn is_accessible_to_user(&self, user_uuid: &UserId, scope: CipherAccessScope, conn: &DbConn) -> bool {
+        self.get_access_restrictions(user_uuid, scope, None, conn).await.is_some()
     }
 
     // Returns whether this cipher is a favorite of the specified user.
@@ -1192,6 +1268,50 @@ impl Cipher {
                 .unwrap_or_default()
         })
         .await
+    }
+
+    /// Every collection of every cipher of the organization, for the members who may see all of them.
+    pub async fn get_collections_with_cipher_by_organization(
+        org_uuid: &OrganizationId,
+        conn: &DbConn,
+    ) -> Vec<(CipherId, CollectionId)> {
+        conn.run(move |conn| {
+            ciphers_collections::table
+                .inner_join(collections::table.on(collections::uuid.eq(ciphers_collections::collection_uuid)))
+                .filter(collections::org_uuid.eq(org_uuid))
+                .select(ciphers_collections::all_columns)
+                .load::<(CipherId, CollectionId)>(conn)
+                .unwrap_or_default()
+        })
+        .await
+    }
+
+    /// The ciphers of the organization of `member` the Admin Console lists when they may not edit every cipher, like
+    /// Bitwarden does: the ones in the member's own vault, then, for a member who may edit any collection, the ones in
+    /// no collection at all.
+    pub async fn find_assigned_to_member(member: &Membership, conn: &DbConn) -> (Vec<Self>, Vec<Self>) {
+        let assigned: Vec<Self> = Self::find_by_user_visible(&member.user_uuid, conn)
+            .await
+            .into_iter()
+            .filter(|cipher| cipher.organization_uuid.as_ref() == Some(&member.org_uuid))
+            .collect();
+        if !member.can_edit_any_collection() {
+            return (assigned, Vec::new());
+        }
+
+        let listed: HashSet<CipherId> = assigned.iter().map(|cipher| cipher.uuid.clone()).collect();
+        let in_collections: HashSet<CipherId> =
+            Self::get_collections_with_cipher_by_organization(&member.org_uuid, conn)
+                .await
+                .into_iter()
+                .map(|(cipher, _)| cipher)
+                .collect();
+        let unassigned = Self::find_by_org(&member.org_uuid, conn)
+            .await
+            .into_iter()
+            .filter(|cipher| !in_collections.contains(&cipher.uuid) && !listed.contains(&cipher.uuid))
+            .collect();
+        (assigned, unassigned)
     }
 }
 
