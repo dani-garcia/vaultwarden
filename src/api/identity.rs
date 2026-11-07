@@ -336,7 +336,11 @@ async fn sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbCon
         Some((mut user, sso_user)) => {
             let mut device = get_device(&data, conn, &user).await?;
 
-            let twofactor_token = twofactor_auth(&mut user, &data, &mut device, ip, conn).await?;
+            let twofactor_token = if user_infos.should_skip_2fa() {
+                None
+            } else {
+                twofactor_auth(&mut user, &data, &mut device, ip, conn).await?
+            };
 
             if user.private_key.is_none() {
                 // User was invited a stub was created
