@@ -8,6 +8,7 @@ mod folders;
 mod organizations;
 mod public;
 mod sends;
+mod sso_cookie_vendor;
 
 pub use accounts::purge_auth_requests;
 pub use ciphers::{CipherData, CipherSyncData, CipherSyncType, purge_trashed_ciphers};
@@ -50,6 +51,11 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut eq_domains_routes);
     routes.append(&mut hibp_routes);
     routes.append(&mut meta_routes);
+
+    // Only evaluated at startup, which is why the SSO_COOKIE_VENDOR_* settings are not editable in the admin panel
+    if CONFIG.sso_cookie_vendor_enabled() {
+        routes.append(&mut sso_cookie_vendor::routes());
+    }
 
     routes
 }
@@ -221,6 +227,21 @@ fn config() -> Json<Value> {
     );
     feature_states.insert("pm-19148-innovation-archive".to_owned(), true);
 
+    // Used by clients to learn if the server requires extra work to establish a connection.
+    // See: https://github.com/bitwarden/server/pull/6892
+    let communication = if CONFIG.sso_cookie_vendor_enabled() {
+        json!({
+            "bootstrap": {
+                "type": "ssoCookieVendor",
+                "idpLoginUrl": CONFIG.sso_cookie_vendor_idp_login_url(),
+                "cookieName": CONFIG.sso_cookie_vendor_cookie_name(),
+                "cookieDomain": CONFIG.sso_cookie_vendor_cookie_domain(),
+            }
+        })
+    } else {
+        json!(null)
+    };
+
     Json(json!({
         // Note: The clients use this version to handle backwards compatibility concerns
         // This means they expect a version that closely matches the Bitwarden server version
@@ -249,16 +270,13 @@ fn config() -> Json<Value> {
           "cloudRegion": null,
           "fillAssistRules": CONFIG.fill_assist_rules_url(),
         },
+        "communication": communication,
         // Bitwarden uses this for the self-hosted servers to indicate the default push technology
         "push": {
           "pushTechnology": 0,
           "vapidPublicKey": null
         },
         "featureStates": feature_states,
-        // Not supported right now
-        // Used for by clients to learn if the server requires extra work to establish a connection.
-        // See: https://github.com/bitwarden/server/pull/6892 | https://github.com/bitwarden/server/commit/52955d1860b4dfb905f67bbe39d9b10bbd61ded0
-        "communication": null,
         "object": "config",
     }))
 }

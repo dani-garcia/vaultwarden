@@ -879,6 +879,17 @@ make_config! {
         sso_debug_tokens:               bool,   true,   def,    false;
     },
 
+    sso_cookie_vendor {
+        /// SSO cookie vendor enabled |> Allow the Bitwarden apps to log in through an authenticating reverse proxy
+        sso_cookie_vendor_enabled:          bool,   false,  def,    false;
+        /// SSO cookie vendor IdP login URL |> URL the apps open in a browser to authenticate with the proxy
+        sso_cookie_vendor_idp_login_url:    String, false,  def,    String::new();
+        /// SSO cookie vendor cookie name |> Name of the auth cookie set by the proxy, for example `CF_Authorization`
+        sso_cookie_vendor_cookie_name:      String, false,  def,    String::new();
+        /// SSO cookie vendor cookie domain |> Domain of the auth cookie set by the proxy
+        sso_cookie_vendor_cookie_domain:    String, false,  def,    String::new();
+    },
+
     /// Yubikey settings
     yubico: _enable_yubico {
         /// Enabled
@@ -1163,6 +1174,18 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
         validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
+    }
+
+    // Refuse a half-configured cookie vendor: with any of these blank the endpoint would hand
+    // clients a bootstrap block they cannot act on, or answer with a 500.
+    if cfg.sso_cookie_vendor_enabled
+        && (cfg.sso_cookie_vendor_idp_login_url.is_empty()
+            || cfg.sso_cookie_vendor_cookie_name.is_empty()
+            || cfg.sso_cookie_vendor_cookie_domain.is_empty())
+    {
+        err!(
+            "`SSO_COOKIE_VENDOR_IDP_LOGIN_URL`, `SSO_COOKIE_VENDOR_COOKIE_NAME`, and `SSO_COOKIE_VENDOR_COOKIE_DOMAIN` must be set when `SSO_COOKIE_VENDOR_ENABLED` is true"
+        )
     }
 
     if cfg._enable_yubico {
