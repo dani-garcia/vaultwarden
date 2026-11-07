@@ -867,9 +867,11 @@ make_config! {
         sso_auth_only_not_session:      bool,   true,   def,    false;
         /// Client cache for discovery endpoint. |> Duration in seconds (0 to disable). More details: https://github.com/dani-garcia/vaultwarden/wiki/Enabling-SSO-support-using-OpenId-Connect#client-cache
         sso_client_cache_expiration:    u32,    true,   def,    0;
-        /// Skip 2FA for SSO/social login |> `false` keeps Vaultwarden 2FA, `true` always skips it, `auto` skips it only when the IdP returns an MFA AMR or ACR claim
+        /// Skip 2FA for SSO/social login |> `false` keeps Vaultwarden 2FA, `true` always skips it, `auto` skips it only when a configured MFA AMR or ACR claim matches
         sso_2fa_skip:                   String, true,   def,    "false".to_owned();
-        /// SSO 2FA AMR values |> Comma-separated AMR values that satisfy `SSO_2FA_SKIP=auto`
+        /// SSO 2FA ACR |> Exact issuer-specific ACR value requested and accepted as MFA for `SSO_2FA_SKIP=auto`
+        sso_2fa_acr:                    String, true,   def,    String::new();
+        /// SSO 2FA AMR values |> Comma-separated exact AMR values accepted as MFA for `SSO_2FA_SKIP=auto`; `otp` also requires `pwd`
         sso_2fa_amr:                    String, true,   def,    "mfa,otp,fido2,webauthn,hwk".to_owned();
         /// Log all tokens |> `LOG_LEVEL=debug` or `LOG_LEVEL=info,vaultwarden::sso=debug` is required
         sso_debug_tokens:               bool,   true,   def,    false;

@@ -3,10 +3,9 @@ use std::{borrow::Cow, collections::HashSet, future::Future, pin::Pin, sync::Laz
 use openidconnect::{
     AccessToken, AsyncHttpClient, AuthDisplay, AuthPrompt, AuthType, AuthenticationContextClass, AuthenticationFlow,
     AuthorizationCode, AuthorizationRequest, ClientId, ClientSecret, CsrfToken, EmptyAdditionalClaims,
-    EmptyExtraTokenFields,
-    EndpointNotSet, EndpointSet, HttpClientError, HttpRequest, HttpResponse, IdTokenClaims, IdTokenFields, Nonce,
-    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RefreshToken, ResponseType, Scope, StandardErrorResponse,
-    StandardTokenResponse,
+    EmptyExtraTokenFields, EndpointNotSet, EndpointSet, HttpClientError, HttpRequest, HttpResponse, IdTokenClaims,
+    IdTokenFields, Nonce, OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RefreshToken, ResponseType, Scope,
+    StandardErrorResponse, StandardTokenResponse,
     core::{
         CoreAuthDisplay, CoreAuthPrompt, CoreClient, CoreClientAuthMethod, CoreErrorResponseType, CoreGenderClaim,
         CoreIdTokenVerifier, CoreJsonWebKey, CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm,
@@ -203,8 +202,9 @@ impl Client {
             .add_scopes(scopes)
             .add_extra_params(CONFIG.sso_authorize_extra_params_vec());
 
-        if CONFIG.sso_2fa_skip() == "auto" {
-            auth_req = auth_req.add_auth_context_value(AuthenticationContextClass::new(crate::sso::SSO_2FA_ACR.to_owned()));
+        let sso_2fa_acr = CONFIG.sso_2fa_acr();
+        if CONFIG.sso_2fa_skip() == "auto" && !sso_2fa_acr.is_empty() {
+            auth_req = auth_req.add_auth_context_value(AuthenticationContextClass::new(sso_2fa_acr));
         }
 
         if CONFIG.sso_pkce() {
