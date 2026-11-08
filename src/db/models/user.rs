@@ -362,7 +362,7 @@ impl User {
         }
     }
 
-    pub async fn delete(self, conn: &DbConn) -> EmptyResult {
+    pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         for member in Membership::find_confirmed_by_user(&self.uuid, conn).await {
             if member.atype == MembershipType::Owner
                 && Membership::count_confirmed_by_org_and_type(&member.org_uuid, MembershipType::Owner, conn).await <= 1
@@ -385,7 +385,7 @@ impl User {
         Invitation::take(&self.email, conn).await; // Delete invitation if any
 
         conn.run(move |conn| {
-            diesel::delete(users::table.filter(users::uuid.eq(self.uuid))).execute(conn).map_res("Error deleting user")
+            diesel::delete(users::table.filter(users::uuid.eq(&self.uuid))).execute(conn).map_res("Error deleting user")
         })
         .await
     }

@@ -79,6 +79,7 @@ pub enum EventType {
     CipherSoftDeleted = 1115,
     CipherRestored = 1116,
     CipherClientToggledCardNumberVisible = 1117,
+    CipherClientHttpAuthReleased = 1133,
 
     // Collection
     CollectionCreated = 1300,
@@ -111,8 +112,8 @@ pub enum EventType {
     // OrganizationUserAutomaticallyConfirmed = 1517,
     // OrganizationUserSelfRevoked = 1518, // User self-revoked due to declining organization data ownership policy
     OrganizationUserAdminResetTwoFactor = 1519,
-    // OrganizationUserRevoked_TwoFactorNonCompliance = 1520,
-    // OrganizationUserRevoked_SingleOrganizationNonCompliance = 1521,
+    OrganizationUserRevokedTwoFactorNonCompliance = 1520,
+    OrganizationUserRevokedSingleOrganizationNonCompliance = 1521,
     OrganizationUserNotificationBannerActionClicked = 1522,
 
     // Organization

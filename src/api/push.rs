@@ -139,21 +139,25 @@ pub async fn unregister_push_device(push_id: Option<&PushId>) -> EmptyResult {
     if !CONFIG.push_enabled() || push_id.is_none() {
         return Ok(());
     }
-    let auth_api_token = get_auth_api_token().await?;
+    let data = json!({
+        "id": push_id.as_ref().unwrap(),
+    });
 
+    let auth_api_token = get_auth_api_token().await?;
     let auth_header = format!("Bearer {auth_api_token}");
 
-    match make_http_request(
-        Method::POST,
-        &format!("{}/push/delete/{}", CONFIG.push_relay_uri(), push_id.as_ref().unwrap()),
-    )?
-    .header(AUTHORIZATION, auth_header)
-    .send()
-    .await
+    if let Err(e) = make_http_request(Method::POST, &(CONFIG.push_relay_uri() + "/push/delete"))?
+        .header(CONTENT_TYPE, "application/json")
+        .header(ACCEPT, "application/json")
+        .header(AUTHORIZATION, auth_header)
+        .json(&data)
+        .send()
+        .await?
+        .error_for_status()
     {
-        Ok(r) => r,
-        Err(e) => err!(format!("An error occurred during device unregistration: {e}")),
-    };
+        err!(format!("An error occurred during device unregistration: {e}"));
+    }
+
     Ok(())
 }
 
@@ -190,20 +194,26 @@ pub async fn push_cipher_update(ut: UpdateType, cipher: &Cipher, device: &Device
 
 pub async fn push_logout(user: &User, acting_device: Option<&Device>, conn: &DbConn) {
     if Device::check_user_has_push_device(&user.uuid, conn).await {
-        tokio::task::spawn(send_to_push_relay(json!({
-            "userId": user.uuid,
-            "organizationId": (),
-            "deviceId": acting_device.and_then(|d| d.push_uuid.as_ref()),
-            "identifier": acting_device.map(|d| &d.uuid),
-            "type": UpdateType::LogOut as i32,
-            "payload": {
-                "userId": user.uuid,
-                "date": format_date(&user.updated_at)
-            },
-            "clientType": null,
-            "installationId": null
-        })));
+        push_logout_to_relay(user, acting_device);
     }
+}
+
+// Sends the logout without checking for push devices first.
+// Needed after deleting a user, when the devices are already gone from the database.
+pub fn push_logout_to_relay(user: &User, acting_device: Option<&Device>) {
+    tokio::task::spawn(send_to_push_relay(json!({
+        "userId": user.uuid,
+        "organizationId": (),
+        "deviceId": acting_device.and_then(|d| d.push_uuid.as_ref()),
+        "identifier": acting_device.map(|d| &d.uuid),
+        "type": UpdateType::LogOut as i32,
+        "payload": {
+            "userId": user.uuid,
+            "date": format_date(&user.updated_at)
+        },
+        "clientType": null,
+        "installationId": null
+    })));
 }
 
 pub async fn push_user_update(ut: UpdateType, user: &User, push_uuid: Option<&PushId>, conn: &DbConn) {

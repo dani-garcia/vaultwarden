@@ -534,3 +534,74 @@ mod postgresql_migrations {
         Ok(())
     }
 }
+
+/// A throwaway SQLite database with the real schema, for tests that need to run queries.
+#[cfg(all(test, sqlite))]
+pub mod test_db {
+    use super::sqlite_migrations::MIGRATIONS;
+    use diesel::connection::SimpleConnection;
+    use diesel_migrations::MigrationHarness;
+
+    #[test]
+    fn custom_role_migration_preserves_memberships_and_guards_downgrade() {
+        use super::schema::users_organizations::dsl::*;
+        use diesel::{migration::MigrationSource, prelude::*};
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        for migration in conn.pending_migrations(MIGRATIONS).unwrap() {
+            if migration.name().version().to_string() == "20261010120000" {
+                break;
+            }
+            conn.run_migration(&migration).unwrap();
+        }
+        conn.batch_execute(
+            "PRAGMA foreign_keys=OFF;
+            INSERT INTO organizations (uuid,name,billing_email) VALUES ('org','Org','a@b');
+            INSERT INTO users_organizations (uuid,user_uuid,org_uuid,access_all,akey,status,atype) VALUES
+            ('0','0','org',TRUE,'key',2,0), ('1','1','org',TRUE,'key',2,1),
+            ('2','2','org',FALSE,'key',1,2), ('3','3','org',FALSE,'key',2,3), ('4','4','org',TRUE,'key',2,3);",
+        )
+        .unwrap();
+        let rows = |conn: &mut SqliteConnection| {
+            users_organizations
+                .select((uuid, user_uuid, org_uuid, access_all, akey, status, atype))
+                .order(uuid)
+                .load::<(String, String, String, bool, String, i32, i32)>(conn)
+                .unwrap()
+        };
+        let before = rows(&mut conn);
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        assert_eq!(rows(&mut conn), before);
+        let grants = |conn: &mut SqliteConnection| {
+            diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>(
+                "(SELECT COUNT(*) FROM users_organizations WHERE manage_users OR manage_groups OR manage_policies
+                OR create_new_collections OR edit_any_collection OR delete_any_collection
+                OR access_event_logs OR access_import_export OR access_reports)",
+            ))
+            .get_result::<i64>(conn)
+            .unwrap()
+        };
+        assert_eq!(grants(&mut conn), 0);
+        let migration = MigrationSource::<diesel::sqlite::Sqlite>::migrations(&MIGRATIONS)
+            .unwrap()
+            .into_iter()
+            .find(|m| m.name().version().to_string() == "20261010120000")
+            .unwrap();
+        for member_status in [1, 2] {
+            conn.batch_execute(&format!(
+                "UPDATE users_organizations SET atype=4,manage_users=TRUE,status={member_status} WHERE uuid='2'"
+            ))
+            .unwrap();
+            let custom = rows(&mut conn);
+            assert!(conn.revert_migration(&*migration).is_err());
+            assert_eq!(rows(&mut conn), custom);
+            assert!(users_organizations.filter(uuid.eq("2")).select(manage_users).first::<bool>(&mut conn).unwrap());
+        }
+        conn.batch_execute("UPDATE users_organizations SET atype=2,manage_users=FALSE,status=1 WHERE uuid='2'")
+            .unwrap();
+        conn.revert_migration(&*migration).unwrap();
+        assert!(diesel::sql_query("SELECT manage_users FROM users_organizations").execute(&mut conn).is_err());
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        assert_eq!(grants(&mut conn), 0);
+        assert_eq!(rows(&mut conn), before);
+    }
+}

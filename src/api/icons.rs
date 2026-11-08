@@ -264,7 +264,7 @@ fn get_favicons_node(dom: Tokenizer<StringReader<'_>, FaviconEmitter>, icons: &m
             TAG_BASE => {
                 base_url = if let Some(href) = token.tag.attributes.get(ATTR_HREF) {
                     let href = std::str::from_utf8(href).unwrap_or_default();
-                    debug!("Found base href: {href}");
+                    debug!("Found base href: {}", href.escape_debug());
                     match base_url.join(href) {
                         Ok(inner_url) => inner_url,
                         _ => continue,
@@ -663,6 +663,17 @@ impl reqwest::cookie::CookieStore for Jar {
         use time::Duration;
 
         let mut cookie_store = self.0.write().unwrap();
+
+        // The store only skips expired cookies when reading them, so remove them here or they are kept forever
+        let expired: Vec<_> = cookie_store
+            .iter_any()
+            .filter(|c| c.is_expired())
+            .map(|c| (String::from(&c.domain), String::from(&c.path), c.name().to_owned()))
+            .collect();
+        for (domain, path, name) in expired {
+            cookie_store.remove(&domain, &path, &name);
+        }
+
         let cookies = cookie_headers.filter_map(|val| {
             std::str::from_utf8(val.as_bytes())
                 .map_err(RawCookieParseError::from)

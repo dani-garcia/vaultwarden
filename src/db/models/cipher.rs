@@ -25,7 +25,7 @@ use macros::UuidFromParam;
 
 use super::{
     Archive, Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership,
-    MembershipStatus, MembershipType, OrganizationId, User, UserId,
+    MembershipStatus, OrganizationId, User, UserId, organization::ORG_ADMIN_ATYPES,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -520,7 +520,16 @@ impl Cipher {
         conn: &DbConn,
     ) -> EmptyResult {
         User::update_uuid_revision(user_uuid, conn).await;
+        self.move_to_folder_without_revision_update(folder_uuid, user_uuid, conn).await
+    }
 
+    /// Same as `move_to_folder`, but the caller is responsible for updating the user's revision.
+    pub async fn move_to_folder_without_revision_update(
+        &self,
+        folder_uuid: Option<FolderId>,
+        user_uuid: &UserId,
+        conn: &DbConn,
+    ) -> EmptyResult {
         match (self.get_folder_uuid(user_uuid, conn).await, folder_uuid) {
             // No changes
             (None, None) => Ok(()),
@@ -863,7 +872,7 @@ impl Cipher {
 
                 if !visible_only {
                     query = query.or_filter(
-                        users_organizations::atype.le(MembershipType::Admin as i32), // Org admin/owner
+                        users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin/owner
                     );
                 }
 
@@ -898,7 +907,7 @@ impl Cipher {
 
                 if !visible_only {
                     query = query.or_filter(
-                        users_organizations::atype.le(MembershipType::Admin as i32), // Org admin/owner
+                        users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin/owner
                     );
                 }
 
@@ -1102,7 +1111,7 @@ impl Cipher {
                             .or(collections_groups::collections_uuid
                                 .is_not_null() // Access via groups
                                 .and(collections_groups::read_only.eq(false)))
-                            .or(users_organizations::atype.le(MembershipType::Admin as i32)), // User is admin or owner
+                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)), // User is admin or owner
                     )
                     .select(ciphers_collections::collection_uuid)
                     .load::<CollectionId>(conn)
@@ -1131,7 +1140,7 @@ impl Cipher {
                             .or(users_collections::user_uuid
                                 .eq(user_uuid) // User has access to collection
                                 .and(users_collections::read_only.eq(false)))
-                            .or(users_organizations::atype.le(MembershipType::Admin as i32)), // User is admin or owner
+                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)), // User is admin or owner
                     )
                     .select(ciphers_collections::collection_uuid)
                     .load::<CollectionId>(conn)
@@ -1173,7 +1182,7 @@ impl Cipher {
                 )
                 .or_filter(users_collections::user_uuid.eq(user_uuid)) // User has access to collection
                 .or_filter(users_organizations::access_all.eq(true)) // User has access all
-                .or_filter(users_organizations::atype.le(MembershipType::Admin as i32)) // User is admin or owner
+                .or_filter(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // User is admin or owner
                 .or_filter(groups::access_all.eq(true)) //Access via group
                 .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
                 .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))

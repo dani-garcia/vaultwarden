@@ -266,8 +266,8 @@ pub async fn exchange_code(
         (_, Some(re)) => {
             let error_msg = format!(
                 "SSO authorization failed: {}, {}",
-                re.error,
-                re.error_description.as_ref().unwrap_or(&String::new())
+                re.error.escape_debug(),
+                re.error_description.as_deref().unwrap_or_default().escape_debug()
             );
             sso_auth.delete(conn).await?;
             err!(error_msg);
@@ -348,7 +348,11 @@ pub async fn exchange_code(
         user_name: user_name.clone(),
     };
 
-    debug!("Authenticated user {authenticated_user:?}");
+    if CONFIG.sso_debug_tokens() {
+        debug!("Authenticated user {authenticated_user:?}");
+    } else {
+        debug!("Authenticated user {identifier}");
+    }
     sso_auth.auth_response = Some(authenticated_user.clone());
     sso_auth.updated_at = Utc::now().naive_utc();
     sso_auth.save(conn).await?;

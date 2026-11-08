@@ -261,6 +261,10 @@ macro_rules! make_config {
             }
 
             async fn from_file() -> Result<Option<Self>, Error> {
+                // The Fs operator would create the folder if it doesn't exist, which we never want
+                if !CONFIG_FILE_PARENT_DIR.starts_with("s3://") && !std::path::Path::new(&*CONFIG_FILE_PARENT_DIR).is_dir() {
+                    return Ok(None);
+                }
                 let operator = storage::operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
                 let config_bytes = match operator.read(&CONFIG_FILENAME).await {
                     Ok(bytes) => bytes,
@@ -603,6 +607,9 @@ make_config! {
         /// This setting applies globally to all users. To control this on a per-org basis instead, use the "Disable Send" org policy.
         sends_allowed:          bool,   true,   def,    true;
 
+        /// Fill Assist Rules URL |> HTTPS URL for the server-wide Fill Assist rules feed base directory.
+        fill_assist_rules_url: String, true, def, "https://fillassist.bitwarden.com".to_owned();
+
         /// HIBP Api Key |> HaveIBeenPwned API Key, request it here: https://haveibeenpwned.com/API/Key
         hibp_api_key:           Pass,   true,   option;
 
@@ -733,6 +740,8 @@ make_config! {
         /// Disable Two-Factor remember |> Enabling this would force the users to use a second factor to login every time.
         /// Note that the checkbox would still be present, but ignored.
         disable_2fa_remember:   bool,   true,   def,    false;
+        /// Two-Factor remember duration |> Number of days before a remembered Two-Factor login expires (min: 1, max: 90).
+        two_factor_remember_days: i64,  true,   def,    30;
 
         /// Disable authenticator time drifted codes to be valid |> Enabling this only allows the current TOTP code to be valid
         /// TOTP codes of the previous and next 30 seconds will be invalid.
@@ -811,6 +820,10 @@ make_config! {
 
         /// Enable groups (BETA!) (Know the risks!) |> Enables groups support for organizations (Currently contains known issues!).
         org_groups_enabled:            bool, false, def, false;
+
+        /// Enable Custom roles (EXPERIMENTAL!) (Know the risks!) |> Enables the in-development Custom member role with granular permissions for organizations.
+        /// Only the permissions this version enforces can be granted. Disabling it again keeps the stored Custom roles, but they grant nothing until it is re-enabled.
+        experimental_custom_roles:     bool, false, def, false;
 
         /// Increase note size limit (Know the risks!) |> Sets the secure note size limit to 100_000 instead of the default 10_000.
         /// WARNING: This could cause issues with clients. Also exports will not work on Bitwarden servers!
@@ -1022,6 +1035,21 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     if !dom.starts_with("http://") && !dom.starts_with("https://") {
         err!(
             "DOMAIN variable needs to contain the protocol (http, https). Use 'http[s]://bw.example.com' instead of 'bw.example.com'"
+        );
+    }
+
+    let valid_fill_assist_rules_url = Url::parse(&cfg.fill_assist_rules_url).is_ok_and(|url| {
+        url.scheme() == "https"
+            && url.has_host()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.query().is_none()
+            && url.fragment().is_none()
+            && cfg.fill_assist_rules_url.trim() == cfg.fill_assist_rules_url
+    });
+    if !valid_fill_assist_rules_url {
+        err!(
+            "`FILL_ASSIST_RULES_URL` must be a valid HTTPS URL without credentials, query parameters, fragments, or surrounding whitespace."
         );
     }
 
@@ -1259,6 +1287,10 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         err!("`INVITATION_EXPIRATION_HOURS` has a minimum duration of 1 hour")
     }
 
+    if !(1..=90).contains(&cfg.two_factor_remember_days) {
+        err!("`TWO_FACTOR_REMEMBER_DAYS` must be between 1 and 90 days")
+    }
+
     // Validate schedule crontab format
     if !cfg.send_purge_schedule.is_empty() && cfg.send_purge_schedule.parse::<Schedule>().is_err() {
         err!("`SEND_PURGE_SCHEDULE` is not a valid cron expression")
@@ -1479,6 +1511,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     // Autofill Team
     "undetermined-cipher-scenario-logic",
     "enable-basic-auth-response",
+    "fill-assist-targeting-rules",
     "ssh-agent-v2",
     "windows-desktop-autotype",
     "windows-desktop-autotype-ga",
@@ -1593,7 +1626,7 @@ impl Config {
     pub fn is_email_domain_allowed(&self, email: &str) -> bool {
         let e: Vec<&str> = email.rsplitn(2, '@').collect();
         if e.len() != 2 || e[0].is_empty() || e[1].is_empty() {
-            warn!("Failed to parse email address '{email}'");
+            warn!("Failed to parse email address '{}'", email.escape_debug());
             return false;
         }
         let email_domain = e[0].to_lowercase();
