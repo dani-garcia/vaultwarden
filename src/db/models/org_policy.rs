@@ -17,7 +17,9 @@ use crate::{
 
 use super::{Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId, TwoFactor, UserId};
 
-#[derive(Identifiable, Queryable, Insertable, AsChangeset)]
+mod send_controls;
+
+#[derive(Clone, Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = org_policies)]
 #[diesel(primary_key(uuid))]
 pub struct OrgPolicy {
@@ -53,13 +55,13 @@ pub enum OrgPolicyType {
     // AutoConfirm = 18, // Not supported (not implemented yet)
     // BlockClaimedDomainAccountCreation = 19, // Not supported (Not AGPLv3 Licensed)
     OrganizationUserNotification = 20,
-    // SendControls = 21, // Not supported yet
+    SendControls = 21,
     FillAssist = 22,
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Models/Data/Organizations/Policies/SendOptionsPolicyData.cs#L5
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct SendOptionsPolicyData {
     #[serde(rename = "disableHideEmail", alias = "DisableHideEmail")]
     pub disable_hide_email: bool,
@@ -270,28 +272,6 @@ impl OrgPolicy {
         .await
     }
 
-    pub async fn find_confirmed_by_user_and_active_policy(
-        user_uuid: &UserId,
-        policy_type: OrgPolicyType,
-        conn: &DbConn,
-    ) -> Vec<Self> {
-        conn.run(move |conn| {
-            org_policies::table
-                .inner_join(
-                    users_organizations::table.on(users_organizations::org_uuid
-                        .eq(org_policies::org_uuid)
-                        .and(users_organizations::user_uuid.eq(user_uuid))),
-                )
-                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
-                .filter(org_policies::atype.eq(policy_type as i32))
-                .filter(org_policies::enabled.eq(true))
-                .select(org_policies::all_columns)
-                .load::<Self>(conn)
-                .expect("Error loading org_policy")
-        })
-        .await
-    }
-
     /// Returns true if the user belongs to an org that has enabled the specified policy type,
     /// and the user is not an owner or admin of that org. This is only useful for checking
     /// applicability of policy types that have these particular semantics.
@@ -372,28 +352,6 @@ impl OrgPolicy {
             None => return false,
         }
 
-        false
-    }
-
-    /// Returns true if the user belongs to an org that has enabled the `DisableHideEmail`
-    /// option of the `Send Options` policy, and the user is not an owner or admin of that org.
-    pub async fn is_hide_email_disabled(user_uuid: &UserId, conn: &DbConn) -> bool {
-        for policy in
-            OrgPolicy::find_confirmed_by_user_and_active_policy(user_uuid, OrgPolicyType::SendOptions, conn).await
-        {
-            if let Some(user) = Membership::find_confirmed_by_user_and_org(user_uuid, &policy.org_uuid, conn).await
-                && user.atype < MembershipType::Admin
-            {
-                match serde_json::from_str::<SendOptionsPolicyData>(&policy.data) {
-                    Ok(opts) => {
-                        if opts.disable_hide_email {
-                            return true;
-                        }
-                    }
-                    _ => error!("Failed to deserialize SendOptionsPolicyData: {}", policy.data),
-                }
-            }
-        }
         false
     }
 
