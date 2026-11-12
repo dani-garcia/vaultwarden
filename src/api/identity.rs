@@ -533,7 +533,8 @@ fn check_client_version(user: &User, client_header: &ClientHeaders) -> EmptyResu
         return Ok(());
     };
     Err(crate::error::Error::from((
-        format!("IP: {}. Username: {}. {error}", client_header.ip.ip, user.email),
+        // Escaped: on a first SSO login the email comes from the provider and isn't validated yet
+        format!("IP: {}. Username: {}. {error}", client_header.ip.ip, user.email.escape_debug()),
         json!({
             "error": error,
             "error_description": description,
