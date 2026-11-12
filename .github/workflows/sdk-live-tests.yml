@@ -1,0 +1,74 @@
+name: SDK live tests
+permissions: {}
+
+# Runs the live-server end-to-end tests of bitwarden/sdk-internal against this branch, see tools/sdk-live-tests/run.sh.
+# It builds the SDK too, so it only runs by hand and on changes to the test seeder or the runner.
+on:
+  workflow_dispatch:
+    inputs:
+      sdk_ref:
+        description: "Branch, tag or commit of bitwarden/sdk-internal to test with"
+        required: true
+        default: "main"
+  pull_request:
+    paths:
+      - ".github/workflows/sdk-live-tests.yml"
+      - "src/api/test_seeder.rs"
+      - "tools/sdk-live-tests/**"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  sdk-live-tests:
+    name: SDK live tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: "Install dependencies Ubuntu"
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libssl-dev pkg-config
+
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Checkout sdk-internal"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: bitwarden/sdk-internal
+          ref: ${{ inputs.sdk_ref || 'main' }}
+          path: sdk-internal
+          persist-credentials: false
+
+      # Each checkout pins its own toolchain in rust-toolchain.toml
+      - name: "Install toolchains"
+        run: |
+          rustup toolchain install
+          cd sdk-internal
+          rustup toolchain install
+          rustup target add wasm32-unknown-unknown
+          rustup component add rust-src
+
+      - name: "Cache Rust builds"
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: |
+            . -> target
+            sdk-internal -> target
+
+      - name: "Setup Node"
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: sdk-internal/.nvmrc
+
+      - name: "Run the SDK live tests"
+        run: tools/sdk-live-tests/run.sh --sdk-dir sdk-internal
+
+      - name: "Upload logs"
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sdk-live-tests-logs
+          path: target/sdk-live-tests/**/*.log
