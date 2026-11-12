@@ -1203,6 +1203,7 @@ struct KeyData {
     account_keys: AccountKeysData,
     account_data: RotateAccountData,
     old_master_key_authentication_hash: String,
+    old_user_key_id: Option<KeyId>,
     new_user_key_id: Option<KeyId>,
 }
 
@@ -1266,6 +1267,7 @@ struct RotateUserKeysData {
     unlock_data: CommonUnlockData,
     account_data: RotateAccountData,
     unlock_method_data: UnlockMethodData,
+    old_user_key_id: Option<KeyId>,
     new_user_key_id: Option<KeyId>,
 }
 
@@ -1487,6 +1489,8 @@ struct RotateData {
     account_keys: ValidatedAccountKeys,
     account_data: RotateAccountData,
     unlock_data: CommonUnlockData,
+    /// The id of the key the client rotates from, `None` from clients that don't send it.
+    old_user_key_id: Option<KeyId>,
     /// `None` from clients that predate key ids.
     new_user_key_id: Option<KeyId>,
     /// The new user key, wrapped by the master key.
@@ -1613,6 +1617,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
             account_keys: data.account_keys.validate()?,
             account_data: data.account_data,
             unlock_data: common,
+            old_user_key_id: data.old_user_key_id,
             new_user_key_id: data.new_user_key_id,
             wrapped_user_key: unlock_data.master_key_encrypted_user_key,
             new_password: Some((unlock_data.master_key_authentication_hash, password_hint)),
@@ -1645,6 +1650,14 @@ async fn rotate_account(data: RotateData, headers: Headers, conn: DbConn, nt: No
         &existing_memberships,
         &existing_sends,
     )?;
+
+    // Like upstream, a client that rotates a user key that was already replaced has to sync first
+    // Ref: <https://github.com/bitwarden/server/blob/15c94ac58bf361a162381749c146d254a21b2098/src/Core/KeyManagement/UserKey/Models/Data/BaseRotateUserAccountKeysData.cs#L34-L46>
+    if let (Some(current), Some(old)) = (&headers.user.key_id, &data.old_user_key_id)
+        && current != old
+    {
+        err_code!("The user key being rotated is not the current user key. Sync and try again.", Status::Conflict.code)
+    }
 
     validate_rotation_account_keys(&data.account_keys, &headers.user, &conn).await?;
 
@@ -1768,7 +1781,8 @@ async fn rotate_account(data: RotateData, headers: Headers, conn: DbConn, nt: No
         user.reset_security_stamp_after_key_rotation(&conn).await?;
     }
 
-    // The key pair first: if saving the user then fails, an upgraded account stays v1 instead of broken
+    // The key pair first, so that a v2 account is never saved without one. The data above is already re-encrypted by
+    // now, so a failure here still leaves it under a key that isn't stored (see the TODO before the first write).
     data.account_keys.save_signature_key_pair(&user.uuid, &conn).await?;
     user.save(&conn).await?;
 
@@ -1833,6 +1847,7 @@ async fn post_rotate_user_keys(
             account_keys: data.wrapped_account_cryptographic_state.validate()?,
             account_data: data.account_data,
             unlock_data: data.unlock_data,
+            old_user_key_id: data.old_user_key_id,
             new_user_key_id: data.new_user_key_id,
             wrapped_user_key,
             new_password: None,
