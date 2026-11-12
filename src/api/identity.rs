@@ -520,16 +520,18 @@ async fn password_login(
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
 }
 
-/// Like upstream's `ClientVersionValidator`, every login needs the `Bitwarden-Client-Version` header, and a V2 account a
-/// client of at least 2026.10.1 (2026.10.2 for the desktop app). Called right after the credentials are checked, like
-/// upstream, so that it doesn't tell anyone else which accounts are V2.
+/// Like upstream's `ClientVersionValidator`, every login needs the `Bitwarden-Client-Version` header, and a V2 account
+/// ([`User::has_v2_encryption`]) a client of at least 2026.10.1 (2026.10.2 for the desktop app). Called right after the
+/// credentials are checked, like upstream, so that it doesn't tell anyone else which accounts are V2.
 ///
 /// Ref: <https://github.com/bitwarden/server/blob/15c94ac58bf361a162381749c146d254a21b2098/src/Identity/IdentityServer/RequestValidators/ClientVersionValidator.cs#L33-L79>
 /// Ref: <https://github.com/bitwarden/server/blob/15c94ac58bf361a162381749c146d254a21b2098/src/Core/KeyManagement/Constants.cs#L5-L6>
 fn check_client_version(user: &User, client_header: &ClientHeaders) -> EmptyResult {
-    let Some((error, description)) =
-        client_version_error(user.is_v2(), client_header.client_version.as_ref(), client_header.device_type)
-    else {
+    let Some((error, description)) = client_version_error(
+        user.has_v2_encryption(),
+        client_header.client_version.as_ref(),
+        client_header.device_type,
+    ) else {
         return Ok(());
     };
     Err(crate::error::Error::from((
@@ -625,7 +627,7 @@ async fn authenticated_response(
             // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "MasterKeyEncryptedUserKey": user.akey,
             "MasterKeyWrappedUserKey": user.akey,
-            "Salt": user.email
+            "Salt": user.master_password_salt()
         })
     } else {
         Value::Null
@@ -780,7 +782,7 @@ async fn user_api_key_login(
             // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "MasterKeyEncryptedUserKey": user.akey,
             "MasterKeyWrappedUserKey": user.akey,
-            "Salt": user.email
+            "Salt": user.master_password_salt()
         })
     } else {
         Value::Null
