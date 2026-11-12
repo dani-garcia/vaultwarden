@@ -29,7 +29,7 @@ use crate::{
     db::{
         DbConn,
         models::{
-            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeResponseError,
+            AuthRequest, AuthRequestId, Device, DeviceId, DeviceType, EventType, Invitation, OIDCCodeResponseError,
             OrganizationApiKey, OrganizationId, SendId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete,
             TwoFactorType, User, UserId,
         },
@@ -77,14 +77,14 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
             check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
             check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
-            password_login(data, &mut user_id, &conn, &client_header.ip, client_header.client_version.as_ref()).await
+            password_login(data, &mut user_id, &conn, &client_header).await
         }
         "client_credentials" => {
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
             check_is_some(data.client_secret.as_ref(), "client_secret cannot be blank")?;
             check_is_some(data.scope.as_ref(), "scope cannot be blank")?;
 
-            api_key_login(data, &mut user_id, &conn, &client_header.ip, client_header.client_version.as_ref()).await
+            api_key_login(data, &mut user_id, &conn, &client_header).await
         }
         "authorization_code" if CONFIG.sso_enabled() => {
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
@@ -95,7 +95,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
             check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
             check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
-            sso_login(data, &mut user_id, &conn, &client_header.ip, client_header.client_version.as_ref()).await
+            sso_login(data, &mut user_id, &conn, &client_header).await
         }
         "authorization_code" => err!("SSO sign-in is not available"),
         "send_access" => {
@@ -183,9 +183,9 @@ async fn sso_login(
     data: ConnectData,
     user_id: &mut Option<UserId>,
     conn: &DbConn,
-    ip: &ClientIp,
-    client_version: Option<&semver::Version>,
+    client_header: &ClientHeaders,
 ) -> JsonResult {
+    let ip = &client_header.ip;
     AuthMethod::Sso.check_scope(data.scope.as_ref())?;
 
     // Ratelimit the login
@@ -323,6 +323,8 @@ async fn sso_login(
             }
 
             let mut user = User::new(&user_infos.email, user_infos.user_name.clone());
+            // Before saving, so that a client that can't log in doesn't create the account
+            check_client_version(&user, client_header)?;
             user.verified_at = Some(now);
             user.save(conn).await?;
 
@@ -343,7 +345,7 @@ async fn sso_login(
         }
         Some((mut user, sso_user)) => {
             *user_id = Some(user.uuid.clone());
-            check_client_version(&user, client_version, ip)?;
+            check_client_version(&user, client_header)?;
 
             let mut device = get_device(&data, conn, &user).await?;
 
@@ -383,9 +385,9 @@ async fn password_login(
     data: ConnectData,
     user_id: &mut Option<UserId>,
     conn: &DbConn,
-    ip: &ClientIp,
-    client_version: Option<&semver::Version>,
+    client_header: &ClientHeaders,
 ) -> JsonResult {
+    let ip = &client_header.ip;
     // Validate scope
     AuthMethod::Password.check_scope(data.scope.as_ref())?;
 
@@ -455,7 +457,7 @@ async fn password_login(
         )
     }
 
-    check_client_version(&user, client_version, ip)?;
+    check_client_version(&user, client_header)?;
 
     // Change the KDF Iterations (only when not logging in with an auth request)
     if data.auth_request.is_none() {
@@ -518,17 +520,20 @@ async fn password_login(
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
 }
 
-/// Like upstream's `ClientVersionValidator`, a V2 account logs in only from a client that sends its version and is at
-/// least 2025.11.0 (upstream also refuses a missing header for V1 accounts). Called right after the credentials are
-/// checked, like upstream, so that it doesn't tell anyone else which accounts are V2.
+/// Like upstream's `ClientVersionValidator`, every login needs the `Bitwarden-Client-Version` header, and a V2 account a
+/// client of at least 2026.10.1 (2026.10.2 for the desktop app). Called right after the credentials are checked, like
+/// upstream, so that it doesn't tell anyone else which accounts are V2.
 ///
-/// Ref: <https://github.com/bitwarden/server/blob/2028f0a5cc9d8ab8ff8475029085f29f81483598/src/Identity/IdentityServer/RequestValidators/ClientVersionValidator.cs#L42-L69>
-fn check_client_version(user: &User, client_version: Option<&semver::Version>, ip: &ClientIp) -> EmptyResult {
-    let Some((error, description)) = client_version_error(user.is_v2(), client_version) else {
+/// Ref: <https://github.com/bitwarden/server/blob/15c94ac58bf361a162381749c146d254a21b2098/src/Identity/IdentityServer/RequestValidators/ClientVersionValidator.cs#L33-L79>
+/// Ref: <https://github.com/bitwarden/server/blob/15c94ac58bf361a162381749c146d254a21b2098/src/Core/KeyManagement/Constants.cs#L5-L6>
+fn check_client_version(user: &User, client_header: &ClientHeaders) -> EmptyResult {
+    let Some((error, description)) =
+        client_version_error(user.is_v2(), client_header.client_version.as_ref(), client_header.device_type)
+    else {
         return Ok(());
     };
     Err(crate::error::Error::from((
-        format!("IP: {}. Username: {}. {error}", ip.ip, user.email),
+        format!("IP: {}. Username: {}. {error}", client_header.ip.ip, user.email),
         json!({
             "error": error,
             "error_description": description,
@@ -541,22 +546,35 @@ fn check_client_version(user: &User, client_version: Option<&semver::Version>, i
 }
 
 /// The error id and message of [`check_client_version`], `None` when the client may log in.
-fn client_version_error(is_v2: bool, client_version: Option<&semver::Version>) -> Option<(&'static str, &'static str)> {
-    const MIN_V2_CLIENT: semver::Version = semver::Version::new(2025, 11, 0);
+fn client_version_error(
+    is_v2: bool,
+    client_version: Option<&semver::Version>,
+    device_type: i32,
+) -> Option<(&'static str, &'static str)> {
+    const MIN_V2_CLIENT: semver::Version = semver::Version::new(2026, 10, 1);
+    const MIN_V2_DESKTOP_CLIENT: semver::Version = semver::Version::new(2026, 10, 2);
 
+    let Some(version) = client_version else {
+        return Some((
+            "version_header_missing",
+            "No client version header found, required to prevent encryption errors. Please confirm your client is supplying the header: \"Bitwarden-Client-Version\"",
+        ));
+    };
     if !is_v2 {
         return None;
     }
-    match client_version {
-        None => Some((
-            "version_header_missing",
-            "No client version header found, required to prevent encryption errors. Please confirm your client is supplying the header: \"Bitwarden-Client-Version\"",
-        )),
-        Some(version) if *version < MIN_V2_CLIENT => {
-            Some(("invalid_client_version", "Please update your app to continue using Bitwarden"))
-        }
-        Some(_) => None,
-    }
+    // Upstream's desktop device types
+    // Ref: <https://github.com/bitwarden/server/blob/15c94ac58bf361a162381749c146d254a21b2098/src/Libraries/Clients/DeviceTypes.cs#L14-L20>
+    let is_desktop = matches!(
+        DeviceType::from_i32(device_type),
+        DeviceType::WindowsDesktop | DeviceType::MacOsDesktop | DeviceType::LinuxDesktop | DeviceType::Uwp
+    );
+    let min_version = if is_desktop {
+        &MIN_V2_DESKTOP_CLIENT
+    } else {
+        &MIN_V2_CLIENT
+    };
+    (version < min_version).then_some(("invalid_client_version", "Please update your app to continue using Bitwarden"))
 }
 
 async fn authenticated_response(
@@ -651,9 +669,9 @@ async fn api_key_login(
     data: ConnectData,
     user_id: &mut Option<UserId>,
     conn: &DbConn,
-    ip: &ClientIp,
-    client_version: Option<&semver::Version>,
+    client_header: &ClientHeaders,
 ) -> JsonResult {
+    let ip = &client_header.ip;
     // Ratelimit the login
     crate::ratelimit::check_limit_login(&ip.ip)?;
 
@@ -665,7 +683,7 @@ async fn api_key_login(
             check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
             check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
-            user_api_key_login(data, user_id, conn, ip, client_version).await
+            user_api_key_login(data, user_id, conn, client_header).await
         }
         Some(scope) if scope == &AuthMethod::OrgApiKey.scope() => organization_api_key_login(data, conn, ip).await,
         _ => err!("Scope not supported"),
@@ -676,9 +694,9 @@ async fn user_api_key_login(
     data: ConnectData,
     user_id: &mut Option<UserId>,
     conn: &DbConn,
-    ip: &ClientIp,
-    client_version: Option<&semver::Version>,
+    client_header: &ClientHeaders,
 ) -> JsonResult {
+    let ip = &client_header.ip;
     // Get the user via the client_id
     let client_id = data.client_id.as_ref().unwrap();
     let Some(client_user_id) = client_id.strip_prefix("user.") else {
@@ -715,7 +733,7 @@ async fn user_api_key_login(
         )
     }
 
-    check_client_version(&user, client_version, ip)?;
+    check_client_version(&user, client_header)?;
 
     let mut device = get_device(&data, conn, &user).await?;
 
@@ -1406,16 +1424,25 @@ mod tests {
     #[test]
     fn test_client_version_error() {
         let version = |v| semver::Version::parse(v).unwrap();
-        // V1 accounts aren't checked, with or without a version
-        assert_eq!(client_version_error(false, None), None);
-        assert_eq!(client_version_error(false, Some(&version("2024.1.0"))), None);
-        // V2 accounts need the header and 2025.11.0 or newer
-        assert_eq!(client_version_error(true, None).map(|e| e.0), Some("version_header_missing"));
+        let web = DeviceType::ChromeBrowser as i32;
+        let desktop = DeviceType::WindowsDesktop as i32;
+        // Every login needs the header
+        assert_eq!(client_version_error(false, None, web).map(|e| e.0), Some("version_header_missing"));
+        assert_eq!(client_version_error(true, None, desktop).map(|e| e.0), Some("version_header_missing"));
+        // V1 accounts log in from any version
+        assert_eq!(client_version_error(false, Some(&version("2024.1.0")), web), None);
+        assert_eq!(client_version_error(false, Some(&version("2024.1.0")), desktop), None);
+        // V2 accounts need 2026.10.1, and 2026.10.2 for the desktop app
         assert_eq!(
-            client_version_error(true, Some(&version("2025.10.3"))).map(|e| e.0),
+            client_version_error(true, Some(&version("2026.10.0")), web).map(|e| e.0),
             Some("invalid_client_version")
         );
-        assert_eq!(client_version_error(true, Some(&version("2025.11.0"))), None);
-        assert_eq!(client_version_error(true, Some(&version("2026.10.1"))), None);
+        assert_eq!(client_version_error(true, Some(&version("2026.10.1")), web), None);
+        assert_eq!(
+            client_version_error(true, Some(&version("2026.10.1")), desktop).map(|e| e.0),
+            Some("invalid_client_version")
+        );
+        assert_eq!(client_version_error(true, Some(&version("2026.10.2")), DeviceType::Uwp as i32), None);
+        assert_eq!(client_version_error(true, Some(&version("2026.11.0")), desktop), None);
     }
 }
