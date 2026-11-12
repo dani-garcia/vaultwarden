@@ -632,6 +632,9 @@ impl<'r> FromRequest<'r> for Host {
 pub struct ClientHeaders {
     pub device_type: i32,
     pub ip: ClientIp,
+    /// `Bitwarden-Client-Version`, `None` when missing or not a version. Unlike the [`ClientVersion`] guard, this
+    /// doesn't log an error, as not every client sends it.
+    pub client_version: Option<semver::Version>,
 }
 
 #[rocket::async_trait]
@@ -648,10 +651,13 @@ impl<'r> FromRequest<'r> for ClientHeaders {
             .get_one("device-type")
             .and_then(|d| d.parse().ok())
             .unwrap_or(DeviceType::UnknownBrowser as i32);
+        let client_version =
+            request.headers().get_one("Bitwarden-Client-Version").and_then(|v| semver::Version::parse(v).ok());
 
         Outcome::Success(ClientHeaders {
             device_type,
             ip,
+            client_version,
         })
     }
 }
