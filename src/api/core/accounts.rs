@@ -386,7 +386,8 @@ impl ValidatedAccountKeys {
     }
 
     /// Sets the keys on the user. Save [`Self::save_signature_key_pair`] before the user: a v2 user without its key
-    /// pair can't unlock, while a key pair is ignored until its user is v2, and replaced on the next try.
+    /// pair can't unlock, while a key pair saved for a user who isn't v2 yet is ignored until it is, and replaced on
+    /// the next try. A rotation of a v2 account replaces its key pair, see `rotate_account`.
     fn apply(&self, user: &mut User) -> EmptyResult {
         user.private_key = Some(self.private_key.clone());
         user.public_key = Some(self.public_key.clone());
@@ -1782,7 +1783,8 @@ async fn rotate_account(data: RotateData, headers: Headers, conn: DbConn, nt: No
     }
 
     // The key pair first, so that a v2 account is never saved without one. The data above is already re-encrypted by
-    // now, so a failure here still leaves it under a key that isn't stored (see the TODO before the first write).
+    // now, and for an account that was already v2 so is the signing key saved here, so a failure in either save
+    // leaves them under a key that isn't stored (see the TODO before the first write).
     data.account_keys.save_signature_key_pair(&user.uuid, &conn).await?;
     user.save(&conn).await?;
 
