@@ -4,7 +4,12 @@ mod icons;
 mod identity;
 mod notifications;
 mod push;
+#[cfg(feature = "unsafe_test_mode")]
+mod test_seeder;
 mod web;
+
+#[cfg(feature = "unsafe_test_mode")]
+pub use test_seeder::routes as test_seeder_routes;
 
 use rocket::serde::json::Json;
 use serde_json::Value;

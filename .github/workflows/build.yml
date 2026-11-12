@@ -158,6 +158,13 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           cargo test --profile ci --features postgresql
+
+      # The test seeder only exists with this feature, which no release build has
+      - name: "test features: sqlite,unsafe_test_mode"
+        id: test_unsafe_test_mode
+        if: ${{ !cancelled() }}
+        run: |
+          cargo test --profile ci --features sqlite,unsafe_test_mode
       # End Run cargo tests
 
 
@@ -167,6 +174,12 @@ jobs:
         if: ${{ !cancelled() && matrix.channel == 'rust-toolchain' }}
         run: |
           cargo clippy --profile ci --features sqlite,mysql,postgresql,enable_mimalloc,s3
+
+      - name: "clippy features: sqlite,unsafe_test_mode"
+        id: clippy_unsafe_test_mode
+        if: ${{ !cancelled() && matrix.channel == 'rust-toolchain' }}
+        run: |
+          cargo clippy --profile ci --features sqlite,unsafe_test_mode
       # End Run cargo clippy
 
 
@@ -190,7 +203,9 @@ jobs:
           TEST_SQLITE: ${{ steps.test_sqlite.outcome }}
           TEST_MYSQL: ${{ steps.test_mysql.outcome }}
           TEST_POSTGRESQL: ${{ steps.test_postgresql.outcome }}
+          TEST_UNSAFE_TEST_MODE: ${{ steps.test_unsafe_test_mode.outcome }}
           CLIPPY: ${{ steps.clippy.outcome }}
+          CLIPPY_UNSAFE_TEST_MODE: ${{ steps.clippy_unsafe_test_mode.outcome }}
           FMT: ${{ steps.formatting.outcome }}
         run: |
           echo "### :x: Checks Failed!" >> "${GITHUB_STEP_SUMMARY}"
@@ -203,7 +218,9 @@ jobs:
           echo "|test (sqlite)|${TEST_SQLITE}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (mysql)|${TEST_MYSQL}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (postgresql)|${TEST_POSTGRESQL}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|test (sqlite,unsafe_test_mode)|${TEST_UNSAFE_TEST_MODE}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|clippy (sqlite,mysql,postgresql,enable_mimalloc,s3)|${CLIPPY}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|clippy (sqlite,unsafe_test_mode)|${CLIPPY_UNSAFE_TEST_MODE}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|fmt|${FMT}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "" >> "${GITHUB_STEP_SUMMARY}"
           echo "Please check the failed jobs and fix where needed." >> "${GITHUB_STEP_SUMMARY}"
