@@ -2,18 +2,23 @@ name: SDK live tests
 permissions: {}
 
 # Runs the live-server end-to-end tests of bitwarden/sdk-internal against this branch, see tools/sdk-live-tests/run.sh.
-# It builds the SDK too, so it runs daily against the SDK's main branch, by hand, and on changes to the test seeder or
-# the runner.
+# By default it tests the latest @bitwarden/sdk-internal on npm, which the SDK publishes for every commit to its main
+# branch, with the e2e tests from that commit. A manual run can name an npm version instead, or a branch, tag or commit
+# to build the SDK from. It runs daily, by hand, and on changes to the test seeder or the runner.
 on:
   schedule:
     # 04:15 UTC, off the top of the hour, when GitHub may delay or drop scheduled runs
     - cron: "15 4 * * *"
   workflow_dispatch:
     inputs:
+      sdk_npm_version:
+        description: "Version of @bitwarden/sdk-internal on npm to test (empty for the latest)"
+        required: false
+        default: ""
       sdk_ref:
-        description: "Branch, tag or commit of bitwarden/sdk-internal to test with"
-        required: true
-        default: "main"
+        description: "Or a branch, tag or commit of bitwarden/sdk-internal to build and test (slower)"
+        required: false
+        default: ""
   pull_request:
     paths:
       - ".github/workflows/sdk-live-tests.yml"
@@ -29,6 +34,9 @@ jobs:
     name: SDK live tests
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    env:
+      # Less to compile and link, and a smaller cache. Panics still show file and line.
+      CARGO_PROFILE_DEV_DEBUG: "0"
     steps:
       - name: "Install dependencies Ubuntu"
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libssl-dev pkg-config
@@ -38,26 +46,80 @@ jobs:
         with:
           persist-credentials: false
 
+      # A published package (npm) or a build from a git ref (git), and the sdk-internal commit to check out
+      - name: "Pick the SDK"
+        id: sdk
+        env:
+          NPM_VERSION: ${{ inputs.sdk_npm_version }}
+          GIT_REF: ${{ inputs.sdk_ref }}
+        run: |
+          if [[ -n "${NPM_VERSION}" && -n "${GIT_REF}" ]]; then
+            echo "::error::Give an npm version or a git ref, not both"
+            exit 1
+          fi
+          if [[ -n "${GIT_REF}" ]]; then
+            {
+              echo "source=git"
+              echo "ref=${GIT_REF}"
+            } >> "${GITHUB_OUTPUT}"
+            echo "SDK: bitwarden/sdk-internal \`${GIT_REF}\`, built from source" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          spec="${NPM_VERSION:-latest}"
+          if [[ ! "${spec}" =~ ^[0-9A-Za-z.+-]+$ ]]; then
+            echo "::error::That is not an npm version or tag"
+            exit 1
+          fi
+          manifest="$(curl -fsS --retry 3 "https://registry.npmjs.org/@bitwarden%2Fsdk-internal/${spec}")"
+          version="$(jq -r .version <<< "${manifest}")"
+          commit="$(jq -r .gitHead <<< "${manifest}")"
+          if [[ ! "${commit}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::@bitwarden/sdk-internal@${version} doesn't name the commit it was built from"
+            exit 1
+          fi
+          {
+            echo "source=npm"
+            echo "version=${version}"
+            echo "ref=${commit}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "SDK: @bitwarden/sdk-internal ${version} from npm, e2e tests at ${commit}" >> "${GITHUB_STEP_SUMMARY}"
+
       - name: "Checkout sdk-internal"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: bitwarden/sdk-internal
-          ref: ${{ inputs.sdk_ref || 'main' }}
+          ref: ${{ steps.sdk.outputs.ref }}
           path: sdk-internal
           persist-credentials: false
 
-      # Each checkout pins its own toolchain in rust-toolchain.toml
+      # Each checkout pins its own toolchain in rust-toolchain.toml. The SDK's is only needed to build it.
       - name: "Install toolchains"
+        env:
+          SDK_SOURCE: ${{ steps.sdk.outputs.source }}
         run: |
           rustup toolchain install
-          cd sdk-internal
-          rustup toolchain install
-          rustup target add wasm32-unknown-unknown
-          rustup component add rust-src
+          if [[ "${SDK_SOURCE}" == git ]]; then
+            cd sdk-internal
+            rustup toolchain install
+            rustup target add wasm32-unknown-unknown
+            rustup component add rust-src
+          fi
 
+      # One cache per SDK source, so that neither restores the other's
       - name: "Cache Rust builds"
+        if: ${{ steps.sdk.outputs.source == 'npm' }}
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
+          key: sdk-live-tests-npm
+          add-job-id-key: false
+          workspaces: ". -> target"
+
+      - name: "Cache Rust builds (with the SDK)"
+        if: ${{ steps.sdk.outputs.source == 'git' }}
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: sdk-live-tests-sdk-build
+          add-job-id-key: false
           workspaces: |
             . -> target
             sdk-internal -> target
@@ -67,8 +129,31 @@ jobs:
         with:
           node-version-file: sdk-internal/.nvmrc
 
+      # Where the SDK's build would put it
+      - name: "Download the SDK package"
+        if: ${{ steps.sdk.outputs.source == 'npm' }}
+        env:
+          SDK_VERSION: ${{ steps.sdk.outputs.version }}
+          SDK_COMMIT: ${{ steps.sdk.outputs.ref }}
+        run: |
+          # npm checks the tarball against the registry's checksum
+          tarball="$(npm pack "@bitwarden/sdk-internal@${SDK_VERSION}" --pack-destination "${RUNNER_TEMP}" --json | jq -r '.[0].filename')"
+          package_dir=sdk-internal/crates/bitwarden-wasm-internal/npm
+          tar -xzf "${RUNNER_TEMP}/${tarball}" --strip-components=1 -C "${package_dir}"
+          if [[ "$(cat "${package_dir}/VERSION")" != "${SDK_COMMIT}" ]]; then
+            echo "::error::The package's VERSION doesn't match its commit ${SDK_COMMIT}"
+            exit 1
+          fi
+
       - name: "Run the SDK live tests"
-        run: tools/sdk-live-tests/run.sh --sdk-dir sdk-internal
+        env:
+          SDK_SOURCE: ${{ steps.sdk.outputs.source }}
+        run: |
+          args=(--sdk-dir sdk-internal)
+          if [[ "${SDK_SOURCE}" == npm ]]; then
+            args+=(--skip-sdk-build)
+          fi
+          tools/sdk-live-tests/run.sh "${args[@]}"
 
       - name: "Upload logs"
         if: ${{ !cancelled() }}

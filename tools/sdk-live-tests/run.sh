@@ -3,6 +3,9 @@
 #
 # Usage: tools/sdk-live-tests/run.sh --sdk-dir <path> [--skip-sdk-build] [--mode vectors|seeder] [-- <vitest args>]
 #
+# --skip-sdk-build uses the package already in the SDK's crates/bitwarden-wasm-internal/npm: an earlier build, or a
+# published @bitwarden/sdk-internal unpacked there.
+#
 # The server is built with `unsafe_test_mode`, whose test seeder (src/api/test_seeder.rs) creates the test accounts.
 # - vectors: for SDK versions whose live tests log in to one given account. Every user test vector with a master
 #   password gets a fresh server, is seeded there with its vault, and the tests run on it (they rotate its keys).
@@ -13,7 +16,8 @@
 # Every vector runs even after a failure; a summary follows, and the exit code is 1 if any failed. The server logs are
 # in <target dir>/sdk-live-tests/. BW_LIVE_CLIENT_VERSION defaults to 2026.10.1, the minimum for V2 accounts.
 #
-# Needs: the SDK's Rust toolchain with the wasm32-unknown-unknown target and rust-src, Node.js >= 22.12, curl, python3.
+# Needs: Node.js >= 22.12, curl, python3, and to build the SDK its Rust toolchain with the wasm32-unknown-unknown target
+# and rust-src.
 set -euo pipefail
 
 VW_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -52,8 +56,8 @@ echo "Mode: ${MODE}, client version ${BW_LIVE_CLIENT_VERSION}"
 (cd "${VW_DIR}" && cargo build --features sqlite,unsafe_test_mode)
 if [[ ${BUILD_SDK} -eq 1 ]]; then
   bash "${SDK_DIR}/crates/bitwarden-wasm-internal/build.sh"
-  (cd "${TESTS_DIR}" && npm ci)
 fi
+(cd "${TESTS_DIR}" && npm ci)
 
 server=""
 trap 'if [[ -n "${server}" ]]; then kill "${server}" 2>/dev/null || true; fi' EXIT
