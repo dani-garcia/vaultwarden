@@ -1959,8 +1959,7 @@ async fn post_org_import(
         collections: imported_collections,
         ..
     } = data;
-    let grant_new_collection_manage =
-        headers.membership.has_type(MembershipType::Custom) && !headers.membership.can_edit_any_collection();
+    let grant_new_collection_manage = headers.membership.has_type(MembershipType::Custom);
     let importer_uuid = headers.membership.user_uuid.clone();
     let OrgMemberHeaders {
         host,
@@ -2050,6 +2049,7 @@ mod org_import_tests {
                 ("rollback", MembershipType::Custom, CustomPermission::CreateNewCollections),
                 ("index", MembershipType::Custom, CustomPermission::CreateNewCollections),
                 ("disabled", MembershipType::Custom, CustomPermission::CreateNewCollections),
+                ("export", MembershipType::Owner, CustomPermission::CreateNewCollections),
             ] {
                 test_flag::CUSTOM_ROLES_ENABLED.set(Some(case != "disabled"));
                 let org = test_db::organization(&conn).await;
