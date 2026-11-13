@@ -70,13 +70,15 @@ These are intended behavior or outside this model. Several match upstream Bitwar
 - Download link replay: an attachment token or Send access token being reusable by its holder until it expires (1 and 2 minutes), and object storage presigned URLs that we cannot count or revoke. The holder already has the content.
 - Short-lived tokens that stay valid after an authorization change elsewhere until they expire, such as an organization API token (1 hour) after its key is rotated. This includes connections the notifications WebSocket accepted before the change, which stay open and carry change notifications and device login requests, not vault data.
 - The access token in the notifications WebSocket's `access_token` query parameter, which reverse proxies may log. Clients send it that way, and our [hardening guide](https://github.com/dani-garcia/vaultwarden/wiki/Hardening-Guide#access-logs-contain-access_token-parameter) covers redacting it.
+- A client's tokens staying valid after it logs out. Logging out discards them on that device, as upstream, and deauthorizing sessions or changing the password ends them.
 - The personal API key skipping 2FA, and working after a password change until the user rotates it. It is a separate credential.
+- A linked SSO identity still logging in after a master password change, and the SSO provider deciding how long a session lasts (`SSO_AUTH_ONLY_NOT_SESSION` turns that off). The provider manages that credential, and it doesn't unlock the vault.
 - A revoked or removed member's login session staying valid. It belongs to their own account, and the server checks membership on every request.
 - A revoked or removed member keeping what their client already synced, and the organization key not being rotated when a member leaves.
 - Unauthenticated requests to `/api/devices/identifier/<id>/clear-token`. The impact is delayed push delivery.
 - Limits we leave out or keep simple by design: no cap on the number of items a user stores, no cleanup of attachments reserved but never uploaded, and rate limits kept in memory per process and IP, which reset on restart and are shared by users behind one address.
 - Log injection. It only affects software that parses our logs, such as Fail2Ban with our community wiki's filters.
-- Attacks that need a misconfigured reverse proxy, such as one not sending `X-Forwarded-Proto` (it decides the admin cookie's `Secure` flag).
+- Attacks that need a missing or misconfigured reverse proxy, such as one not sending `X-Forwarded-Proto` (it decides the admin cookie's `Secure` flag).
 - Attacks that need another component to break its own specification, such as a NAT64 translator that forwards the `64:ff9b::/96` prefix to private addresses, against RFC 6052.
 - Outbound requests to the SSO provider, Yubico server or S3 endpoint the operator configures, which skip the outbound filter and can be on the internal network.
 - File permissions in the data folder. Host security belongs to the operator.
