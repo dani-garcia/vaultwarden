@@ -2,8 +2,12 @@ name: SDK live tests
 permissions: {}
 
 # Runs the live-server end-to-end tests of bitwarden/sdk-internal against this branch, see tools/sdk-live-tests/run.sh.
-# It builds the SDK too, so it only runs by hand and on changes to the test seeder or the runner.
+# It builds the SDK too, so it runs daily against the SDK's main branch, by hand, and on changes to the test seeder or
+# the runner.
 on:
+  schedule:
+    # 04:15 UTC, off the top of the hour, when GitHub may delay or drop scheduled runs
+    - cron: "15 4 * * *"
   workflow_dispatch:
     inputs:
       sdk_ref:
