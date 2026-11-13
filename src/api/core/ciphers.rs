@@ -645,7 +645,7 @@ pub async fn validate_rotated_cipher(
 )]
 async fn save_cipher_data(
     cipher: &mut Cipher,
-    data: CipherData,
+    mut data: CipherData,
     headers: &Headers,
     shared_to_collections: Option<Vec<CollectionId>>,
     conn: &DbConn,
@@ -653,20 +653,6 @@ async fn save_cipher_data(
     ut: UpdateType,
     emit_side_effects: bool,
 ) -> EmptyResult {
-    // Cleanup cipher data, like removing the 'Response' key.
-    // This key is somewhere generated during Javascript so no way for us this fix this.
-    // Also, upstream only retrieves keys they actually want to store, and thus skip the 'Response' key.
-    // We do not mind which data is in it, the keep our model more flexible when there are upstream changes.
-    // But, we at least know we do not need to store and return this specific key.
-    fn clean_cipher_data(mut json_data: Value) -> Value {
-        if let Some(items) = json_data.as_array_mut() {
-            for item in items.iter_mut().filter_map(Value::as_object_mut) {
-                item.remove("response");
-            }
-        }
-        json_data
-    }
-
     let is_blob = data.is_blob();
     data.validate_content(is_blob)?;
     data.validate_type_data(is_blob)?;
@@ -679,7 +665,7 @@ async fn save_cipher_data(
     // Check if this cipher is being transferred from a personal to an organization vault
     let transfer_cipher = cipher.organization_uuid.is_none() && data.organization_id.is_some();
 
-    if let Some(org_id) = data.organization_id {
+    if let Some(org_id) = data.organization_id.take() {
         match Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &org_id, conn).await {
             None => err!("You don't have permission to add item to organization"),
             Some(member) => {
@@ -708,7 +694,7 @@ async fn save_cipher_data(
     }
 
     // Modify attachments name and keys when rotating
-    if let Some(attachments) = data.attachments2 {
+    if let Some(attachments) = data.attachments2.take() {
         for (id, attachment) in attachments {
             let Some(mut saved_att) = Attachment::find_by_id(&id, conn).await else {
                 // Warn and continue here.
@@ -733,49 +719,7 @@ async fn save_cipher_data(
         }
     }
 
-    let type_data_opt = match data.r#type {
-        1 => data.login,
-        2 => data.secure_note,
-        3 => data.card,
-        4 => data.identity,
-        5 => data.ssh_key,
-        6 => data.bank_account,
-        7 => data.drivers_license,
-        8 => data.passport,
-        _ => err!("Invalid type"),
-    };
-
-    if let Some(blob) = data.data.filter(|_| is_blob) {
-        // A blob holds everything, the name included; the column can't be null, so it's left empty
-        // TODO: Make `ciphers.name` nullable and store `None` here instead.
-        cipher.name = String::new();
-        cipher.notes = None;
-        cipher.fields = None;
-        cipher.password_history = None;
-        cipher.data = blob;
-    } else {
-        let Some(mut type_data) = type_data_opt else {
-            err!("Data missing")
-        };
-        // Remove the 'Response' key from the base object.
-        if let Some(data_obj) = type_data.as_object_mut() {
-            data_obj.remove("response");
-        }
-        // Remove the 'Response' key from every Uri.
-        if type_data["uris"].is_array() {
-            type_data["uris"] = clean_cipher_data(type_data["uris"].clone());
-        }
-
-        // `validate_content` made sure there is a name
-        cipher.name = data.name.unwrap_or_default();
-        cipher.notes = data.notes;
-        cipher.fields = data.fields.map(|f| clean_cipher_data(f).to_string());
-        cipher.password_history = data.password_history.map(|f| f.to_string());
-        cipher.data = type_data.to_string();
-    }
-
-    cipher.key = data.key;
-    cipher.reprompt = data.reprompt.filter(|r| *r == RepromptType::None as i32 || *r == RepromptType::Password as i32);
+    set_cipher_content(cipher, &mut data)?;
 
     cipher.save(conn).await?;
     cipher.move_to_folder(data.folder_id, &headers.user.uuid, conn).await?;
@@ -811,6 +755,70 @@ async fn save_cipher_data(
         )
         .await;
     }
+    Ok(())
+}
+
+/// The cipher's own content from `data`, which has passed `validate_content` and `validate_type_data`: its type data or
+/// blob, name, notes, fields, password history, key and reprompt.
+fn set_cipher_content(cipher: &mut Cipher, data: &mut CipherData) -> EmptyResult {
+    // Cleanup cipher data, like removing the 'Response' key.
+    // This key is somewhere generated during Javascript so no way for us this fix this.
+    // Also, upstream only retrieves keys they actually want to store, and thus skip the 'Response' key.
+    // We do not mind which data is in it, the keep our model more flexible when there are upstream changes.
+    // But, we at least know we do not need to store and return this specific key.
+    fn clean_cipher_data(mut json_data: Value) -> Value {
+        if let Some(items) = json_data.as_array_mut() {
+            for item in items.iter_mut().filter_map(Value::as_object_mut) {
+                item.remove("response");
+            }
+        }
+        json_data
+    }
+
+    let is_blob = data.is_blob();
+    let type_data_opt = match data.r#type {
+        1 => data.login.take(),
+        2 => data.secure_note.take(),
+        3 => data.card.take(),
+        4 => data.identity.take(),
+        5 => data.ssh_key.take(),
+        6 => data.bank_account.take(),
+        7 => data.drivers_license.take(),
+        8 => data.passport.take(),
+        _ => err!("Invalid type"),
+    };
+
+    if let Some(blob) = data.data.take().filter(|_| is_blob) {
+        // A blob holds everything, the name included; the column can't be null, so it's left empty
+        // TODO: Make `ciphers.name` nullable and store `None` here instead.
+        cipher.name = String::new();
+        cipher.notes = None;
+        cipher.fields = None;
+        cipher.password_history = None;
+        cipher.data = blob;
+    } else {
+        let Some(mut type_data) = type_data_opt else {
+            err!("Data missing")
+        };
+        // Remove the 'Response' key from the base object.
+        if let Some(data_obj) = type_data.as_object_mut() {
+            data_obj.remove("response");
+        }
+        // Remove the 'Response' key from every Uri.
+        if type_data["uris"].is_array() {
+            type_data["uris"] = clean_cipher_data(type_data["uris"].clone());
+        }
+
+        // `validate_content` made sure there is a name
+        cipher.name = data.name.take().unwrap_or_default();
+        cipher.notes = data.notes.take();
+        cipher.fields = data.fields.take().map(|f| clean_cipher_data(f).to_string());
+        cipher.password_history = data.password_history.take().map(|f| f.to_string());
+        cipher.data = type_data.to_string();
+    }
+
+    cipher.key = data.key.take();
+    cipher.reprompt = data.reprompt.filter(|r| *r == RepromptType::None as i32 || *r == RepromptType::Password as i32);
     Ok(())
 }
 
