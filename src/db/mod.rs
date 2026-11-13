@@ -1,7 +1,11 @@
 mod query_logger;
 
 use std::{
-    sync::{Arc, OnceLock},
+    future::Future,
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
@@ -123,6 +127,7 @@ pub static ACTIVE_DB_TYPE: OnceLock<DbConnType> = OnceLock::new();
 pub struct DbConn {
     conn: Arc<Mutex<Option<PooledConnection<DbConnManager>>>>,
     permit: Option<OwnedSemaphorePermit>,
+    transaction_open: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -150,6 +155,7 @@ impl Drop for DbConn {
     fn drop(&mut self) {
         let conn = Arc::clone(&self.conn);
         let permit = self.permit.take();
+        let transaction_open = self.transaction_open.load(Ordering::Acquire);
 
         // Since connection can't be on the stack in an async fn during an
         // await, we have to spawn a new blocking-safe thread...
@@ -157,7 +163,13 @@ impl Drop for DbConn {
             // And then re-enter the runtime to wait on the async mutex, but in a blocking fashion.
             let mut conn = tokio::runtime::Handle::current().block_on(conn.lock_owned());
 
-            if let Some(conn) = conn.take() {
+            if let Some(mut conn) = conn.take() {
+                if transaction_open {
+                    // A cancelled request must not return an open transaction to the pool.
+                    if let Err(error) = conn.batch_execute("ROLLBACK") {
+                        error!("Failed to roll back a cancelled database transaction: {error}");
+                    }
+                }
                 drop(conn);
             }
 
@@ -248,6 +260,7 @@ impl DbPool {
         Ok(DbConn {
             conn: Arc::new(Mutex::new(Some(c))),
             permit: Some(permit),
+            transaction_open: AtomicBool::new(false),
         })
     }
 }
@@ -320,6 +333,29 @@ impl DbConnType {
 }
 
 impl DbConn {
+    /// Run asynchronous model calls on this request's pooled connection in one transaction.
+    /// Send external notifications only after this returns successfully.
+    pub async fn transaction<F, Fut, T>(&self, operation: F) -> Result<T, Error>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, Error>>,
+    {
+        self.run(|conn| conn.batch_execute("BEGIN")).await.map_res("Error starting database transaction")?;
+        self.transaction_open.store(true, Ordering::Release);
+        let result = operation().await;
+        if result.is_ok() {
+            let committed = self.run(|conn| conn.batch_execute("COMMIT")).await;
+            let closed = committed.is_ok() || self.run(|conn| conn.batch_execute("ROLLBACK")).await.is_ok();
+            if closed {
+                self.transaction_open.store(false, Ordering::Release);
+            }
+            committed.map_res("Error committing database transaction")?;
+        } else if self.run(|conn| conn.batch_execute("ROLLBACK")).await.is_ok() {
+            self.transaction_open.store(false, Ordering::Release);
+        }
+        result
+    }
+
     pub async fn run<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut DbConnInner) -> R + Send,
@@ -538,9 +574,61 @@ mod postgresql_migrations {
 /// A throwaway SQLite database with the real schema, for tests that need to run queries.
 #[cfg(all(test, sqlite))]
 pub mod test_db {
-    use super::sqlite_migrations::MIGRATIONS;
-    use diesel::connection::SimpleConnection;
+    use super::{DbConn, DbConnManager, sqlite_migrations::MIGRATIONS};
+    use diesel::{Connection, connection::SimpleConnection, r2d2::Pool, sqlite::SqliteConnection};
     use diesel_migrations::MigrationHarness;
+    use std::sync::{Arc, atomic::AtomicBool};
+    use tokio::sync::Mutex;
+
+    pub struct TestDb {
+        pool: Pool<DbConnManager>,
+        // Keep the named in-memory database alive across pooled connections.
+        _keeper: SqliteConnection,
+    }
+
+    impl TestDb {
+        fn new() -> Self {
+            let url = format!("sqlite://{}?mode=memory&cache=shared", crate::util::get_uuid());
+            let mut keeper = SqliteConnection::establish(&url).unwrap();
+            keeper.run_pending_migrations(MIGRATIONS).unwrap();
+            let pool = Pool::builder().max_size(2).build(DbConnManager::new(&url)).unwrap();
+            Self {
+                pool,
+                _keeper: keeper,
+            }
+        }
+
+        pub fn conn(&self) -> DbConn {
+            DbConn {
+                conn: Arc::new(Mutex::new(Some(self.pool.get().unwrap()))),
+                permit: None,
+                transaction_open: AtomicBool::new(false),
+            }
+        }
+    }
+
+    // CONFIG must initialize in a child process: the DNS bootstrap test needs it uninitialized.
+    pub fn run(test: impl AsyncFnOnce(&TestDb)) {
+        if std::env::var_os("VAULTWARDEN_ISOLATED_CONFIG_TEST").is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", std::thread::current().name().unwrap(), "--nocapture"])
+                .env("VAULTWARDEN_ISOLATED_CONFIG_TEST", "1")
+                .env("DATABASE_URL", "sqlite://:memory:")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        // DbConn::run uses block_in_place, requiring a multi-threaded runtime.
+        tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap().block_on(async {
+            test(&TestDb::new()).await;
+        });
+    }
 
     #[test]
     fn custom_role_migration_preserves_memberships_and_guards_downgrade() {
@@ -603,5 +691,71 @@ pub mod test_db {
         conn.run_pending_migrations(MIGRATIONS).unwrap();
         assert_eq!(grants(&mut conn), 0);
         assert_eq!(rows(&mut conn), before);
+    }
+
+    use super::models::{Collection, CustomPermission, Membership, MembershipType, Organization, OrganizationId, User};
+
+    pub async fn organization(conn: &DbConn) -> Organization {
+        let org = Organization::new("Org".into(), "billing@example.com", None, None);
+        org.save(conn).await.unwrap();
+        org
+    }
+
+    pub async fn member(
+        conn: &DbConn,
+        org: &OrganizationId,
+        role: MembershipType,
+        permissions: &[CustomPermission],
+    ) -> (User, Membership) {
+        let mut user = User::new(&format!("{}@example.com", crate::util::get_uuid()), None);
+        user.password_hash = b"existing-account".to_vec();
+        user.save(conn).await.unwrap();
+        let mut member = Membership::new(user.uuid.clone(), org.clone(), None);
+        member.set_type(role);
+        member.status = 2;
+        member.set_custom_permissions(&permissions.iter().copied().collect());
+        member.save(conn).await.unwrap();
+        (user, member)
+    }
+
+    pub async fn custom_member(conn: &DbConn, permission: CustomPermission) -> (Organization, User, Membership) {
+        let org = organization(conn).await;
+        let (user, member) = member(conn, &org.uuid, MembershipType::Custom, &[permission]).await;
+        (org, user, member)
+    }
+
+    pub async fn collection(conn: &DbConn, org: &OrganizationId) -> Collection {
+        let collection = Collection::new(org.clone(), "Collection".into(), None);
+        collection.save(conn).await.unwrap();
+        collection
+    }
+
+    #[test]
+    fn transactions_rollback_before_connection_reuse_and_commit_success() {
+        use crate::error::MapResult;
+        use diesel::RunQueryDsl;
+        run(async |db| {
+            let conn = db.conn();
+            conn.run(|c| c.batch_execute("CREATE TABLE probe (id INTEGER PRIMARY KEY)")).await.unwrap();
+            for (sql, expected) in [
+                ("INSERT INTO probe VALUES (1); INSERT INTO probe VALUES (1)", 0_i64),
+                ("INSERT INTO probe VALUES (1)", 1),
+            ] {
+                let result: Result<(), super::Error> = conn
+                    .transaction(async || conn.run(move |c| c.batch_execute(sql)).await.map_res("Insert failed"))
+                    .await;
+                assert_eq!(result.is_ok(), expected == 1);
+                let count: i64 = conn
+                    .run(|c| {
+                        diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>("(SELECT COUNT(*) FROM probe)"))
+                            .get_result(c)
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(count, expected);
+                // The same live connection must accept another transaction, before DbConn::drop can help.
+                conn.run(|c| c.batch_execute("BEGIN; ROLLBACK")).await.unwrap();
+            }
+        });
     }
 }

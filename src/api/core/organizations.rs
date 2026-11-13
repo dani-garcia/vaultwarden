@@ -15,10 +15,11 @@ use crate::{
     db::{
         DbConn,
         models::{
-            Cipher, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId, CollectionUser,
-            CustomPermission, Device, EventType, FillAssistPolicyData, Group, GroupId, GroupUser, Invitation,
-            Membership, MembershipId, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType, Organization,
-            OrganizationApiKey, OrganizationId, TwoFactor, TwoFactorType, User, UserId, custom_roles_enabled,
+            Cipher, CipherAccessScope, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId,
+            CollectionUser, CustomPermission, Device, EventType, FillAssistPolicyData, Group, GroupId, GroupUser,
+            Invitation, Membership, MembershipId, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType,
+            Organization, OrganizationApiKey, OrganizationId, TwoFactor, TwoFactorType, User, UserId,
+            custom_roles_enabled,
         },
     },
     mail,
@@ -47,6 +48,7 @@ pub fn routes() -> Vec<Route> {
         bulk_delete_organization_collections,
         post_bulk_collections,
         get_org_details,
+        get_assigned_org_details,
         get_org_domain_sso_verified,
         get_members,
         send_invite,
@@ -841,7 +843,7 @@ async fn get_org_details(data: OrgIdData, headers: ManagerHeadersLoose, conn: Db
         err_code!("Resource not found.", "Organization id's do not match", Status::NotFound.code);
     }
 
-    if !headers.membership.has_full_access() {
+    if !headers.membership.can_edit_any_collection() {
         err_code!("Resource not found.", "User does not have full access", Status::NotFound.code);
     }
 
@@ -859,13 +861,51 @@ async fn get_org_details_impl(
     conn: &DbConn,
 ) -> Result<Value, crate::Error> {
     let ciphers = Cipher::find_by_org(org_id, conn).await;
-    let cipher_sync_data = CipherSyncData::new(user_id, CipherSyncType::Organization, conn).await;
+    let mut cipher_sync_data = CipherSyncData::new(user_id, CipherSyncType::Organization, conn).await;
+    // Every cipher of the organization is listed, so list every collection of them too
+    cipher_sync_data.cipher_collections = HashMap::new();
+    for (cipher_id, collection_id) in Cipher::get_collections_with_cipher_by_organization(org_id, conn).await {
+        cipher_sync_data.cipher_collections.entry(cipher_id).or_default().push(collection_id);
+    }
 
     let mut ciphers_json = Vec::with_capacity(ciphers.len());
     for c in ciphers {
         ciphers_json.push(c.to_json(host, user_id, Some(&cipher_sync_data), CipherSyncType::Organization, conn).await?);
     }
     Ok(json!(ciphers_json))
+}
+
+// The Admin Console lists these instead of every cipher of the organization for a member who may not edit every
+// cipher, like a Custom member with Delete any collection only. As in Bitwarden, any confirmed member may list them.
+#[get("/ciphers/organization-details/assigned?<data..>")]
+async fn get_assigned_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> JsonResult {
+    let Some(member) =
+        Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &data.organization_id, &conn).await
+    else {
+        err_code!("Resource not found.", "User is not a confirmed member of the organization", Status::NotFound.code);
+    };
+
+    let (assigned, unassigned) = Cipher::find_assigned_to_member(&member, &conn).await;
+    let mut ciphers_json = Vec::with_capacity(assigned.len() + unassigned.len());
+    // The ciphers of the member's own vault, as they are there
+    let cipher_sync_data = CipherSyncData::new(&headers.user.uuid, CipherSyncType::User, &conn).await;
+    for cipher in assigned {
+        ciphers_json.push(
+            cipher
+                .to_json(&headers.host, &headers.user.uuid, Some(&cipher_sync_data), CipherSyncType::User, &conn)
+                .await?,
+        );
+    }
+    // The ciphers in no collection, as the member may use them in the Admin Console
+    for cipher in unassigned {
+        ciphers_json.push(cipher.to_json_org_admin(&headers.host, &headers.user.uuid, &conn).await?);
+    }
+
+    Ok(Json(json!({
+        "data": ciphers_json,
+        "object": "list",
+        "continuationToken": null,
+    })))
 }
 
 // Returning a Domain/Organization here allow to prefill it and prevent prompting the user
@@ -1875,6 +1915,7 @@ async fn post_org_import(
             &conn,
             &nt,
             UpdateType::None,
+            true,
         )
         .await
         .ok();
@@ -1908,29 +1949,37 @@ struct BulkCollectionsData {
 async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers, conn: DbConn) -> EmptyResult {
     let data: BulkCollectionsData = data.into_inner();
 
-    if Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &data.organization_id, &conn).await.is_none() {
+    let Some(member) =
+        Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &data.organization_id, &conn).await
+    else {
         err!("You need to be a Member of the Organization to call this endpoint")
-    }
+    };
+    // A member who may edit any collection may use every collection of the organization
+    let can_edit_any_collection = member.can_edit_any_collection();
 
     // Get all the collection available to the user in one query
     // Also filter based upon the provided collections
-    let user_collections: HashMap<CollectionId, Collection> =
-        Collection::find_by_organization_and_user_uuid(&data.organization_id, &headers.user.uuid, &conn)
-            .await
-            .into_iter()
-            .filter_map(|c| {
-                if data.collection_ids.contains(&c.uuid) {
-                    Some((c.uuid.clone(), c))
-                } else {
-                    None
-                }
-            })
-            .collect();
+    let collections = if can_edit_any_collection {
+        Collection::find_by_organization(&data.organization_id, &conn).await
+    } else {
+        Collection::find_by_organization_and_user_uuid(&data.organization_id, &headers.user.uuid, &conn).await
+    };
+    let user_collections: HashMap<CollectionId, Collection> = collections
+        .into_iter()
+        .filter_map(|c| {
+            if data.collection_ids.contains(&c.uuid) {
+                Some((c.uuid.clone(), c))
+            } else {
+                None
+            }
+        })
+        .collect();
 
     // Verify if all the collections requested exists and are writable for the user, else abort
     for collection_uuid in &data.collection_ids {
         match user_collections.get(collection_uuid) {
-            Some(collection) if collection.is_writable_by_user(&headers.user.uuid, &conn).await => (),
+            Some(collection)
+                if can_edit_any_collection || collection.is_writable_by_user(&headers.user.uuid, &conn).await => {}
             _ => err_code!("Resource not found", "User does not have access to a collection", 404),
         }
     }
@@ -1939,7 +1988,7 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
         // Only act on existing cipher uuid's
         // Do not abort the operation just ignore it, it could be a cipher was just deleted for example
         if let Some(cipher) = Cipher::find_by_uuid_and_org(cipher_id, &data.organization_id, &conn).await
-            && cipher.is_write_accessible_to_user(&headers.user.uuid, &conn).await
+            && cipher.is_write_accessible_to_user(&headers.user.uuid, CipherAccessScope::OrganizationAdmin, &conn).await
         {
             // When selecting a specific collection from the left filter list, and use the bulk option, you can remove an item from that collection
             // In these cases the client will call this endpoint twice, once for adding the new collections and a second for deleting.

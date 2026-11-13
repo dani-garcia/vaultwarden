@@ -767,6 +767,23 @@ mod tests {
 
     #[test]
     fn test_has_v2_encryption() {
+        // User::new loads CONFIG; isolate it from the DNS bootstrap test and filesystem configuration.
+        if std::env::var_os("VAULTWARDEN_ISOLATED_CONFIG_TEST").is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", std::thread::current().name().unwrap(), "--nocapture"])
+                .env("VAULTWARDEN_ISOLATED_CONFIG_TEST", "1")
+                .env("DATABASE_URL", "sqlite://:memory:")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
         let user = |private_key: Option<&str>, security_version: Option<i32>| {
             let mut user = User::new("user@example.com", None);
             user.private_key = private_key.map(String::from);
