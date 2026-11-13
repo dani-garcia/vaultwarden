@@ -879,10 +879,6 @@ async fn get_org_details_impl(
 // cipher, like a Custom member with Delete any collection only. As in Bitwarden, any confirmed member may list them.
 #[get("/ciphers/organization-details/assigned?<data..>")]
 async fn get_assigned_org_details(data: OrgIdData, headers: Headers, conn: DbConn) -> JsonResult {
-    // Only the Custom role needs this, every other role that opens the Admin Console may edit every cipher
-    if !custom_roles_enabled() {
-        err_code!("Resource not found.", "Custom roles are disabled", Status::NotFound.code);
-    }
     let Some(member) =
         Membership::find_confirmed_by_user_and_org(&headers.user.uuid, &data.organization_id, &conn).await
     else {

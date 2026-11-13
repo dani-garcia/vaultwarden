@@ -1491,15 +1491,16 @@ async fn get_attachment_data(
     };
 
     if scope == CipherAccessScope::OrganizationAdmin {
+        // NotFound as in Bitwarden, the web vault then falls back to the attachment's own URL
         let Some(org_id) = cipher.organization_uuid.as_ref() else {
-            err!("Cipher is not owned by an organization")
+            err_code!("Cipher is not owned by an organization", Status::NotFound.code)
         };
         if !Membership::find_confirmed_by_user_and_org(&headers.user.uuid, org_id, &conn)
             .await
             .is_some_and(|member| member.can_edit_any_collection())
             || !cipher.is_write_accessible_to_user(&headers.user.uuid, scope, &conn).await
         {
-            err!("Cipher is not accessible")
+            err_code!("Cipher is not accessible", Status::NotFound.code)
         }
     } else if !cipher.is_accessible_to_user(&headers.user.uuid, scope, &conn).await {
         err!("Cipher is not accessible")
