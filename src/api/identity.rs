@@ -29,7 +29,7 @@ use crate::{
     db::{
         DbConn,
         models::{
-            AuthRequest, AuthRequestId, Device, DeviceId, EventType, Invitation, OIDCCodeResponseError,
+            AuthRequest, AuthRequestId, Device, DeviceId, DeviceType, EventType, Invitation, OIDCCodeResponseError,
             OrganizationApiKey, OrganizationId, SendId, SsoAuth, SsoUser, TwoFactor, TwoFactorIncomplete,
             TwoFactorType, User, UserId,
         },
@@ -77,14 +77,14 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
             check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
             check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
-            password_login(data, &mut user_id, &conn, &client_header.ip).await
+            password_login(data, &mut user_id, &conn, &client_header).await
         }
         "client_credentials" => {
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
             check_is_some(data.client_secret.as_ref(), "client_secret cannot be blank")?;
             check_is_some(data.scope.as_ref(), "scope cannot be blank")?;
 
-            api_key_login(data, &mut user_id, &conn, &client_header.ip).await
+            api_key_login(data, &mut user_id, &conn, &client_header).await
         }
         "authorization_code" if CONFIG.sso_enabled() => {
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
@@ -95,7 +95,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
             check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
             check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
-            sso_login(data, &mut user_id, &conn, &client_header.ip).await
+            sso_login(data, &mut user_id, &conn, &client_header).await
         }
         "authorization_code" => err!("SSO sign-in is not available"),
         "send_access" => {
@@ -179,7 +179,13 @@ async fn refresh_login(data: ConnectData, conn: &DbConn, ip: &ClientIp) -> JsonR
 }
 
 // After exchanging the code we need to check first if 2FA is needed before continuing
-async fn sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbConn, ip: &ClientIp) -> JsonResult {
+async fn sso_login(
+    data: ConnectData,
+    user_id: &mut Option<UserId>,
+    conn: &DbConn,
+    client_header: &ClientHeaders,
+) -> JsonResult {
+    let ip = &client_header.ip;
     AuthMethod::Sso.check_scope(data.scope.as_ref())?;
 
     // Ratelimit the login
@@ -317,6 +323,8 @@ async fn sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbCon
             }
 
             let mut user = User::new(&user_infos.email, user_infos.user_name.clone());
+            // Before saving, so that a client that can't log in doesn't create the account
+            check_client_version(&user, client_header)?;
             user.verified_at = Some(now);
             user.save(conn).await?;
 
@@ -325,6 +333,8 @@ async fn sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbCon
             (user, device, None, None)
         }
         Some((user, _)) if !user.enabled => {
+            // Set in both arms, not only after the match, so that their failed logins are logged
+            *user_id = Some(user.uuid.clone());
             err!(
                 "This user has been disabled",
                 format!("IP: {}. Username: {}.", ip.ip, user.email),
@@ -334,6 +344,9 @@ async fn sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbCon
             )
         }
         Some((mut user, sso_user)) => {
+            *user_id = Some(user.uuid.clone());
+            check_client_version(&user, client_header)?;
+
             let mut device = get_device(&data, conn, &user).await?;
 
             let twofactor_token = twofactor_auth(&mut user, &data, &mut device, ip, conn).await?;
@@ -368,7 +381,13 @@ async fn sso_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbCon
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
 }
 
-async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbConn, ip: &ClientIp) -> JsonResult {
+async fn password_login(
+    data: ConnectData,
+    user_id: &mut Option<UserId>,
+    conn: &DbConn,
+    client_header: &ClientHeaders,
+) -> JsonResult {
+    let ip = &client_header.ip;
     // Validate scope
     AuthMethod::Password.check_scope(data.scope.as_ref())?;
 
@@ -438,6 +457,8 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
         )
     }
 
+    check_client_version(&user, client_header)?;
+
     // Change the KDF Iterations (only when not logging in with an auth request)
     if data.auth_request.is_none() {
         kdf_upgrade(&mut user, password, conn).await?;
@@ -499,6 +520,66 @@ async fn password_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
 }
 
+/// Like upstream's `ClientVersionValidator`, every login needs the `Bitwarden-Client-Version` header, and a V2 account
+/// ([`User::has_v2_encryption`]) a client of at least 2026.10.1 (2026.10.2 for the desktop app). Called right after the
+/// credentials are checked, like upstream, so that it doesn't tell anyone else which accounts are V2.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/15c94ac58bf361a162381749c146d254a21b2098/src/Identity/IdentityServer/RequestValidators/ClientVersionValidator.cs#L33-L79>
+/// Ref: <https://github.com/bitwarden/server/blob/15c94ac58bf361a162381749c146d254a21b2098/src/Core/KeyManagement/Constants.cs#L5-L6>
+fn check_client_version(user: &User, client_header: &ClientHeaders) -> EmptyResult {
+    let Some((error, description)) = client_version_error(
+        user.has_v2_encryption(),
+        client_header.client_version.as_ref(),
+        client_header.device_type,
+    ) else {
+        return Ok(());
+    };
+    Err(crate::error::Error::from((
+        // Escaped: on a first SSO login the email comes from the provider and isn't validated yet
+        format!("IP: {}. Username: {}. {error}", client_header.ip.ip, user.email.escape_debug()),
+        json!({
+            "error": error,
+            "error_description": description,
+            "ErrorModel": { "Message": description, "Object": "error" },
+        }),
+    ))
+    .with_event(crate::error::ErrorEvent {
+        event: EventType::UserFailedLogIn,
+    }))
+}
+
+/// The error id and message of [`check_client_version`], `None` when the client may log in.
+fn client_version_error(
+    is_v2: bool,
+    client_version: Option<&semver::Version>,
+    device_type: i32,
+) -> Option<(&'static str, &'static str)> {
+    const MIN_V2_CLIENT: semver::Version = semver::Version::new(2026, 10, 1);
+    const MIN_V2_DESKTOP_CLIENT: semver::Version = semver::Version::new(2026, 10, 2);
+
+    let Some(version) = client_version else {
+        return Some((
+            "version_header_missing",
+            "No client version header found, required to prevent encryption errors. Please confirm your client is supplying the header: \"Bitwarden-Client-Version\"",
+        ));
+    };
+    if !is_v2 {
+        return None;
+    }
+    // Upstream's desktop device types
+    // Ref: <https://github.com/bitwarden/server/blob/15c94ac58bf361a162381749c146d254a21b2098/src/Libraries/Clients/DeviceTypes.cs#L14-L20>
+    let is_desktop = matches!(
+        DeviceType::from_i32(device_type),
+        DeviceType::WindowsDesktop | DeviceType::MacOsDesktop | DeviceType::LinuxDesktop | DeviceType::Uwp
+    );
+    let min_version = if is_desktop {
+        &MIN_V2_DESKTOP_CLIENT
+    } else {
+        &MIN_V2_CLIENT
+    };
+    (version < min_version).then_some(("invalid_client_version", "Please update your app to continue using Bitwarden"))
+}
+
 async fn authenticated_response(
     user: &User,
     device: &mut Device,
@@ -546,24 +627,13 @@ async fn authenticated_response(
             // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "MasterKeyEncryptedUserKey": user.akey,
             "MasterKeyWrappedUserKey": user.akey,
-            "Salt": user.email
+            "Salt": user.master_password_salt()
         })
     } else {
         Value::Null
     };
 
-    let account_keys = if user.private_key.is_some() {
-        json!({
-            "publicKeyEncryptionKeyPair": {
-                "wrappedPrivateKey": user.private_key,
-                "publicKey": user.public_key,
-                "Object": "publicKeyEncryptionKeyPair"
-            },
-            "Object": "privateKeys"
-        })
-    } else {
-        Value::Null
-    };
+    let account_keys = user.account_keys_json(conn).await;
 
     let mut result = json!({
         "access_token": auth_tokens.access_token(),
@@ -598,7 +668,13 @@ async fn authenticated_response(
     Ok(Json(result))
 }
 
-async fn api_key_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &DbConn, ip: &ClientIp) -> JsonResult {
+async fn api_key_login(
+    data: ConnectData,
+    user_id: &mut Option<UserId>,
+    conn: &DbConn,
+    client_header: &ClientHeaders,
+) -> JsonResult {
+    let ip = &client_header.ip;
     // Ratelimit the login
     crate::ratelimit::check_limit_login(&ip.ip)?;
 
@@ -610,7 +686,7 @@ async fn api_key_login(data: ConnectData, user_id: &mut Option<UserId>, conn: &D
             check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
             check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
 
-            user_api_key_login(data, user_id, conn, ip).await
+            user_api_key_login(data, user_id, conn, client_header).await
         }
         Some(scope) if scope == &AuthMethod::OrgApiKey.scope() => organization_api_key_login(data, conn, ip).await,
         _ => err!("Scope not supported"),
@@ -621,8 +697,9 @@ async fn user_api_key_login(
     data: ConnectData,
     user_id: &mut Option<UserId>,
     conn: &DbConn,
-    ip: &ClientIp,
+    client_header: &ClientHeaders,
 ) -> JsonResult {
+    let ip = &client_header.ip;
     // Get the user via the client_id
     let client_id = data.client_id.as_ref().unwrap();
     let Some(client_user_id) = client_id.strip_prefix("user.") else {
@@ -658,6 +735,8 @@ async fn user_api_key_login(
             }
         )
     }
+
+    check_client_version(&user, client_header)?;
 
     let mut device = get_device(&data, conn, &user).await?;
 
@@ -703,24 +782,13 @@ async fn user_api_key_login(
             // https://github.com/bitwarden/android/blob/release/2025.12-rc41/network/src/main/kotlin/com/bitwarden/network/model/MasterPasswordUnlockDataJson.kt#L22-L26
             "MasterKeyEncryptedUserKey": user.akey,
             "MasterKeyWrappedUserKey": user.akey,
-            "Salt": user.email
+            "Salt": user.master_password_salt()
         })
     } else {
         Value::Null
     };
 
-    let account_keys = if user.private_key.is_some() {
-        json!({
-            "publicKeyEncryptionKeyPair": {
-                "wrappedPrivateKey": user.private_key,
-                "publicKey": user.public_key,
-                "Object": "publicKeyEncryptionKeyPair"
-            },
-            "Object": "privateKeys"
-        })
-    } else {
-        Value::Null
-    };
+    let account_keys = user.account_keys_json(conn).await;
 
     // Note: No refresh_token is returned. The CLI just repeats the
     // client_credentials login flow when the existing token expires.
@@ -1350,4 +1418,34 @@ async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure,
     );
 
     Ok(Redirect::temporary(String::from(auth_url)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_client_version_error() {
+        let version = |v| semver::Version::parse(v).unwrap();
+        let web = DeviceType::ChromeBrowser as i32;
+        let desktop = DeviceType::WindowsDesktop as i32;
+        // Every login needs the header
+        assert_eq!(client_version_error(false, None, web).map(|e| e.0), Some("version_header_missing"));
+        assert_eq!(client_version_error(true, None, desktop).map(|e| e.0), Some("version_header_missing"));
+        // V1 accounts log in from any version
+        assert_eq!(client_version_error(false, Some(&version("2024.1.0")), web), None);
+        assert_eq!(client_version_error(false, Some(&version("2024.1.0")), desktop), None);
+        // V2 accounts need 2026.10.1, and 2026.10.2 for the desktop app
+        assert_eq!(
+            client_version_error(true, Some(&version("2026.10.0")), web).map(|e| e.0),
+            Some("invalid_client_version")
+        );
+        assert_eq!(client_version_error(true, Some(&version("2026.10.1")), web), None);
+        assert_eq!(
+            client_version_error(true, Some(&version("2026.10.1")), desktop).map(|e| e.0),
+            Some("invalid_client_version")
+        );
+        assert_eq!(client_version_error(true, Some(&version("2026.10.2")), DeviceType::Uwp as i32), None);
+        assert_eq!(client_version_error(true, Some(&version("2026.11.0")), desktop), None);
+    }
 }

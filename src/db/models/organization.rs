@@ -24,8 +24,8 @@ use crate::{
 use macros::UuidFromParam;
 
 use super::{
-    Cipher, CipherId, Collection, CollectionGroup, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy,
-    OrgPolicyType, TwoFactor, User, UserId,
+    Cipher, CipherId, Collection, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy, OrgPolicyType,
+    TwoFactor, User, UserId,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -69,6 +69,9 @@ pub struct Membership {
     access_event_logs: bool,
     access_import_export: bool,
     access_reports: bool,
+
+    /// The user's v2 upgrade token, for the org to unwrap the v2 user key after an upgrade. Opaque to us.
+    pub v2_upgrade_token: Option<String>,
 }
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -131,22 +134,28 @@ impl MembershipType {
     /// role (`None` for an invite).
     ///
     /// The clients no longer know the legacy Manager role and are shown a Custom role in its place, so a
-    /// requested Custom role is the legacy Manager unless EXPERIMENTAL_CUSTOM_ROLES is enabled. An existing
-    /// Manager or Custom member keeps their role when the request repeats it, so an unrelated edit never
-    /// turns one into the other.
+    /// requested Custom role is the legacy Manager unless EXPERIMENTAL_CUSTOM_ROLES is enabled, in which case
+    /// `custom_permissions` are the permissions requested along with it. An existing Manager or Custom member
+    /// keeps their role when the request repeats it, so an unrelated edit never turns one into the other. A
+    /// Manager only becomes a Custom member when the permissions they are shown with are changed.
     pub fn requested(
         requested: MembershipType,
         current: Option<&Membership>,
-        custom_roles_enabled: bool,
+        custom_permissions: Option<&HashSet<CustomPermission>>,
     ) -> MembershipType {
         if requested != MembershipType::Custom {
             return requested;
         }
-        match current {
-            Some(member) if member.has_type(MembershipType::Custom) => MembershipType::Custom,
-            Some(member) if member.has_type(MembershipType::Manager) => MembershipType::Manager,
-            _ if custom_roles_enabled => MembershipType::Custom,
-            _ => MembershipType::Manager,
+        match (current, custom_permissions) {
+            (Some(member), _) if member.has_type(MembershipType::Custom) => MembershipType::Custom,
+            (Some(member), Some(permissions))
+                if member.has_type(MembershipType::Manager) && *permissions != member.legacy_manager_permissions() =>
+            {
+                MembershipType::Custom
+            }
+            (Some(member), _) if member.has_type(MembershipType::Manager) => MembershipType::Manager,
+            (_, Some(_)) => MembershipType::Custom,
+            (_, None) => MembershipType::Manager,
         }
     }
 
@@ -237,7 +246,11 @@ pub enum CustomPermission {
 
 /// The permissions this version enforces on every endpoint they open. Only these can be granted, a stored
 /// grant of any other one grants nothing. They are implemented one at a time, so this grows with them.
-const SUPPORTED_CUSTOM_PERMISSIONS: &[CustomPermission] = &[];
+const SUPPORTED_CUSTOM_PERMISSIONS: &[CustomPermission] = &[
+    CustomPermission::CreateNewCollections,
+    CustomPermission::EditAnyCollection,
+    CustomPermission::DeleteAnyCollection,
+];
 
 impl CustomPermission {
     pub const ALL: [CustomPermission; 9] = [
@@ -303,7 +316,36 @@ pub(super) const ORG_ADMIN_ATYPES: [i32; 2] = [MembershipType::Owner as i32, Mem
 
 /// Whether the experimental Custom role is enabled. Nothing is ever granted through a Custom role otherwise.
 pub fn custom_roles_enabled() -> bool {
+    #[cfg(test)]
+    if let Some(enabled) = test_flag::CUSTOM_ROLES_ENABLED.get() {
+        return enabled;
+    }
     CONFIG.experimental_custom_roles()
+}
+
+type CustomEditAnyCollection = diesel::dsl::And<
+    diesel::dsl::And<
+        diesel::dsl::Eq<users_organizations::atype, i32>,
+        diesel::dsl::Eq<users_organizations::edit_any_collection, bool>,
+    >,
+    bool,
+    diesel::sql_types::Bool,
+>;
+
+/// SQL: a Custom member with Edit any collection, while Custom roles are enabled.
+pub(super) fn custom_edit_any_collection() -> CustomEditAnyCollection {
+    users_organizations::atype
+        .eq(MembershipType::Custom as i32)
+        .and(users_organizations::edit_any_collection.eq(true))
+        .and::<_, diesel::sql_types::Bool>(custom_roles_enabled())
+}
+
+#[cfg(test)]
+pub(crate) mod test_flag {
+    thread_local! {
+        /// Overrides EXPERIMENTAL_CUSTOM_ROLES for the tests running on this thread.
+        pub static CUSTOM_ROLES_ENABLED: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+    }
 }
 
 /// Local methods
@@ -407,6 +449,8 @@ impl Membership {
             access_event_logs: false,
             access_import_export: false,
             access_reports: false,
+
+            v2_upgrade_token: None,
         }
     }
 
@@ -447,40 +491,100 @@ impl Membership {
         }
     }
 
-    /// Why this legacy Manager can't become a Custom member without losing what they may do now, if they can't. A
-    /// conversion must not silently change their access, and a Custom role can't keep access to all collections
-    /// (which also puts every collection in the Manager's own vault), nor manage any collection yet.
-    pub async fn custom_role_conversion_loss(&self, conn: &DbConn) -> Option<&'static str> {
+    /// Why this legacy Manager can't become a Custom member with `permissions` without losing what they may do now, if
+    /// they can't. A conversion must not silently change their access. A Custom role can't keep access to all
+    /// collections, which also puts every collection in the Manager's own vault, unless the permissions it is shown as
+    /// are given up too. And it only manages every collection with Edit any collection, not through a group with access
+    /// to all collections, which stays dynamic. The collections they manage with the manage permission stay managed.
+    pub async fn custom_role_conversion_loss(
+        &self,
+        permissions: &HashSet<CustomPermission>,
+        conn: &DbConn,
+    ) -> Option<&'static str> {
         if !self.has_type(MembershipType::Manager) {
             return None;
         }
-        if self.access_all {
+        if self.access_all && permissions.is_superset(&self.legacy_manager_permissions()) {
             return Some(
                 "This Manager has access to all collections, which a Custom member can't have: the collections they \
-                 aren't assigned to would disappear from their vault. Uncheck Manage all collections for them first, \
-                 or keep the Manager role.",
+                 aren't assigned to would disappear from their vault. Uncheck Manage all collections for them to give \
+                 that access up, or keep the Manager role.",
             );
         }
-        // Whatever their status, the collections they manage directly, through a group or through a group with
-        // access to all collections
-        let mut manages = GroupUser::has_full_access_by_member(&self.org_uuid, &self.uuid, conn).await
-            || CollectionUser::find_by_organization_and_user_uuid(&self.org_uuid, &self.user_uuid, conn)
-                .await
-                .iter()
-                .any(|assignment| assignment.manage);
-        for group_user in GroupUser::find_by_member(&self.uuid, conn).await {
-            if manages {
-                break;
-            }
-            manages = CollectionGroup::find_by_group(&group_user.groups_uuid, &self.org_uuid, conn)
-                .await
-                .iter()
-                .any(|assignment| assignment.manage);
+        if !permissions.contains(&CustomPermission::EditAnyCollection)
+            && GroupUser::has_full_access_by_member(&self.org_uuid, &self.uuid, conn).await
+        {
+            return Some(
+                "This Manager manages every collection through a group with access to all collections, which a Custom \
+                 member only does with Edit any collection. Grant that permission, or remove them from the group \
+                 first.",
+            );
         }
-        manages.then_some(
-            "This Manager manages collections, with the manage permission or through a group with access to all \
-             collections, which a Custom member can't do yet. Remove that first, or keep the Manager role.",
-        )
+        None
+    }
+
+    fn custom_permission(&self, permission: CustomPermission) -> bool {
+        match permission {
+            CustomPermission::ManageUsers => self.manage_users,
+            CustomPermission::ManageGroups => self.manage_groups,
+            CustomPermission::ManagePolicies => self.manage_policies,
+            CustomPermission::CreateNewCollections => self.create_new_collections,
+            CustomPermission::EditAnyCollection => self.edit_any_collection,
+            CustomPermission::DeleteAnyCollection => self.delete_any_collection,
+            CustomPermission::AccessEventLogs => self.access_event_logs,
+            CustomPermission::AccessImportExport => self.access_import_export,
+            CustomPermission::AccessReports => self.access_reports,
+        }
+    }
+
+    /// Whether the role of this member grants `permission`. Only a Custom role grants any, only while Custom roles
+    /// are enabled, and only the permissions this version enforces.
+    fn grants_custom_permission(&self, permission: CustomPermission) -> bool {
+        custom_roles_enabled()
+            && permission.is_supported()
+            && self.has_type(MembershipType::Custom)
+            && self.custom_permission(permission)
+    }
+
+    /// Whether this member may act with `permission`, granted by their Custom role. Like the authority of any
+    /// other role, it needs a confirmed membership.
+    pub fn has_custom_permission(&self, permission: CustomPermission) -> bool {
+        self.has_status(MembershipStatus::Confirmed) && self.grants_custom_permission(permission)
+    }
+
+    /// The permissions the "Manage all collections" a legacy Manager is shown with stands for: their `access_all`.
+    pub fn legacy_manager_permissions(&self) -> HashSet<CustomPermission> {
+        if self.has_type(MembershipType::Manager) && self.access_all {
+            HashSet::from([
+                CustomPermission::CreateNewCollections,
+                CustomPermission::EditAnyCollection,
+                CustomPermission::DeleteAnyCollection,
+            ])
+        } else {
+            HashSet::new()
+        }
+    }
+
+    /// The permissions the clients are shown, which a legacy Manager is shown as a Custom member with.
+    pub fn shown_custom_permissions(&self) -> HashSet<CustomPermission> {
+        if self.has_type(MembershipType::Manager) {
+            self.legacy_manager_permissions()
+        } else {
+            CustomPermission::ALL.into_iter().filter(|p| self.grants_custom_permission(*p)).collect()
+        }
+    }
+
+    fn custom_permissions_json(&self) -> Value {
+        let shown = self.shown_custom_permissions();
+        let mut permissions = json!({
+            "manageSso": false, // Not supported
+            "manageResetPassword": false,
+            "manageScim": false, // Not supported (Not AGPLv3 Licensed)
+        });
+        for permission in CustomPermission::ALL {
+            permissions[permission.json_key()] = json!(shown.contains(&permission));
+        }
+        permissions
     }
 
     pub fn restore(&mut self) -> bool {
@@ -651,24 +755,8 @@ impl Membership {
         // It will be converted back on other locations
         let membership_type = self.type_manager_as_custom();
 
-        let permissions = json!({
-                // TODO: Add full support for Custom User Roles
-                // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
-                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
-                "accessEventLogs": false,
-                "accessImportExport": false,
-                "accessReports": false,
-                // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": membership_type == 4 && self.access_all,
-                "editAnyCollection": membership_type == 4 && self.access_all,
-                "deleteAnyCollection": membership_type == 4 && self.access_all,
-                "manageGroups": false,
-                "managePolicies": false,
-                "manageSso": false, // Not supported
-                "manageUsers": false,
-                "manageResetPassword": false,
-                "manageScim": false // Not supported (Not AGPLv3 Licensed)
-        });
+        // A Manager is shown with the 3 Collection permissions set, when they have the access_all permission
+        let permissions = self.custom_permissions_json();
 
         // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/ProfileOrganizationResponseModel.cs
         json!({
@@ -798,29 +886,11 @@ impl Membership {
         // It will be converted back on other locations
         let membership_type = self.type_manager_as_custom();
 
-        // HACK: Only return permissions if the user is of type custom and has access_all
-        // Else Bitwarden will assume the defaults of all false
-        let permissions = if membership_type == 4 && self.access_all {
-            json!({
-                // TODO: Add full support for Custom User Roles
-                // See: https://bitwarden.com/help/article/user-types-access-control/#custom-role
-                // Currently we use the custom role as a manager role and link the 3 Collection roles to mimic the access_all permission
-                "accessEventLogs": false,
-                "accessImportExport": false,
-                "accessReports": false,
-                // If the following 3 Collection roles are set to true a custom user has access all permission
-                "createNewCollections": true,
-                "editAnyCollection": true,
-                "deleteAnyCollection": true,
-                "manageGroups": false,
-                "managePolicies": false,
-                "manageSso": false, // Not supported
-                "manageUsers": false,
-                "manageResetPassword": false,
-                "manageScim": false // Not supported (Not AGPLv3 Licensed)
-            })
-        } else {
+        // Only return permissions if there are any, else Bitwarden will assume the defaults of all false
+        let permissions = if self.shown_custom_permissions().is_empty() {
             json!(null)
+        } else {
+            self.custom_permissions_json()
         };
 
         json!({
@@ -1001,6 +1071,19 @@ impl Membership {
         (self.access_all || self.atype >= MembershipType::Admin) && self.has_status(MembershipStatus::Confirmed)
     }
 
+    /// Whether this member may edit every collection and the items in them in the Admin Console: every member with
+    /// full access, and a Custom member with Edit any collection. Unlike full access, the permission does not add
+    /// anything to the member's own vault.
+    pub fn can_edit_any_collection(&self) -> bool {
+        self.has_full_access() || self.has_custom_permission(CustomPermission::EditAnyCollection)
+    }
+
+    /// Whether this member may see every collection and who has access to them in the Admin Console. Deleting any
+    /// collection needs that, but not the items in them.
+    pub fn can_view_all_collections(&self) -> bool {
+        self.can_edit_any_collection() || self.has_custom_permission(CustomPermission::DeleteAnyCollection)
+    }
+
     pub async fn find_by_uuid(uuid: &MembershipId, conn: &DbConn) -> Option<Self> {
         conn.run(move |conn| {
             users_organizations::table.filter(users_organizations::uuid.eq(uuid)).first::<Self>(conn).ok()
@@ -1123,6 +1206,8 @@ impl Membership {
     }
 
     // Get all users which are either owner or admin, or a manager which can manage/access all
+    // A Custom member with Edit any collection is not listed: the Admin Console sends this list back when a collection
+    // is saved, which would assign them to it for good, while the others are skipped there for their access_all.
     pub async fn find_confirmed_and_manage_all_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             users_organizations::table
@@ -1443,6 +1528,7 @@ pub struct OrgApiKeyId(String);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use CustomPermission::*;
     use MembershipType::{Admin, Custom, Manager, Owner, User};
 
     fn member(role: MembershipType) -> Membership {
@@ -1472,21 +1558,33 @@ mod tests {
 
     #[test]
     fn requested_membership_type() {
-        for (current, disabled, enabled) in [
-            (None, Manager, Custom),
-            (Some(User), Manager, Custom),
-            (Some(Manager), Manager, Manager),
-            (Some(Custom), Custom, Custom),
+        let none = HashSet::new();
+        let edit = HashSet::from([EditAnyCollection]);
+        let legacy = HashSet::from([CreateNewCollections, EditAnyCollection, DeleteAnyCollection]);
+        for (current, all, permissions, disabled, enabled) in [
+            (None, false, &none, Manager, Custom),
+            (Some(User), false, &edit, Manager, Custom),
+            (Some(Owner), false, &none, Manager, Custom),
+            (Some(Manager), false, &none, Manager, Manager),
+            (Some(Manager), true, &legacy, Manager, Manager),
+            (Some(Manager), false, &edit, Manager, Custom),
+            (Some(Manager), true, &none, Manager, Custom),
+            (Some(Manager), true, &edit, Manager, Custom),
+            (Some(Custom), false, &none, Custom, Custom),
         ] {
-            let current = current.map(member);
-            for (flag, expected) in [(false, disabled), (true, enabled)] {
-                assert_eq!(MembershipType::requested(Custom, current.as_ref(), flag), expected);
+            let current = current.map(|role| {
+                let mut m = member(role);
+                m.access_all = all;
+                m
+            });
+            for (permissions, expected) in [(None, disabled), (Some(permissions), enabled)] {
+                assert_eq!(MembershipType::requested(Custom, current.as_ref(), permissions), expected);
             }
         }
-        assert_eq!(MembershipType::requested(User, Some(&member(Custom)), true), User);
-        assert_eq!(MembershipType::requested(User, Some(&member(Manager)), true), User);
+        assert_eq!(MembershipType::requested(User, Some(&member(Custom)), None), User);
+        assert_eq!(MembershipType::requested(User, Some(&member(Manager)), None), User);
         for requested in [Owner, Admin, Manager] {
-            assert_eq!(MembershipType::requested(requested, Some(&member(Custom)), true), requested);
+            assert_eq!(MembershipType::requested(requested, Some(&member(Custom)), None), requested);
         }
     }
 
@@ -1505,7 +1603,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(SUPPORTED_CUSTOM_PERMISSIONS, []);
+        assert_eq!(SUPPORTED_CUSTOM_PERMISSIONS, [CreateNewCollections, EditAnyCollection, DeleteAnyCollection]);
     }
 
     #[test]
@@ -1531,5 +1629,62 @@ mod tests {
             }
             assert_eq!(member.access_all, to != Custom);
         }
+    }
+    #[test]
+    fn permission_matrix_preserves_role_status_flag_and_collection_boundaries() {
+        let legacy = HashSet::from([CreateNewCollections, EditAnyCollection, DeleteAnyCollection]);
+        for (role, all) in
+            [(Owner, false), (Admin, false), (Manager, false), (Manager, true), (Custom, false), (User, false)]
+        {
+            for permission in CustomPermission::ALL {
+                let mut member = member(role);
+                member.access_all = all;
+                *member.custom_permission_mut(permission) = true;
+                for enabled in [false, true] {
+                    test_flag::CUSTOM_ROLES_ENABLED.set(Some(enabled));
+                    let shown = if role == Manager && all {
+                        legacy.clone()
+                    } else if role == Custom && enabled && permission.is_supported() {
+                        HashSet::from([permission])
+                    } else {
+                        HashSet::new()
+                    };
+                    assert_eq!(member.shown_custom_permissions(), shown);
+                    for status in [-128, -127, -126, -3, -2, -1, 0, 1, 2] {
+                        member.status = status;
+                        let allowed = enabled && role == Custom && status == 2 && permission.is_supported();
+                        let full = status == 2 && (role == Owner || role == Admin || all);
+                        let edit = full || (allowed && permission == EditAnyCollection);
+                        let view = full || (allowed && matches!(permission, EditAnyCollection | DeleteAnyCollection));
+                        assert_eq!(
+                            (
+                                member.has_custom_permission(permission),
+                                member.can_edit_any_collection(),
+                                member.can_view_all_collections()
+                            ),
+                            (allowed, edit, view),
+                            "{role:?} {all} {enabled} {status} {permission:?}"
+                        );
+                    }
+                }
+            }
+        }
+        for raw in [99, -1] {
+            let mut member = member(Custom);
+            member.atype = raw;
+            for p in CustomPermission::ALL {
+                *member.custom_permission_mut(p) = true;
+            }
+            for enabled in [false, true] {
+                test_flag::CUSTOM_ROLES_ENABLED.set(Some(enabled));
+                assert!(CustomPermission::ALL.into_iter().all(|p| !member.has_custom_permission(p)));
+                assert!(!member.can_edit_any_collection() && !member.can_view_all_collections());
+            }
+        }
+        let empty = member(Custom);
+        assert!(!empty.can_edit_any_collection() && !empty.can_view_all_collections());
+        assert!(empty.shown_custom_permissions().is_empty());
+
+        test_flag::CUSTOM_ROLES_ENABLED.set(None);
     }
 }

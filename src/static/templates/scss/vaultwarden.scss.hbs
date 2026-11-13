@@ -99,7 +99,7 @@ app-security > app-two-factor-setup > form {
 
 /* Hide unsupported Custom Role options */
 {{#if custom_roles_enabled}}
-:is(bit-dialog, [bit-dialog]) div.tw-ml-4:has(bit-form-control input),
+/* Only the collection permissions can be granted yet */
 :is(bit-dialog, [bit-dialog]) div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcontrolname*="manage"]) {
   @extend %vw-hide;
 }

@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashSet};
 
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
@@ -19,13 +19,14 @@ use crate::{
         },
     },
     error::MapResult,
-    util::LowerCase,
+    util::{LowerCase, convert_json_key_lcase_first},
 };
 use macros::UuidFromParam;
 
 use super::{
     Archive, Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership,
-    MembershipStatus, OrganizationId, User, UserId, organization::ORG_ADMIN_ATYPES,
+    MembershipStatus, OrganizationId, User, UserId,
+    organization::{ORG_ADMIN_ATYPES, custom_edit_any_collection},
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
@@ -63,14 +64,68 @@ pub struct Cipher {
     pub reprompt: Option<i32>,
 }
 
+/// Whether `data` is a v2 cipher blob, recognized like upstream by a top-level `format_version` key.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Core/Vault/Entities/Cipher.cs#L36-L41>
+pub fn is_data_blob_encrypted(data: &str) -> bool {
+    serde_json::from_str::<Value>(data).is_ok_and(|d| is_blob_value(&d))
+}
+
+/// [`is_data_blob_encrypted`] for `data` that was already parsed.
+fn is_blob_value(data: &Value) -> bool {
+    data.get("format_version").is_some()
+}
+
 pub enum RepromptType {
     None = 0,
     Password = 1,
 }
 
+/// Which access a cipher operation is authorized with.
+///
+/// The administrative cipher routes (`/ciphers/<id>/admin` and friends) are served by the same handlers as the
+/// regular vault routes, so the handlers state which one applies. They only differ for a Custom member with Edit
+/// any collection, who reaches every cipher of the organization on the administrative routes, but keeps their
+/// own vault limited to the collections they are assigned to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CipherAccessScope {
+    User,
+    OrganizationAdmin,
+}
+
+impl CipherAccessScope {
+    /// Whether `member` reaches every cipher of their organization with this access.
+    fn reaches_all_ciphers(self, member: &Membership) -> bool {
+        match self {
+            CipherAccessScope::User => member.has_full_access(),
+            CipherAccessScope::OrganizationAdmin => member.can_edit_any_collection(),
+        }
+    }
+
+    /// The access the v2 attachment upload asks for with `adminRequest`. It only picks which check runs, the
+    /// administrative one still needs a member who may edit any collection.
+    pub fn requested(admin_request: Option<bool>) -> Self {
+        if admin_request == Some(true) {
+            CipherAccessScope::OrganizationAdmin
+        } else {
+            CipherAccessScope::User
+        }
+    }
+
+    /// The access for a route that does not tell which one it is, from the member's own membership.
+    pub fn for_member(member: Option<&Membership>) -> Self {
+        if member.is_some_and(Membership::can_edit_any_collection) {
+            CipherAccessScope::OrganizationAdmin
+        } else {
+            CipherAccessScope::User
+        }
+    }
+}
+
 /// Local methods
 impl Cipher {
-    pub fn new(atype: i32, name: String) -> Self {
+    /// The name is set when the data is saved, since a blob-encrypted cipher has it inside `data`
+    pub fn new(atype: i32) -> Self {
         let now = Utc::now().naive_utc();
 
         Self {
@@ -84,7 +139,7 @@ impl Cipher {
             key: None,
 
             atype,
-            name,
+            name: String::new(),
 
             notes: None,
             fields: None,
@@ -108,6 +163,16 @@ impl Cipher {
             {
                 validation_errors
                     .insert(format!("Ciphers[{index}].Notes"), serde_json::to_value([&max_note_size_msg]).unwrap());
+            }
+
+            let is_blob = cipher.is_blob();
+            if let Err(e) = cipher.validate_content(is_blob) {
+                validation_errors
+                    .insert(format!("Ciphers[{index}].{}", e.field), serde_json::to_value([e.message]).unwrap());
+            }
+            if let Err(e) = cipher.validate_type_data(is_blob) {
+                validation_errors
+                    .insert(format!("Ciphers[{index}].Type"), serde_json::to_value([e.message()]).unwrap());
             }
 
             // Validate the password history if it contains `null` values and if so, return a warning
@@ -152,7 +217,51 @@ impl Cipher {
         sync_type: CipherSyncType,
         conn: &DbConn,
     ) -> Result<Value, crate::Error> {
+        self.to_json_scoped(host, user_uuid, cipher_sync_data, sync_type, CipherAccessScope::User, conn).await
+    }
+
+    /// [`Cipher::to_json`] for an administrative route, telling what the member may do with the cipher there.
+    pub async fn to_json_org_admin(
+        &self,
+        host: &str,
+        user_uuid: &UserId,
+        conn: &DbConn,
+    ) -> Result<Value, crate::Error> {
+        self.to_json_scoped(host, user_uuid, None, CipherSyncType::User, CipherAccessScope::OrganizationAdmin, conn)
+            .await
+    }
+
+    pub async fn to_json_org_admin_collections(
+        &self,
+        host: &str,
+        user_uuid: &UserId,
+        conn: &DbConn,
+    ) -> Result<Value, crate::Error> {
+        self.to_json_scoped(
+            host,
+            user_uuid,
+            None,
+            CipherSyncType::Organization,
+            CipherAccessScope::OrganizationAdmin,
+            conn,
+        )
+        .await
+    }
+
+    async fn to_json_scoped(
+        &self,
+        host: &str,
+        user_uuid: &UserId,
+        cipher_sync_data: Option<&CipherSyncData>,
+        sync_type: CipherSyncType,
+        scope: CipherAccessScope,
+        conn: &DbConn,
+    ) -> Result<Value, crate::Error> {
         use crate::util::{format_date, validate_and_format_date};
+
+        // Parsed once, since `data` can be large and this runs for every cipher in a sync
+        let type_data = serde_json::from_str::<Value>(&self.data);
+        let is_blob_encrypted = type_data.as_ref().is_ok_and(is_blob_value);
 
         let mut attachments_json: Value = Value::Null;
         if let Some(cipher_sync_data) = cipher_sync_data {
@@ -179,7 +288,7 @@ impl Cipher {
         // We don't need these values at all for Organizational syncs
         // Skip any other database calls if this is the case and just return false.
         let (read_only, hide_passwords, _) = if sync_type == CipherSyncType::User {
-            if let Some((ro, hp, mn)) = self.get_access_restrictions(user_uuid, cipher_sync_data, conn).await {
+            if let Some((ro, hp, mn)) = self.get_access_restrictions(user_uuid, scope, cipher_sync_data, conn).await {
                 (ro, hp, mn)
             } else {
                 error!("Cipher ownership assertion failure");
@@ -250,63 +359,9 @@ impl Cipher {
             })
             .unwrap_or_default();
 
-        // Get the type_data or a default to an empty json object '{}'.
-        // If not passing an empty object, mobile clients will crash.
-        let mut type_data_json = serde_json::from_str::<LowerCase<Value>>(&self.data)
-            .inspect_err(|_| warn!("Error parsing data field for {}", self.uuid))
-            .map_or_else(|_| Value::Object(serde_json::Map::new()), |d| d.data);
-
-        // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
-        // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
-        if self.atype == 1 {
-            // Upstream always has an `uri` key/value
-            type_data_json["uri"] = Value::Null;
-            if let Some(uris) = type_data_json["uris"].as_array_mut()
-                && !uris.is_empty()
-            {
-                // Fix uri match values first, they are only allowed to be a number or null
-                // If it is a string, convert it to an int or null if that fails
-                for uri in &mut *uris {
-                    if uri["match"].is_string() {
-                        let match_value = match uri["match"].as_str().unwrap_or_default().parse::<u8>() {
-                            Ok(n) => json!(n),
-                            _ => Value::Null,
-                        };
-                        uri["match"] = match_value;
-                    }
-                }
-                type_data_json["uri"] = uris[0]["uri"].clone();
-            }
-
-            // Check if `passwordRevisionDate` is a valid date, else convert it
-            if let Some(pw_revision) = type_data_json["passwordRevisionDate"].as_str() {
-                type_data_json["passwordRevisionDate"] = json!(validate_and_format_date(pw_revision));
-            }
-        }
-
-        // Fix secure note issues when data is invalid
-        // This breaks at least the native mobile clients
-        if self.atype == 2 {
-            match type_data_json {
-                Value::Object(ref t) if t.get("type").is_some_and(Value::is_number) => {}
-                _ => {
-                    type_data_json = json!({"type": 0});
-                }
-            }
-        }
-
-        // Fix invalid SSH Entries
-        // This breaks at least the native mobile client if invalid
-        // The only way to fix this is by setting type_data_json to `null`
-        // Opening this ssh-key in the mobile client will probably crash the client, but you can edit, save and afterwards delete it
-        if self.atype == 5
-            && (type_data_json["keyFingerprint"].as_str().is_none_or(str::is_empty)
-                || type_data_json["privateKey"].as_str().is_none_or(str::is_empty)
-                || type_data_json["publicKey"].as_str().is_none_or(str::is_empty))
-        {
-            warn!("Error parsing ssh-key, mandatory fields are invalid for {}", self.uuid);
-            type_data_json = Value::Null;
-        }
+        // Like upstream, fields and password history stored as NULL are sent as null, not `[]`
+        let fields_json = self.fields.is_some().then_some(fields_json);
+        let password_history_json = self.password_history.is_some().then_some(password_history_json);
 
         let collection_ids = if let Some(cipher_sync_data) = cipher_sync_data {
             if let Some(cipher_collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
@@ -315,7 +370,7 @@ impl Cipher {
                 Cow::from(Vec::new())
             }
         } else {
-            Cow::from(self.get_admin_collections(user_uuid.clone(), conn).await)
+            Cow::from(self.get_admin_collections(user_uuid.clone(), scope, conn).await)
         };
 
         // There are three types of cipher response models in upstream
@@ -403,8 +458,82 @@ impl Cipher {
             _ => err!(format!("Cipher {} has an invalid type {}", self.uuid, self.atype)),
         };
 
-        json_object[key] = type_data_json;
+        if is_blob_encrypted {
+            // Like upstream, sent as-is with the structured fields null
+            json_object["data"] = json!(self.data);
+            json_object["name"] = Value::Null;
+        } else {
+            json_object[key] = self.legacy_type_data_json(type_data);
+        }
         Ok(json_object)
+    }
+
+    /// The per-type data of a legacy cipher, with fixups for values known to break clients.
+    fn legacy_type_data_json(&self, type_data: Result<Value, serde_json::Error>) -> Value {
+        use crate::util::validate_and_format_date;
+
+        // Get the type_data or a default to an empty json object '{}'.
+        // If not passing an empty object, mobile clients will crash.
+        let mut type_data_json = if let Ok(data @ Value::Object(_)) = type_data {
+            convert_json_key_lcase_first(data)
+        } else {
+            warn!("Error parsing data field for {}", self.uuid);
+            Value::Object(serde_json::Map::new())
+        };
+
+        // NOTE: This was marked as *Backwards Compatibility Code*, but as of January 2021 this is still being used by upstream
+        // Set the first element of the Uris array as Uri, this is needed several (mobile) clients.
+        if self.atype == 1 {
+            // Upstream always has an `uri` key/value
+            type_data_json["uri"] = Value::Null;
+            if let Some(uris) = type_data_json["uris"].as_array_mut()
+                && !uris.is_empty()
+            {
+                // Fix uri match values first, they are only allowed to be a number or null
+                // If it is a string, convert it to an int or null if that fails
+                for uri in &mut *uris {
+                    if uri["match"].is_string() {
+                        let match_value = match uri["match"].as_str().unwrap_or_default().parse::<u8>() {
+                            Ok(n) => json!(n),
+                            _ => Value::Null,
+                        };
+                        uri["match"] = match_value;
+                    }
+                }
+                type_data_json["uri"] = uris[0]["uri"].clone();
+            }
+
+            // Check if `passwordRevisionDate` is a valid date, else convert it
+            if let Some(pw_revision) = type_data_json["passwordRevisionDate"].as_str() {
+                type_data_json["passwordRevisionDate"] = json!(validate_and_format_date(pw_revision));
+            }
+        }
+
+        // Fix secure note issues when data is invalid
+        // This breaks at least the native mobile clients
+        if self.atype == 2 {
+            match type_data_json {
+                Value::Object(ref t) if t.get("type").is_some_and(Value::is_number) => {}
+                _ => {
+                    type_data_json = json!({"type": 0});
+                }
+            }
+        }
+
+        // Fix invalid SSH Entries
+        // This breaks at least the native mobile client if invalid
+        // The only way to fix this is by setting type_data_json to `null`
+        // Opening this ssh-key in the mobile client will probably crash the client, but you can edit, save and afterwards delete it
+        if self.atype == 5
+            && (type_data_json["keyFingerprint"].as_str().is_none_or(str::is_empty)
+                || type_data_json["privateKey"].as_str().is_none_or(str::is_empty)
+                || type_data_json["publicKey"].as_str().is_none_or(str::is_empty))
+        {
+            warn!("Error parsing ssh-key, mandatory fields are invalid for {}", self.uuid);
+            type_data_json = Value::Null;
+        }
+
+        type_data_json
     }
 
     pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<UserId> {
@@ -562,20 +691,21 @@ impl Cipher {
         self.user_uuid.is_some() && self.user_uuid.as_ref().unwrap() == user_uuid
     }
 
-    /// Returns whether this cipher is owned by an org in which the user has full access.
+    /// Returns whether this cipher is owned by an org in which the user reaches every cipher with `scope`.
     async fn is_in_full_access_org(
         &self,
         user_uuid: &UserId,
+        scope: CipherAccessScope,
         cipher_sync_data: Option<&CipherSyncData>,
         conn: &DbConn,
     ) -> bool {
         if let Some(ref org_uuid) = self.organization_uuid {
             if let Some(cipher_sync_data) = cipher_sync_data {
                 if let Some(cached_member) = cipher_sync_data.members.get(org_uuid) {
-                    return cached_member.has_full_access();
+                    return scope.reaches_all_ciphers(cached_member);
                 }
             } else if let Some(member) = Membership::find_confirmed_by_user_and_org(user_uuid, org_uuid, conn).await {
-                return member.has_full_access();
+                return scope.reaches_all_ciphers(&member);
             }
         }
         false
@@ -608,6 +738,7 @@ impl Cipher {
     pub async fn get_access_restrictions(
         &self,
         user_uuid: &UserId,
+        scope: CipherAccessScope,
         cipher_sync_data: Option<&CipherSyncData>,
         conn: &DbConn,
     ) -> Option<(bool, bool, bool)> {
@@ -615,7 +746,7 @@ impl Cipher {
         // a collection that the user has full access to. If so, there are no
         // access restrictions.
         if self.is_owned_by_user(user_uuid)
-            || self.is_in_full_access_org(user_uuid, cipher_sync_data, conn).await
+            || self.is_in_full_access_org(user_uuid, scope, cipher_sync_data, conn).await
             || self.is_in_full_access_group(user_uuid, cipher_sync_data, conn).await
         {
             return Some((false, false, true));
@@ -738,8 +869,13 @@ impl Cipher {
         .await
     }
 
-    pub async fn is_write_accessible_to_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
-        match self.get_access_restrictions(user_uuid, None, conn).await {
+    pub async fn is_write_accessible_to_user(
+        &self,
+        user_uuid: &UserId,
+        scope: CipherAccessScope,
+        conn: &DbConn,
+    ) -> bool {
+        match self.get_access_restrictions(user_uuid, scope, None, conn).await {
             Some((read_only, _hide_passwords, manage)) => !read_only || manage,
             None => false,
         }
@@ -747,15 +883,20 @@ impl Cipher {
 
     // used for checking if collection can be edited (only if user has access to a collection they
     // can write to and also passwords are not hidden to prevent privilege escalation)
-    pub async fn is_in_editable_collection_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
-        match self.get_access_restrictions(user_uuid, None, conn).await {
+    pub async fn is_in_editable_collection_by_user(
+        &self,
+        user_uuid: &UserId,
+        scope: CipherAccessScope,
+        conn: &DbConn,
+    ) -> bool {
+        match self.get_access_restrictions(user_uuid, scope, None, conn).await {
             Some((read_only, hide_passwords, manage)) => (!read_only && !hide_passwords) || manage,
             None => false,
         }
     }
 
-    pub async fn is_accessible_to_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
-        self.get_access_restrictions(user_uuid, None, conn).await.is_some()
+    pub async fn is_accessible_to_user(&self, user_uuid: &UserId, scope: CipherAccessScope, conn: &DbConn) -> bool {
+        self.get_access_restrictions(user_uuid, scope, None, conn).await.is_some()
     }
 
     // Returns whether this cipher is a favorite of the specified user.
@@ -1071,7 +1212,12 @@ impl Cipher {
         }
     }
 
-    pub async fn get_admin_collections(&self, user_uuid: UserId, conn: &DbConn) -> Vec<CollectionId> {
+    pub async fn get_admin_collections(
+        &self,
+        user_uuid: UserId,
+        scope: CipherAccessScope,
+        conn: &DbConn,
+    ) -> Vec<CollectionId> {
         if CONFIG.org_groups_enabled() {
             conn.run(move |conn| {
                 ciphers_collections::table
@@ -1111,7 +1257,9 @@ impl Cipher {
                             .or(collections_groups::collections_uuid
                                 .is_not_null() // Access via groups
                                 .and(collections_groups::read_only.eq(false)))
-                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)), // User is admin or owner
+                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // User is admin or owner
+                            .or(custom_edit_any_collection()
+                                .and::<_, diesel::sql_types::Bool>(scope == CipherAccessScope::OrganizationAdmin)),
                     )
                     .select(ciphers_collections::collection_uuid)
                     .load::<CollectionId>(conn)
@@ -1140,7 +1288,9 @@ impl Cipher {
                             .or(users_collections::user_uuid
                                 .eq(user_uuid) // User has access to collection
                                 .and(users_collections::read_only.eq(false)))
-                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)), // User is admin or owner
+                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // User is admin or owner
+                            .or(custom_edit_any_collection()
+                                .and::<_, diesel::sql_types::Bool>(scope == CipherAccessScope::OrganizationAdmin)),
                     )
                     .select(ciphers_collections::collection_uuid)
                     .load::<CollectionId>(conn)
@@ -1192,6 +1342,50 @@ impl Cipher {
                 .unwrap_or_default()
         })
         .await
+    }
+
+    /// Every collection of every cipher of the organization, for the members who may see all of them.
+    pub async fn get_collections_with_cipher_by_organization(
+        org_uuid: &OrganizationId,
+        conn: &DbConn,
+    ) -> Vec<(CipherId, CollectionId)> {
+        conn.run(move |conn| {
+            ciphers_collections::table
+                .inner_join(collections::table.on(collections::uuid.eq(ciphers_collections::collection_uuid)))
+                .filter(collections::org_uuid.eq(org_uuid))
+                .select(ciphers_collections::all_columns)
+                .load::<(CipherId, CollectionId)>(conn)
+                .unwrap_or_default()
+        })
+        .await
+    }
+
+    /// The ciphers of the organization of `member` the Admin Console lists when they may not edit every cipher, like
+    /// Bitwarden does: the ones in the member's own vault, then, for a member who may edit any collection, the ones in
+    /// no collection at all.
+    pub async fn find_assigned_to_member(member: &Membership, conn: &DbConn) -> (Vec<Self>, Vec<Self>) {
+        let assigned: Vec<Self> = Self::find_by_user_visible(&member.user_uuid, conn)
+            .await
+            .into_iter()
+            .filter(|cipher| cipher.organization_uuid.as_ref() == Some(&member.org_uuid))
+            .collect();
+        if !member.can_edit_any_collection() {
+            return (assigned, Vec::new());
+        }
+
+        let listed: HashSet<CipherId> = assigned.iter().map(|cipher| cipher.uuid.clone()).collect();
+        let in_collections: HashSet<CipherId> =
+            Self::get_collections_with_cipher_by_organization(&member.org_uuid, conn)
+                .await
+                .into_iter()
+                .map(|(cipher, _)| cipher)
+                .collect();
+        let unassigned = Self::find_by_org(&member.org_uuid, conn)
+            .await
+            .into_iter()
+            .filter(|cipher| !in_collections.contains(&cipher.uuid) && !listed.contains(&cipher.uuid))
+            .collect();
+        (assigned, unassigned)
     }
 }
 

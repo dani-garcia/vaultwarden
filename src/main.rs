@@ -577,9 +577,19 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .limit("data-form", 525.megabytes()) // This needs to match the maximum allowed file size for Send
         .limit("file", 525.megabytes()); // This needs to match the maximum allowed file size for attachments
 
+    let rocket = rocket::custom(config);
+    #[cfg(feature = "unsafe_test_mode")]
+    let rocket = {
+        warn!(
+            "This build has `unsafe_test_mode`: its test seeder at /test/seeder creates accounts without any checks. \
+            Never use it outside of tests!"
+        );
+        rocket.mount([basepath, "/test/seeder"].concat(), api::test_seeder_routes())
+    };
+
     // If adding more paths here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
-    let instance = rocket::custom(config)
+    let instance = rocket
         .mount([basepath, "/"].concat(), api::web_routes())
         .mount([basepath, "/api"].concat(), api::core_routes())
         .mount([basepath, "/admin"].concat(), api::admin_routes())
