@@ -33,6 +33,8 @@ pub use self::favorite::Favorite;
 pub use self::folder::{Folder, FolderCipher, FolderId};
 pub use self::group::{CollectionGroup, Group, GroupId, GroupUser};
 pub use self::org_policy::{FillAssistPolicyData, OrgPolicy, OrgPolicyId, OrgPolicyType};
+#[cfg(all(test, sqlite))]
+pub(crate) use self::organization::test_flag;
 pub use self::organization::{
     CustomPermission, Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, Organization,
     OrganizationApiKey, OrganizationId, custom_roles_enabled,

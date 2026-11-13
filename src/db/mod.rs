@@ -626,6 +626,7 @@ pub mod test_db {
         }
         // DbConn::run uses block_in_place, requiring a multi-threaded runtime.
         tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap().block_on(async {
+            super::models::test_flag::CUSTOM_ROLES_ENABLED.set(Some(true));
             test(&TestDb::new()).await;
         });
     }
@@ -756,6 +757,70 @@ pub mod test_db {
                 // The same live connection must accept another transaction, before DbConn::drop can help.
                 conn.run(|c| c.batch_execute("BEGIN; ROLLBACK")).await.unwrap();
             }
+        });
+    }
+
+    #[test]
+    fn collection_and_cipher_access_requires_active_membership_and_enabled_groups() {
+        use super::models::{Cipher, CipherAccessScope, CollectionCipher, CollectionUser, test_flag};
+        use crate::{
+            api::core::{CipherSyncData, CipherSyncType},
+            auth::{CollectionAction, custom_member_may},
+        };
+        run(async |db| {
+            let conn = db.conn();
+            let (org, user, mut member) = custom_member(&conn, CustomPermission::EditAnyCollection).await;
+            let collection = collection(&conn, &org.uuid).await;
+            let mut cipher = Cipher::new(2);
+            cipher.name = "Cipher".into();
+            cipher.organization_uuid = Some(org.uuid.clone());
+            cipher.save(&conn).await.unwrap();
+            CollectionCipher::save(&cipher.uuid, &collection.uuid, &conn).await.unwrap();
+            for (enabled, status, allowed) in [(true, 2, true), (false, 2, false), (true, 1, false)] {
+                test_flag::CUSTOM_ROLES_ENABLED.set(Some(enabled));
+                member.status = status;
+                member.save(&conn).await.unwrap();
+                assert!(!cipher.is_accessible_to_user(&user.uuid, CipherAccessScope::User, &conn).await);
+                assert_eq!(
+                    cipher.is_write_accessible_to_user(&user.uuid, CipherAccessScope::OrganizationAdmin, &conn).await,
+                    allowed
+                );
+            }
+            test_flag::CUSTOM_ROLES_ENABLED.set(Some(true));
+            member.status = 2;
+            member.save(&conn).await.unwrap();
+            let foreign = organization(&conn).await;
+            cipher.organization_uuid = Some(foreign.uuid);
+            assert!(!cipher.is_accessible_to_user(&user.uuid, CipherAccessScope::OrganizationAdmin, &conn).await);
+            cipher.organization_uuid = Some(org.uuid.clone());
+            member.set_custom_permissions(&std::collections::HashSet::new());
+            member.save(&conn).await.unwrap();
+            let sql=format!("INSERT INTO groups (uuid,organizations_uuid,name,access_all,creation_date,revision_date)
+                VALUES ('g','{}','Group',FALSE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+                INSERT INTO groups_users (groups_uuid,users_organizations_uuid) VALUES ('g','{}');
+                INSERT INTO collections_groups (collections_uuid,groups_uuid,read_only,hide_passwords,manage) VALUES ('{}','g',FALSE,FALSE,TRUE);",
+                org.uuid,member.uuid,collection.uuid);
+            conn.run(move |c| c.batch_execute(&sql)).await.unwrap();
+            for status in [2, 1, -3, -126] {
+                member.status = status;
+                member.save(&conn).await.unwrap();
+                let allowed = status == 2 && crate::CONFIG.org_groups_enabled();
+                assert_eq!(custom_member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await, allowed);
+                let sync = CipherSyncData::new(&user.uuid, CipherSyncType::User, &conn).await;
+                for cached in [None, Some(&sync)] {
+                    assert_eq!(
+                        cipher
+                            .get_access_restrictions(&user.uuid, CipherAccessScope::User, cached, &conn)
+                            .await
+                            .is_some(),
+                        allowed
+                    );
+                }
+            }
+            member.status = 2;
+            member.save(&conn).await.unwrap();
+            CollectionUser::save(&user.uuid, &collection.uuid, false, false, true, &conn).await.unwrap();
+            assert!(custom_member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await);
         });
     }
 }
