@@ -1244,10 +1244,11 @@ struct CommonUnlockData {
     v2_upgrade_token: Option<V2UpgradeTokenData>,
 }
 
-/// Lets other sessions with the v1 user key unwrap the v2 one after an upgrade. Opaque to us.
+/// Lets other sessions with the v1 user key unwrap the v2 one after an upgrade. Opaque to us. Stored on the user and
+/// the memberships as this serializes, and read back with it (the account recovery V2 upgrade routes).
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct V2UpgradeTokenData {
+pub(crate) struct V2UpgradeTokenData {
     wrapped_user_key1: String,
     wrapped_user_key2: String,
 }

@@ -19,14 +19,26 @@ use crate::{
             organizations, users, users_collections, users_organizations,
         },
     },
-    error::MapResult,
+    error::{Error, MapResult},
 };
 use macros::UuidFromParam;
 
 use super::{
-    Cipher, CipherId, Collection, CollectionId, CollectionUser, Group, GroupId, GroupUser, OrgPolicy, OrgPolicyType,
-    TwoFactor, User, UserId,
+    Cipher, CipherId, Collection, CollectionId, CollectionUser, Group, GroupId, GroupUser, KeyId, OrgPolicy,
+    OrgPolicyType, TwoFactor, User, UserId,
 };
+
+/// A membership whose account recovery key still wraps the member's V1 user key: an upgrade to V2 encryption can't
+/// re-wrap it (that needs the member to trust the organization's key), so it left the token the admin re-wraps it from.
+#[derive(Queryable)]
+pub struct PendingV2Upgrade {
+    pub member_id: MembershipId,
+    /// The member's current user key id, which the re-wrapped key must be sent back with
+    pub user_key_id: KeyId,
+    /// The V1 user key, wrapped with the organization's public key
+    pub account_recovery_key: String,
+    pub v2_upgrade_token: String,
+}
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = organizations)]
@@ -291,7 +303,7 @@ impl CustomPermission {
     /// replaces the member's permissions, so a malformed value must not silently remove one. Granting a
     /// permission this version does not enforce is rejected as well. The clients also send permissions
     /// Vaultwarden does not know at all, like `manageSso`, those are ignored.
-    pub fn requested(permissions: &HashMap<String, Value>) -> Result<HashSet<CustomPermission>, crate::Error> {
+    pub fn requested(permissions: &HashMap<String, Value>) -> Result<HashSet<CustomPermission>, Error> {
         let mut granted = HashSet::new();
         for permission in CustomPermission::ALL {
             match permissions.get(permission.json_key()) {
@@ -1254,6 +1266,90 @@ impl Membership {
                 .expect("Error loading user organizations")
         })
         .await
+    }
+
+    /// The most account recovery V2 upgrades one request reads or writes, like upstream's
+    /// `OrganizationUserV2UpgradesRequestModel.MaxUpgrades`.
+    pub const MAX_V2_UPGRADES: i64 = 100;
+
+    /// The next page of memberships of this organization whose account recovery key the admin still has to re-wrap
+    /// with the member's V2 user key: enrolled, carrying an upgrade token, of a user with a key id (the re-wrapped key
+    /// is checked against it), and Owners only for an Owner. Ordered by id, after `after`, at most `MAX_V2_UPGRADES`.
+    pub async fn find_pending_v2_upgrades(
+        org_uuid: &OrganizationId,
+        include_owners: bool,
+        after: Option<&MembershipId>,
+        conn: &DbConn,
+    ) -> Vec<PendingV2Upgrade> {
+        conn.run(move |conn| {
+            let mut query = users_organizations::table
+                .inner_join(users::table)
+                .filter(users_organizations::org_uuid.eq(org_uuid))
+                .filter(users_organizations::v2_upgrade_token.is_not_null())
+                .filter(users_organizations::reset_password_key.is_not_null())
+                .filter(users::key_id.is_not_null())
+                .into_boxed();
+            if !include_owners {
+                query = query.filter(users_organizations::atype.ne(MembershipType::Owner as i32));
+            }
+            if let Some(after) = after {
+                query = query.filter(users_organizations::uuid.gt(after));
+            }
+            query
+                .order(users_organizations::uuid)
+                .limit(Self::MAX_V2_UPGRADES)
+                // The filters above make sure these are set
+                .select((
+                    users_organizations::uuid,
+                    users::key_id.assume_not_null(),
+                    users_organizations::reset_password_key.assume_not_null(),
+                    users_organizations::v2_upgrade_token.assume_not_null(),
+                ))
+                .load(conn)
+                .unwrap_or_default()
+        })
+        .await
+    }
+
+    /// Replaces the account recovery key of a member who upgraded to V2 encryption with `account_recovery_key`, or
+    /// unenrolls them when it is `None`, and consumes the upgrade token, so it can't be replayed. Only while the
+    /// membership is still enrolled, carrying the token, not an Owner unless `include_owners`, and its user's key id is
+    /// still `user_key_id` (the key the new recovery key wraps). Returns whether it applied, otherwise the membership
+    /// stays pending. It runs inside a transaction, so it leaves the user's revision to the caller.
+    pub async fn apply_v2_upgrade(
+        &self,
+        include_owners: bool,
+        user_key_id: &KeyId,
+        account_recovery_key: Option<&str>,
+        conn: &DbConn,
+    ) -> Result<bool, Error> {
+        // An empty list excludes no one
+        let excluded = if include_owners {
+            vec![]
+        } else {
+            vec![MembershipType::Owner as i32]
+        };
+        let rows: usize = conn
+            .run(move |conn| {
+                diesel::update(
+                    users_organizations::table
+                        .filter(users_organizations::uuid.eq(&self.uuid))
+                        .filter(users_organizations::v2_upgrade_token.is_not_null())
+                        .filter(users_organizations::reset_password_key.is_not_null())
+                        .filter(users_organizations::atype.ne_all(excluded))
+                        .filter(diesel::dsl::exists(
+                            users::table.filter(users::uuid.eq(&self.user_uuid)).filter(users::key_id.eq(user_key_id)),
+                        )),
+                )
+                .set((
+                    users_organizations::reset_password_key.eq(account_recovery_key),
+                    users_organizations::v2_upgrade_token.eq(None::<String>),
+                ))
+                .execute(conn)
+                .map_res("Error saving membership")
+            })
+            .await?;
+        Ok(rows > 0)
     }
 
     pub async fn count_confirmed_by_org_and_type(
