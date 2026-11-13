@@ -3191,12 +3191,7 @@ struct OrganizationUserRecoverAccountRequest {
 // But the clients do not seem to use this at all
 // Just add it here in case they will
 #[get("/organizations/<org_id>/public-key")]
-async fn get_organization_public_key(
-    org_id: OrganizationId,
-    headers: Headers,
-    member: Result<OrgMemberHeaders, &'static str>,
-    conn: DbConn,
-) -> JsonResult {
+async fn get_organization_public_key(org_id: OrganizationId, headers: Headers, conn: DbConn) -> JsonResult {
     // SSO users without an org get the fake one, whose key the v2 JIT password flow fetches anyway
     if org_id.eq_ignore_ascii_case(FAKE_SSO_IDENTIFIER) && headers.user.private_key.is_none() {
         return Ok(Json(json!({
@@ -3204,14 +3199,16 @@ async fn get_organization_public_key(
             "publicKey": fake_sso_org_public_key().await?,
         })));
     }
-    let member = match member {
-        Ok(member) => member,
-        // The guard already logged it
-        Err(e) => return Err(crate::error::Error::new_msg(e).with_code(Status::Unauthorized.code)),
-    };
 
-    if org_id != member.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
+    // Only for members, as `OrgMemberHeaders` checks it, but here, so that the fake org above neither logs a
+    // membership error nor authenticates the request twice: a known role, and not revoked (invited members are,
+    // while joining)
+    let is_member = Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await.is_some_and(|member| {
+        MembershipType::from_i32(member.atype).is_some()
+            && MembershipStatus::from_i32(member.status).is_some_and(|status| status != MembershipStatus::Revoked)
+    });
+    if !is_member {
+        err_code!("You need to be a Member of the Organization to call this endpoint", Status::Unauthorized.code)
     }
     let Some(org) = Organization::find_by_uuid(&org_id, &conn).await else {
         err!("Organization not found")
@@ -3240,13 +3237,8 @@ async fn fake_sso_org_public_key() -> ApiResult<String> {
 // Obsolete - Renamed to public-key (2023.8), left for backwards compatibility with older clients
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Controllers/OrganizationsController.cs#L487-L492
 #[get("/organizations/<org_id>/keys")]
-async fn get_organization_keys(
-    org_id: OrganizationId,
-    headers: Headers,
-    member: Result<OrgMemberHeaders, &'static str>,
-    conn: DbConn,
-) -> JsonResult {
-    get_organization_public_key(org_id, headers, member, conn).await
+async fn get_organization_keys(org_id: OrganizationId, headers: Headers, conn: DbConn) -> JsonResult {
+    get_organization_public_key(org_id, headers, conn).await
 }
 
 // Will allow to reset 2FA too
