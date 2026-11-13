@@ -57,7 +57,23 @@ jobs:
     steps:
       # Install dependencies
       - name: "Install dependencies Ubuntu"
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openssl build-essential libmariadb-dev-compat libpq-dev libssl-dev pkg-config
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openssl build-essential libmariadb-dev-compat libpq-dev libssl-dev pkg-config
+
+          # Pass the MariaDB client library to mysqlclient-sys through its environment variables.
+          # When it finds the library with pkg-config, its build script makes cargo rerun it whenever
+          # anything in the library directory changes, and the install above changes that directory on
+          # every run. So every MySQL build recompiled mysqlclient-sys, diesel and diesel_migrations,
+          # even with a cached build. Cargo compares environment variables by their value instead.
+          lib_dir="$(pkg-config --variable=libdir mysqlclient)"
+          version="$(pkg-config --modversion mysqlclient)"
+          {
+            echo "MYSQLCLIENT_NO_PKG_CONFIG=1"
+            echo "LIBMARIADB_NO_PKG_CONFIG=1"
+            echo "MYSQLCLIENT_LIB_DIR=${lib_dir}"
+            echo "MYSQLCLIENT_VERSION=${version}"
+          } | tee -a "${GITHUB_ENV}"
       # End Install dependencies
 
       # Checkout the repo
@@ -118,22 +134,19 @@ jobs:
           # Use a custom prefix-key to force a fresh start. This is sometimes needed with bigger changes.
           # Like changing the build host from Ubuntu 20.04 to 22.04 for example.
           # Only update when really needed! Use a <year>.<month>[.<inc>] format.
-          prefix-key: "v2025.09-rust"
+          prefix-key: "v2026.11-rust"
+          # Only save caches on main to save cache space.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # End Enable Rust Caching
 
       # Run cargo tests
       # First test all features together, afterwards test them separately.
-      - name: "test features: sqlite,mysql,postgresql,enable_mimalloc,s3"
+      # enable_mimalloc and unsafe_test_mode are additive, so we test them once here.
+      - name: "test features: sqlite,mysql,postgresql,enable_mimalloc,s3,unsafe_test_mode"
         id: test_sqlite_mysql_postgresql_mimalloc_s3
         if: ${{ !cancelled() }}
         run: |
-          cargo test --profile ci --features sqlite,mysql,postgresql,enable_mimalloc,s3
-
-      - name: "test features: sqlite,mysql,postgresql,enable_mimalloc"
-        id: test_sqlite_mysql_postgresql_mimalloc
-        if: ${{ !cancelled() }}
-        run: |
-          cargo test --profile ci --features sqlite,mysql,postgresql,enable_mimalloc
+          cargo test --profile ci --features sqlite,mysql,postgresql,enable_mimalloc,s3,unsafe_test_mode
 
       - name: "test features: sqlite,mysql,postgresql"
         id: test_sqlite_mysql_postgresql
@@ -158,28 +171,15 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           cargo test --profile ci --features postgresql
-
-      # The test seeder only exists with this feature, which no release build has
-      - name: "test features: sqlite,unsafe_test_mode"
-        id: test_unsafe_test_mode
-        if: ${{ !cancelled() }}
-        run: |
-          cargo test --profile ci --features sqlite,unsafe_test_mode
       # End Run cargo tests
 
 
       # Run cargo clippy, and fail on warnings
-      - name: "clippy features: sqlite,mysql,postgresql,enable_mimalloc,s3"
+      - name: "clippy features: sqlite,mysql,postgresql,enable_mimalloc,s3,unsafe_test_mode"
         id: clippy
         if: ${{ !cancelled() && matrix.channel == 'rust-toolchain' }}
         run: |
-          cargo clippy --profile ci --features sqlite,mysql,postgresql,enable_mimalloc,s3
-
-      - name: "clippy features: sqlite,unsafe_test_mode"
-        id: clippy_unsafe_test_mode
-        if: ${{ !cancelled() && matrix.channel == 'rust-toolchain' }}
-        run: |
-          cargo clippy --profile ci --features sqlite,unsafe_test_mode
+          cargo clippy --profile ci --features sqlite,mysql,postgresql,enable_mimalloc,s3,unsafe_test_mode
       # End Run cargo clippy
 
 
@@ -198,29 +198,23 @@ jobs:
         if: ${{ failure() }}
         env:
           TEST_DB_M_S3: ${{ steps.test_sqlite_mysql_postgresql_mimalloc_s3.outcome }}
-          TEST_DB_M: ${{ steps.test_sqlite_mysql_postgresql_mimalloc.outcome }}
           TEST_DB: ${{ steps.test_sqlite_mysql_postgresql.outcome }}
           TEST_SQLITE: ${{ steps.test_sqlite.outcome }}
           TEST_MYSQL: ${{ steps.test_mysql.outcome }}
           TEST_POSTGRESQL: ${{ steps.test_postgresql.outcome }}
-          TEST_UNSAFE_TEST_MODE: ${{ steps.test_unsafe_test_mode.outcome }}
           CLIPPY: ${{ steps.clippy.outcome }}
-          CLIPPY_UNSAFE_TEST_MODE: ${{ steps.clippy_unsafe_test_mode.outcome }}
           FMT: ${{ steps.formatting.outcome }}
         run: |
           echo "### :x: Checks Failed!" >> "${GITHUB_STEP_SUMMARY}"
           echo "" >> "${GITHUB_STEP_SUMMARY}"
           echo "|Job|Status|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|---|------|" >> "${GITHUB_STEP_SUMMARY}"
-          echo "|test (sqlite,mysql,postgresql,enable_mimalloc,s3)|${TEST_DB_M_S3}|" >> "${GITHUB_STEP_SUMMARY}"
-          echo "|test (sqlite,mysql,postgresql,enable_mimalloc)|${TEST_DB_M}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|test (sqlite,mysql,postgresql,enable_mimalloc,s3,unsafe_test_mode)|${TEST_DB_M_S3}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (sqlite,mysql,postgresql)|${TEST_DB}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (sqlite)|${TEST_SQLITE}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (mysql)|${TEST_MYSQL}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|test (postgresql)|${TEST_POSTGRESQL}|" >> "${GITHUB_STEP_SUMMARY}"
-          echo "|test (sqlite,unsafe_test_mode)|${TEST_UNSAFE_TEST_MODE}|" >> "${GITHUB_STEP_SUMMARY}"
-          echo "|clippy (sqlite,mysql,postgresql,enable_mimalloc,s3)|${CLIPPY}|" >> "${GITHUB_STEP_SUMMARY}"
-          echo "|clippy (sqlite,unsafe_test_mode)|${CLIPPY_UNSAFE_TEST_MODE}|" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|clippy (sqlite,mysql,postgresql,enable_mimalloc,s3,unsafe_test_mode)|${CLIPPY}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "|fmt|${FMT}|" >> "${GITHUB_STEP_SUMMARY}"
           echo "" >> "${GITHUB_STEP_SUMMARY}"
           echo "Please check the failed jobs and fix where needed." >> "${GITHUB_STEP_SUMMARY}"
