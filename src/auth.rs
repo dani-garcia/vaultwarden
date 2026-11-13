@@ -912,7 +912,9 @@ macro_rules! permission_headers {
                         ip: headers.ip,
                     })
                 } else {
-                    err_handler!("You need to be Admin or Owner to call this endpoint")
+                    // Forbidden as in Bitwarden's permission requirements
+                    error!(target: "auth", "The current user is missing the permission for this endpoint");
+                    Outcome::Error((rocket::http::Status::Forbidden, "You don't have permission to call this endpoint"))
                 }
             }
         }
