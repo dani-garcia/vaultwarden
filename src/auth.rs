@@ -961,7 +961,9 @@ async fn collection_headers(request: &Request<'_>, action: CollectionAction) -> 
         Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await
     };
     if !allowed {
-        err_handler!("The current user isn't a manager for this collection")
+        // NotFound as in Bitwarden, the web vault logs the user out on a 401
+        error!(target: "auth", "Collection not found. The current user isn't a manager for this collection");
+        return Outcome::Error((rocket::http::Status::NotFound, "Collection not found"));
     }
     Outcome::Success(headers)
 }
