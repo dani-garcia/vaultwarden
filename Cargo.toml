@@ -57,6 +57,9 @@ oidc-accept-string-booleans = ["openidconnect/accept-string-booleans"]
 # Currently only used to enable rusts official ip support
 unstable = []
 
+# Enables special test mode features. This should NEVER be enabled in production
+unsafe_test_mode = ["dep:serde_cbor_2"]
+
 [target."cfg(unix)".dependencies]
 nix = { version = "0.31.3", features = ["fs"] }
 # Logging
@@ -157,6 +160,7 @@ yubico_ng = { version = "1.0.0", default-features = false }
 webauthn-rs = { version = "0.5.5", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
 webauthn-rs-proto = "0.5.5"
 webauthn-rs-core = "0.5.5"
+serde_cbor_2 = { version = "0.13.0", optional = true }
 
 # Handling of URL's for WebAuthn and favicons
 url = "2.5.8"

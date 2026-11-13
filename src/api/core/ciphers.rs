@@ -822,6 +822,68 @@ fn set_cipher_content(cipher: &mut Cipher, data: &mut CipherData) -> EmptyResult
     Ok(())
 }
 
+/// Stores a personal cipher that is already encrypted, as [`save_cipher_data`] stores it but without its checks, events
+/// and pushes, for the test seeder (`unsafe_test_mode`). `folder_ids` maps the cipher's folder to a seeded one.
+#[cfg(feature = "unsafe_test_mode")]
+pub async fn seed_cipher(
+    encrypted: Value,
+    user_id: &UserId,
+    folder_ids: &HashMap<FolderId, FolderId>,
+    conn: &DbConn,
+) -> ApiResult<CipherId> {
+    // Not in the request model, but a trashed cipher has to stay trashed
+    let deleted_at = encrypted.get("deletedDate").and_then(Value::as_str).map(parse_seed_date).transpose()?;
+    let mut data: CipherData = serde_json::from_value(encrypted)?;
+    let is_blob = data.is_blob();
+    data.validate_content(is_blob)?;
+    data.validate_type_data(is_blob)?;
+
+    let mut cipher = Cipher::new(data.r#type);
+    cipher.user_uuid = Some(user_id.clone());
+    cipher.deleted_at = deleted_at;
+    set_cipher_content(&mut cipher, &mut data)?;
+    cipher.save(conn).await?;
+
+    let folder_id = data.folder_id.and_then(|id| folder_ids.get(&id).cloned());
+    cipher.move_to_folder(folder_id, user_id, conn).await?;
+    cipher.set_favorite(data.favorite, user_id, conn).await?;
+    if let Some(archived_date) = data.archived_date {
+        cipher.set_archived_at(parse_seed_date(&archived_date)?, user_id, conn).await?;
+    }
+
+    // Only the metadata: the files of a seeded cipher's attachments don't exist
+    for attachment in data.attachments.as_ref().and_then(Value::as_array).into_iter().flatten() {
+        let (Some(id), Some(file_name)) = (attachment["id"].as_str(), attachment["fileName"].as_str()) else {
+            err!("A seeded attachment needs an id and a file name")
+        };
+        // Clients send the size as a string
+        let size = match &attachment["size"] {
+            Value::Number(size) => size.as_i64(),
+            Value::String(size) => size.parse().ok(),
+            _ => None,
+        };
+        // Saving is an upsert, and destroying the play deletes the attachment: an id that exists isn't the seeding's
+        if id.is_empty() || !id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') {
+            err!(format!("Invalid attachment id {}", id.escape_debug()))
+        }
+        let id = AttachmentId(id.to_owned());
+        if Attachment::find_by_id(&id, conn).await.is_some() {
+            err!(format!("An attachment with id {id} already exists"))
+        }
+        let key = attachment["key"].as_str().map(str::to_owned);
+        Attachment::new(id, cipher.uuid.clone(), file_name.to_owned(), size.unwrap_or(0), key).save(conn).await?;
+    }
+    Ok(cipher.uuid)
+}
+
+#[cfg(feature = "unsafe_test_mode")]
+fn parse_seed_date(date: &str) -> ApiResult<NaiveDateTime> {
+    match chrono::DateTime::parse_from_rfc3339(date) {
+        Ok(date) => Ok(date.naive_utc()),
+        Err(e) => err!(format!("Invalid date {}: {e}", date.escape_debug())),
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ImportData {

@@ -6270,6 +6270,7 @@ dependencies = [
  "rustls",
  "semver",
  "serde",
+ "serde_cbor_2",
  "serde_json",
  "subtle",
  "svg-hush",
