@@ -1565,15 +1565,16 @@ async fn get_attachment_data(
     };
 
     if scope == CipherAccessScope::OrganizationAdmin {
-        // NotFound as in Bitwarden, the web vault then falls back to the attachment's own URL
+        // NotFound as in Bitwarden. Its web vault then falls back to the attachment's URL from the listing, which isn't
+        // served here without a token, so a member who can open the item themselves gets the signed URL instead.
         let Some(org_id) = cipher.organization_uuid.as_ref() else {
             err_code!("Cipher is not owned by an organization", Status::NotFound.code)
         };
-        if !Membership::find_confirmed_by_user_and_org(&headers.user.uuid, org_id, &conn)
+        let is_admin = Membership::find_confirmed_by_user_and_org(&headers.user.uuid, org_id, &conn)
             .await
             .is_some_and(|member| member.can_edit_any_collection())
-            || !cipher.is_write_accessible_to_user(&headers.user.uuid, scope, &conn).await
-        {
+            && cipher.is_write_accessible_to_user(&headers.user.uuid, scope, &conn).await;
+        if !is_admin && !cipher.is_accessible_to_user(&headers.user.uuid, CipherAccessScope::User, &conn).await {
             err_code!("Cipher is not accessible", Status::NotFound.code)
         }
     } else if !cipher.is_accessible_to_user(&headers.user.uuid, scope, &conn).await {
@@ -1581,7 +1582,9 @@ async fn get_attachment_data(
     }
 
     match Attachment::find_by_id(&attachment_id, &conn).await {
-        Some(attachment) if cipher_id == attachment.cipher_uuid => Ok(Json(attachment.to_json(&headers.host).await?)),
+        Some(attachment) if cipher_id == attachment.cipher_uuid => {
+            Ok(Json(attachment.to_json_for_download(&headers.host).await?))
+        }
         Some(_) => err!("Attachment doesn't belong to cipher"),
         None => err!("Attachment doesn't exist"),
     }

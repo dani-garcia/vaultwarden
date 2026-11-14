@@ -21,7 +21,7 @@ use crate::{
         models::{
             Cipher, CipherAccessScope, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId,
             CollectionUser, CustomPermission, Device, EventType, FillAssistPolicyData, Group, GroupId, GroupUser,
-            Invitation, Membership, MembershipId, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType,
+            Invitation, KeyId, Membership, MembershipId, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType,
             Organization, OrganizationApiKey, OrganizationId, TwoFactor, TwoFactorType, User, UserId,
             custom_roles_enabled,
         },
@@ -31,7 +31,7 @@ use crate::{
     util::{NumberOrString, convert_json_key_lcase_first},
 };
 
-use super::accounts::{AuthenticationData, UnlockData};
+use super::accounts::{AuthenticationData, UnlockData, V2UpgradeTokenData};
 
 pub fn routes() -> Vec<Route> {
     routes![
@@ -94,6 +94,9 @@ pub fn routes() -> Vec<Route> {
         get_group_members,
         put_reset_password_enrollment,
         get_reset_password_details,
+        get_pending_v2_upgrades,
+        post_v2_upgrades,
+        get_organization_private_key,
         put_recover_account,
         get_org_export,
         post_api_key,
@@ -3188,12 +3191,7 @@ struct OrganizationUserRecoverAccountRequest {
 // But the clients do not seem to use this at all
 // Just add it here in case they will
 #[get("/organizations/<org_id>/public-key")]
-async fn get_organization_public_key(
-    org_id: OrganizationId,
-    headers: Headers,
-    member: Result<OrgMemberHeaders, &'static str>,
-    conn: DbConn,
-) -> JsonResult {
+async fn get_organization_public_key(org_id: OrganizationId, headers: Headers, conn: DbConn) -> JsonResult {
     // SSO users without an org get the fake one, whose key the v2 JIT password flow fetches anyway
     if org_id.eq_ignore_ascii_case(FAKE_SSO_IDENTIFIER) && headers.user.private_key.is_none() {
         return Ok(Json(json!({
@@ -3201,14 +3199,16 @@ async fn get_organization_public_key(
             "publicKey": fake_sso_org_public_key().await?,
         })));
     }
-    let member = match member {
-        Ok(member) => member,
-        // The guard already logged it
-        Err(e) => return Err(crate::error::Error::new_msg(e).with_code(Status::Unauthorized.code)),
-    };
 
-    if org_id != member.membership.org_uuid {
-        err!("Organization not found", "Organization id's do not match");
+    // Only for members, as `OrgMemberHeaders` checks it, but here, so that the fake org above neither logs a
+    // membership error nor authenticates the request twice: a known role, and not revoked (invited members are,
+    // while joining)
+    let is_member = Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn).await.is_some_and(|member| {
+        MembershipType::from_i32(member.atype).is_some()
+            && MembershipStatus::from_i32(member.status).is_some_and(|status| status != MembershipStatus::Revoked)
+    });
+    if !is_member {
+        err_code!("You need to be a Member of the Organization to call this endpoint", Status::Unauthorized.code)
     }
     let Some(org) = Organization::find_by_uuid(&org_id, &conn).await else {
         err!("Organization not found")
@@ -3237,13 +3237,8 @@ async fn fake_sso_org_public_key() -> ApiResult<String> {
 // Obsolete - Renamed to public-key (2023.8), left for backwards compatibility with older clients
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Controllers/OrganizationsController.cs#L487-L492
 #[get("/organizations/<org_id>/keys")]
-async fn get_organization_keys(
-    org_id: OrganizationId,
-    headers: Headers,
-    member: Result<OrgMemberHeaders, &'static str>,
-    conn: DbConn,
-) -> JsonResult {
-    get_organization_public_key(org_id, headers, member, conn).await
+async fn get_organization_keys(org_id: OrganizationId, headers: Headers, conn: DbConn) -> JsonResult {
+    get_organization_public_key(org_id, headers, conn).await
 }
 
 // Will allow to reset 2FA too
@@ -3364,6 +3359,167 @@ async fn recover_account(
     Ok(())
 }
 
+#[derive(FromForm)]
+struct PendingV2UpgradesQuery {
+    #[field(name = "continuationToken")]
+    continuation_token: Option<MembershipId>,
+}
+
+/// The memberships whose account recovery key an Owner or Admin still has to re-wrap with the member's V2 user key,
+/// one page at a time: the client posts each page to `v2-upgrades` and reads the next one with the continuation
+/// token, until it is null. An Admin gets every member but the Owners, whose key material only an Owner can read.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/341acc9d3d8988cec8fe05debfa6d557cf5ab749/src/Api/KeyManagement/Controllers/OrganizationUsersKeysController.cs#L46-L83>
+#[get("/organizations/<org_id>/users/keys/pending-v2-upgrades?<query..>")]
+async fn get_pending_v2_upgrades(
+    org_id: OrganizationId,
+    query: PendingV2UpgradesQuery,
+    headers: AdminHeaders,
+    conn: DbConn,
+) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    let include_owners = headers.membership_type == MembershipType::Owner;
+    let pending =
+        Membership::find_pending_v2_upgrades(&org_id, include_owners, query.continuation_token.as_ref(), &conn).await;
+
+    let continuation_token = if i64::try_from(pending.len()).is_ok_and(|len| len == Membership::MAX_V2_UPGRADES) {
+        pending.last().map(|upgrade| upgrade.member_id.clone())
+    } else {
+        None
+    };
+    let data: Vec<Value> = pending
+        .into_iter()
+        .map(|upgrade| {
+            json!({
+                "object": "organizationUserPendingV2Upgrade",
+                "organizationUserId": upgrade.member_id,
+                "userKeyId": upgrade.user_key_id,
+                "accountRecoveryKey": upgrade.account_recovery_key,
+                // Null when the stored token can't be read: it holds no usable key, so the admin unenrolls the member
+                "v2UpgradeToken": serde_json::from_str::<V2UpgradeTokenData>(&upgrade.v2_upgrade_token).ok(),
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "object": "list",
+        "data": data,
+        "continuationToken": continuation_token,
+    })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct V2UpgradesData {
+    upgrades: Vec<V2UpgradeData>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct V2UpgradeData {
+    organization_user_id: MembershipId,
+    /// The id of the user key the new account recovery key wraps, which must still be the member's
+    user_key_id: KeyId,
+    /// The member's V2 user key wrapped with the organization's public key, or none to unenroll the member (when the
+    /// upgrade token holds no usable key)
+    account_recovery_key: Option<String>,
+}
+
+/// Stores the account recovery keys an Owner or Admin re-wrapped with members' V2 user keys, or unenrolls the members
+/// whose entry has no key. Every member named must be one the caller can recover in this organization. A membership
+/// that changed since the read (rotated again, unenrolled, upgraded already, promoted) is skipped and stays pending.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/341acc9d3d8988cec8fe05debfa6d557cf5ab749/src/Api/KeyManagement/Controllers/OrganizationUsersKeysController.cs#L85-L108>
+#[post("/organizations/<org_id>/users/keys/v2-upgrades", data = "<data>")]
+async fn post_v2_upgrades(
+    org_id: OrganizationId,
+    data: Json<V2UpgradesData>,
+    headers: AdminHeaders,
+    conn: DbConn,
+) -> EmptyResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    let upgrades = data.into_inner().upgrades;
+    if upgrades.is_empty() || i64::try_from(upgrades.len()).map_or(true, |len| len > Membership::MAX_V2_UPGRADES) {
+        err!(format!("The field Upgrades must contain between 1 and {} entries.", Membership::MAX_V2_UPGRADES))
+    }
+    let mut seen = HashSet::new();
+    if !upgrades.iter().all(|upgrade| seen.insert(&upgrade.organization_user_id)) {
+        err!("An organization user can only be upgraded once per request.")
+    }
+    // A key or its absence: the token the key could be rebuilt from is consumed with the write, so a malformed key is
+    // refused rather than stored
+    if upgrades
+        .iter()
+        .filter_map(|upgrade| upgrade.account_recovery_key.as_deref())
+        .any(|key| !crate::util::is_valid_rsa_encrypted_string(key))
+    {
+        err!("The field AccountRecoveryKey is not a valid encrypted string.")
+    }
+
+    let include_owners = headers.membership_type == MembershipType::Owner;
+    let mut members = Vec::with_capacity(upgrades.len());
+    for upgrade in &upgrades {
+        match Membership::find_by_uuid_and_org(&upgrade.organization_user_id, &org_id, &conn).await {
+            Some(member) if include_owners || member.atype != MembershipType::Owner => members.push(member),
+            _ => err_code!("Resource not found.", Status::NotFound.code),
+        }
+    }
+
+    // Every write in one transaction, as upstream's single statement, so a failure leaves the whole batch pending
+    let applied = conn
+        .transaction(async || {
+            let mut applied = Vec::with_capacity(members.len());
+            for (member, upgrade) in members.iter().zip(&upgrades) {
+                let key = upgrade.account_recovery_key.as_deref();
+                if member.apply_v2_upgrade(include_owners, &upgrade.user_key_id, key, &conn).await? {
+                    applied.push((member, upgrade));
+                }
+            }
+            Ok(applied)
+        })
+        .await?;
+
+    for (member, upgrade) in applied {
+        User::update_uuid_revision(&member.user_uuid, &conn).await;
+        // A re-wrapped key isn't logged: the member stays enrolled
+        if upgrade.account_recovery_key.is_none() {
+            log_event(
+                EventType::OrganizationUserResetPasswordWithdraw,
+                &upgrade.organization_user_id,
+                &org_id,
+                &headers.user.uuid,
+                headers.device.atype,
+                &headers.ip.ip,
+                &conn,
+            )
+            .await;
+        }
+    }
+    Ok(())
+}
+
+/// The organization's private key, wrapped with the organization key: the account recovery V2 upgrade (the SDK's
+/// encrypted migrator) needs it to unwrap the members' V1 user keys. Open to everyone with Manage users, as upstream.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/341acc9d3d8988cec8fe05debfa6d557cf5ab749/src/Api/AdminConsole/Controllers/OrganizationsController.cs#L473-L484>
+#[get("/organizations/<org_id>/private-key")]
+async fn get_organization_private_key(org_id: OrganizationId, headers: ManageUsersHeaders, conn: DbConn) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    let Some(org) = Organization::find_by_uuid(&org_id, &conn).await else {
+        err_code!("Resource not found.", Status::NotFound.code)
+    };
+    Ok(Json(json!({
+        "object": "organizationPrivateKey",
+        "privateKey": org.private_key,
+    })))
+}
+
 #[get("/organizations/<org_id>/users/<member_id>/reset-password-details")]
 async fn get_reset_password_details(
     org_id: OrganizationId,
@@ -3476,6 +3632,9 @@ async fn put_reset_password_enrollment(
     }
 
     membership.reset_password_key = reset_password_key;
+    // A new key already wraps the current user key and a withdrawal leaves none. An upgrade token left from an earlier
+    // V2 upgrade would only get the member unenrolled by the account recovery V2 upgrade.
+    membership.v2_upgrade_token = None;
     membership.save(&conn).await?;
 
     let event_type = if membership.reset_password_key.is_some() {
