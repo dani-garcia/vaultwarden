@@ -12,8 +12,9 @@ use crate::{
         core::{CipherSyncData, CipherSyncType, accept_org_invite, log_event, two_factor},
     },
     auth::{
-        AdminHeaders, CollectionAction, CollectionDeleteHeaders, CollectionReadHeaders, Headers, ManagerHeaders,
-        ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, custom_member_may, decode_invite,
+        AdminHeaders, CollectionAction, CollectionDeleteHeaders, CollectionReadHeaders, CollectionUsersReadHeaders,
+        Headers, ManageUsersHeaders, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders,
+        custom_member_may, decode_invite,
     },
     db::{
         DbConn,
@@ -412,12 +413,13 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
     // check if current user has full access to the organization (either directly or via any group)
     let has_full_access_to_org = member.has_full_access()
         || (CONFIG.org_groups_enabled() && GroupUser::has_full_access_by_member(&org_id, &member.uuid, &conn).await);
-    // A Custom member gets every collection when they may see all of them, else the ones they may manage
-    let custom_collections = if member.has_type(MembershipType::Custom) && !member.can_view_all_collections() {
-        Some(Collection::find_explicitly_manageable_by_user(&org_id, &member.user_uuid, &conn).await)
-    } else {
-        None
-    };
+    // Manage users may read collection access details without editing the collection itself.
+    let custom_collections =
+        if member.has_type(MembershipType::Custom) && !member.can_view_all_collection_access_details() {
+            Some(Collection::find_explicitly_manageable_by_user(&org_id, &member.user_uuid, &conn).await)
+        } else {
+            None
+        };
 
     // Get all admins, owners and managers who can manage/access all
     // Those are currently not listed in the col_users but need to be listed too.
@@ -846,7 +848,7 @@ async fn get_org_collection_detail(
 async fn get_collection_users(
     org_id: OrganizationId,
     col_id: CollectionId,
-    headers: CollectionReadHeaders,
+    headers: CollectionUsersReadHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -984,7 +986,8 @@ async fn get_members(
         err!("Organization not found", "Organization id's do not match");
     }
 
-    if !headers.membership.has_full_access() {
+    if !headers.membership.has_full_access() && !headers.membership.has_custom_permission(CustomPermission::ManageUsers)
+    {
         err_code!("Resource not found.", "User does not have full access", Status::NotFound.code);
     }
 
@@ -1073,11 +1076,64 @@ impl InviteData {
     }
 }
 
+/// Whether a Custom member with Manage users may manage the members of `target_type`: only Users and Custom members.
+fn custom_member_manages(target_type: i32) -> bool {
+    target_type == MembershipType::User || target_type == MembershipType::Custom
+}
+
+/// Whether a member of `caller_type` may manage the members of `target_type`, as in Bitwarden: Owners every role,
+/// Admins every role but Owner, and Custom members with Manage users only Users and Custom members.
+fn check_role_manageable(caller_type: MembershipType, target_type: i32) -> EmptyResult {
+    match caller_type {
+        MembershipType::Owner => Ok(()),
+        MembershipType::Admin if target_type != MembershipType::Owner => Ok(()),
+        MembershipType::Custom if custom_member_manages(target_type) => Ok(()),
+        _ if target_type == MembershipType::Owner => err!("Only Owners can manage Owners"),
+        _ => err!("You can only manage Users and Custom members"),
+    }
+}
+
+/// Manage users controls member access to any collection in their organization, separately from editing its metadata.
+fn custom_member_may_assign_collection(caller: &Membership, collection: &Collection) -> bool {
+    caller.org_uuid == collection.org_uuid && caller.has_custom_permission(CustomPermission::ManageUsers)
+}
+
+/// Checks what a Custom member with Manage users gives a member: only permissions they have themselves, and access to
+/// collections and groups in their organization. As in Bitwarden, Manage users may change any group membership.
+async fn check_custom_member_grants(
+    caller: &Membership,
+    permissions: Option<&HashSet<CustomPermission>>,
+    collections: &[&CollectionId],
+    groups: &HashSet<GroupId>,
+    conn: &DbConn,
+) -> EmptyResult {
+    if !caller.has_custom_permission(CustomPermission::ManageUsers) {
+        err!("You need Manage users to change member access")
+    }
+    if permissions.is_some_and(|permissions| permissions.iter().any(|p| !caller.has_custom_permission(*p))) {
+        err!("Custom users can only grant the same custom permissions that they have")
+    }
+    for collection_id in collections {
+        let Some(collection) = Collection::find_by_uuid_and_org(collection_id, &caller.org_uuid, conn).await else {
+            err!("Collection not found in Organization")
+        };
+        if !custom_member_may_assign_collection(caller, &collection) {
+            err!("You can only give access to collections in your organization")
+        }
+    }
+    for group_id in groups {
+        if Group::find_by_uuid_and_org(group_id, &caller.org_uuid, conn).await.is_none() {
+            err!("Group not found in Organization")
+        }
+    }
+    Ok(())
+}
+
 #[post("/organizations/<org_id>/users/invite", data = "<data>")]
 async fn send_invite(
     org_id: OrganizationId,
     data: Json<InviteData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
@@ -1100,8 +1156,12 @@ async fn send_invite(
     };
     let new_type = MembershipType::requested(requested_type, None, custom_permissions.as_ref());
 
-    if new_type != MembershipType::User && headers.membership_type != MembershipType::Owner {
-        err!("Only Owners can invite Managers, Admins or Owners")
+    check_role_manageable(headers.membership_type, new_type as i32)?;
+    if headers.membership_type == MembershipType::Custom {
+        let collections: Vec<&CollectionId> = data.collections.iter().flatten().map(|c| &c.id).collect();
+        let groups = data.groups.iter().cloned().collect();
+        check_custom_member_grants(&headers.membership, custom_permissions.as_ref(), &collections, &groups, &conn)
+            .await?;
     }
 
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
@@ -1237,7 +1297,7 @@ async fn send_invite(
 async fn bulk_reinvite_members(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -1275,7 +1335,7 @@ async fn bulk_reinvite_members(
 async fn reinvite_member(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
@@ -1406,7 +1466,7 @@ struct BulkConfirmData {
 async fn bulk_confirm_invite(
     org_id: OrganizationId,
     data: Json<BulkConfirmData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
@@ -1455,7 +1515,7 @@ async fn confirm_invite(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: Json<ConfirmData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
@@ -1468,7 +1528,7 @@ async fn confirm_invite_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
     key: &str,
-    headers: &AdminHeaders,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
@@ -1483,9 +1543,7 @@ async fn confirm_invite_impl(
         err!("The specified user isn't a member of the organization")
     };
 
-    if member_to_confirm.atype != MembershipType::User && headers.membership_type != MembershipType::Owner {
-        err!("Only Owners can confirm Managers, Admins or Owners")
-    }
+    // As in Bitwarden, confirming is open to everyone managing the members, whatever the role of the member
 
     if member_to_confirm.status != MembershipStatus::Accepted as i32 {
         err!("User in invalid state")
@@ -1558,7 +1616,7 @@ async fn get_user(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: GetOrgUserData,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -1591,7 +1649,7 @@ async fn edit_member(
     org_id: OrganizationId,
     member_id: MembershipId,
     data: Json<EditUserData>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     if org_id != headers.org_id {
@@ -1634,16 +1692,9 @@ async fn edit_member(
             && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
             && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
-    if new_type != member_to_edit.atype
-        && (member_to_edit.atype >= MembershipType::Admin || new_type >= MembershipType::Admin)
-        && headers.membership_type != MembershipType::Owner
-    {
-        err!("Only Owners can grant and remove Admin or Owner privileges")
-    }
-
-    if member_to_edit.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
-        err!("Only Owners can edit Owner users")
-    }
+    // Both the current and the requested role must be one the caller may manage
+    check_role_manageable(headers.membership_type, member_to_edit.atype)?;
+    check_role_manageable(headers.membership_type, new_type as i32)?;
 
     if member_to_edit.atype == MembershipType::Owner
         && new_type != MembershipType::Owner
@@ -1653,6 +1704,21 @@ async fn edit_member(
         if Membership::count_confirmed_by_org_and_type(&org_id, MembershipType::Owner, &conn).await <= 1 {
             err!("Can't delete the last owner")
         }
+    }
+
+    // A Custom member with Manage users only gives what they have themselves. Manage users authorizes member access
+    // to every collection in this organization.
+    if headers.membership_type == MembershipType::Custom {
+        let collections: Vec<&CollectionId> = data.collections.iter().flatten().map(|c| &c.id).collect();
+        let groups = data.groups.iter().flatten().cloned().collect();
+        check_custom_member_grants(
+            &headers.membership,
+            custom_permissions.as_ref().filter(|_| new_type == MembershipType::Custom),
+            &collections,
+            &groups,
+            &conn,
+        )
+        .await?;
     }
 
     member_to_edit.set_type(new_type);
@@ -1665,7 +1731,7 @@ async fn edit_member(
     // We need to perform the check after changing the type since `admin` is exempt.
     OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
-    // Delete all the odd collections
+    // Replace the member's direct collection assignments with those in the request.
     for c in CollectionUser::find_by_organization_and_user_uuid(&org_id, &member_to_edit.user_uuid, &conn).await {
         c.delete(&conn).await?;
     }
@@ -1718,7 +1784,7 @@ async fn edit_member(
 async fn bulk_delete_member(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> JsonResult {
@@ -1757,7 +1823,7 @@ async fn bulk_delete_member(
 async fn delete_member(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
@@ -1767,7 +1833,7 @@ async fn delete_member(
 async fn delete_member_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    headers: &AdminHeaders,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
     nt: &Notify<'_>,
 ) -> EmptyResult {
@@ -1778,9 +1844,11 @@ async fn delete_member_impl(
         err!("User to delete isn't member of the organization")
     };
 
-    if member_to_delete.atype != MembershipType::User && headers.membership_type != MembershipType::Owner {
-        err!("Only Owners can delete Admins or Owners")
+    // As in Bitwarden, leaving the organization is its own route
+    if member_to_delete.user_uuid == headers.user.uuid {
+        err!("You cannot remove yourself")
     }
+    check_role_manageable(headers.membership_type, member_to_delete.atype)?;
 
     if member_to_delete.atype == MembershipType::Owner && member_to_delete.status == MembershipStatus::Confirmed as i32
     {
@@ -1821,7 +1889,7 @@ async fn delete_member_impl(
 async fn bulk_public_keys(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2522,7 +2590,7 @@ struct BulkRevokeMembershipIds {
 async fn revoke_member(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     revoke_member_impl(&org_id, &member_id, &headers, &conn).await
@@ -2532,7 +2600,7 @@ async fn revoke_member(
 async fn bulk_revoke_members(
     org_id: OrganizationId,
     data: Json<BulkRevokeMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2574,7 +2642,7 @@ async fn bulk_revoke_members(
 async fn revoke_member_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    headers: &AdminHeaders,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
     if org_id != &headers.org_id {
@@ -2587,6 +2655,9 @@ async fn revoke_member_impl(
             }
             if member.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
                 err!("Only owners can revoke other owners")
+            }
+            if headers.membership_type == MembershipType::Custom && !custom_member_manages(member.atype) {
+                err!("You can only manage Users and Custom members")
             }
             if member.atype == MembershipType::Owner
                 && Membership::count_confirmed_by_org_and_type(org_id, MembershipType::Owner, conn).await <= 1
@@ -2618,7 +2689,7 @@ async fn revoke_member_impl(
 async fn restore_member_vnext(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     // Vaultwarden does not (yet) support the per User Collection linked to the `Enforce organization data ownership` policy.
@@ -2630,7 +2701,7 @@ async fn restore_member_vnext(
 async fn restore_member(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> EmptyResult {
     restore_member_impl(&org_id, &member_id, &headers, &conn).await
@@ -2640,7 +2711,7 @@ async fn restore_member(
 async fn bulk_restore_members(
     org_id: OrganizationId,
     data: Json<BulkMembershipIds>,
-    headers: AdminHeaders,
+    headers: ManageUsersHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2677,7 +2748,7 @@ async fn bulk_restore_members(
 async fn restore_member_impl(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    headers: &AdminHeaders,
+    headers: &ManageUsersHeaders,
     conn: &DbConn,
 ) -> EmptyResult {
     if org_id != &headers.org_id {
@@ -2690,6 +2761,9 @@ async fn restore_member_impl(
             }
             if member.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
                 err!("Only owners can restore other owners")
+            }
+            if headers.membership_type == MembershipType::Custom && !custom_member_manages(member.atype) {
+                err!("You can only manage Users and Custom members")
             }
 
             member.restore();
@@ -2716,10 +2790,11 @@ async fn restore_member_impl(
 }
 
 /// Whether a member may give others access to collections, and so needs to see the members and groups: by seeing
-/// or creating any collection, or by the manage option on a collection.
+/// or creating any collection, by managing the members, or by the manage option on a collection.
 async fn may_assign_collection_access(member: &Membership, conn: &DbConn) -> bool {
     member.can_view_all_collections()
         || member.has_custom_permission(CustomPermission::CreateNewCollections)
+        || member.has_custom_permission(CustomPermission::ManageUsers)
         || Collection::has_manageable_collection_by_user(&member.org_uuid, &member.user_uuid, conn).await
 }
 
@@ -2742,7 +2817,7 @@ async fn get_groups_data(
             && !headers.membership.has_type(MembershipType::Custom)
             && GroupUser::has_full_access_by_member(&org_id, &headers.membership.uuid, &conn).await);
     let allowed = if details {
-        has_full_access
+        has_full_access || headers.membership.has_custom_permission(CustomPermission::ManageUsers)
     } else {
         has_full_access || may_assign_collection_access(&headers.membership, &conn).await
     };
@@ -3488,4 +3563,107 @@ async fn rotate_api_key(
     conn: DbConn,
 ) -> JsonResult {
     api_key(&org_id, data, true, headers, conn).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(sqlite)]
+    use crate::db::{models::test_flag, test_db};
+
+    #[test]
+    fn custom_members_manage_users_and_custom_members_only() {
+        for role in [0, 1, 2, 3, 4, 99, -1] {
+            assert_eq!(custom_member_manages(role), matches!(role, 2 | 4));
+        }
+    }
+
+    #[cfg(sqlite)]
+    #[test]
+    fn manage_users_grants_are_confined_to_permission_and_organization() {
+        test_db::run(async |db| {
+            let conn = db.conn();
+            let (org, _, mut member) = test_db::custom_member(&conn, CustomPermission::ManageUsers).await;
+            let foreign = test_db::organization(&conn).await;
+            for org_id in [&org.uuid, &foreign.uuid] {
+                let collection = test_db::collection(&conn, org_id).await;
+                let mut group = Group::new(org_id.clone(), "Group".into(), true, None);
+                group.save(&conn).await.unwrap();
+                let empty = HashSet::new();
+                for (collections, groups) in [
+                    (&[&collection.uuid][..], empty.clone()),
+                    (&[][..], HashSet::from([group.uuid.clone()])),
+                    (&[&collection.uuid][..], HashSet::from([group.uuid])),
+                ] {
+                    // A group with access to all collections may be given as well, as in Bitwarden
+                    assert_eq!(
+                        check_custom_member_grants(&member, None, collections, &groups, &conn).await.is_ok(),
+                        org_id == &org.uuid
+                    );
+                }
+            }
+            let collection = test_db::collection(&conn, &org.uuid).await;
+            assert!(!Collection::can_access_collection(&member, &collection.uuid, &conn).await);
+            let escalated = HashSet::from([CustomPermission::EditAnyCollection]);
+            let empty = HashSet::new();
+            for (enabled, status) in [(true, 2), (true, 1), (true, -126), (false, 2)] {
+                test_flag::CUSTOM_ROLES_ENABLED.set(Some(enabled));
+                member.status = status;
+                assert_eq!(
+                    custom_member_may(CollectionAction::Read, &member, &collection.uuid, &conn).await,
+                    enabled && status == 2
+                );
+                assert!(!custom_member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await);
+                assert!(!custom_member_may(CollectionAction::ReadAccess, &member, &collection.uuid, &conn).await);
+                assert_eq!(
+                    check_custom_member_grants(&member, None, &[], &empty, &conn).await.is_ok(),
+                    enabled && status == 2
+                );
+                assert!(check_custom_member_grants(&member, Some(&escalated), &[], &empty, &conn).await.is_err());
+            }
+        });
+    }
+
+    #[cfg(sqlite)]
+    async fn users_headers(member: &Membership, conn: &DbConn) -> ManageUsersHeaders {
+        ManageUsersHeaders {
+            device: Device::new("test".to_owned().into(), member.user_uuid.clone(), "test".into(), 1),
+            user: User::find_by_uuid(&member.user_uuid, conn).await.unwrap(),
+            membership: Membership::find_by_uuid(&member.uuid, conn).await.unwrap(),
+            membership_type: MembershipType::Custom,
+            org_id: member.org_uuid.clone(),
+            ip: crate::auth::ClientIp {
+                ip: "127.0.0.1".parse().unwrap(),
+            },
+        }
+    }
+
+    #[cfg(sqlite)]
+    #[test]
+    fn manage_users_can_reinvite_and_confirm_higher_role_members() {
+        use crate::api::notifications::{WS_USERS, WebSocketUsers};
+        use std::sync::Arc;
+        test_db::run(async |db| {
+            let conn = db.conn();
+            let (org, _, actor) = test_db::custom_member(&conn, CustomPermission::ManageUsers).await;
+            let (_, mut target) = test_db::member(&conn, &org.uuid, MembershipType::Owner, &[]).await;
+            target.status = MembershipStatus::Invited as i32;
+            target.save(&conn).await.unwrap();
+            let headers = users_headers(&actor, &conn).await;
+            reinvite_member_impl(&org.uuid, &target.uuid, &headers.user.email, &conn).await.unwrap();
+            assert!(
+                Membership::find_by_uuid(&target.uuid, &conn).await.unwrap().has_status(MembershipStatus::Accepted)
+            );
+            let rocket = rocket::build().manage(Arc::clone(&WS_USERS));
+            let notify = rocket.state::<Arc<WebSocketUsers>>().unwrap();
+            confirm_invite_impl(&org.uuid, &target.uuid, "encrypted-key", &headers, &conn, &notify.into())
+                .await
+                .unwrap();
+            let after = Membership::find_by_uuid(&target.uuid, &conn).await.unwrap();
+            assert_eq!(
+                (after.status, after.atype, after.akey.as_str()),
+                (2, MembershipType::Owner as i32, "encrypted-key")
+            );
+        });
+    }
 }

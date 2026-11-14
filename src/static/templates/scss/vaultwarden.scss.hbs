@@ -99,8 +99,12 @@ app-security > app-two-factor-setup > form {
 
 /* Hide unsupported Custom Role options */
 {{#if custom_roles_enabled}}
-/* Only the collection permissions can be granted yet */
-:is(bit-dialog, [bit-dialog]) div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcontrolname*="manage"]) {
+/* Only the collection permissions and Manage users can be granted yet */
+:is(bit-dialog, [bit-dialog]) div.tw-col-span-4:has(input[formcontrolname*="access"]),
+:is(bit-dialog, [bit-dialog]) bit-form-control:has(input[formcontrolname="manageGroups"]),
+:is(bit-dialog, [bit-dialog]) bit-form-control:has(input[formcontrolname="managePolicies"]),
+:is(bit-dialog, [bit-dialog]) bit-form-control:has(input[formcontrolname="manageSso"]),
+:is(bit-dialog, [bit-dialog]) bit-form-control:has(input[formcontrolname="manageResetPassword"]) {
   @extend %vw-hide;
 }
 {{else}}
