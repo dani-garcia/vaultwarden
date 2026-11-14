@@ -995,6 +995,22 @@ pub async fn save_temp_file(
     Ok(())
 }
 
+/// Whether `value` has the form of an RSA-encrypted string (types 3 to 6), the form of the account recovery key: the
+/// type and its number of `|` pieces like the clients' `UnsignedSharedKey` parser, and each piece canonical, padded
+/// base64, which is what the clients send.
+///
+/// Ref: <https://github.com/bitwarden/sdk-internal/blob/6238472451e4fa7b5c592b4b24a84e950a258957/crates/bitwarden-crypto/src/enc_string/asymmetric.rs#L85-L119>
+pub fn is_valid_rsa_encrypted_string(value: &str) -> bool {
+    let (pieces, rest) = match value.split_once('.') {
+        Some(("3" | "4", rest)) => (1, rest),
+        Some(("5" | "6", rest)) => (2, rest),
+        _ => return false,
+    };
+    let parts: Vec<&str> = rest.split('|').collect();
+    parts.len() == pieces
+        && parts.iter().all(|part| !part.is_empty() && data_encoding::BASE64.decode(part.as_bytes()).is_ok())
+}
+
 /// These are some tests to check that the implementations match
 /// The IPv4 can be all checked in 30 seconds or so and they are correct as of nightly 2023-07-17
 /// The IPV6 can't be checked in a reasonable time, so we check over a hundred billion random ones, so far correct
@@ -1071,5 +1087,25 @@ mod query_log_tests {
         let name = "a".repeat(MAX_LOGGED_QUERY_BYTES - 1);
         let query = redact_query_values(&format!("{name}=SECRET"));
         assert_eq!(&query[..query.floor_char_boundary(MAX_LOGGED_QUERY_BYTES)], format!("{name}="));
+    }
+}
+
+#[cfg(test)]
+mod encrypted_string_tests {
+    use super::is_valid_rsa_encrypted_string as valid;
+
+    #[test]
+    fn rsa_encrypted_strings_are_validated() {
+        assert!(valid("3.YWJjZA=="));
+        assert!(valid("4.YWJjZA=="));
+        assert!(valid("6.YWJjZA==|YWJjZA=="));
+        assert!(!valid("2.YWJjZA==|YWJjZA==|YWJjZA=="), "symmetric type");
+        assert!(!valid("YWJjZA=="), "no type");
+        assert!(!valid("4.not base64!"));
+        assert!(!valid("4.YWJjZA==|YWJjZA=="), "one piece too many");
+        assert!(!valid("5.YWJjZA=="), "one piece too few");
+        assert!(!valid("4.YWJjZB=="), "padding bits set");
+        assert!(!valid("4."), "empty piece");
+        assert!(!valid(""));
     }
 }
