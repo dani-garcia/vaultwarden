@@ -159,6 +159,14 @@ impl Error {
         self
     }
 
+    pub const fn get_code(&self) -> u16 {
+        self.code
+    }
+
+    pub const fn is_server_error(&self) -> bool {
+        matches!(self.code, 500..=599)
+    }
+
     #[must_use]
     pub fn with_event(mut self, event: ErrorEvent) -> Self {
         self.event = Some(event);
