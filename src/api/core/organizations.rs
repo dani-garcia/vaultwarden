@@ -2198,7 +2198,10 @@ async fn list_policies(org_id: OrganizationId, headers: AdminHeaders, conn: DbCo
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let policies = OrgPolicy::find_by_org(&org_id, &conn).await;
+    let mut policies = OrgPolicy::find_by_org(&org_id, &conn).await;
+    if !policies.iter().any(|p| p.has_type(OrgPolicyType::SendControls)) {
+        policies.push(OrgPolicy::synthesize_send_controls(&org_id, &policies));
+    }
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 
     Ok(Json(json!({
@@ -2271,6 +2274,9 @@ async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: AdminHeaders
 
     let policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await {
         Some(p) => p,
+        None if pol_type_enum == OrgPolicyType::SendControls => {
+            OrgPolicy::synthesize_send_controls(&org_id, &OrgPolicy::find_by_org(&org_id, &conn).await)
+        }
         None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "null".to_owned()),
     };
 
@@ -2442,13 +2448,15 @@ async fn put_policy(
         }
     }
 
+    let policy_data = OrgPolicy::send_policy_data(pol_type_enum, data.data)?;
+
     let mut policy = match current_policy {
         Some(p) => p,
         None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "{}".to_owned()),
     };
 
     policy.enabled = data.enabled;
-    policy.data = serde_json::to_string(&data.data)?;
+    policy.data = serde_json::to_string(&policy_data)?;
     policy.save(&conn).await?;
 
     log_event(
@@ -2461,6 +2469,8 @@ async fn put_policy(
         &conn,
     )
     .await;
+
+    OrgPolicy::sync_send_policies(&policy, &conn).await?;
 
     Ok(Json(policy.to_json()))
 }
