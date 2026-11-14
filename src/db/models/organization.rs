@@ -15,7 +15,7 @@ use crate::{
     db::{
         DbConn,
         schema::{
-            ciphers, ciphers_collections, collections_groups, groups, groups_users, org_policies, organization_api_key,
+            ciphers_collections, collections_groups, groups, groups_users, org_policies, organization_api_key,
             organizations, users, users_collections, users_organizations,
         },
     },
@@ -245,7 +245,8 @@ pub enum CustomPermission {
 }
 
 /// The permissions this version enforces on every endpoint they open. Only these can be granted, a stored
-/// grant of any other one grants nothing. They are implemented one at a time, so this grows with them.
+/// grant of any other one grants nothing. Every stored permission is enforced now, a permission added later only
+/// belongs here once every endpoint it opens enforces it.
 const SUPPORTED_CUSTOM_PERMISSIONS: &[CustomPermission] = &[
     CustomPermission::ManageUsers,
     CustomPermission::ManageGroups,
@@ -253,6 +254,9 @@ const SUPPORTED_CUSTOM_PERMISSIONS: &[CustomPermission] = &[
     CustomPermission::CreateNewCollections,
     CustomPermission::EditAnyCollection,
     CustomPermission::DeleteAnyCollection,
+    CustomPermission::AccessEventLogs,
+    CustomPermission::AccessImportExport,
+    CustomPermission::AccessReports,
 ];
 
 impl CustomPermission {
@@ -1093,6 +1097,25 @@ impl Membership {
         self.can_view_all_collections() || self.has_custom_permission(CustomPermission::ManageUsers)
     }
 
+    /// Whether the member may list all organization collections in the Admin Console. This endpoint returns
+    /// collection metadata without user or group access details. Group management and import/export need the
+    /// complete collection list, but neither permission grants individual collection editing or cipher access.
+    pub fn can_list_all_collections(&self) -> bool {
+        self.can_view_all_collections()
+            || self.has_custom_permission(CustomPermission::ManageGroups)
+            || self.has_custom_permission(CustomPermission::AccessImportExport)
+    }
+
+    /// Whether this member may list every cipher of the organization in the Admin Console, like Bitwarden's
+    /// CanAccessAllCiphers: every member who may edit any collection, and a Custom member with Access import/export
+    /// (the export holds every cipher anyway) or Access reports (the reports run on every cipher). The list adds
+    /// nothing to the member's own vault.
+    pub fn can_list_all_ciphers(&self) -> bool {
+        self.can_edit_any_collection()
+            || self.has_custom_permission(CustomPermission::AccessImportExport)
+            || self.has_custom_permission(CustomPermission::AccessReports)
+    }
+
     pub async fn find_by_uuid(uuid: &MembershipId, conn: &DbConn) -> Option<Self> {
         conn.run(move |conn| {
             users_organizations::table.filter(users_organizations::uuid.eq(uuid)).first::<Self>(conn).ok()
@@ -1388,28 +1411,6 @@ impl Membership {
         .await
     }
 
-    pub async fn user_has_ge_admin_access_to_cipher(user_uuid: &UserId, cipher_uuid: &CipherId, conn: &DbConn) -> bool {
-        conn.run(move |conn| {
-            users_organizations::table
-                .inner_join(
-                    ciphers::table.on(ciphers::uuid
-                        .eq(cipher_uuid)
-                        .and(ciphers::organization_uuid.eq(users_organizations::org_uuid.nullable()))),
-                )
-                .filter(users_organizations::user_uuid.eq(user_uuid))
-                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
-                .filter(
-                    users_organizations::atype.eq_any(vec![MembershipType::Owner as i32, MembershipType::Admin as i32]),
-                )
-                .count()
-                .first::<i64>(conn)
-                .ok()
-                .unwrap_or(0)
-                != 0
-        })
-        .await
-    }
-
     pub async fn find_by_collection_and_org(
         collection_uuid: &CollectionId,
         org_uuid: &OrganizationId,
@@ -1614,7 +1615,17 @@ mod tests {
         }
         assert_eq!(
             SUPPORTED_CUSTOM_PERMISSIONS,
-            [ManageUsers, ManageGroups, ManagePolicies, CreateNewCollections, EditAnyCollection, DeleteAnyCollection]
+            [
+                ManageUsers,
+                ManageGroups,
+                ManagePolicies,
+                CreateNewCollections,
+                EditAnyCollection,
+                DeleteAnyCollection,
+                AccessEventLogs,
+                AccessImportExport,
+                AccessReports
+            ]
         );
     }
 
@@ -1677,6 +1688,14 @@ mod tests {
                             (allowed, edit, view),
                             "{role:?} {all} {enabled} {status} {permission:?}"
                         );
+                        assert_eq!(
+                            (member.can_list_all_collections(), member.can_list_all_ciphers()),
+                            (
+                                view || (allowed && matches!(permission, ManageGroups | AccessImportExport)),
+                                edit || (allowed && matches!(permission, AccessImportExport | AccessReports))
+                            ),
+                            "{role:?} {enabled} {status} {permission:?}"
+                        );
                     }
                 }
             }
@@ -1691,12 +1710,13 @@ mod tests {
                 test_flag::CUSTOM_ROLES_ENABLED.set(Some(enabled));
                 assert!(CustomPermission::ALL.into_iter().all(|p| !member.has_custom_permission(p)));
                 assert!(!member.can_edit_any_collection() && !member.can_view_all_collections());
+                assert!(!member.can_list_all_collections() && !member.can_list_all_ciphers());
             }
         }
         let empty = member(Custom);
         assert!(!empty.can_edit_any_collection() && !empty.can_view_all_collections());
         assert!(empty.shown_custom_permissions().is_empty());
-
+        assert!(!empty.can_list_all_collections() && !empty.can_list_all_ciphers());
         test_flag::CUSTOM_ROLES_ENABLED.set(None);
     }
 }
