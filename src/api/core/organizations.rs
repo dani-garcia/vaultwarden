@@ -1086,21 +1086,13 @@ fn custom_member_may_assign_collection(caller: &Membership, collection: &Collect
     caller.org_uuid == collection.org_uuid && caller.has_custom_permission(CustomPermission::ManageUsers)
 }
 
-/// Group membership gives member access; legacy full-access groups also require Edit any collection.
-fn custom_member_may_grant_group(caller: &Membership, group: &Group) -> bool {
-    caller.org_uuid == group.organizations_uuid
-        && caller.has_custom_permission(CustomPermission::ManageUsers)
-        && (!group.access_all || caller.can_edit_any_collection())
-}
-
 /// Checks what a Custom member with Manage users gives a member: only permissions they have themselves, and access to
-/// collections and groups in their organization.
+/// collections and groups in their organization. As in Bitwarden, Manage users may change any group membership.
 async fn check_custom_member_grants(
     caller: &Membership,
     permissions: Option<&HashSet<CustomPermission>>,
     collections: &[&CollectionId],
     groups: &HashSet<GroupId>,
-    current_groups: &HashSet<GroupId>,
     conn: &DbConn,
 ) -> EmptyResult {
     if !caller.has_custom_permission(CustomPermission::ManageUsers) {
@@ -1117,12 +1109,9 @@ async fn check_custom_member_grants(
             err!("You can only give access to collections in your organization")
         }
     }
-    for group_id in groups.symmetric_difference(current_groups) {
-        let Some(group) = Group::find_by_uuid_and_org(group_id, &caller.org_uuid, conn).await else {
+    for group_id in groups {
+        if Group::find_by_uuid_and_org(group_id, &caller.org_uuid, conn).await.is_none() {
             err!("Group not found in Organization")
-        };
-        if !custom_member_may_grant_group(caller, &group) {
-            err!("You do not have permission to change this group membership")
         }
     }
     Ok(())
@@ -1165,15 +1154,8 @@ async fn send_invite(
     if headers.membership_type == MembershipType::Custom {
         let collections: Vec<&CollectionId> = data.collections.iter().flatten().map(|c| &c.id).collect();
         let groups = data.groups.iter().cloned().collect();
-        check_custom_member_grants(
-            &headers.membership,
-            custom_permissions.as_ref(),
-            &collections,
-            &groups,
-            &HashSet::new(),
-            &conn,
-        )
-        .await?;
+        check_custom_member_grants(&headers.membership, custom_permissions.as_ref(), &collections, &groups, &conn)
+            .await?;
     }
 
     // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
@@ -1739,14 +1721,11 @@ async fn edit_member(
         }
         let collections: Vec<&CollectionId> = data.collections.iter().flatten().map(|c| &c.id).collect();
         let groups = data.groups.iter().flatten().cloned().collect();
-        let current_groups =
-            GroupUser::find_by_member(&member_to_edit.uuid, &conn).await.into_iter().map(|g| g.groups_uuid).collect();
         check_custom_member_grants(
             &headers.membership,
             custom_permissions.as_ref().filter(|_| new_type == MembershipType::Custom),
             &collections,
             &groups,
-            &current_groups,
             &conn,
         )
         .await?;
@@ -3627,9 +3606,10 @@ mod tests {
                     (&[][..], HashSet::from([group.uuid.clone()])),
                     (&[&collection.uuid][..], HashSet::from([group.uuid])),
                 ] {
+                    // A group with access to all collections may be given as well, as in Bitwarden
                     assert_eq!(
-                        check_custom_member_grants(&member, None, collections, &groups, &empty, &conn).await.is_ok(),
-                        org_id == &org.uuid && groups.is_empty()
+                        check_custom_member_grants(&member, None, collections, &groups, &conn).await.is_ok(),
+                        org_id == &org.uuid
                     );
                 }
             }
@@ -3647,12 +3627,10 @@ mod tests {
                 assert!(!custom_member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await);
                 assert!(!custom_member_may(CollectionAction::ReadAccess, &member, &collection.uuid, &conn).await);
                 assert_eq!(
-                    check_custom_member_grants(&member, None, &[], &empty, &empty, &conn).await.is_ok(),
+                    check_custom_member_grants(&member, None, &[], &empty, &conn).await.is_ok(),
                     enabled && status == 2
                 );
-                assert!(
-                    check_custom_member_grants(&member, Some(&escalated), &[], &empty, &empty, &conn).await.is_err()
-                );
+                assert!(check_custom_member_grants(&member, Some(&escalated), &[], &empty, &conn).await.is_err());
             }
         });
     }
