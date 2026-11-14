@@ -83,7 +83,7 @@ impl PasswordOrOtpData {
 
 #[expect(clippy::struct_excessive_bools, reason = "Bitwarden clients expect the data in this specific format")]
 #[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct MasterPasswordPolicy {
     min_complexity: Option<u8>,
     min_length: Option<u32>,
@@ -96,7 +96,7 @@ pub struct MasterPasswordPolicy {
 
 // Fetch all valid Master Password Policies and merge them into one with all trues and largest numbers as one policy
 async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
-    let master_password_policies: Vec<MasterPasswordPolicy> =
+    let mut master_password_policies: Vec<MasterPasswordPolicy> =
         OrgPolicy::find_accepted_and_confirmed_by_user_and_active_policy(
             &user.uuid,
             OrgPolicyType::MasterPassword,
@@ -106,6 +106,13 @@ async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
         .into_iter()
         .filter_map(|p| serde_json::from_str(&p.data).ok())
         .collect();
+
+    // The global policy applies to all users, on top of whatever their organizations require
+    if let Some(global_policy) = CONFIG.master_password_policy_value()
+        && let Ok(global_policy) = serde_json::from_value::<MasterPasswordPolicy>(global_policy)
+    {
+        master_password_policies.push(global_policy);
+    }
 
     let mut mpp_json = if !master_password_policies.is_empty() {
         json!(master_password_policies.into_iter().reduce(|acc, policy| {

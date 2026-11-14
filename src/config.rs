@@ -632,6 +632,11 @@ make_config! {
         /// This setting applies globally to all users.
         incomplete_2fa_time_limit: u16, true,   def,    3;
 
+        /// Master password policy |> Optional global master password policy, enforced for all users
+        /// in addition to any organization policies. Uses the same JSON format as the SSO master
+        /// password policy. Ex format: '{"enforceOnLogin":false,"minComplexity":3,"minLength":12,"requireLower":false,"requireNumbers":false,"requireSpecial":false,"requireUpper":false}'
+        master_password_policy: String, true,   option;
+
         /// Disable icon downloads |> Set to true to disable icon downloading in the internal icon service.
         /// This still serves existing icons from $ICON_CACHE_FOLDER, without generating any external
         /// network requests. $ICON_CACHE_TTL must also be set to 0; otherwise, the existing icons
@@ -1162,8 +1167,10 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
 
         validate_internal_sso_issuer_url(&cfg.sso_authority)?;
         validate_internal_sso_redirect_url(&cfg.sso_callback_path)?;
-        validate_sso_master_password_policy(cfg.sso_master_password_policy.as_ref())?;
+        validate_master_password_policy("sso_master_password_policy", cfg.sso_master_password_policy.as_ref())?;
     }
+
+    validate_master_password_policy("master_password_policy", cfg.master_password_policy.as_ref())?;
 
     if cfg._enable_yubico {
         if cfg.yubico_client_id.is_some() != cfg.yubico_secret_key.is_some() {
@@ -1393,17 +1400,18 @@ fn validate_internal_sso_redirect_url(sso_callback_path: &String) -> Result<open
     }
 }
 
-fn validate_sso_master_password_policy(
-    sso_master_password_policy: Option<&String>,
+fn validate_master_password_policy(
+    setting_name: &str,
+    master_password_policy: Option<&String>,
 ) -> Result<Option<serde_json::Value>, Error> {
-    let policy = sso_master_password_policy.as_ref().map(|mpp| serde_json::from_str::<serde_json::Value>(mpp));
+    let policy = master_password_policy.as_ref().map(|mpp| serde_json::from_str::<serde_json::Value>(mpp));
 
     match policy {
         None => Ok(None),
         Some(Ok(jsobject @ serde_json::Value::Object(_))) => Ok(Some(jsobject)),
-        Some(Ok(_)) => err!("Invalid sso_master_password_policy: parsed value is not a JSON object"),
+        Some(Ok(_)) => err!(format!("Invalid {setting_name}: parsed value is not a JSON object")),
         Some(Err(error)) => {
-            err!(format!("Invalid sso_master_password_policy ({error}), Ensure that it's correctly escaped with ''"))
+            err!(format!("Invalid {setting_name} ({error}), Ensure that it's correctly escaped with ''"))
         }
     }
 }
@@ -1778,7 +1786,13 @@ impl Config {
     }
 
     pub fn sso_master_password_policy_value(&self) -> Option<serde_json::Value> {
-        validate_sso_master_password_policy(self.sso_master_password_policy().as_ref()).ok().flatten()
+        validate_master_password_policy("sso_master_password_policy", self.sso_master_password_policy().as_ref())
+            .ok()
+            .flatten()
+    }
+
+    pub fn master_password_policy_value(&self) -> Option<serde_json::Value> {
+        validate_master_password_policy("master_password_policy", self.master_password_policy().as_ref()).ok().flatten()
     }
 
     pub fn sso_scopes_vec(&self) -> Vec<String> {
