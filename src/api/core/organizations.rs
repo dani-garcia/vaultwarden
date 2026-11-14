@@ -1081,6 +1081,18 @@ fn custom_member_manages(target_type: i32) -> bool {
     target_type == MembershipType::User || target_type == MembershipType::Custom
 }
 
+/// Whether a member of `caller_type` may manage the members of `target_type`, as in Bitwarden: Owners every role,
+/// Admins every role but Owner, and Custom members with Manage users only Users and Custom members.
+fn check_role_manageable(caller_type: MembershipType, target_type: i32) -> EmptyResult {
+    match caller_type {
+        MembershipType::Owner => Ok(()),
+        MembershipType::Admin if target_type != MembershipType::Owner => Ok(()),
+        MembershipType::Custom if custom_member_manages(target_type) => Ok(()),
+        _ if target_type == MembershipType::Owner => err!("Only Owners can manage Owners"),
+        _ => err!("You can only manage Users and Custom members"),
+    }
+}
+
 /// Manage users controls member access to any collection in their organization, separately from editing its metadata.
 fn custom_member_may_assign_collection(caller: &Membership, collection: &Collection) -> bool {
     caller.org_uuid == collection.org_uuid && caller.has_custom_permission(CustomPermission::ManageUsers)
@@ -1144,13 +1156,7 @@ async fn send_invite(
     };
     let new_type = MembershipType::requested(requested_type, None, custom_permissions.as_ref());
 
-    // Admins and Custom members with Manage users may invite Custom members as well
-    if new_type != MembershipType::User
-        && new_type != MembershipType::Custom
-        && headers.membership_type != MembershipType::Owner
-    {
-        err!("Only Owners can invite Managers, Admins or Owners")
-    }
+    check_role_manageable(headers.membership_type, new_type as i32)?;
     if headers.membership_type == MembershipType::Custom {
         let collections: Vec<&CollectionId> = data.collections.iter().flatten().map(|c| &c.id).collect();
         let groups = data.groups.iter().cloned().collect();
@@ -1537,13 +1543,7 @@ async fn confirm_invite_impl(
         err!("The specified user isn't a member of the organization")
     };
 
-    if member_to_confirm.atype != MembershipType::User
-        && member_to_confirm.atype != MembershipType::Custom
-        && headers.membership_type != MembershipType::Owner
-        && headers.membership_type != MembershipType::Custom
-    {
-        err!("Only Owners can confirm Managers, Admins or Owners")
-    }
+    // As in Bitwarden, confirming is open to everyone managing the members, whatever the role of the member
 
     if member_to_confirm.status != MembershipStatus::Accepted as i32 {
         err!("User in invalid state")
@@ -1692,16 +1692,9 @@ async fn edit_member(
             && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
             && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
-    if new_type != member_to_edit.atype
-        && (member_to_edit.atype >= MembershipType::Admin || new_type >= MembershipType::Admin)
-        && headers.membership_type != MembershipType::Owner
-    {
-        err!("Only Owners can grant and remove Admin or Owner privileges")
-    }
-
-    if member_to_edit.atype == MembershipType::Owner && headers.membership_type != MembershipType::Owner {
-        err!("Only Owners can edit Owner users")
-    }
+    // Both the current and the requested role must be one the caller may manage
+    check_role_manageable(headers.membership_type, member_to_edit.atype)?;
+    check_role_manageable(headers.membership_type, new_type as i32)?;
 
     if member_to_edit.atype == MembershipType::Owner
         && new_type != MembershipType::Owner
@@ -1713,12 +1706,9 @@ async fn edit_member(
         }
     }
 
-    // A Custom member with Manage users only manages Users and Custom members, and only gives what they have
-    // themselves. Manage users authorizes member access to every collection in this organization.
+    // A Custom member with Manage users only gives what they have themselves. Manage users authorizes member access
+    // to every collection in this organization.
     if headers.membership_type == MembershipType::Custom {
-        if !custom_member_manages(member_to_edit.atype) || !custom_member_manages(new_type as i32) {
-            err!("You can only manage Users and Custom members")
-        }
         let collections: Vec<&CollectionId> = data.collections.iter().flatten().map(|c| &c.id).collect();
         let groups = data.groups.iter().flatten().cloned().collect();
         check_custom_member_grants(
@@ -1854,12 +1844,11 @@ async fn delete_member_impl(
         err!("User to delete isn't member of the organization")
     };
 
-    if member_to_delete.atype != MembershipType::User
-        && member_to_delete.atype != MembershipType::Custom
-        && headers.membership_type != MembershipType::Owner
-    {
-        err!("Only Owners can delete Admins or Owners")
+    // As in Bitwarden, leaving the organization is its own route
+    if member_to_delete.user_uuid == headers.user.uuid {
+        err!("You cannot remove yourself")
     }
+    check_role_manageable(headers.membership_type, member_to_delete.atype)?;
 
     if member_to_delete.atype == MembershipType::Owner && member_to_delete.status == MembershipStatus::Confirmed as i32
     {
