@@ -26,11 +26,12 @@ def main() -> int:
         print("no master password")
         return SKIP
 
-    # Without attachments: the rotation test compares the vault before and after, and our sync gives each attachment
-    # a link with a fresh download token every time (upstream's is the same on every sync). A vector's legacy
-    # attachments, without a key of their own, would also make the SDK refuse to rotate at all.
+    # Without the legacy attachments that have no key of their own: the SDK refuses to rotate a vault holding one
+    # (`OldAttachments`), on any server.
     for cipher in vector.get("vault", {}).get("ciphers", []):
-        cipher.get("encrypted", {}).pop("attachments", None)
+        encrypted = cipher.get("encrypted", {})
+        if encrypted.get("attachments"):
+            encrypted["attachments"] = [a for a in encrypted["attachments"] if a.get("key")] or None
 
     credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
     request = urllib.request.Request(
