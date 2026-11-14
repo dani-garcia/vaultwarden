@@ -105,7 +105,8 @@ jobs:
             rustup component add rust-src
           fi
 
-      # One cache per SDK source, so that neither restores the other's
+      # One cache per SDK source, so that neither restores the other's.
+      # Only save caches on main to save cache space.
       - name: "Cache Rust builds"
         if: ${{ steps.sdk.outputs.source == 'npm' }}
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -113,6 +114,7 @@ jobs:
           key: sdk-live-tests-npm
           add-job-id-key: false
           workspaces: ". -> target"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: "Cache Rust builds (with the SDK)"
         if: ${{ steps.sdk.outputs.source == 'git' }}
@@ -123,6 +125,7 @@ jobs:
           workspaces: |
             . -> target
             sdk-internal -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: "Setup Node"
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
