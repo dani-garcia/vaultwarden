@@ -27,14 +27,14 @@ use rocket::{
 
 use crate::{
     CONFIG,
-    api::{ApiResult, core::log_event},
+    api::ApiResult,
     config::PathType,
     db::{
         DbConn,
         models::{
             AttachmentId, CipherId, Collection, CollectionId, CustomPermission, Device, DeviceId, DeviceType,
-            EmergencyAccessId, EventType, Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId,
-            OrganizationId, SendFileId, SendId, User, UserId, custom_roles_enabled,
+            EmergencyAccessId, Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, OrganizationId,
+            SendFileId, SendId, User, UserId, custom_roles_enabled,
         },
     },
     error::Error,
@@ -854,12 +854,6 @@ pub struct AdminHeaders {
     pub org_id: OrganizationId,
 }
 
-impl AdminHeaders {
-    pub async fn log_event(&self, event_type: EventType, source_uuid: &str, org_id: &OrganizationId, conn: &DbConn) {
-        log_event(event_type, source_uuid, org_id, &self.user.uuid, self.device.atype, &self.ip.ip, conn).await;
-    }
-}
-
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for AdminHeaders {
     type Error = &'static str;
@@ -946,6 +940,11 @@ permission_headers!(
     /// For the routes that export the vault of an organization.
     AccessImportExportHeaders,
     CustomPermission::AccessImportExport
+);
+permission_headers!(
+    /// For the routes that recover the accounts of the members of an organization.
+    ManageResetPasswordHeaders,
+    CustomPermission::ManageResetPassword
 );
 
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),

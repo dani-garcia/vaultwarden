@@ -13,8 +13,9 @@ use crate::{
     },
     auth::{
         AccessImportExportHeaders, AdminHeaders, CollectionAction, CollectionDeleteHeaders, CollectionReadHeaders,
-        CollectionUsersReadHeaders, Headers, ManageGroupsHeaders, ManagePoliciesHeaders, ManageUsersHeaders,
-        ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, custom_member_may, decode_invite,
+        CollectionUsersReadHeaders, Headers, ManageGroupsHeaders, ManagePoliciesHeaders, ManageResetPasswordHeaders,
+        ManageUsersHeaders, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, custom_member_may,
+        decode_invite,
     },
     db::{
         DbConn,
@@ -1007,13 +1008,18 @@ async fn get_members(
         err!("Organization not found", "Organization id's do not match");
     }
 
-    if !headers.membership.has_full_access() && !headers.membership.has_custom_permission(CustomPermission::ManageUsers)
-    {
+    // As in Bitwarden, Manage account recovery alone only lists the members whose account it can recover
+    let recovery_only = !headers.membership.has_full_access()
+        && !headers.membership.has_custom_permission(CustomPermission::ManageUsers);
+    if recovery_only && !headers.membership.has_custom_permission(CustomPermission::ManageResetPassword) {
         err_code!("Resource not found.", "User does not have full access", Status::NotFound.code);
     }
 
     let mut users_json = Vec::new();
     for u in Membership::find_by_org(&org_id, &conn).await {
+        if recovery_only && (!u.has_status(MembershipStatus::Confirmed) || u.reset_password_key.is_none()) {
+            continue;
+        }
         // The user can be a manager instead of an admin, but we've checked above that they have full access
         users_json.push(
             u.to_json_details_for_admin(
@@ -1036,7 +1042,7 @@ async fn get_members(
 async fn post_org_keys(
     org_id: OrganizationId,
     data: Json<OrgKeyData>,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2883,9 +2889,10 @@ async fn get_groups_data(
             || headers.membership.has_custom_permission(CustomPermission::ManageUsers)
             || headers.membership.has_custom_permission(CustomPermission::ManageGroups)
     } else {
-        // Reports need the basic group list, not group details or management rights.
+        // Reports and account recovery need the basic group list, not group details or management rights.
         has_full_access
             || headers.membership.has_custom_permission(CustomPermission::AccessReports)
+            || headers.membership.has_custom_permission(CustomPermission::ManageResetPassword)
             || may_assign_collection_access(&headers.membership, &conn).await
     };
     if !allowed {
@@ -3322,7 +3329,7 @@ async fn get_organization_keys(org_id: OrganizationId, headers: Headers, conn: D
 async fn put_recover_account(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     data: Json<OrganizationUserRecoverAccountRequest>,
     conn: DbConn,
     nt: Notify<'_>,
@@ -3333,7 +3340,7 @@ async fn put_recover_account(
 async fn recover_account(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     req: OrganizationUserRecoverAccountRequest,
     conn: DbConn,
     nt: Notify<'_>,
@@ -3353,7 +3360,7 @@ async fn recover_account(
         err!("User not found")
     };
 
-    check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers, &conn).await?;
+    check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers.membership, &conn).await?;
 
     if member.reset_password_key.is_none() {
         err!("Password reset not or not correctly enrolled");
@@ -3423,12 +3430,14 @@ async fn recover_account(
 
     nt.send_logout(&user, None, &conn).await;
 
-    if req.reset_master_password {
-        headers.log_event(EventType::OrganizationUserAdminResetPassword, &member_id, &org_id, &conn).await;
-    }
-
-    if req.reset_two_factor {
-        headers.log_event(EventType::OrganizationUserAdminResetTwoFactor, &member_id, &org_id, &conn).await;
+    for (reset, event_type) in [
+        (req.reset_master_password, EventType::OrganizationUserAdminResetPassword),
+        (req.reset_two_factor, EventType::OrganizationUserAdminResetTwoFactor),
+    ] {
+        if reset {
+            log_event(event_type, &member_id, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
+                .await;
+        }
     }
 
     Ok(())
@@ -3599,7 +3608,7 @@ async fn get_organization_private_key(org_id: OrganizationId, headers: ManageUse
 async fn get_reset_password_details(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -3617,7 +3626,7 @@ async fn get_reset_password_details(
         err!("User not found")
     };
 
-    check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers, &conn).await?;
+    check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers.membership, &conn).await?;
 
     // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/Organizations/OrganizationUserResponseModel.cs#L190
     Ok(Json(json!({
@@ -3636,7 +3645,7 @@ async fn get_reset_password_details(
 async fn check_reset_password_applicable_and_permissions(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    headers: &AdminHeaders,
+    caller: &Membership,
     conn: &DbConn,
 ) -> EmptyResult {
     check_reset_password_applicable(org_id, conn).await?;
@@ -3645,11 +3654,25 @@ async fn check_reset_password_applicable_and_permissions(
         err!("Reset target user not found")
     };
 
-    // Resetting user must be higher/equal to user to reset
-    match headers.membership_type {
-        MembershipType::Owner => Ok(()),
-        MembershipType::Admin if target_user.atype <= MembershipType::Admin => Ok(()),
-        _ => err!("No permission to reset this user's password"),
+    if may_recover_account(caller, &target_user) {
+        Ok(())
+    } else {
+        err!("No permission to reset this user's password")
+    }
+}
+
+/// Whether `caller` may recover the account of `target`, who must not have more authority, as in Bitwarden: Owners
+/// may recover every member, Admins every member but Owners, and Custom members with Manage account recovery Users
+/// and the Custom members whose permissions they all have.
+fn may_recover_account(caller: &Membership, target: &Membership) -> bool {
+    if caller.has_type(MembershipType::Owner) {
+        true
+    } else if caller.has_type(MembershipType::Admin) {
+        target.atype <= MembershipType::Admin
+    } else {
+        caller.has_custom_permission(CustomPermission::ManageResetPassword)
+            && custom_member_manages(target.atype)
+            && caller.has_custom_permissions_of(target)
     }
 }
 
@@ -4033,6 +4056,56 @@ mod tests {
                         .is_err()
                 );
             }
+        });
+    }
+
+    #[cfg(sqlite)]
+    #[test]
+    fn account_recovery_authorization() {
+        test_db::run(async |db| {
+            use CustomPermission::{ManageResetPassword, ManageUsers};
+            use MembershipType::*;
+            let conn = db.conn();
+            let org = test_db::organization(&conn).await;
+            let mut members = Vec::new();
+            for (role, permissions) in [
+                (Owner, vec![]),
+                (Admin, vec![]),
+                (Manager, vec![]),
+                (User, vec![]),
+                (Custom, vec![ManageResetPassword]),
+                (Custom, vec![ManageResetPassword, ManageUsers]),
+            ] {
+                members.push(test_db::member(&conn, &org.uuid, role, &permissions).await.1);
+            }
+            // Who may recover whom: a row per caller, a column per target, both in the order above
+            for (caller, row) in members.iter().zip(["111111", "011111", "000000", "000000", "000110", "000111"]) {
+                for (target, allowed) in members.iter().zip(row.chars()) {
+                    assert_eq!(
+                        may_recover_account(caller, target),
+                        allowed == '1',
+                        "{} {}",
+                        caller.atype,
+                        target.atype
+                    );
+                }
+            }
+            // Manage account recovery alone lists only the confirmed members enrolled in account recovery
+            for (i, status) in [(2, MembershipStatus::Accepted), (3, MembershipStatus::Confirmed)] {
+                members[i].status = status as i32;
+                members[i].reset_password_key = Some("key".into());
+                members[i].save(&conn).await.unwrap();
+            }
+            let data = GetOrgUserData {
+                include_collections: None,
+                include_groups: None,
+            };
+            let users = get_members(data, org.uuid.clone(), directory_headers(&members[4], &conn).await, db.conn());
+            assert_eq!(
+                users.await.unwrap().0["data"],
+                json!([members[3].to_json_details_for_admin(false, false, &conn).await])
+            );
+            assert!(get_groups(org.uuid.clone(), directory_headers(&members[4], &conn).await, db.conn()).await.is_ok());
         });
     }
 }
