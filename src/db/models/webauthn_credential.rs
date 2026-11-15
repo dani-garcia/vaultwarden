@@ -290,8 +290,8 @@ mod tests {
     use super::*;
     use crate::db::{models::User, test_db};
 
-    /// A passkey as webauthn-rs stores it, from its own test data
-    const PASSKEY: &str = r#"{"cred":{"cred_id":"uZcVDBVS68E_MtAgeQpElJxldF_6cY9sSvbWqx_qRh8wiu42lyRBRmh5yFeD_r9k130dMbFHBHI9RTFgdJQIzQ","cred":{"type_":"ES256","key":{"EC_EC2":{"curve":"SECP256R1","x":[194,126,127,109,252,23,131,21,252,6,223,99,44,254,140,27,230,17,94,5,133,28,104,41,144,69,171,149,161,26,200,243],"y":[143,123,183,156,24,178,21,248,117,159,162,69,171,52,188,252,26,59,6,47,103,92,19,58,117,103,249,0,219,8,95,196]}}},"counter":2,"user_verified":true,"backup_eligible":false,"backup_state":false,"registration_policy":"required","extensions":{"cred_protect":"NotRequested","hmac_create_secret":"NotRequested"},"attestation":{"data":"None","metadata":"None"},"attestation_format":"None"}}"#;
+    /// A passkey as webauthn-rs stores it, with the key from its own test data
+    const PASSKEY: &str = r#"{"cred":{"cred_id":"dmF1bHR3YXJkZW4gdGVzdCBwYXNza2V5","cred":{"type_":"ES256","key":{"EC_EC2":{"curve":"SECP256R1","x":[194,126,127,109,252,23,131,21,252,6,223,99,44,254,140,27,230,17,94,5,133,28,104,41,144,69,171,149,161,26,200,243],"y":[143,123,183,156,24,178,21,248,117,159,162,69,171,52,188,252,26,59,6,47,103,92,19,58,117,103,249,0,219,8,95,196]}}},"counter":2,"user_verified":true,"backup_eligible":false,"backup_state":false,"registration_policy":"required","extensions":{"cred_protect":"NotRequested","hmac_create_secret":"NotRequested"},"attestation":{"data":"None","metadata":"None"},"attestation_format":"None"}}"#;
 
     #[test]
     fn assertions_are_single_use_and_key_writes_leave_the_rest() {
