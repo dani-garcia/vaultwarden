@@ -51,7 +51,7 @@ impl Device {
 
             push_uuid: Some(PushId(get_uuid())),
             push_token: None,
-            refresh_token: Device::generate_refresh_token(),
+            refresh_token: Self::generate_refresh_token(),
             twofactor_remember: None,
         }
     }
@@ -268,7 +268,7 @@ impl Device {
         // We cannot do a single UPDATE with one value because each device needs a unique token.
         let devices = Self::find_by_user(user_uuid, conn).await;
         for mut device in devices {
-            device.refresh_token = Device::generate_refresh_token();
+            device.refresh_token = Self::generate_refresh_token();
             device.twofactor_remember = None;
             device.save(false, conn).await?;
         }
@@ -347,36 +347,36 @@ pub enum DeviceType {
 
 impl DeviceType {
     #[expect(clippy::match_same_arms, reason = "Specifically define 14 and have a fallback for new types")]
-    pub fn from_i32(value: i32) -> DeviceType {
+    pub fn from_i32(value: i32) -> Self {
         match value {
-            0 => DeviceType::Android,
-            1 => DeviceType::Ios,
-            2 => DeviceType::ChromeExtension,
-            3 => DeviceType::FirefoxExtension,
-            4 => DeviceType::OperaExtension,
-            5 => DeviceType::EdgeExtension,
-            6 => DeviceType::WindowsDesktop,
-            7 => DeviceType::MacOsDesktop,
-            8 => DeviceType::LinuxDesktop,
-            9 => DeviceType::ChromeBrowser,
-            10 => DeviceType::FirefoxBrowser,
-            11 => DeviceType::OperaBrowser,
-            12 => DeviceType::EdgeBrowser,
-            13 => DeviceType::IEBrowser,
-            14 => DeviceType::UnknownBrowser,
-            15 => DeviceType::AndroidAmazon,
-            16 => DeviceType::Uwp,
-            17 => DeviceType::SafariBrowser,
-            18 => DeviceType::VivaldiBrowser,
-            19 => DeviceType::VivaldiExtension,
-            20 => DeviceType::SafariExtension,
-            21 => DeviceType::Sdk,
-            22 => DeviceType::Server,
-            23 => DeviceType::WindowsCLI,
-            24 => DeviceType::MacOsCLI,
-            25 => DeviceType::LinuxCLI,
-            26 => DeviceType::DuckDuckGoBrowser,
-            _ => DeviceType::UnknownBrowser,
+            0 => Self::Android,
+            1 => Self::Ios,
+            2 => Self::ChromeExtension,
+            3 => Self::FirefoxExtension,
+            4 => Self::OperaExtension,
+            5 => Self::EdgeExtension,
+            6 => Self::WindowsDesktop,
+            7 => Self::MacOsDesktop,
+            8 => Self::LinuxDesktop,
+            9 => Self::ChromeBrowser,
+            10 => Self::FirefoxBrowser,
+            11 => Self::OperaBrowser,
+            12 => Self::EdgeBrowser,
+            13 => Self::IEBrowser,
+            14 => Self::UnknownBrowser,
+            15 => Self::AndroidAmazon,
+            16 => Self::Uwp,
+            17 => Self::SafariBrowser,
+            18 => Self::VivaldiBrowser,
+            19 => Self::VivaldiExtension,
+            20 => Self::SafariExtension,
+            21 => Self::Sdk,
+            22 => Self::Server,
+            23 => Self::WindowsCLI,
+            24 => Self::MacOsCLI,
+            25 => Self::LinuxCLI,
+            26 => Self::DuckDuckGoBrowser,
+            _ => Self::UnknownBrowser,
         }
     }
 }

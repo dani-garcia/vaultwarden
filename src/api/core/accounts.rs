@@ -166,8 +166,8 @@ impl RegisterDataCompat {
         fcu: impl FnOnce(&'a RegisterDataCur) -> &'a T,
     ) -> &'a T {
         match self {
-            RegisterDataCompat::RegisterDataOld(rdc) => fct(rdc),
-            RegisterDataCompat::RegisterDataCur(rdcu) => fcu(rdcu),
+            Self::RegisterDataOld(rdc) => fct(rdc),
+            Self::RegisterDataCur(rdcu) => fcu(rdcu),
         }
     }
 
@@ -186,8 +186,8 @@ impl RegisterDataCompat {
     /// The id of the user key, which only the current format carries.
     fn key_id(&self) -> Option<KeyId> {
         match self {
-            RegisterDataCompat::RegisterDataOld(_) => None,
-            RegisterDataCompat::RegisterDataCur(rdcu) => rdcu.master_password_unlock.contained_key_id.clone(),
+            Self::RegisterDataOld(_) => None,
+            Self::RegisterDataCur(rdcu) => rdcu.master_password_unlock.contained_key_id.clone(),
         }
     }
 
@@ -299,7 +299,7 @@ impl AccountKeysData {
         }
         if let Some(security_state) = &self.security_state {
             required(Some(security_state.security_state.clone()), "SecurityState")?;
-            if security_state.security_state.encode_utf16().count() > 10_000 {
+            if security_state.security_state.encode_utf16().nth(10_000).is_some() {
                 err!("The field SecurityState must be a string with a maximum length of 10000.")
             }
         }
@@ -709,7 +709,7 @@ async fn post_set_password(data: Json<Value>, headers: Headers, conn: DbConn) ->
     let Ok(data) = serde_json::from_value::<SetPasswordData>(data) else {
         err_code!("Unexpected SetPasswordData format", Status::UnprocessableEntity.code)
     };
-    if data.master_password_hint.as_ref().is_some_and(|h| h.encode_utf16().count() > 50) {
+    if data.master_password_hint.as_ref().is_some_and(|h| h.encode_utf16().nth(50).is_some()) {
         err!("The field MasterPasswordHint must be a string with a maximum length of 50.")
     }
     let mut user = headers.user;
@@ -1373,7 +1373,6 @@ fn validate_rotation_data(
     existing_sends: &[Send],
 ) -> EmptyResult {
     // Check that we're correctly rotating all the user's ciphers
-    let existing_cipher_ids = existing_ciphers.iter().map(|c| &c.uuid).collect::<HashSet<&CipherId>>();
     let provided_cipher_ids = data
         .account_data
         .ciphers
@@ -1381,44 +1380,38 @@ fn validate_rotation_data(
         .filter(|c| c.organization_id.is_none())
         .filter_map(|c| c.id.as_ref())
         .collect::<HashSet<&CipherId>>();
-    if !provided_cipher_ids.is_superset(&existing_cipher_ids) {
+    if existing_ciphers.iter().any(|c| !provided_cipher_ids.contains(&c.uuid)) {
         err!("All existing ciphers must be included in the rotation")
     }
 
     // Check that we're correctly rotating all the user's folders
-    let existing_folder_ids = existing_folders.iter().map(|f| &f.uuid).collect::<HashSet<&FolderId>>();
     let provided_folder_ids =
         data.account_data.folders.iter().filter_map(|f| f.id.as_ref()).collect::<HashSet<&FolderId>>();
-    if !provided_folder_ids.is_superset(&existing_folder_ids) {
+    if existing_folders.iter().any(|f| !provided_folder_ids.contains(&f.uuid)) {
         err!("All existing folders must be included in the rotation")
     }
 
     // Check that we're correctly rotating all the user's emergency access keys
-    let existing_emergency_access_ids =
-        existing_emergency_access.iter().map(|ea| &ea.uuid).collect::<HashSet<&EmergencyAccessId>>();
     let provided_emergency_access_ids =
         data.unlock_data.emergency_access_unlock_data.iter().map(|ea| &ea.id).collect::<HashSet<&EmergencyAccessId>>();
-    if !provided_emergency_access_ids.is_superset(&existing_emergency_access_ids) {
+    if existing_emergency_access.iter().any(|ea| !provided_emergency_access_ids.contains(&ea.uuid)) {
         err!("All existing emergency access keys must be included in the rotation")
     }
 
     // Check that we're correctly rotating all the user's reset password keys
-    let existing_reset_password_ids =
-        existing_memberships.iter().map(|m| &m.org_uuid).collect::<HashSet<&OrganizationId>>();
     let provided_reset_password_ids = data
         .unlock_data
         .organization_account_recovery_unlock_data
         .iter()
         .map(|rp| &rp.organization_id)
         .collect::<HashSet<&OrganizationId>>();
-    if !provided_reset_password_ids.is_superset(&existing_reset_password_ids) {
+    if existing_memberships.iter().any(|m| !provided_reset_password_ids.contains(&m.org_uuid)) {
         err!("All existing reset password keys must be included in the rotation")
     }
 
     // Check that we're correctly rotating all the user's sends
-    let existing_send_ids = existing_sends.iter().map(|s| &s.uuid).collect::<HashSet<&SendId>>();
     let provided_send_ids = data.account_data.sends.iter().filter_map(|s| s.id.as_ref()).collect::<HashSet<&SendId>>();
-    if !provided_send_ids.is_superset(&existing_send_ids) {
+    if existing_sends.iter().any(|s| !provided_send_ids.contains(&s.uuid)) {
         err!("All existing sends must be included in the rotation")
     }
 
@@ -1503,7 +1496,7 @@ struct RotateData {
 
 /// Upstream's `[StringLength(max)]`, which counts UTF-16 code units.
 fn validate_max_length(value: &str, max: usize, field: &str) -> EmptyResult {
-    if value.encode_utf16().count() > max {
+    if value.encode_utf16().nth(max).is_some() {
         err!(format!("The field {field} must be a string with a maximum length of {max}."))
     }
     Ok(())
@@ -1544,7 +1537,7 @@ impl MasterPasswordUnlockData {
         if let Some(hint) = &self.master_password_hint {
             validate_max_length(hint, 50, "MasterPasswordHint")?;
         }
-        if self.master_password_salt.as_ref().is_some_and(|salt| salt.encode_utf16().count() > 256) {
+        if self.master_password_salt.as_ref().is_some_and(|salt| salt.encode_utf16().nth(256).is_some()) {
             err!("The field MasterPasswordSalt must be a string or array type with a maximum length of '256'.")
         }
         Ok(())
@@ -2194,7 +2187,7 @@ async fn password_hint(data: Json<PasswordHintData>, ip: ClientIp, conn: DbConn)
                 use rand::{RngExt, rngs::SmallRng};
                 let mut rng: SmallRng = rand::make_rng();
                 let sleep_ms: u64 = rng.random_range(900..=1100);
-                tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
                 Ok(())
             } else {
                 err!(NO_HINT);
@@ -2371,7 +2364,7 @@ impl<'r> FromRequest<'r> for KnownDevice {
             return Outcome::Error((Status::BadRequest, "X-Device-Identifier value is required"));
         };
 
-        Outcome::Success(KnownDevice {
+        Outcome::Success(Self {
             email,
             uuid,
         })

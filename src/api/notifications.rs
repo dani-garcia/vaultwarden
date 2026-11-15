@@ -615,12 +615,11 @@ impl AnonymousWebSocketSubscriptions {
 
     /// Releases a slot taken by `try_reserve`.
     fn release(&self, addr: IpAddr) {
-        let empty = if let Some(mut count) = self.connections.get_mut(&addr) {
-            *count = count.saturating_sub(1);
-            *count == 0
-        } else {
-            false
-        };
+        let empty = self.connections.get_mut(&addr).is_some_and(|mut c| {
+            *c = c.saturating_sub(1);
+            *c == 0
+        });
+
         // Only remove once the guard above is dropped, otherwise this deadlocks.
         if empty {
             self.connections.remove_if(&addr, |_, count| *count == 0);
@@ -629,7 +628,7 @@ impl AnonymousWebSocketSubscriptions {
 
     async fn send_update(&self, token: &str, data: &[u8]) {
         // Clone the senders so the map isn't kept locked while sending.
-        let senders = self.map.get(token).map(|v| v.clone()).unwrap_or_default();
+        let senders = self.map.get(token).map_or_default(|v| v.clone());
         for (_, sender) in senders {
             if let Err(e) = sender.send(Message::binary(data)).await {
                 error!("Error sending WS update {e}");

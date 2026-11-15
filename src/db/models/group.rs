@@ -112,10 +112,7 @@ impl Group {
 
     pub fn set_external_id(&mut self, external_id: Option<String>) {
         // Check if external_id is empty. We do not want to have empty strings in the database
-        self.external_id = match external_id {
-            Some(external_id) if !external_id.trim().is_empty() => Some(external_id),
-            _ => None,
-        };
+        self.external_id = external_id.filter(|e| !e.trim().is_empty());
     }
 }
 
@@ -315,7 +312,7 @@ impl Group {
 }
 
 impl CollectionGroup {
-    pub async fn save(&mut self, org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
         let group_users = GroupUser::find_by_group(&self.groups_uuid, org_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
@@ -448,7 +445,7 @@ impl CollectionGroup {
         org_uuid: &OrganizationId,
         conn: &DbConn,
     ) -> EmptyResult {
-        let collection_assigned_to_groups = CollectionGroup::find_by_collection(collection_uuid, conn).await;
+        let collection_assigned_to_groups = Self::find_by_collection(collection_uuid, conn).await;
         for collection_assigned_to_group in collection_assigned_to_groups {
             let group_users = GroupUser::find_by_group(&collection_assigned_to_group.groups_uuid, org_uuid, conn).await;
             for group_user in group_users {
@@ -467,7 +464,7 @@ impl CollectionGroup {
 }
 
 impl GroupUser {
-    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         self.update_user_revision(conn).await;
 
         let values = (
@@ -574,7 +571,7 @@ impl GroupUser {
     }
 
     pub async fn delete_all_by_group(group_uuid: &GroupId, org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
-        let group_users = GroupUser::find_by_group(group_uuid, org_uuid, conn).await;
+        let group_users = Self::find_by_group(group_uuid, org_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
         }

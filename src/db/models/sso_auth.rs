@@ -67,7 +67,7 @@ impl SsoAuth {
     ) -> Self {
         let now = Utc::now().naive_utc();
 
-        SsoAuth {
+        Self {
             state,
             client_challenge,
             nonce,
