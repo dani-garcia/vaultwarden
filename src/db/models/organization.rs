@@ -81,6 +81,7 @@ pub struct Membership {
     access_event_logs: bool,
     access_import_export: bool,
     access_reports: bool,
+    manage_reset_password: bool,
 
     /// The user's v2 upgrade token, for the org to unwrap the v2 user key after an upgrade. Opaque to us.
     pub v2_upgrade_token: Option<String>,
@@ -254,6 +255,7 @@ pub enum CustomPermission {
     AccessEventLogs,
     AccessImportExport,
     AccessReports,
+    ManageResetPassword,
 }
 
 /// The permissions this version enforces on every endpoint they open. Only these can be granted, a stored
@@ -269,10 +271,11 @@ const SUPPORTED_CUSTOM_PERMISSIONS: &[CustomPermission] = &[
     CustomPermission::AccessEventLogs,
     CustomPermission::AccessImportExport,
     CustomPermission::AccessReports,
+    CustomPermission::ManageResetPassword,
 ];
 
 impl CustomPermission {
-    pub const ALL: [CustomPermission; 9] = [
+    pub const ALL: [CustomPermission; 10] = [
         CustomPermission::ManageUsers,
         CustomPermission::ManageGroups,
         CustomPermission::ManagePolicies,
@@ -282,6 +285,7 @@ impl CustomPermission {
         CustomPermission::AccessEventLogs,
         CustomPermission::AccessImportExport,
         CustomPermission::AccessReports,
+        CustomPermission::ManageResetPassword,
     ];
 
     /// The key of the permission in the `permissions` object of the Bitwarden clients.
@@ -296,6 +300,7 @@ impl CustomPermission {
             CustomPermission::AccessEventLogs => "accessEventLogs",
             CustomPermission::AccessImportExport => "accessImportExport",
             CustomPermission::AccessReports => "accessReports",
+            CustomPermission::ManageResetPassword => "manageResetPassword",
         }
     }
 
@@ -468,6 +473,7 @@ impl Membership {
             access_event_logs: false,
             access_import_export: false,
             access_reports: false,
+            manage_reset_password: false,
 
             v2_upgrade_token: None,
         }
@@ -484,6 +490,7 @@ impl Membership {
             CustomPermission::AccessEventLogs => &mut self.access_event_logs,
             CustomPermission::AccessImportExport => &mut self.access_import_export,
             CustomPermission::AccessReports => &mut self.access_reports,
+            CustomPermission::ManageResetPassword => &mut self.manage_reset_password,
         }
     }
 
@@ -553,6 +560,7 @@ impl Membership {
             CustomPermission::AccessEventLogs => self.access_event_logs,
             CustomPermission::AccessImportExport => self.access_import_export,
             CustomPermission::AccessReports => self.access_reports,
+            CustomPermission::ManageResetPassword => self.manage_reset_password,
         }
     }
 
@@ -569,6 +577,12 @@ impl Membership {
     /// other role, it needs a confirmed membership.
     pub fn has_custom_permission(&self, permission: CustomPermission) -> bool {
         self.has_status(MembershipStatus::Confirmed) && self.grants_custom_permission(permission)
+    }
+
+    /// Whether this member may act with every Custom role permission stored for `other`, as Bitwarden's
+    /// `Permissions.Includes`.
+    pub fn has_custom_permissions_of(&self, other: &Membership) -> bool {
+        CustomPermission::ALL.into_iter().all(|p| !other.custom_permission(p) || self.has_custom_permission(p))
     }
 
     /// The permissions the "Manage all collections" a legacy Manager is shown with stands for: their `access_all`.
@@ -597,7 +611,6 @@ impl Membership {
         let shown = self.shown_custom_permissions();
         let mut permissions = json!({
             "manageSso": false, // Not supported
-            "manageResetPassword": false,
             "manageScim": false, // Not supported (Not AGPLv3 Licensed)
         });
         for permission in CustomPermission::ALL {
@@ -1720,7 +1733,8 @@ mod tests {
                 DeleteAnyCollection,
                 AccessEventLogs,
                 AccessImportExport,
-                AccessReports
+                AccessReports,
+                ManageResetPassword
             ]
         );
     }
