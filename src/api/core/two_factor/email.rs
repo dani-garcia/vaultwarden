@@ -398,22 +398,24 @@ pub async fn activate_email_2fa(user: &User, conn: &DbConn) -> EmptyResult {
 
 /// Takes an email address and obscures it by replacing it with asterisks except two characters.
 pub fn obscure_email(email: &str) -> String {
-    let split: Vec<&str> = email.rsplitn(2, '@').collect();
-
-    let mut name = split[1].to_owned();
-    let domain = &split[0];
+    let (name, domain) = match email.rsplit_once('@') {
+        Some((name, domain)) => (name, Some(domain)),
+        None => (email, None),
+    };
 
     let name_size = name.chars().count();
 
-    let new_name = if let 1..=3 = name_size {
+    let new_name = if let 0..=3 = name_size {
         "*".repeat(name_size)
     } else {
-        let stars = "*".repeat(name_size - 2);
-        name.truncate(2);
-        format!("{name}{stars}")
+        let visible: String = name.chars().take(2).collect();
+        format!("{visible}{}", "*".repeat(name_size - 2))
     };
 
-    format!("{new_name}@{domain}")
+    match domain {
+        Some(domain) => format!("{new_name}@{domain}"),
+        None => new_name,
+    }
 }
 
 pub async fn find_and_activate_email_2fa(user_id: &UserId, conn: &DbConn) -> EmptyResult {
@@ -446,5 +448,26 @@ mod tests {
 
         // If it's smaller than 3 characters it should only show asterisks.
         assert_eq!(result, "***@example.ext");
+    }
+
+    #[test]
+    fn test_obscure_email_boundaries() {
+        // The local part is measured and truncated in characters, not bytes, so
+        // multi-byte UTF-8 names must not panic or expose the wrong characters.
+        // An input without '@' (or with an empty/very short local part) must not
+        // panic either.
+        let cases = [
+            ("中文测试@example.ext", "中文**@example.ext"),
+            ("éabc@example.ext", "éa**@example.ext"),
+            ("中文@example.ext", "**@example.ext"),
+            ("abcd@example.ext", "ab**@example.ext"),
+            ("no-at-sign", "no********"),
+            ("@example.ext", "@example.ext"),
+            ("", ""),
+        ];
+
+        for (email, expected) in cases {
+            assert_eq!(obscure_email(email), expected, "input: {email:?}");
+        }
     }
 }
