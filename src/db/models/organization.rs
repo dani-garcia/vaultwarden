@@ -1241,23 +1241,37 @@ impl Membership {
         .await
     }
 
+    /// Counts the user's accepted and confirmed memberships in other organizations, revoked ones included, which is
+    /// what Bitwarden's Single organization policy counts, both when it is enabled and when a member joins.
+    pub async fn count_accepted_confirmed_or_revoked_by_user(
+        user_uuid: &UserId,
+        excluded_org: &OrganizationId,
+        conn: &DbConn,
+    ) -> i64 {
+        let statuses = [
+            MembershipStatus::Accepted as i32,
+            MembershipStatus::Confirmed as i32,
+            MembershipStatus::Accepted as i32 - ACTIVATE_REVOKE_DIFF,
+            MembershipStatus::Confirmed as i32 - ACTIVATE_REVOKE_DIFF,
+        ];
+        conn.run(move |conn| {
+            users_organizations::table
+                .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::org_uuid.ne(excluded_org))
+                .filter(users_organizations::status.eq_any(statuses))
+                .count()
+                .first::<i64>(conn)
+                .unwrap_or(0)
+        })
+        .await
+    }
+
     pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             users_organizations::table
                 .filter(users_organizations::org_uuid.eq(org_uuid))
                 .load::<Self>(conn)
                 .expect("Error loading user organizations")
-        })
-        .await
-    }
-
-    pub async fn find_confirmed_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
-        conn.run(move |conn| {
-            users_organizations::table
-                .filter(users_organizations::org_uuid.eq(org_uuid))
-                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
-                .load::<Self>(conn)
-                .unwrap_or_default()
         })
         .await
     }
@@ -1444,6 +1458,7 @@ impl Membership {
         .await
     }
 
+    /// The user's accepted and confirmed memberships in organizations that have enabled `policy_type`.
     pub async fn find_by_user_and_policy(user_uuid: &UserId, policy_type: OrgPolicyType, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             users_organizations::table
@@ -1454,7 +1469,11 @@ impl Membership {
                         .and(org_policies::atype.eq(policy_type as i32))
                         .and(org_policies::enabled.eq(true))),
                 )
-                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .filter(
+                    users_organizations::status
+                        .eq(MembershipStatus::Accepted as i32)
+                        .or(users_organizations::status.eq(MembershipStatus::Confirmed as i32)),
+                )
                 .select(users_organizations::all_columns)
                 .load::<Self>(conn)
                 .unwrap_or_default()

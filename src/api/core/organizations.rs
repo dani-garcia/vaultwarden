@@ -590,23 +590,18 @@ async fn post_bulk_access_collections(
         err!("Can't find organization details")
     }
 
-    // The collections and members are checked below, the groups only here.
-    let org_groups = Group::find_by_organization(&org_id, &conn).await;
-    let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
-    if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
-        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id.escape_debug(), org_id))
-    }
-
+    // As in Bitwarden, missing, repeated or unmanageable collections are Not Found. Invalid groups and members are
+    // checked after them and are a Bad Request.
     if data.collection_ids.is_empty()
         || data.collection_ids.iter().collect::<HashSet<_>>().len() != data.collection_ids.len()
     {
-        err!("Invalid collection list")
+        err_code!("One or more collections not found.", Status::NotFound.code)
     }
 
     let mut collections = Vec::with_capacity(data.collection_ids.len());
     for col_id in &data.collection_ids {
         let Some(collection) = Collection::find_by_uuid_and_org(col_id, &org_id, &conn).await else {
-            err!("Collection not found")
+            err_code!("One or more collections not found.", Status::NotFound.code)
         };
 
         let manageable = if headers.membership.has_type(MembershipType::Custom) {
@@ -617,10 +612,20 @@ async fn post_bulk_access_collections(
             collection.is_manageable_by_user(&headers.membership.user_uuid, &conn).await
         };
         if !manageable {
-            err!("Collection not found", "The current user isn't a manager for this collection")
+            err_code!(
+                "Resource not found.",
+                "The current user isn't a manager for this collection",
+                Status::NotFound.code
+            )
         }
 
         collections.push(collection);
+    }
+
+    let org_groups = Group::find_by_organization(&org_id, &conn).await;
+    let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
+    if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
+        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id.escape_debug(), org_id))
     }
 
     let mut members = Vec::with_capacity(data.users.len());
@@ -2573,8 +2578,9 @@ async fn enforce_single_org_policy_for_org(
         // Later membership activation still checks the enabled policy independently.
         if member.atype < MembershipType::Admin
             && member.user_uuid != *acting_user_id
-            && member.status != MembershipStatus::Invited as i32
-            && Membership::count_accepted_and_confirmed_by_user(&member.user_uuid, &member.org_uuid, conn).await > 0
+            && (member.has_status(MembershipStatus::Accepted) || member.has_status(MembershipStatus::Confirmed))
+            && Membership::count_accepted_confirmed_or_revoked_by_user(&member.user_uuid, &member.org_uuid, conn).await
+                > 0
         {
             if CONFIG.mail_enabled() {
                 let org = Organization::find_by_uuid(&member.org_uuid, conn).await.unwrap();
@@ -2896,6 +2902,14 @@ async fn get_groups_data(
             || may_assign_collection_access(&headers.membership, &conn).await
     };
     if !allowed {
+        // Bitwarden's permission requirement on the details answers Forbidden
+        if details {
+            err_code!(
+                "You don't have permission to call this endpoint",
+                "User does not have access",
+                Status::Forbidden.code
+            );
+        }
         err_code!("Resource not found.", "User does not have access", Status::NotFound.code);
     }
 
@@ -3421,8 +3435,15 @@ async fn recover_account(
         TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
         Device::clear_twofactor_remember_by_user(&user.uuid, &conn).await?;
         if !fallback_2fa_email || two_factor::email::find_and_activate_email_2fa(&user.uuid, &conn).await.is_err() {
-            two_factor::enforce_2fa_policy(&user, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-                .await?;
+            two_factor::enforce_2fa_policy(
+                &user,
+                &headers.user.uuid,
+                headers.device.atype,
+                &headers.ip.ip,
+                true,
+                &conn,
+            )
+            .await?;
         }
     }
 
