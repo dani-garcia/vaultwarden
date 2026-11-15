@@ -334,7 +334,6 @@ impl Send {
     pub async fn size_by_user(user_uuid: &UserId, conn: &DbConn) -> Option<i64> {
         #[derive(serde::Deserialize)]
         struct FileData {
-            #[serde(rename = "size", alias = "Size")]
             size: NumberOrString,
         }
 

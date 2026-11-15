@@ -261,6 +261,10 @@ macro_rules! make_config {
             }
 
             async fn from_file() -> Result<Option<Self>, Error> {
+                // The Fs operator would create the folder if it doesn't exist, which we never want
+                if !CONFIG_FILE_PARENT_DIR.starts_with("s3://") && !std::path::Path::new(&*CONFIG_FILE_PARENT_DIR).is_dir() {
+                    return Ok(None);
+                }
                 let operator = storage::operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
                 let config_bytes = match operator.read(&CONFIG_FILENAME).await {
                     Ok(bytes) => bytes,
@@ -816,6 +820,10 @@ make_config! {
 
         /// Enable groups (BETA!) (Know the risks!) |> Enables groups support for organizations (Currently contains known issues!).
         org_groups_enabled:            bool, false, def, false;
+
+        /// Enable Custom roles (EXPERIMENTAL!) (Know the risks!) |> Enables the in-development Custom member role with granular permissions for organizations.
+        /// Only the permissions this version enforces can be granted. Disabling it again keeps the stored Custom roles, but they grant nothing until it is re-enabled.
+        experimental_custom_roles:     bool, false, def, false;
 
         /// Increase note size limit (Know the risks!) |> Sets the secure note size limit to 100_000 instead of the default 10_000.
         /// WARNING: This could cause issues with clients. Also exports will not work on Bitwarden servers!
@@ -1516,6 +1524,9 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     // Key Management Team
     "biometrics-sdk-ipc",
     "windows-native-credential-sync",
+    "macos-native-credential-sync",
+    "enable-account-encryption-v2-jit-password-registration",
+    "pm-27278-v2-password-registration",
     // Mobile Team
     "pm-34171-card-scanner",
     // Platform Team
@@ -1624,7 +1635,7 @@ impl Config {
     pub fn is_email_domain_allowed(&self, email: &str) -> bool {
         let e: Vec<&str> = email.rsplitn(2, '@').collect();
         if e.len() != 2 || e[0].is_empty() || e[1].is_empty() {
-            warn!("Failed to parse email address '{email}'");
+            warn!("Failed to parse email address '{}'", email.escape_debug());
             return false;
         }
         let email_domain = e[0].to_lowercase();

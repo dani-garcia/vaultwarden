@@ -72,7 +72,11 @@ impl SendTokens {
         conn: &DbConn,
     ) -> ApiResult<SendTokens> {
         let Some(send_id) = Self::as_send_id(access_id) else {
-            return Self::invalid_error(&format!("Can't convert {access_id}"), "send_id_invalid", false);
+            return Self::invalid_error(
+                &format!("Can't convert {}", access_id.escape_debug()),
+                "send_id_invalid",
+                false,
+            );
         };
 
         let Some(send) = Send::find_by_uuid(&send_id, conn).await else {

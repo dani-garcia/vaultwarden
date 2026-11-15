@@ -79,6 +79,7 @@ pub enum EventType {
     CipherSoftDeleted = 1115,
     CipherRestored = 1116,
     CipherClientToggledCardNumberVisible = 1117,
+    CipherClientHttpAuthReleased = 1133,
 
     // Collection
     CollectionCreated = 1300,
@@ -111,8 +112,8 @@ pub enum EventType {
     // OrganizationUserAutomaticallyConfirmed = 1517,
     // OrganizationUserSelfRevoked = 1518, // User self-revoked due to declining organization data ownership policy
     OrganizationUserAdminResetTwoFactor = 1519,
-    // OrganizationUserRevoked_TwoFactorNonCompliance = 1520,
-    // OrganizationUserRevoked_SingleOrganizationNonCompliance = 1521,
+    OrganizationUserRevokedTwoFactorNonCompliance = 1520,
+    OrganizationUserRevokedSingleOrganizationNonCompliance = 1521,
     OrganizationUserNotificationBannerActionClicked = 1522,
 
     // Organization
@@ -330,6 +331,7 @@ impl Event {
 
     pub async fn find_by_cipher_uuid(
         cipher_uuid: &CipherId,
+        org_uuid: &OrganizationId,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
         conn: &DbConn,
@@ -337,6 +339,7 @@ impl Event {
         conn.run(move |conn| {
             event::table
                 .filter(event::cipher_uuid.eq(cipher_uuid))
+                .filter(event::org_uuid.eq(org_uuid))
                 .filter(event::event_date.between(start, end))
                 .order_by(event::event_date.desc())
                 .limit(Self::PAGE_SIZE)

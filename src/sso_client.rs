@@ -260,7 +260,7 @@ impl Client {
                 };
 
                 if CONFIG.sso_debug_tokens() {
-                    debug!("Id token: {}", id_token.to_string());
+                    debug!("Id token: {id_token}");
                     debug!("Access token: {}", token_response.access_token().secret());
                     debug!("Refresh token: {:?}", token_response.refresh_token().map(RefreshToken::secret));
                     debug!("Expiration time: {:?}", token_response.expires_in());

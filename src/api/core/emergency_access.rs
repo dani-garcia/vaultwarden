@@ -15,8 +15,9 @@ use crate::{
     db::{
         DbConn, DbPool,
         models::{
-            Cipher, EMERGENCY_ACCESS_TIMEOUT_RANGE, EmergencyAccess, EmergencyAccessId, EmergencyAccessStatus,
-            EmergencyAccessType, Invitation, Membership, MembershipType, OrgPolicy, TwoFactor, User, UserId,
+            Attachment, AttachmentId, Cipher, CipherId, EMERGENCY_ACCESS_TIMEOUT_RANGE, EmergencyAccess,
+            EmergencyAccessId, EmergencyAccessStatus, EmergencyAccessType, Invitation, Membership, MembershipType,
+            OrgPolicy, TwoFactor, User, UserId,
         },
     },
     mail,
@@ -42,6 +43,7 @@ pub fn routes() -> Vec<Route> {
         takeover_emergency_access,
         password_emergency_access,
         view_emergency_access,
+        get_emergency_access_attachment,
         policies_emergency_access,
     ]
 }
@@ -614,6 +616,46 @@ async fn view_emergency_access(emer_id: EmergencyAccessId, headers: Headers, con
       "keyEncrypted": &emergency_access.key_encrypted,
       "object": "emergencyAccessView",
     })))
+}
+
+/// An attachment of the grantor's for a grantee with approved view access, with a `url` to download it from: the view
+/// lists the attachments with one that only names the file. Only the grantor's own ciphers, the ones the view lists.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/341acc9d3d8988cec8fe05debfa6d557cf5ab749/src/Api/Auth/Controllers/EmergencyAccessController.cs#L219-L226>
+#[get("/emergency-access/<emer_id>/<cipher_id>/attachment/<attachment_id>")]
+async fn get_emergency_access_attachment(
+    emer_id: EmergencyAccessId,
+    cipher_id: CipherId,
+    attachment_id: AttachmentId,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    check_emergency_access_enabled()?;
+
+    let Some(emergency_access) =
+        EmergencyAccess::find_by_uuid_and_grantee_uuid(&emer_id, &headers.user.uuid, &conn).await
+    else {
+        err!("Emergency access not valid.")
+    };
+
+    if !is_valid_request(&emergency_access, &headers.user.uuid, EmergencyAccessType::View) {
+        err!("Emergency access not valid.")
+    }
+
+    let Some(cipher) = Cipher::find_by_uuid(&cipher_id, &conn).await else {
+        err!("Cipher doesn't exist")
+    };
+    if cipher.user_uuid.as_ref() != Some(&emergency_access.grantor_uuid) || cipher.organization_uuid.is_some() {
+        err!("Cipher is not accessible")
+    }
+
+    match Attachment::find_by_id(&attachment_id, &conn).await {
+        Some(attachment) if attachment.cipher_uuid == cipher_id => {
+            Ok(Json(attachment.to_json_for_download(&headers.host).await?))
+        }
+        Some(_) => err!("Attachment doesn't belong to cipher"),
+        None => err!("Attachment doesn't exist"),
+    }
 }
 
 #[post("/emergency-access/<emer_id>/takeover")]

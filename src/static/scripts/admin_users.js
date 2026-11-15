@@ -173,9 +173,13 @@ const ORG_TYPES = {
         "name": "User",
         "bg": "blue"
     },
-    "4": {
+    "3": {
         "name": "Manager",
         "bg": "green"
+    },
+    "4": {
+        "name": "Custom",
+        "bg": "teal"
     },
 };
 
@@ -187,15 +191,19 @@ userOrgTypeDialog.addEventListener("show.bs.modal", function (event) {
     const userUuid = event.relatedTarget.parentNode.dataset.vwUserUuid;
     // Get org specific values
     const userOrgType = event.relatedTarget.dataset.vwOrgType;
-    const userOrgTypeName = ORG_TYPES[userOrgType]["name"];
     const orgName = event.relatedTarget.dataset.vwOrgName;
     const orgUuid = event.relatedTarget.dataset.vwOrgUuid;
 
+    document.getElementById("userOrgTypeForm").reset();
     document.getElementById("userOrgTypeDialogOrgName").textContent = orgName;
     document.getElementById("userOrgTypeDialogUserEmail").textContent = userEmail;
     document.getElementById("userOrgTypeUserUuid").value = userUuid;
     document.getElementById("userOrgTypeOrgUuid").value = orgUuid;
-    document.getElementById(`userOrgType${userOrgTypeName}`).checked = true;
+    // The Custom role can only be selected while it is enabled
+    const userOrgTypeRadio = document.getElementById(`userOrgType${ORG_TYPES[userOrgType]?.name}`);
+    if (userOrgTypeRadio) {
+        userOrgTypeRadio.checked = true;
+    }
 }, false);
 
 // Prevent accidental submission of the form with valid elements after the modal has been hidden.
@@ -222,7 +230,7 @@ function updateUserOrgType(event) {
 function initUserTable() {
     // Color all the org buttons per type
     document.querySelectorAll("button[data-vw-org-type]").forEach(function (e) {
-        const orgType = ORG_TYPES[e.dataset.vwOrgType];
+        const orgType = ORG_TYPES[e.dataset.vwOrgType] ?? { "name": "Unknown", "bg": "gray" };
         e.style.backgroundColor = orgType.bg;
         if (orgType.font !== undefined) {
             e.style.color = orgType.font;
