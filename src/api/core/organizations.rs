@@ -2005,7 +2005,7 @@ async fn validate_org_import_collections(
         && !membership.has_type(MembershipType::Manager)
     {
         Some(
-            Collection::find_manageable_by_any_assignment(org_id, &membership.user_uuid, conn)
+            Collection::find_explicitly_manageable_by_user(org_id, &membership.user_uuid, conn)
                 .await
                 .into_iter()
                 .collect::<HashSet<_>>(),
