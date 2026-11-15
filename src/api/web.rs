@@ -99,6 +99,7 @@ fn vaultwarden_css() -> EtagCached<String> {
         "sends_allowed": CONFIG.sends_allowed(),
         "remember_2fa_disabled": CONFIG.disable_2fa_remember(),
         "password_hints_allowed": CONFIG.password_hints_allowed(),
+        "passkey_login_available": crate::api::core::webauthn_login::passkey_login_available(),
         "signup_disabled": CONFIG.is_signup_disabled(),
         "sso_enabled": CONFIG.sso_enabled(),
         "sso_only": CONFIG.sso_enabled() && CONFIG.sso_only(),

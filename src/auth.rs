@@ -66,6 +66,7 @@ static JWT_FILE_DOWNLOAD_ISSUER: LazyLock<String> =
 static JWT_REGISTER_VERIFY_ISSUER: LazyLock<String> =
     LazyLock::new(|| format!("{}|register_verify", CONFIG.domain_origin()));
 static JWT_2FA_REMEMBER_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|2faremember", CONFIG.domain_origin()));
+pub static JWT_WEBAUTHN_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|webauthn", CONFIG.domain_origin()));
 
 static PRIVATE_RSA_KEY: OnceLock<EncodingKey> = OnceLock::new();
 static PUBLIC_RSA_KEY: OnceLock<DecodingKey> = OnceLock::new();
@@ -1410,6 +1411,7 @@ pub enum AuthMethod {
     Password,
     Sso,
     UserApiKey,
+    Webauthn,
 }
 
 impl AuthMethod {
@@ -1417,7 +1419,7 @@ impl AuthMethod {
         match self {
             AuthMethod::OrgApiKey => "api.organization".to_owned(),
             AuthMethod::UserApiKey => "api".to_owned(),
-            AuthMethod::Password | AuthMethod::Sso => "api offline_access".to_owned(),
+            AuthMethod::Password | AuthMethod::Sso | AuthMethod::Webauthn => "api offline_access".to_owned(),
         }
     }
 
@@ -1542,8 +1544,10 @@ pub async fn refresh_tokens(
             sso::exchange_refresh_token(&device, &user, client_id, refresh_claims).await?
         }
         AuthMethod::Sso => err!("SSO is now disabled, Login again using email and master password"),
-        AuthMethod::Password if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO is now required, Login again"),
-        AuthMethod::Password => AuthTokens::new(&device, &user, refresh_claims.sub, client_id),
+        AuthMethod::Password | AuthMethod::Webauthn if CONFIG.sso_enabled() && CONFIG.sso_only() => {
+            err!("SSO is now required, Login again")
+        }
+        AuthMethod::Password | AuthMethod::Webauthn => AuthTokens::new(&device, &user, refresh_claims.sub, client_id),
         _ => err!("Invalid auth method, cannot refresh token"),
     };
 
