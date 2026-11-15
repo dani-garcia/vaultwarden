@@ -874,7 +874,7 @@ async fn twofactor_auth(
 
     // No twofactor token if twofactor is disabled
     if twofactors.is_empty() {
-        enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, conn).await?;
+        enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, false, conn).await?;
         return Ok(None);
     }
 
@@ -970,7 +970,7 @@ async fn twofactor_auth(
             Device::clear_twofactor_remember_by_user(&user.uuid, conn).await?;
             device.delete_twofactor_remember();
 
-            enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, conn).await?;
+            enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, true, conn).await?;
 
             log_user_event(EventType::UserRecovered2fa, &user.uuid, device.atype, &ip.ip, conn).await;
 

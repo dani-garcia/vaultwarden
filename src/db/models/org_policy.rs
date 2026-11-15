@@ -342,12 +342,20 @@ impl OrgPolicy {
 
             if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::SingleOrg, conn).await
                 && p.enabled
-                && Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await > 0
             {
-                err!(format!(
-                    "Cannot {} because the organization policy forbids being part of other organization (membership {})",
-                    action, m.uuid
-                ));
+                // Joining, confirming and restoring count memberships revoked elsewhere too, as in Bitwarden. Bitwarden
+                // does not check a modification at all, so that keeps counting only the active ones.
+                let other_memberships = if action == "modify" {
+                    Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await
+                } else {
+                    Membership::count_accepted_confirmed_or_revoked_by_user(&m.user_uuid, &m.org_uuid, conn).await
+                };
+                if other_memberships > 0 {
+                    err!(format!(
+                        "Cannot {} because the organization policy forbids being part of other organization (membership {})",
+                        action, m.uuid
+                    ));
+                }
             }
         }
 
