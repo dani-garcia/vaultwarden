@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, sync::LazyLock};
+use std::{env, sync::LazyLock};
 
 use reqwest::Method;
 use rocket::{
@@ -393,18 +393,6 @@ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<Stri
 
         usr["sso_identifier"] = json!(sso_u.map_or(String::new(), |u| u.identifier.to_string()));
 
-        // The clients are shown a Manager as a Custom member, but the admin panel tells the two roles apart
-        let roles: HashMap<String, i32> = Membership::find_confirmed_by_user(&u.uuid, &conn)
-            .await
-            .into_iter()
-            .map(|member| (member.org_uuid.to_string(), member.atype))
-            .collect();
-        for org in usr["organizations"].as_array_mut().into_iter().flatten() {
-            if let Some(atype) = org["id"].as_str().and_then(|org_id| roles.get(org_id)) {
-                org["type"] = json!(atype);
-            }
-        }
-
         users_json.push(usr);
     }
 
@@ -580,30 +568,16 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
         err!("The specified user isn't member of the organization")
     };
 
-    let new_type = match MembershipType::from_str(&data.user_type.into_string()) {
-        // Unlike the clients, the admin panel tells the Custom and the legacy Manager role apart. Unless Custom roles
-        // are enabled, a Custom role is a Manager here as well, but an existing Custom member is kept as one.
-        Some(MembershipType::Custom) if !custom_roles_enabled() && !member_to_edit.has_type(MembershipType::Custom) => {
-            MembershipType::Manager
-        }
-        Some(new_type) => new_type,
-        None => err!("Invalid type"),
+    let Some(new_type) = MembershipType::from_str(&data.user_type.into_string()) else {
+        err!("Invalid type")
     };
+    MembershipType::check_requested(new_type, Some(&member_to_edit))?;
 
     if member_to_edit.atype == MembershipType::Owner && new_type != MembershipType::Owner {
         // Removing owner permission, check that there is at least one other confirmed owner
         if Membership::count_confirmed_by_org_and_type(&data.org_uuid, MembershipType::Owner, &conn).await <= 1 {
             err!("Can't change the type of the last owner")
         }
-    }
-
-    // A Manager only becomes a Custom member if that changes nothing they may do. Here they would keep the permissions
-    // they are shown with, the admin panel can't give up their access to all collections, so that is refused.
-    if new_type == MembershipType::Custom
-        && let Some(loss) =
-            member_to_edit.custom_role_conversion_loss(&member_to_edit.legacy_manager_permissions(), &conn).await
-    {
-        err!(loss)
     }
 
     member_to_edit.set_type(new_type);

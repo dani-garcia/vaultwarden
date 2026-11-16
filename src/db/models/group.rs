@@ -23,7 +23,6 @@ pub struct Group {
     pub uuid: GroupId,
     pub organizations_uuid: OrganizationId,
     pub name: String,
-    pub access_all: bool,
     pub external_id: Option<String>,
     pub creation_date: NaiveDateTime,
     pub revision_date: NaiveDateTime,
@@ -50,19 +49,13 @@ pub struct GroupUser {
 
 /// Local methods
 impl Group {
-    pub fn new(
-        organizations_uuid: OrganizationId,
-        name: String,
-        access_all: bool,
-        external_id: Option<String>,
-    ) -> Self {
+    pub fn new(organizations_uuid: OrganizationId, name: String, external_id: Option<String>) -> Self {
         let now = Utc::now().naive_utc();
 
         let mut new_model = Self {
             uuid: GroupId(crate::util::get_uuid()),
             organizations_uuid,
             name,
-            access_all,
             external_id: None,
             creation_date: now,
             revision_date: now,
@@ -84,9 +77,6 @@ impl Group {
     }
 
     pub async fn to_json_details(&self, conn: &DbConn) -> Value {
-        // If both read_only and hide_passwords are false, then manage should be true
-        // You can't have an entry with read_only and manage, or hide_passwords and manage
-        // Or an entry with everything to false
         let collections_groups: Vec<Value> = CollectionGroup::find_by_group(&self.uuid, &self.organizations_uuid, conn)
             .await
             .iter()
@@ -235,50 +225,6 @@ impl Group {
         })
         .await
     }
-    //Returns all organizations the user has full access to
-    pub async fn get_orgs_by_user_with_full_access(user_uuid: &UserId, conn: &DbConn) -> Vec<OrganizationId> {
-        conn.run(move |conn| {
-            groups_users::table
-                .inner_join(
-                    users_organizations::table.on(users_organizations::uuid.eq(groups_users::users_organizations_uuid)),
-                )
-                .inner_join(
-                    groups::table.on(groups::uuid
-                        .eq(groups_users::groups_uuid)
-                        .and(groups::organizations_uuid.eq(users_organizations::org_uuid))),
-                )
-                .filter(users_organizations::user_uuid.eq(user_uuid))
-                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
-                .filter(groups::access_all.eq(true))
-                .select(groups::organizations_uuid)
-                .distinct()
-                .load::<OrganizationId>(conn)
-                .expect("Error loading organization group full access information for user")
-        })
-        .await
-    }
-
-    pub async fn is_in_full_access_group(user_uuid: &UserId, org_uuid: &OrganizationId, conn: &DbConn) -> bool {
-        conn.run(move |conn| {
-            groups::table
-                .inner_join(groups_users::table.on(groups_users::groups_uuid.eq(groups::uuid)))
-                .inner_join(
-                    users_organizations::table.on(users_organizations::uuid
-                        .eq(groups_users::users_organizations_uuid)
-                        .and(users_organizations::org_uuid.eq(groups::organizations_uuid))),
-                )
-                .filter(users_organizations::user_uuid.eq(user_uuid))
-                // Only allow full access via a confirmed membership, since
-                // groups_users rows are kept when a membership is revoked.
-                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
-                .filter(groups::organizations_uuid.eq(org_uuid))
-                .filter(groups::access_all.eq(true))
-                .select(groups::access_all)
-                .first::<bool>(conn)
-                .unwrap_or_default()
-        })
-        .await
-    }
 
     pub async fn delete(&self, org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
         CollectionGroup::delete_all_by_group(&self.uuid, org_uuid, conn).await?;
@@ -391,6 +337,37 @@ impl CollectionGroup {
                 .select(collections_groups::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading user collection groups")
+        })
+        .await
+    }
+
+    /// The assignments to the collection of the groups `member` is in. The caller checks the membership's status.
+    pub async fn find_by_collection_and_member(
+        collection_uuid: &CollectionId,
+        member_uuid: &MembershipId,
+        conn: &DbConn,
+    ) -> Vec<Self> {
+        conn.run(move |conn| {
+            collections_groups::table
+                .inner_join(groups_users::table.on(groups_users::groups_uuid.eq(collections_groups::groups_uuid)))
+                .inner_join(
+                    users_organizations::table.on(users_organizations::uuid.eq(groups_users::users_organizations_uuid)),
+                )
+                .inner_join(
+                    groups::table.on(groups::uuid
+                        .eq(collections_groups::groups_uuid)
+                        .and(groups::organizations_uuid.eq(users_organizations::org_uuid))),
+                )
+                .inner_join(
+                    collections::table.on(collections::uuid
+                        .eq(collections_groups::collections_uuid)
+                        .and(collections::org_uuid.eq(groups::organizations_uuid))),
+                )
+                .filter(collections_groups::collections_uuid.eq(collection_uuid))
+                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
+                .select(collections_groups::all_columns)
+                .load::<Self>(conn)
+                .expect("Error loading the collection groups of a member")
         })
         .await
     }
@@ -538,25 +515,6 @@ impl GroupUser {
                         .and(collections::org_uuid.eq(groups::organizations_uuid))),
                 )
                 .filter(collections_groups::collections_uuid.eq(collection_uuid))
-                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
-                .count()
-                .first::<i64>(conn)
-                .unwrap_or(0)
-                != 0
-        })
-        .await
-    }
-
-    pub async fn has_full_access_by_member(
-        org_uuid: &OrganizationId,
-        member_uuid: &MembershipId,
-        conn: &DbConn,
-    ) -> bool {
-        conn.run(move |conn| {
-            groups_users::table
-                .inner_join(groups::table.on(groups::uuid.eq(groups_users::groups_uuid)))
-                .filter(groups::organizations_uuid.eq(org_uuid))
-                .filter(groups::access_all.eq(true))
                 .filter(groups_users::users_organizations_uuid.eq(member_uuid))
                 .count()
                 .first::<i64>(conn)

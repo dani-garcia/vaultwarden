@@ -104,8 +104,8 @@ app-security > app-two-factor-setup > form {
   @extend %vw-hide;
 }
 {{else}}
-:is(bit-dialog, [bit-dialog]) div.tw-ml-4:has(bit-form-control input),
-:is(bit-dialog, [bit-dialog]) div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcontrolname*="manage"]) {
+/* An existing Custom member keeps the role, but has no permissions to show */
+:is(bit-dialog, [bit-dialog]) div.tw-grid:has(> div.tw-col-span-4 input[formcontrolname="accessEventLogs"]) {
   @extend %vw-hide;
 }
 {{/if}}

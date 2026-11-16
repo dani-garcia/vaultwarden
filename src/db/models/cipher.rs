@@ -24,7 +24,7 @@ use crate::{
 use macros::UuidFromParam;
 
 use super::{
-    Archive, Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Group, Membership,
+    Archive, Attachment, CollectionCipher, CollectionId, Favorite, FolderCipher, FolderId, Membership,
     MembershipStatus, OrganizationId, User, UserId,
     organization::{ORG_ADMIN_ATYPES, custom_edit_any_collection},
 };
@@ -84,9 +84,10 @@ pub enum RepromptType {
 /// Which access a cipher operation is authorized with.
 ///
 /// The administrative cipher routes (`/ciphers/<id>/admin` and friends) are served by the same handlers as the
-/// regular vault routes, so the handlers state which one applies. They only differ for a Custom member with Edit
-/// any collection, who reaches every cipher of the organization on the administrative routes, but keeps their
-/// own vault limited to the collections they are assigned to.
+/// regular vault routes, so the handlers state which one applies. They differ for every member who may edit any
+/// collection, an Owner, an Admin or a Custom member with Edit any collection: like in Bitwarden, they reach every
+/// cipher of the organization on the administrative routes only, and keep their own vault limited to the collections
+/// they are assigned to, with the access they are assigned.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CipherAccessScope {
     User,
@@ -94,10 +95,11 @@ pub enum CipherAccessScope {
 }
 
 impl CipherAccessScope {
-    /// Whether `member` reaches every cipher of their organization with this access.
+    /// Whether `member` reaches every cipher of their organization with this access. On the regular vault routes no
+    /// role does, like Bitwarden's UserCipherDetails: everyone only reaches what they own or are assigned to.
     fn reaches_all_ciphers(self, member: &Membership) -> bool {
         match self {
-            CipherAccessScope::User => member.has_full_access(),
+            CipherAccessScope::User => false,
             CipherAccessScope::OrganizationAdmin => member.can_edit_any_collection(),
         }
     }
@@ -711,25 +713,6 @@ impl Cipher {
         false
     }
 
-    /// Returns whether this cipher is owned by an group in which the user has full access.
-    async fn is_in_full_access_group(
-        &self,
-        user_uuid: &UserId,
-        cipher_sync_data: Option<&CipherSyncData>,
-        conn: &DbConn,
-    ) -> bool {
-        if !CONFIG.org_groups_enabled() {
-            return false;
-        }
-        if let Some(ref org_uuid) = self.organization_uuid {
-            if let Some(cipher_sync_data) = cipher_sync_data {
-                return cipher_sync_data.user_group_full_access_for_organizations.contains(org_uuid);
-            }
-            return Group::is_in_full_access_group(user_uuid, org_uuid, conn).await;
-        }
-        false
-    }
-
     /// Returns the user's access restrictions to this cipher. A return value
     /// of None means that this cipher does not belong to the user, and is
     /// not in any collection the user has access to. Otherwise, the user has
@@ -742,12 +725,10 @@ impl Cipher {
         cipher_sync_data: Option<&CipherSyncData>,
         conn: &DbConn,
     ) -> Option<(bool, bool, bool)> {
-        // Check whether this cipher is directly owned by the user, or is in
-        // a collection that the user has full access to. If so, there are no
-        // access restrictions.
+        // Check whether this cipher is directly owned by the user, or the user may reach every cipher of its
+        // organization. If so, there are no access restrictions.
         if self.is_owned_by_user(user_uuid)
             || self.is_in_full_access_org(user_uuid, scope, cipher_sync_data, conn).await
-            || self.is_in_full_access_group(user_uuid, cipher_sync_data, conn).await
         {
             return Some((false, false, true));
         }
@@ -956,24 +937,10 @@ impl Cipher {
         .await
     }
 
-    // Find all ciphers accessible or visible to the specified user.
-    //
-    // "Accessible" means the user has read access to the cipher, either via
-    // direct ownership, collection or via group access.
-    //
-    // "Visible" usually means the same as accessible, except when an org
-    // owner/admin sets their account or group to have access to only selected
-    // collections in the org (presumably because they aren't interested in
-    // the other collections in the org). In this case, if `visible_only` is
-    // true, then the non-interesting ciphers will not be returned. As a
-    // result, those ciphers will not appear in "My Vault" for the org
-    // owner/admin, but they can still be accessed via the org vault view.
-    pub async fn find_by_user(
-        user_uuid: &UserId,
-        visible_only: bool,
-        cipher_uuids: &Vec<CipherId>,
-        conn: &DbConn,
-    ) -> Vec<Self> {
+    // Find the ciphers the user has read access to in their own vault: the ones they own, and the ones in a collection
+    // they are assigned to, directly or via a group. Like Bitwarden, the role doesn't add any: an Owner or Admin reaches
+    // the other ciphers of their organization in the Admin Console.
+    pub async fn find_by_user(user_uuid: &UserId, cipher_uuids: &Vec<CipherId>, conn: &DbConn) -> Vec<Self> {
         if CONFIG.org_groups_enabled() {
             conn.run(move |conn| {
                 let mut query = ciphers::table
@@ -1005,17 +972,9 @@ impl Cipher {
                             .and(collections_groups::groups_uuid.eq(groups::uuid))),
                     )
                     .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
-                    .or_filter(users_organizations::access_all.eq(true)) // access_all in org
                     .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
-                    .or_filter(groups::access_all.eq(true)) // Access via groups
                     .or_filter(collections_groups::collections_uuid.is_not_null()) // Access via groups
                     .into_boxed();
-
-                if !visible_only {
-                    query = query.or_filter(
-                        users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin/owner
-                    );
-                }
 
                 // Only filter for one specific cipher
                 if !cipher_uuids.is_empty() {
@@ -1042,15 +1001,8 @@ impl Cipher {
                             .and(users_organizations::user_uuid.eq(users_collections::user_uuid))),
                     )
                     .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
-                    .or_filter(users_organizations::access_all.eq(true)) // access_all in org
                     .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
                     .into_boxed();
-
-                if !visible_only {
-                    query = query.or_filter(
-                        users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin/owner
-                    );
-                }
 
                 // Only filter for one specific cipher
                 if !cipher_uuids.is_empty() {
@@ -1065,7 +1017,7 @@ impl Cipher {
 
     // Find all ciphers visible to the specified user.
     pub async fn find_by_user_visible(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
-        Self::find_by_user(user_uuid, true, &vec![], conn).await
+        Self::find_by_user(user_uuid, &vec![], conn).await
     }
 
     pub async fn find_by_user_and_ciphers(
@@ -1073,11 +1025,11 @@ impl Cipher {
         cipher_uuids: &Vec<CipherId>,
         conn: &DbConn,
     ) -> Vec<Self> {
-        Self::find_by_user(user_uuid, true, cipher_uuids, conn).await
+        Self::find_by_user(user_uuid, cipher_uuids, conn).await
     }
 
     pub async fn find_by_user_and_cipher(user_uuid: &UserId, cipher_uuid: &CipherId, conn: &DbConn) -> Option<Self> {
-        Self::find_by_user(user_uuid, true, &vec![cipher_uuid.clone()], conn).await.pop()
+        Self::find_by_user(user_uuid, &vec![cipher_uuid.clone()], conn).await.pop()
     }
 
     // Find all ciphers directly owned by the specified user.
@@ -1166,12 +1118,9 @@ impl Cipher {
                     )
                     .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
-                        users_organizations::access_all
-                            .eq(true) // User has access all
-                            .or(users_collections::user_uuid
-                                .eq(user_uuid) // User has access to collection
-                                .and(users_collections::read_only.eq(false)))
-                            .or(groups::access_all.eq(true)) // Access via groups
+                        users_collections::user_uuid
+                            .eq(user_uuid) // User has access to collection
+                            .and(users_collections::read_only.eq(false))
                             .or(collections_groups::collections_uuid
                                 .is_not_null() // Access via groups
                                 .and(collections_groups::read_only.eq(false))),
@@ -1198,11 +1147,9 @@ impl Cipher {
                     )
                     .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
-                        users_organizations::access_all
-                            .eq(true) // User has access all
-                            .or(users_collections::user_uuid
-                                .eq(user_uuid) // User has access to collection
-                                .and(users_collections::read_only.eq(false))),
+                        users_collections::user_uuid
+                            .eq(user_uuid) // User has access to collection
+                            .and(users_collections::read_only.eq(false)),
                     )
                     .select(ciphers_collections::collection_uuid)
                     .load::<CollectionId>(conn)
@@ -1248,16 +1195,16 @@ impl Cipher {
                     )
                     .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
-                        users_organizations::access_all
-                            .eq(true) // User has access all
-                            .or(users_collections::user_uuid
-                                .eq(user_uuid) // User has access to collection
-                                .and(users_collections::read_only.eq(false)))
-                            .or(groups::access_all.eq(true)) // Access via groups
+                        users_collections::user_uuid
+                            .eq(user_uuid) // User has access to collection
+                            .and(users_collections::read_only.eq(false))
                             .or(collections_groups::collections_uuid
                                 .is_not_null() // Access via groups
                                 .and(collections_groups::read_only.eq(false)))
-                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // User is admin or owner
+                            // On the administrative routes only, an Owner or Admin reaches every collection
+                            .or(users_organizations::atype
+                                .eq_any(ORG_ADMIN_ATYPES)
+                                .and::<_, diesel::sql_types::Bool>(scope == CipherAccessScope::OrganizationAdmin))
                             .or(custom_edit_any_collection()
                                 .and::<_, diesel::sql_types::Bool>(scope == CipherAccessScope::OrganizationAdmin)),
                     )
@@ -1283,12 +1230,13 @@ impl Cipher {
                     )
                     .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
-                        users_organizations::access_all
-                            .eq(true) // User has access all
-                            .or(users_collections::user_uuid
-                                .eq(user_uuid) // User has access to collection
-                                .and(users_collections::read_only.eq(false)))
-                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // User is admin or owner
+                        users_collections::user_uuid
+                            .eq(user_uuid) // User has access to collection
+                            .and(users_collections::read_only.eq(false))
+                            // On the administrative routes only, an Owner or Admin reaches every collection
+                            .or(users_organizations::atype
+                                .eq_any(ORG_ADMIN_ATYPES)
+                                .and::<_, diesel::sql_types::Bool>(scope == CipherAccessScope::OrganizationAdmin))
                             .or(custom_edit_any_collection()
                                 .and::<_, diesel::sql_types::Bool>(scope == CipherAccessScope::OrganizationAdmin)),
                     )
@@ -1330,10 +1278,8 @@ impl Cipher {
                         .eq(ciphers_collections::collection_uuid)
                         .and(collections_groups::groups_uuid.eq(groups::uuid))),
                 )
+                // Like upstream, an Owner or Admin only gets the collections they are assigned to
                 .or_filter(users_collections::user_uuid.eq(user_uuid)) // User has access to collection
-                .or_filter(users_organizations::access_all.eq(true)) // User has access all
-                .or_filter(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // User is admin or owner
-                .or_filter(groups::access_all.eq(true)) //Access via group
                 .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
                 .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .select(ciphers_collections::all_columns)
