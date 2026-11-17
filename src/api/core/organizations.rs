@@ -1854,10 +1854,21 @@ async fn edit_member(
         }
     }
 
+    // Like upstream, the posted access leaves out My Items collections, before it is authorized: they are no member's
+    // to give. The member keeps their own one, see below.
+    let org_collections: HashMap<CollectionId, Collection> =
+        Collection::find_by_organization(&org_id, &conn).await.into_iter().map(|c| (c.uuid.clone(), c)).collect();
+    let posted_collections: Vec<&CollectionData> = data
+        .collections
+        .iter()
+        .flatten()
+        .filter(|col| !org_collections.get(&col.id).is_some_and(Collection::is_default_user_collection))
+        .collect();
+
     // A Custom member with Manage users only gives what they have themselves. Manage users authorizes member access
     // to every collection in this organization.
     if headers.membership_type == MembershipType::Custom {
-        let collections: Vec<&CollectionId> = data.collections.iter().flatten().map(|c| &c.id).collect();
+        let collections: Vec<&CollectionId> = posted_collections.iter().map(|c| &c.id).collect();
         let groups = data.groups.iter().flatten().cloned().collect();
         check_custom_member_grants(
             &headers.membership,
@@ -1881,25 +1892,12 @@ async fn edit_member(
     // We need to perform the check after changing the type since `admin` is exempt.
     OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
-    // Like upstream, reject a My Items collection before changing anything
-    let org_collections: HashMap<CollectionId, Collection> =
-        Collection::find_by_organization(&org_id, &conn).await.into_iter().map(|c| (c.uuid.clone(), c)).collect();
-    if !access_all
-        && data
-            .collections
-            .iter()
-            .flatten()
-            .any(|col| org_collections.get(&col.id).is_some_and(Collection::is_default_user_collection))
-    {
-        err!("Default collections cannot be assigned to a member.")
-    }
-
     // Delete all the odd collections, but keep the member's My Items
     CollectionUser::delete_all_but_my_items_by_user_and_org(&member_to_edit.user_uuid, &org_id, &conn).await?;
 
     // If no accessAll, add the collections received
     if !access_all {
-        for col in data.collections.iter().flatten() {
+        for col in posted_collections {
             match org_collections.get(&col.id) {
                 None => err!("Collection not found in Organization"),
                 Some(collection) => {
@@ -2171,12 +2169,10 @@ async fn validate_org_import_collections(
     };
     for col in imported {
         if let Some(collection) = col.id.as_ref().and_then(|id| existing.get(id)) {
-            if collection.is_default_user_collection() {
-                // Only its owner can import into a My Items collection, whatever else the member may do
-                if collection.default_user_uuid.as_ref() != Some(&membership.user_uuid) {
-                    err!(Compact, "The current user isn't allowed to manage this collection")
-                }
-            } else if membership.atype < MembershipType::Admin && !membership.can_edit_any_collection() {
+            // Like upstream's `ImportCiphers` authorization, also for a My Items collection: Owners, Admins and
+            // members who may edit any collection may import into it, others only into one they may manage or
+            // write to, which for a My Items collection is only its owner
+            if membership.atype < MembershipType::Admin && !membership.can_edit_any_collection() {
                 let can_import = if let Some(manageable) = &manageable {
                     manageable.contains(&collection.uuid)
                 } else {

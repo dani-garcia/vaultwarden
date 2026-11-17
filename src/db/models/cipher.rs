@@ -630,21 +630,25 @@ impl Cipher {
     }
 
     /// Purges the organization vault like upstream's `Cipher_DeleteByOrganizationId`: the items stored in a
-    /// member's My Items collection are kept, they are only removed from the shared collections.
+    /// member's My Items collection are kept, they are only removed from the shared collections. In one transaction
+    /// like there; as there, the attachment files are removed along with their items.
     pub async fn purge_organization(org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
-        let my_items = CollectionCipher::find_my_items_by_org(org_uuid, conn).await;
-        for cipher in Self::find_by_org(org_uuid, conn).await {
-            if !my_items.contains_key(&cipher.uuid) {
-                cipher.delete(conn).await?;
+        conn.transaction(async || {
+            let my_items = CollectionCipher::find_my_items_by_org(org_uuid, conn).await;
+            for cipher in Self::find_by_org(org_uuid, conn).await {
+                if !my_items.contains_key(&cipher.uuid) {
+                    cipher.delete(conn).await?;
+                }
             }
-        }
 
-        if !my_items.is_empty() {
-            CollectionCipher::delete_all_shared_by_organization(org_uuid, conn).await?;
-            let members = Membership::find_by_org(org_uuid, conn).await;
-            User::update_uuid_revisions(members.into_iter().map(|m| m.user_uuid).collect(), conn).await;
-        }
-        Ok(())
+            if !my_items.is_empty() {
+                CollectionCipher::delete_all_shared_by_organization(org_uuid, conn).await?;
+                let members = Membership::find_by_org(org_uuid, conn).await;
+                User::update_uuid_revisions(members.into_iter().map(|m| m.user_uuid).collect(), conn).await;
+            }
+            Ok(())
+        })
+        .await
     }
 
     pub async fn delete_all_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {

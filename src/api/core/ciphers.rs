@@ -1228,6 +1228,14 @@ async fn update_collections_by_scope(
             let Some(org_uuid) = cipher.organization_uuid.clone() else {
                 err!("Cipher is not owned by an organization")
             };
+            // Like upstream's `SaveCollectionsAsync`, on both routes: another member's personal cipher, one that is
+            // only in their My Items collection, may not be shared, even by an admin
+            if CollectionCipher::find_my_items_owners_if_only(&cipher.uuid, &conn)
+                .await
+                .is_some_and(|owners| owners.iter().any(|owner| owner != &headers.user.uuid))
+            {
+                err_code!("Resource not found", "Cannot share another member's My Items", Status::NotFound.code)
+            }
             let posted = HashSet::<CollectionId>::from_iter(data.collection_ids);
             let current = HashSet::<CollectionId>::from_iter(match scope {
                 CipherAccessScope::User => cipher.get_collections(headers.user.uuid.clone(), &conn).await,
