@@ -134,11 +134,11 @@ pub enum MembershipType {
 impl MembershipType {
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "0" | "Owner" => Some(MembershipType::Owner),
-            "1" | "Admin" => Some(MembershipType::Admin),
-            "2" | "User" => Some(MembershipType::User),
-            "3" | "Manager" => Some(MembershipType::Manager),
-            "4" | "Custom" => Some(MembershipType::Custom),
+            "0" | "Owner" => Some(Self::Owner),
+            "1" | "Admin" => Some(Self::Admin),
+            "2" | "User" => Some(Self::User),
+            "3" | "Manager" => Some(Self::Manager),
+            "4" | "Custom" => Some(Self::Custom),
             _ => None,
         }
     }
@@ -152,23 +152,23 @@ impl MembershipType {
     /// keeps their role when the request repeats it, so an unrelated edit never turns one into the other. A
     /// Manager only becomes a Custom member when the permissions they are shown with are changed.
     pub fn requested(
-        requested: MembershipType,
+        requested: Self,
         current: Option<&Membership>,
         custom_permissions: Option<&HashSet<CustomPermission>>,
-    ) -> MembershipType {
-        if requested != MembershipType::Custom {
+    ) -> Self {
+        if requested != Self::Custom {
             return requested;
         }
         match (current, custom_permissions) {
-            (Some(member), _) if member.has_type(MembershipType::Custom) => MembershipType::Custom,
+            (Some(member), _) if member.has_type(Self::Custom) => Self::Custom,
             (Some(member), Some(permissions))
-                if member.has_type(MembershipType::Manager) && *permissions != member.legacy_manager_permissions() =>
+                if member.has_type(Self::Manager) && *permissions != member.legacy_manager_permissions() =>
             {
-                MembershipType::Custom
+                Self::Custom
             }
-            (Some(member), _) if member.has_type(MembershipType::Manager) => MembershipType::Manager,
-            (_, Some(_)) => MembershipType::Custom,
-            (_, None) => MembershipType::Manager,
+            (Some(member), _) if member.has_type(Self::Manager) => Self::Manager,
+            (_, Some(_)) => Self::Custom,
+            (_, None) => Self::Manager,
         }
     }
 
@@ -176,23 +176,23 @@ impl MembershipType {
     /// its permissions, never from its role, so the role itself ranks right above User and below Manager.
     const fn rank(self) -> u8 {
         match self {
-            MembershipType::User => 0,
-            MembershipType::Custom => 1,
-            MembershipType::Manager => 2,
-            MembershipType::Admin => 3,
-            MembershipType::Owner => 4,
+            Self::User => 0,
+            Self::Custom => 1,
+            Self::Manager => 2,
+            Self::Admin => 3,
+            Self::Owner => 4,
         }
     }
 }
 
 impl Ord for MembershipType {
-    fn cmp(&self, other: &MembershipType) -> Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         self.rank().cmp(&other.rank())
     }
 }
 
 impl PartialOrd for MembershipType {
-    fn partial_cmp(&self, other: &MembershipType) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
@@ -212,17 +212,17 @@ impl PartialOrd<i32> for MembershipType {
     }
 
     fn gt(&self, other: &i32) -> bool {
-        matches!(self.partial_cmp(other), Some(Ordering::Greater))
+        self.partial_cmp(other).is_some_and(Ordering::is_gt)
     }
 
     fn ge(&self, other: &i32) -> bool {
-        matches!(self.partial_cmp(other), Some(Ordering::Greater | Ordering::Equal))
+        self.partial_cmp(other).is_some_and(Ordering::is_ge)
     }
 }
 
 impl PartialEq<MembershipType> for i32 {
     fn eq(&self, other: &MembershipType) -> bool {
-        *self == *other as i32
+        *self == *other as Self
     }
 }
 
@@ -235,11 +235,11 @@ impl PartialOrd<MembershipType> for i32 {
     }
 
     fn lt(&self, other: &MembershipType) -> bool {
-        matches!(self.partial_cmp(other), Some(Ordering::Less) | None)
+        self.partial_cmp(other).is_none_or(Ordering::is_lt)
     }
 
     fn le(&self, other: &MembershipType) -> bool {
-        matches!(self.partial_cmp(other), Some(Ordering::Less | Ordering::Equal) | None)
+        self.partial_cmp(other).is_none_or(Ordering::is_le)
     }
 }
 
@@ -275,32 +275,32 @@ const SUPPORTED_CUSTOM_PERMISSIONS: &[CustomPermission] = &[
 ];
 
 impl CustomPermission {
-    pub const ALL: [CustomPermission; 10] = [
-        CustomPermission::ManageUsers,
-        CustomPermission::ManageGroups,
-        CustomPermission::ManagePolicies,
-        CustomPermission::CreateNewCollections,
-        CustomPermission::EditAnyCollection,
-        CustomPermission::DeleteAnyCollection,
-        CustomPermission::AccessEventLogs,
-        CustomPermission::AccessImportExport,
-        CustomPermission::AccessReports,
-        CustomPermission::ManageResetPassword,
+    pub const ALL: [Self; 10] = [
+        Self::ManageUsers,
+        Self::ManageGroups,
+        Self::ManagePolicies,
+        Self::CreateNewCollections,
+        Self::EditAnyCollection,
+        Self::DeleteAnyCollection,
+        Self::AccessEventLogs,
+        Self::AccessImportExport,
+        Self::AccessReports,
+        Self::ManageResetPassword,
     ];
 
     /// The key of the permission in the `permissions` object of the Bitwarden clients.
     pub const fn json_key(self) -> &'static str {
         match self {
-            CustomPermission::ManageUsers => "manageUsers",
-            CustomPermission::ManageGroups => "manageGroups",
-            CustomPermission::ManagePolicies => "managePolicies",
-            CustomPermission::CreateNewCollections => "createNewCollections",
-            CustomPermission::EditAnyCollection => "editAnyCollection",
-            CustomPermission::DeleteAnyCollection => "deleteAnyCollection",
-            CustomPermission::AccessEventLogs => "accessEventLogs",
-            CustomPermission::AccessImportExport => "accessImportExport",
-            CustomPermission::AccessReports => "accessReports",
-            CustomPermission::ManageResetPassword => "manageResetPassword",
+            Self::ManageUsers => "manageUsers",
+            Self::ManageGroups => "manageGroups",
+            Self::ManagePolicies => "managePolicies",
+            Self::CreateNewCollections => "createNewCollections",
+            Self::EditAnyCollection => "editAnyCollection",
+            Self::DeleteAnyCollection => "deleteAnyCollection",
+            Self::AccessEventLogs => "accessEventLogs",
+            Self::AccessImportExport => "accessImportExport",
+            Self::AccessReports => "accessReports",
+            Self::ManageResetPassword => "manageResetPassword",
         }
     }
 
@@ -314,9 +314,9 @@ impl CustomPermission {
     /// replaces the member's permissions, so a malformed value must not silently remove one. Granting a
     /// permission this version does not enforce is rejected as well. The clients also send permissions
     /// Vaultwarden does not know at all, like `manageSso`, those are ignored.
-    pub fn requested(permissions: &HashMap<String, Value>) -> Result<HashSet<CustomPermission>, Error> {
+    pub fn requested(permissions: &HashMap<String, Value>) -> Result<HashSet<Self>, Error> {
         let mut granted = HashSet::new();
-        for permission in CustomPermission::ALL {
+        for permission in Self::ALL {
             match permissions.get(permission.json_key()) {
                 None | Some(Value::Bool(false)) => {}
                 Some(Value::Bool(true)) if permission.is_supported() => {
@@ -581,7 +581,7 @@ impl Membership {
 
     /// Whether this member may act with every Custom role permission stored for `other`, as Bitwarden's
     /// `Permissions.Includes`.
-    pub fn has_custom_permissions_of(&self, other: &Membership) -> bool {
+    pub fn has_custom_permissions_of(&self, other: &Self) -> bool {
         CustomPermission::ALL.into_iter().all(|p| !other.custom_permission(p) || self.has_custom_permission(p))
     }
 
@@ -644,16 +644,15 @@ impl Membership {
     }
 
     pub fn set_external_id(&mut self, external_id: Option<String>) -> bool {
-        //Check if external id is empty. We don't want to have
-        //empty strings in the database
-        if self.external_id != external_id {
-            self.external_id = match external_id {
-                Some(external_id) if !external_id.is_empty() => Some(external_id),
-                _ => None,
-            };
-            return true;
+        // Check if external id is empty. We don't want to have empty strings in the database
+        let external_id = external_id.filter(|e| !e.trim().is_empty());
+
+        if self.external_id == external_id {
+            return false;
         }
-        false
+
+        self.external_id = external_id;
+        true
     }
 
     /// HACK: Convert the manager type to a custom type
@@ -882,7 +881,7 @@ impl Membership {
         let twofactor_enabled = !TwoFactor::find_by_user(&user.uuid, conn).await.is_empty();
 
         let groups: Vec<GroupId> = if include_groups && CONFIG.org_groups_enabled() {
-            GroupUser::find_by_member(&self.uuid, conn).await.iter().map(|gu| gu.groups_uuid.clone()).collect()
+            GroupUser::find_by_member(&self.uuid, conn).await.into_iter().map(|gu| gu.groups_uuid).collect()
         } else {
             // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
             // so just act as if there are no groups.
@@ -928,7 +927,7 @@ impl Membership {
         json!({
             "id": self.uuid,
             "userId": self.user_uuid,
-            "name": if self.get_unrevoked_status() >= MembershipStatus::Accepted as i32 { Some(user.name) } else { None },
+            "name": (self.get_unrevoked_status() >= MembershipStatus::Accepted as i32).then_some(user.name),
             "email": user.email,
             "externalId": self.external_id,
             "avatarColor": user.avatar_color,
@@ -1081,9 +1080,9 @@ impl Membership {
         Ok(())
     }
 
-    pub async fn find_by_email_and_org(email: &str, org_uuid: &OrganizationId, conn: &DbConn) -> Option<Membership> {
+    pub async fn find_by_email_and_org(email: &str, org_uuid: &OrganizationId, conn: &DbConn) -> Option<Self> {
         if let Some(user) = User::find_by_mail(email, conn).await
-            && let Some(member) = Membership::find_by_user_and_org(&user.uuid, org_uuid, conn).await
+            && let Some(member) = Self::find_by_user_and_org(&user.uuid, org_uuid, conn).await
         {
             return Some(member);
         }
@@ -1285,11 +1284,9 @@ impl Membership {
                 .filter(users_organizations::org_uuid.eq(org_uuid))
                 .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(
-                    users_organizations::atype
-                        .eq_any(vec![MembershipType::Owner as i32, MembershipType::Admin as i32])
-                        .or(users_organizations::atype
-                            .eq(MembershipType::Manager as i32)
-                            .and(users_organizations::access_all.eq(true))),
+                    users_organizations::atype.eq_any(ORG_ADMIN_ATYPES).or(users_organizations::atype
+                        .eq(MembershipType::Manager as i32)
+                        .and(users_organizations::access_all.eq(true))),
                 )
                 .load::<Self>(conn)
                 .unwrap_or_default()
@@ -1669,6 +1666,18 @@ mod tests {
     use CustomPermission::*;
     use MembershipType::{Admin, Custom, Manager, Owner, User};
 
+    /// Every role, from the least to the most authority.
+    const AUTHORITY: [MembershipType; 5] = [User, Custom, Manager, Admin, Owner];
+    /// Stored roles no `MembershipType` exists for, like one written by a newer version.
+    const UNKNOWN_ROLES: [i32; 5] = [i32::MIN, -1, 5, 99, i32::MAX];
+    /// `[<, <=, >, >=, ==, !=]`, through the trait methods those operators call for `A` and `B`.
+    fn compare<A: PartialOrd<B>, B>(a: &A, b: &B) -> [bool; 6] {
+        [a.lt(b), a.le(b), a.gt(b), a.ge(b), a.eq(b), a.ne(b)]
+    }
+    fn expected(ordering: Ordering) -> [bool; 6] {
+        [ordering.is_lt(), ordering.is_le(), ordering.is_gt(), ordering.is_ge(), ordering.is_eq(), ordering.is_ne()]
+    }
+
     fn member(role: MembershipType) -> Membership {
         let mut member = Membership::new("user".into(), "org".into(), None);
         member.atype = role as i32;
@@ -1678,19 +1687,91 @@ mod tests {
 
     #[test]
     fn membership_type_authority() {
-        assert!(Owner > Admin && Admin > Manager && Manager > Custom && Custom > User);
-        assert!((Custom as i32) >= User && (Custom as i32) < Manager && (Custom as i32) < Admin);
-        for raw in [99, -1] {
-            assert_eq!((raw >= User, raw >= Manager, raw >= Admin, raw < Admin), (false, false, false, true));
+        // Roles compare by authority, never by their stored number, whichever side the raw `i32` is on
+        for (i, role) in AUTHORITY.into_iter().enumerate() {
+            for (j, other) in AUTHORITY.into_iter().enumerate() {
+                let ordering = i.cmp(&j);
+                let (raw, raw_other) = (role as i32, other as i32);
+                assert_eq!(role.cmp(&other), ordering, "{role:?} {other:?}");
+                assert_eq!(role.partial_cmp(&raw_other), Some(ordering), "{role:?} {raw_other}");
+                assert_eq!(raw.partial_cmp(&other), Some(ordering), "{raw} {other:?}");
+                assert_eq!(compare(&role, &other), expected(ordering), "{role:?} {other:?}");
+                assert_eq!(compare(&role, &raw_other), expected(ordering), "{role:?} {raw_other}");
+                assert_eq!(compare(&raw, &other), expected(ordering), "{raw} {other:?}");
+            }
         }
+
         for (value, expected) in [
+            ("0", Some(Owner)),
+            ("Owner", Some(Owner)),
+            ("1", Some(Admin)),
+            ("Admin", Some(Admin)),
+            ("2", Some(User)),
+            ("User", Some(User)),
             ("3", Some(Manager)),
             ("Manager", Some(Manager)),
             ("4", Some(Custom)),
             ("Custom", Some(Custom)),
             ("5", None),
+            ("Invalid", None),
         ] {
             assert_eq!(MembershipType::from_str(value), expected);
+        }
+    }
+
+    #[test]
+    fn unknown_raw_roles_fail_closed() {
+        for raw in UNKNOWN_ROLES {
+            assert_eq!(MembershipType::from_i32(raw), None);
+            for role in AUTHORITY {
+                // An unknown stored role ranks below every role, so it never passes an authority check and every
+                // `atype < Admin` restriction applies to it
+                assert_eq!(raw.partial_cmp(&role), None);
+                assert_eq!(compare(&raw, &role), [true, true, false, false, false, true], "{raw} {role:?}");
+                // The other way around nothing holds, which no check relies on
+                assert_eq!(role.partial_cmp(&raw), None);
+                assert_eq!(compare(&role, &raw), [false, false, false, false, false, true], "{role:?} {raw}");
+            }
+            let mut unknown = member(User);
+            unknown.atype = raw;
+            assert!(!unknown.has_full_access());
+            assert!(AUTHORITY.into_iter().all(|role| !unknown.has_type(role)));
+        }
+    }
+
+    #[test]
+    fn revoke_and_restore_round_trip() {
+        // The revoked statuses are stored and queried for, so they are pinned rather than derived
+        for (status, revoked) in
+            [(MembershipStatus::Invited, -128), (MembershipStatus::Accepted, -127), (MembershipStatus::Confirmed, -126)]
+        {
+            let status = status as i32;
+            for role in AUTHORITY {
+                let mut m = member(role);
+                m.status = status;
+                let full_access = m.has_full_access();
+
+                assert_eq!(full_access, role >= Admin && status == MembershipStatus::Confirmed as i32);
+                assert!(!m.restore(), "{role:?} {status}: only a revoked member can be restored");
+                assert_eq!((m.status, m.get_unrevoked_status()), (status, status));
+
+                assert!(m.revoke(), "{role:?} {status}");
+                assert_eq!((m.status, m.get_unrevoked_status()), (revoked, status));
+                assert!(MembershipStatus::from_i32(m.status).is_none());
+                assert!(!m.has_status(MembershipStatus::Confirmed) && !m.has_full_access());
+                assert!(m.has_type(role));
+                assert_eq!(m.atype.partial_cmp(&role), Some(Ordering::Equal));
+
+                assert!(!m.revoke(), "{role:?} {status}: a revoked member can't be revoked again");
+                assert_eq!(m.status, revoked);
+
+                assert!(m.restore(), "{role:?} {status}");
+                assert_eq!((m.status, m.get_unrevoked_status()), (status, status));
+                assert_eq!((m.atype, m.has_full_access()), (role as i32, full_access));
+
+                assert!(!m.restore(), "{role:?} {status}: a restored member can't be restored again");
+                assert_eq!(m.status, status);
+            }
         }
     }
 

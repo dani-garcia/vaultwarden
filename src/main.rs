@@ -243,22 +243,20 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         let level = caps
             .get(1)
             .and_then(|m| log::LevelFilter::from_str(m.as_str()).ok())
-            .ok_or(Error::new("Failed to parse global log level".to_owned(), ""))?;
+            .ok_or_else(|| Error::new("Failed to parse global log level".to_owned(), ""))?;
 
         let levels_override: Vec<(&str, log::LevelFilter)> = caps
             .get(2)
             .map(|m| {
                 m.as_str()
                     .split(',')
-                    .collect::<Vec<&str>>()
-                    .into_iter()
                     .filter_map(|s| match s.split_once('=') {
                         Some((log, lvl_str)) => log::LevelFilter::from_str(lvl_str).ok().map(|lvl| (log, lvl)),
                         _ => None,
                     })
                     .collect()
             })
-            .ok_or(Error::new("Failed to parse overrides".to_owned(), ""))?;
+            .ok_or_else(|| Error::new("Failed to parse overrides".to_owned(), ""))?;
 
         (level, levels_override)
     } else {
@@ -366,15 +364,14 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
     }
 
     if let Some(log_file) = CONFIG.log_file() {
-        #[cfg(windows)]
-        {
-            logger = logger.chain(fern::log_file(log_file)?);
-        }
-        #[cfg(unix)]
-        {
-            const SIGHUP: i32 = SignalKind::hangup().as_raw_value();
-            let path = Path::new(&log_file);
-            logger = logger.chain(fern::log_reopen1(path, [SIGHUP])?);
+        std::cfg_select! {
+            windows => { logger = logger.chain(fern::log_file(log_file)?); }
+            unix => {
+                const SIGHUP: i32 = SignalKind::hangup().as_raw_value();
+                let path = Path::new(&log_file);
+                logger = logger.chain(fern::log_reopen1(path, [SIGHUP])?);
+            }
+            _ => {}
         }
     }
 
@@ -394,14 +391,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         let thread = thread::current();
         let thread = thread.name().unwrap_or("unnamed");
 
-        let msg = match info.payload().downcast_ref::<&'static str>() {
-            Some(s) => *s,
-            None => match info.payload().downcast_ref::<String>() {
-                Some(s) => &**s,
-                None => "Box<Any>",
-            },
-        };
-
+        let msg = info.payload_as_str().unwrap_or("Box<Any>");
         let backtrace = std::backtrace::Backtrace::force_capture();
 
         match info.location() {
@@ -764,7 +754,7 @@ fn schedule_jobs(pool: db::DbPool) {
             // tick, the one that was added earlier will run first.
             loop {
                 sched.tick();
-                runtime.block_on(tokio::time::sleep(tokio::time::Duration::from_millis(u64::from(
+                runtime.block_on(tokio::time::sleep(std::time::Duration::from_millis(u64::from(
                     CONFIG.job_poll_interval_ms(),
                 ))));
             }

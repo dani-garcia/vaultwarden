@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashSet, future::Future, pin::Pin, sync::LazyLock, time::Duration};
+use std::{borrow::Cow, collections::HashSet, pin::Pin, sync::LazyLock, time::Duration};
 
 use openidconnect::{
     AccessToken, AsyncHttpClient, AuthDisplay, AuthPrompt, AuthType, AuthenticationFlow, AuthorizationCode,
@@ -12,7 +12,7 @@ use openidconnect::{
         CoreProviderMetadata, CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse,
         CoreTokenIntrospectionResponse, CoreTokenResponse, CoreTokenType, CoreUserInfoClaims,
     },
-    http, url,
+    http,
 };
 use regex::Regex;
 use url::Url;
@@ -25,8 +25,8 @@ use crate::{
     sso::{OIDCCode, OIDCCodeChallenge, OIDCCodeVerifier, OIDCState},
 };
 
-static CLIENT_CACHE_KEY: LazyLock<String> = LazyLock::new(|| "sso-client".to_owned());
-static CLIENT_CACHE: LazyLock<moka::sync::Cache<String, Client>> = LazyLock::new(|| {
+const CLIENT_CACHE_KEY: &str = "sso-client";
+static CLIENT_CACHE: LazyLock<moka::sync::Cache<&'static str, Client>> = LazyLock::new(|| {
     moka::sync::Cache::builder()
         .max_capacity(1)
         .time_to_live(Duration::from_secs(u64::from(CONFIG.sso_client_cache_expiration())))
@@ -83,10 +83,12 @@ impl<'c> AsyncHttpClient<'c> for OidcHttpClient {
 
     fn call(&'c self, request: HttpRequest) -> Self::Future {
         Box::pin(async move {
-            let response = self.client.execute(request.try_into().map_err(Box::new)?).await.map_err(|e| {
-                debug!("Request failed {e:?}");
-                Box::new(e)
-            })?;
+            let response = self
+                .client
+                .execute(request.try_into().map_err(Box::new)?)
+                .await
+                .inspect_err(|e| debug!("Request failed {e:?}"))
+                .map_err(Box::new)?;
 
             let mut builder = http::Response::builder().status(response.status()).version(response.version());
 
@@ -154,7 +156,7 @@ impl Client {
             .set_token_uri(token_uri)
             .set_user_info_url(user_info_url);
 
-        Ok(Client {
+        Ok(Self {
             http_client,
             core_client,
         })
@@ -163,11 +165,11 @@ impl Client {
     // Simple cache to prevent recalling the discovery endpoint each time
     pub async fn cached() -> ApiResult<Self> {
         if CONFIG.sso_client_cache_expiration() > 0 {
-            match CLIENT_CACHE.get(&*CLIENT_CACHE_KEY) {
+            match CLIENT_CACHE.get(CLIENT_CACHE_KEY) {
                 Some(client) => Ok(client),
                 None => Self::get_client().await.inspect(|client| {
                     debug!("Inserting new client in cache");
-                    CLIENT_CACHE.insert(CLIENT_CACHE_KEY.clone(), client.clone());
+                    CLIENT_CACHE.insert(CLIENT_CACHE_KEY, client.clone());
                 }),
             }
         } else {
@@ -177,7 +179,7 @@ impl Client {
 
     pub fn invalidate() {
         if CONFIG.sso_client_cache_expiration() > 0 {
-            CLIENT_CACHE.invalidate(&*CLIENT_CACHE_KEY);
+            CLIENT_CACHE.invalidate(CLIENT_CACHE_KEY);
         }
     }
 
@@ -189,7 +191,7 @@ impl Client {
         binding_hash: Option<String>,
     ) -> ApiResult<(Url, SsoAuth)> {
         let scopes = CONFIG.sso_scopes_vec().into_iter().map(Scope::new);
-        let base64_state = data_encoding::BASE64.encode(state.to_string().as_bytes());
+        let base64_state = data_encoding::BASE64.encode(state.as_bytes());
 
         let client = Self::cached().await?;
         let mut auth_req = client
@@ -287,7 +289,7 @@ impl Client {
     }
 
     pub async fn check_validity(access_token: String) -> EmptyResult {
-        let client = Client::cached().await?;
+        let client = Self::cached().await?;
         match client.user_info(AccessToken::new(access_token)).await {
             Err(err) => {
                 err_silent!(format!("Failed to retrieve user info, token has probably been invalidated: {err}"))
@@ -312,7 +314,7 @@ impl Client {
     }
 
     pub async fn exchange_refresh_token(refresh_token: String) -> ApiResult<RefreshTokenResponse> {
-        let client = Client::cached().await?;
+        let client = Self::cached().await?;
 
         REFRESH_CACHE
             .get_with(refresh_token.clone(), async move { client.exchange_refresh_token_impl(refresh_token).await })

@@ -38,23 +38,14 @@ impl Fairing for AppHeaders {
 
     async fn on_response<'r>(&self, req: &'r Request<'_>, res: &mut Response<'r>) {
         let req_uri_path = req.uri().path();
-        let req_headers = req.headers();
 
         // Check if this connection is an Upgrade/WebSocket connection and return early
         // We do not want add any extra headers, this could cause issues with reverse proxies or CloudFlare
-        if req_uri_path.ends_with("notifications/hub") || req_uri_path.ends_with("notifications/anonymous-hub") {
-            match (req_headers.get_one("connection"), req_headers.get_one("upgrade")) {
-                (Some(c), Some(u))
-                    if c.to_lowercase().contains("upgrade") && u.to_lowercase().contains("websocket") =>
-                {
-                    // Remove headers which could cause websocket connection issues
-                    res.remove_header("X-Frame-Options");
-                    res.remove_header("X-Content-Type-Options");
-                    res.remove_header("Permissions-Policy");
-                    return;
-                }
-                (_, _) => (),
-            }
+        if res.upgrade("websocket").is_some() {
+            res.remove_header("X-Frame-Options");
+            res.remove_header("X-Content-Type-Options");
+            res.remove_header("Permissions-Policy");
+            return;
         }
 
         // NOTE: When modifying or adding security headers be sure to also update the diagnostic checks in `src/static/scripts/admin_diagnostics.js` in `checkSecurityHeaders`
@@ -151,16 +142,13 @@ pub struct Cors();
 
 impl Cors {
     fn get_header(headers: &HeaderMap<'_>, name: &str) -> String {
-        match headers.get_one(name) {
-            Some(h) => h.to_owned(),
-            _ => String::new(),
-        }
+        headers.get_one(name).map_or_default(ToOwned::to_owned)
     }
 
     // Check a request's `Origin` header against the list of allowed origins.
     // If a match exists, return it. Otherwise, return None.
     fn get_allowed_origin(headers: &HeaderMap<'_>) -> Option<String> {
-        let origin = Cors::get_header(headers, "Origin");
+        let origin = Self::get_header(headers, "Origin");
         let safari_extension_origin = "file://";
         let desktop_custom_file_origin = "bw-desktop-file://bundle";
 
@@ -188,14 +176,14 @@ impl Fairing for Cors {
     async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
         let req_headers = request.headers();
 
-        if let Some(origin) = Cors::get_allowed_origin(req_headers) {
+        if let Some(origin) = Self::get_allowed_origin(req_headers) {
             response.set_header(Header::new("Access-Control-Allow-Origin", origin));
         }
 
         // Preflight request
         if request.method() == Method::Options {
-            let req_allow_headers = Cors::get_header(req_headers, "Access-Control-Request-Headers");
-            let req_allow_method = Cors::get_header(req_headers, "Access-Control-Request-Method");
+            let req_allow_headers = Self::get_header(req_headers, "Access-Control-Request-Headers");
+            let req_allow_method = Self::get_header(req_headers, "Access-Control-Request-Method");
 
             response.set_header(Header::new("Access-Control-Allow-Methods", req_allow_method));
             response.set_header(Header::new("Access-Control-Allow-Headers", req_allow_headers));
@@ -214,7 +202,7 @@ pub struct Cached<R> {
 }
 
 impl<R> Cached<R> {
-    pub fn long(response: R, is_immutable: bool) -> Cached<R> {
+    pub fn long(response: R, is_immutable: bool) -> Self {
         Self {
             response,
             is_immutable,
@@ -222,7 +210,7 @@ impl<R> Cached<R> {
         }
     }
 
-    pub fn short(response: R, is_immutable: bool) -> Cached<R> {
+    pub fn short(response: R, is_immutable: bool) -> Self {
         Self {
             response,
             is_immutable,
@@ -230,7 +218,7 @@ impl<R> Cached<R> {
         }
     }
 
-    pub fn ttl(response: R, ttl: u32, is_immutable: bool) -> Cached<R> {
+    pub fn ttl(response: R, ttl: u32, is_immutable: bool) -> Self {
         Self {
             response,
             is_immutable,
@@ -447,19 +435,19 @@ pub fn get_uuid() -> String {
 #[inline]
 pub fn upcase_first(s: &str) -> String {
     let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-    }
+    c.next().map_or_default(|f| f.to_uppercase().collect::<String>() + c.as_str())
 }
 
 #[inline]
-pub fn lcase_first(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_lowercase().collect::<String>() + c.as_str(),
+pub fn lcase_first(mut s: String) -> String {
+    // get_mut(0..1) is None if empty or if the first char is multi-byte
+    if let Some(first) = s.get_mut(0..1) {
+        first.make_ascii_lowercase();
+    } else if let Some(c) = s.chars().next() {
+        let lc: String = c.to_lowercase().collect();
+        s.replace_range(..c.len_utf8(), &lc);
     }
+    s
 }
 
 pub fn try_parse_string<S, T>(string: Option<S>) -> Option<T>
@@ -467,11 +455,7 @@ where
     S: AsRef<str>,
     T: FromStr,
 {
-    if let Some(Ok(value)) = string.map(|s| s.as_ref().parse::<T>()) {
-        Some(value)
-    } else {
-        None
-    }
+    string.and_then(|s| s.as_ref().parse::<T>().ok())
 }
 
 //
@@ -513,15 +497,15 @@ pub fn get_env_bool(key: &'static str) -> Option<bool> {
     const TRUE_VALUES: &[&str] = &["true", "t", "yes", "y", "1"];
     const FALSE_VALUES: &[&str] = &["false", "f", "no", "n", "0"];
 
-    match get_env_str_value(key) {
-        Some(val) if TRUE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(true),
-        Some(val) if FALSE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(false),
-        Some(_) => {
-            println!("[ERROR] `{key}` contains an invalid boolean value and is ignored, the default is used instead.");
-            INVALID_ENV_VARS.lock().unwrap().push(key);
-            None
-        }
-        _ => None,
+    let val = get_env_str_value(key)?;
+    if TRUE_VALUES.iter().any(|v| val.eq_ignore_ascii_case(v)) {
+        Some(true)
+    } else if FALSE_VALUES.iter().any(|v| val.eq_ignore_ascii_case(v)) {
+        Some(false)
+    } else {
+        println!("[ERROR] `{key}` contains an invalid boolean value and is ignored, the default is used instead.");
+        INVALID_ENV_VARS.lock().unwrap().push(key);
+        None
     }
 }
 
@@ -715,10 +699,12 @@ impl<'de> Visitor<'de> for LowerCaseVisitor {
 
 // Inner function to handle a special case for the 'ssn' key.
 // This key is part of the Identity Cipher (Social Security Number)
-fn process_json_key(key: &str) -> String {
-    match key.to_lowercase().as_ref() {
-        "ssn" => "ssn".into(),
-        _ => lcase_first(key),
+fn process_json_key(mut key: String) -> String {
+    if key.eq_ignore_ascii_case("ssn") {
+        key.make_ascii_lowercase();
+        key
+    } else {
+        lcase_first(key)
     }
 }
 
@@ -728,13 +714,7 @@ where
     T: From<String>,
 {
     use serde::Deserialize;
-    Ok(Option::<String>::deserialize(deserializer)?.and_then(|s| {
-        if s.is_empty() {
-            None
-        } else {
-            Some(T::from(s))
-        }
-    }))
+    Ok(Option::<String>::deserialize(deserializer)?.filter(|s| !s.is_empty()).map(T::from))
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -747,8 +727,8 @@ pub enum NumberOrString {
 impl NumberOrString {
     pub fn into_string(self) -> String {
         match self {
-            NumberOrString::Number(n) => n.to_string(),
-            NumberOrString::String(s) => s,
+            Self::Number(n) => n.to_string(),
+            Self::String(s) => s,
         }
     }
 
@@ -756,16 +736,14 @@ impl NumberOrString {
     pub fn into_i32(&self) -> Result<i32, crate::Error> {
         use std::num::ParseIntError as PIE;
         match self {
-            NumberOrString::Number(n) => {
-                if let Some(n) = n.to_i32() {
+            Self::Number(n) => {
+                if let Ok(n) = i32::try_from(*n) {
                     Ok(n)
                 } else {
                     err!("Number does not fit in i32")
                 }
             }
-            NumberOrString::String(s) => {
-                s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string()))
-            }
+            Self::String(s) => s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string())),
         }
     }
 
@@ -773,10 +751,8 @@ impl NumberOrString {
     pub fn into_i64(&self) -> Result<i64, crate::Error> {
         use std::num::ParseIntError as PIE;
         match self {
-            NumberOrString::Number(n) => Ok(*n),
-            NumberOrString::String(s) => {
-                s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string()))
-            }
+            Self::Number(n) => Ok(*n),
+            Self::String(s) => s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string())),
         }
     }
 }
@@ -833,50 +809,25 @@ where
 
 pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
     match src_json {
-        Value::Array(elm) => {
-            let mut new_array: Vec<Value> = Vec::with_capacity(elm.len());
-
-            for obj in elm {
-                new_array.push(convert_json_key_lcase_first(obj));
+        Value::Array(mut elm) => {
+            for obj in &mut elm {
+                *obj = convert_json_key_lcase_first(obj.take());
             }
-            Value::Array(new_array)
+            Value::Array(elm)
         }
 
         Value::Object(obj) => {
             let mut json_map = JsonMap::new();
             for (key, value) in obj {
-                match (key, value) {
-                    (key, Value::Object(elm)) => {
-                        let inner_value = convert_json_key_lcase_first(Value::Object(elm));
-                        json_map.insert(process_json_key(&key), inner_value);
-                    }
-
-                    (key, Value::Array(elm)) => {
-                        let mut inner_array: Vec<Value> = Vec::with_capacity(elm.len());
-
-                        for inner_obj in elm {
-                            inner_array.push(convert_json_key_lcase_first(inner_obj));
-                        }
-
-                        json_map.insert(process_json_key(&key), Value::Array(inner_array));
-                    }
-
-                    (key, value) => {
-                        json_map.insert(process_json_key(&key), value);
-                    }
-                }
+                json_map.insert(process_json_key(key), convert_json_key_lcase_first(value));
             }
-
             Value::Object(json_map)
         }
-
         value => value,
     }
 }
 
 pub enum FeatureFlagFilter {
-    #[allow(dead_code)]
-    Unfiltered,
     ValidOnly,
     InvalidOnly,
 }
@@ -891,7 +842,6 @@ pub fn parse_experimental_client_feature_flags(
         .map(str::trim)
         .filter(|flag| !flag.is_empty())
         .filter(|flag| match filter_mode {
-            FeatureFlagFilter::Unfiltered => true,
             FeatureFlagFilter::ValidOnly => SUPPORTED_FEATURE_FLAGS.contains(flag),
             FeatureFlagFilter::InvalidOnly => !SUPPORTED_FEATURE_FLAGS.contains(flag),
         })
@@ -911,9 +861,9 @@ pub fn is_client_feature_flag_enabled(flag: &str) -> bool {
 // #[expect(clippy::nonminimal_bool, reason = "Mostly copy/paste from std, keep as-is")]
 #[expect(clippy::decimal_bitwise_operands, reason = "Mostly copy/paste from std, keep as-is")]
 #[cfg(any(not(feature = "unstable"), test))]
-pub fn is_global_hardcoded(ip: std::net::IpAddr) -> bool {
+pub fn is_global_hardcoded(ip: core::net::IpAddr) -> bool {
     match ip {
-        std::net::IpAddr::V4(ip) => {
+        core::net::IpAddr::V4(ip) => {
             !(ip.octets()[0] == 0 // "This network"
             || ip.is_private()
             || (ip.octets()[0] == 100 && (ip.octets()[1] & 0b1100_0000 == 0b0100_0000)) // ip.is_shared()
@@ -925,12 +875,14 @@ pub fn is_global_hardcoded(ip: std::net::IpAddr) -> bool {
                 ip.octets()[0] == 192 && ip.octets()[1] == 0 && ip.octets()[2] == 0
                 && ip.octets()[3] != 9 && ip.octets()[3] != 10
             )
+            // 6a44-relay anycast address (`192.88.99.2/32`)
+            || matches!(ip.octets(), [192, 88, 99, 2])
             || ip.is_documentation()
             || (ip.octets()[0] == 198 && (ip.octets()[1] & 0xfe) == 18) // ip.is_benchmarking()
             || (ip.octets()[0] & 240 == 240 && !ip.is_broadcast()) // ip.is_reserved()
             || ip.is_broadcast())
         }
-        std::net::IpAddr::V6(ip) => {
+        core::net::IpAddr::V6(ip) => {
             !(ip.is_unspecified()
             || ip.is_loopback()
             // IPv4-mapped Address (`::ffff:0:0/96`)
@@ -939,6 +891,8 @@ pub fn is_global_hardcoded(ip: std::net::IpAddr) -> bool {
             || matches!(ip.segments(), [0x64, 0xff9b, 1, _, _, _, _, _])
             // Discard-Only Address Block (`100::/64`)
             || matches!(ip.segments(), [0x100, 0, 0, 0, _, _, _, _])
+            // Dummy IPv6 Prefix (100:0:0:1::/64)
+            || matches!(ip.segments(), [0x100, 0, 0, 1, _, _, _, _])
             // IETF Protocol Assignments (`2001::/23`)
             || (matches!(ip.segments(), [0x2001, b, _, _, _, _, _, _] if b < 0x200)
                 && !(
@@ -946,6 +900,8 @@ pub fn is_global_hardcoded(ip: std::net::IpAddr) -> bool {
                     u128::from_be_bytes(ip.octets()) == 0x2001_0001_0000_0000_0000_0000_0000_0001
                     // Traversal Using Relays around NAT Anycast (`2001:1::2`)
                     || u128::from_be_bytes(ip.octets()) == 0x2001_0001_0000_0000_0000_0000_0000_0002
+                    // DNS-SD Service Registration Protocol Anycast (`2001:1::3`)
+                    || u128::from_be_bytes(ip.octets()) == 0x2001_0001_0000_0000_0000_0000_0000_0003
                     // AMT (`2001:3::/32`)
                     || matches!(ip.segments(), [0x2001, 3, _, _, _, _, _, _])
                     // AS112-v6 (`2001:4:112::/48`)
@@ -1027,11 +983,11 @@ mod tests {
     #[test]
     #[ignore = "exhaustive IPv4 check is too slow for the regular test suite"]
     fn test_ipv4_global() {
-        for a in 0..u8::MAX {
+        for a in 0..=u8::MAX {
             println!("Iter: {a}/255");
-            for b in 0..u8::MAX {
-                for c in 0..u8::MAX {
-                    for d in 0..u8::MAX {
+            for b in 0..=u8::MAX {
+                for c in 0..=u8::MAX {
+                    for d in 0..=u8::MAX {
                         let ip = IpAddr::V4(std::net::Ipv4Addr::new(a, b, c, d));
                         assert_eq!(ip.is_global(), is_global_hardcoded(ip), "IP mismatch: {ip}");
                     }

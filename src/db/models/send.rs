@@ -58,9 +58,9 @@ pub enum SendType {
 }
 
 enum SendAuthType {
-    #[allow(dead_code)]
+    #[expect(unused, reason = "Not yet supported")]
     // Send requires email OTP verification
-    Email = 0, // Not yet supported by Vaultwarden
+    Email = 0,
     // Send requires a password
     Password = 1,
     // Send requires no auth
@@ -145,7 +145,7 @@ impl Send {
     }
 
     pub fn to_json(&self) -> Value {
-        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map_or_default(|d| d.data);
 
         // Mobile clients expect size to be a string instead of a number
         if let Some(size) = data.get("size").and_then(Value::as_i64) {
@@ -159,8 +159,8 @@ impl Send {
 
             "name": self.name,
             "notes": self.notes,
-            "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
-            "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "text": (self.atype == SendType::Text as i32).then_some(&data),
+            "file": (self.atype == SendType::File as i32).then_some(&data),
 
             "key": self.akey,
             "maxAccessCount": self.max_access_count,
@@ -178,7 +178,7 @@ impl Send {
     }
 
     pub async fn to_json_access(&self, conn: &DbConn) -> Value {
-        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map_or_default(|d| d.data);
 
         // Mobile clients expect size to be a string instead of a number
         if let Some(size) = data.get("size").and_then(Value::as_i64) {
@@ -190,8 +190,8 @@ impl Send {
             "type": self.atype,
 
             "name": self.name,
-            "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
-            "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "text": (self.atype == SendType::Text as i32).then_some(&data),
+            "file": (self.atype == SendType::File as i32).then_some(&data),
 
             "expirationDate": self.expiration_date.as_ref().map(format_date),
             "creatorIdentifier": self.creator_identifier(conn).await,

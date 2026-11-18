@@ -146,7 +146,7 @@ impl Attachment {
     }
 
     pub async fn delete_all_by_cipher(cipher_uuid: &CipherId, conn: &DbConn) -> EmptyResult {
-        for attachment in Attachment::find_by_cipher(cipher_uuid, conn).await {
+        for attachment in Self::find_by_cipher(cipher_uuid, conn).await {
             attachment.delete(conn).await?;
         }
         Ok(())

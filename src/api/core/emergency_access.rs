@@ -793,8 +793,7 @@ fn is_valid_request(
     requesting_user_id: &UserId,
     requested_access_type: EmergencyAccessType,
 ) -> bool {
-    emergency_access.grantee_uuid.is_some()
-        && emergency_access.grantee_uuid.as_ref().unwrap() == requesting_user_id
+    emergency_access.grantee_uuid.as_ref().is_some_and(|u| u == requesting_user_id)
         && emergency_access.status == EmergencyAccessStatus::RecoveryApproved as i32
         && emergency_access.atype == requested_access_type as i32
 }
@@ -911,7 +910,7 @@ pub async fn emergency_notification_reminder_job(pool: DbPool) {
         };
 
         // Only send reminders during the last 24 hours, else continue
-        if now < final_reminder_at || now >= deadline_at {
+        if !(final_reminder_at..deadline_at).contains(&now) {
             continue;
         }
 
