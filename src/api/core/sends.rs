@@ -126,6 +126,23 @@ async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, c
     Ok(())
 }
 
+/// Stores a text Send that is already encrypted, as [`create_send`] does, for the test seeder (`unsafe_test_mode`).
+/// Its deletion date becomes a week from now: a recorded one can be years ahead, more than a Send may be.
+#[cfg(feature = "unsafe_test_mode")]
+pub async fn seed_send(mut encrypted: Value, user_id: &UserId, conn: &DbConn) -> ApiResult<SendId> {
+    let Some(fields) = encrypted.as_object_mut() else {
+        err!("A seeded Send has to be a JSON object")
+    };
+    fields.insert("deletionDate".to_owned(), serde_json::to_value(Utc::now() + TimeDelta::try_days(7).unwrap())?);
+    let data: SendData = serde_json::from_value(encrypted)?;
+    if data.r#type != SendType::Text as i32 {
+        err!("Only text Sends can be seeded: a file Send needs its file")
+    }
+    let mut send = create_send(data, user_id.clone())?;
+    send.save(conn).await?;
+    Ok(send.uuid)
+}
+
 fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
     let data_val = if data.r#type == SendType::Text as i32 {
         data.text

@@ -331,6 +331,7 @@ impl Event {
 
     pub async fn find_by_cipher_uuid(
         cipher_uuid: &CipherId,
+        org_uuid: &OrganizationId,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
         conn: &DbConn,
@@ -338,6 +339,7 @@ impl Event {
         conn.run(move |conn| {
             event::table
                 .filter(event::cipher_uuid.eq(cipher_uuid))
+                .filter(event::org_uuid.eq(org_uuid))
                 .filter(event::event_date.between(start, end))
                 .order_by(event::event_date.desc())
                 .limit(Self::PAGE_SIZE)

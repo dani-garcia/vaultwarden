@@ -65,16 +65,33 @@ impl Attachment {
         }
     }
 
-    pub async fn to_json(&self, host: &str) -> Result<Value, crate::Error> {
-        Ok(json!({
+    /// The attachment as sync and the cipher responses list it. Its `url` is a leftover from the old download flow.
+    /// Clients get a signed URL from the attachment routes (`to_json_for_download`) instead, only the web vault and the
+    /// CLI read this one, as a fallback when those routes answer 404.
+    ///
+    /// Ref: <https://github.com/bitwarden/server/blob/341acc9d3d8988cec8fe05debfa6d557cf5ab749/src/Api/Vault/Models/Response/AttachmentResponseModel.cs#L24-L29>
+    pub fn to_json(&self, host: &str) -> Value {
+        self.json_with_url(&format!("{host}/attachments/{}/{}", self.cipher_uuid, self.id))
+    }
+
+    /// The attachment with a `url` the client can download it from for a short while, for the attachment routes
+    /// (`GET /ciphers/{id}/attachment/{attachmentId}`, its admin variant, the emergency access one).
+    ///
+    /// Ref: <https://github.com/bitwarden/server/blob/341acc9d3d8988cec8fe05debfa6d557cf5ab749/src/Api/Vault/Controllers/CiphersController.cs#L1699-L1717>
+    pub async fn to_json_for_download(&self, host: &str) -> Result<Value, crate::Error> {
+        Ok(self.json_with_url(&self.get_url(host).await?))
+    }
+
+    fn json_with_url(&self, url: &str) -> Value {
+        json!({
             "id": self.id,
-            "url": self.get_url(host).await?,
+            "url": url,
             "fileName": self.file_name,
             "size": self.file_size.to_string(),
             "sizeName": crate::util::get_display_size(self.file_size),
             "key": self.akey,
             "object": "attachment"
-        }))
+        })
     }
 }
 
