@@ -250,32 +250,26 @@ fn get_favicons_node(dom: Tokenizer<StringReader<'_>, FaviconEmitter>, icons: &m
     const ATTR_HREF: &[u8] = b"href";
     const ATTR_SIZES: &[u8] = b"sizes";
 
-    let mut base_url = url.clone();
-    let mut icon_tags: Vec<Tag> = Vec::new();
-    for Ok(token) in dom {
-        let tag_name: &[u8] = &token.tag.name;
-        match tag_name {
-            TAG_LINK => {
-                icon_tags.push(token.tag);
+    let mut base_href = None;
+    let mut icon_tags = Vec::new();
+    for Ok(mut token) in dom {
+        match token.tag.name.as_slice() {
+            TAG_LINK => icon_tags.push(token.tag),
+            TAG_BASE if base_href.is_none() => {
+                base_href = token.tag.attributes.remove(ATTR_HREF);
             }
-            TAG_BASE => {
-                base_url = if let Some(href) = token.tag.attributes.get(ATTR_HREF) {
-                    let href = str::from_utf8(href).unwrap_or_default();
-                    debug!("Found base href: {}", href.escape_debug());
-                    match base_url.join(href) {
-                        Ok(inner_url) => inner_url,
-                        _ => continue,
-                    }
-                } else {
-                    continue;
-                };
-            }
-            TAG_HEAD if token.closing => {
-                break;
-            }
+            TAG_HEAD if token.closing => break,
+            b"body" | b"frameset" if !token.closing => break,
             _ => {}
         }
     }
+
+    let parsed_base = base_href.as_ref().and_then(|value| {
+        let href = str::from_utf8(value).ok()?;
+        debug!("Found base href: {}", href.escape_debug());
+        url.join(href).ok().filter(|base| !matches!(base.scheme(), "data" | "javascript"))
+    });
+    let base_url = parsed_base.as_ref().unwrap_or(url);
 
     for icon_tag in icon_tags {
         if let Some(icon_href) = icon_tag.attributes.get(ATTR_HREF)
@@ -700,32 +694,48 @@ struct FaviconEmitter {
 }
 
 impl FaviconEmitter {
-    fn flush_current_attribute(&mut self, emit_current_tag: bool) {
-        const ATTR_HREF: &[u8] = b"href";
-        const ATTR_REL: &[u8] = b"rel";
-        const TAG_LINK: &[u8] = b"link";
-        const TAG_BASE: &[u8] = b"base";
-        const TAG_HEAD: &[u8] = b"head";
+    fn is_icon_rel(rel: &[u8]) -> bool {
+        let mut has_icon = false;
 
-        if let Some(ref mut token) = self.current_token {
-            let tag_name: &[u8] = &token.tag.name;
-
-            if let Some((k, v)) = self.current_attribute.take_if(|_| tag_name == TAG_BASE || tag_name == TAG_LINK) {
-                token.tag.attributes.entry(k).or_insert(v);
+        for keyword in rel.split(u8::is_ascii_whitespace) {
+            if keyword.eq_ignore_ascii_case(b"mask-icon") {
+                return false;
             }
+            if keyword.eq_ignore_ascii_case(b"icon")
+                || keyword.eq_ignore_ascii_case(b"favicon")
+                || keyword.eq_ignore_ascii_case(b"fluid-icon")
+                || keyword.eq_ignore_ascii_case(b"apple-touch-icon")
+                || keyword.eq_ignore_ascii_case(b"apple-touch-icon-precomposed")
+            {
+                has_icon = true;
+            }
+        }
 
-            let tag_attr = &token.tag.attributes;
-            match tag_name {
-                TAG_HEAD if token.closing => self.emit_token = true,
-                TAG_BASE if tag_attr.contains_key(ATTR_HREF) => self.emit_token = true,
-                TAG_LINK if emit_current_tag && tag_attr.contains_key(ATTR_REL) && tag_attr.contains_key(ATTR_HREF) => {
-                    let rel_value = str::from_utf8(token.tag.attributes.get(ATTR_REL).unwrap()).unwrap_or_default();
-                    if rel_value.contains("icon") && !rel_value.contains("mask-icon") {
-                        self.emit_token = true;
-                    }
+        has_icon
+    }
+
+    fn flush_current_attribute(&mut self, tag_complete: bool) {
+        let Some(token) = &mut self.current_token else {
+            return;
+        };
+
+        if let Some((name, value)) = self.current_attribute.take() {
+            token.tag.attributes.entry(name).or_insert(value);
+        }
+
+        if tag_complete {
+            let attrs = &token.tag.attributes;
+            let href: &[u8] = b"href";
+            let rel: &[u8] = b"rel";
+
+            self.emit_token = match (token.closing, token.tag.name.as_slice()) {
+                (true, b"head") | (false, b"body" | b"frameset") => true,
+                (false, b"base") => attrs.contains_key(href),
+                (false, b"link") => {
+                    attrs.contains_key(href) && attrs.get(rel).is_some_and(|value| Self::is_icon_rel(value))
                 }
-                _ => (),
-            }
+                _ => false,
+            };
         }
     }
 }
@@ -780,16 +790,11 @@ impl Emitter for FaviconEmitter {
 
     fn init_attribute(&mut self) {
         self.flush_current_attribute(false);
-        self.current_attribute = match &self.current_token {
-            Some(token) => {
-                let tag_name: &[u8] = &token.tag.name;
-                match tag_name {
-                    b"link" | b"head" | b"base" => Some(Default::default()),
-                    _ => None,
-                }
-            }
-            _ => None,
-        };
+        self.current_attribute = self
+            .current_token
+            .as_ref()
+            .filter(|token| !token.closing && matches!(token.tag.name.as_slice(), b"link" | b"base"))
+            .map(|_| Default::default());
     }
 
     fn push_attribute_name(&mut self, s: &[u8]) {
@@ -810,19 +815,27 @@ impl Emitter for FaviconEmitter {
             .is_some_and(|t| t.closing && (!self.last_start_tag.is_empty() && self.last_start_tag == t.tag.name))
     }
 
+    fn should_emit_errors(&mut self) -> bool {
+        false
+    }
+
     // We do not want and need these parts of the HTML document
     // These will be skipped and ignored during the tokenization and iteration.
     fn emit_current_comment(&mut self) {}
     fn emit_current_doctype(&mut self) {}
+    fn emit_current_processing_instruction(&mut self) {}
     fn emit_eof(&mut self) {}
     fn emit_error(&mut self, _: html5gum::Error) {}
     fn emit_string(&mut self, _: &[u8]) {}
     fn init_comment(&mut self) {}
     fn init_doctype(&mut self) {}
+    fn init_processing_instruction(&mut self) {}
     fn push_comment(&mut self, _: &[u8]) {}
     fn push_doctype_name(&mut self, _: &[u8]) {}
     fn push_doctype_public_identifier(&mut self, _: &[u8]) {}
     fn push_doctype_system_identifier(&mut self, _: &[u8]) {}
+    fn push_processing_instruction_data(&mut self, _: &[u8]) {}
+    fn push_processing_instruction_target(&mut self, _: &[u8]) {}
     fn set_doctype_public_identifier(&mut self, _: &[u8]) {}
     fn set_doctype_system_identifier(&mut self, _: &[u8]) {}
     fn set_force_quirks(&mut self) {}

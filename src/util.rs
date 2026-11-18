@@ -38,23 +38,14 @@ impl Fairing for AppHeaders {
 
     async fn on_response<'r>(&self, req: &'r Request<'_>, res: &mut Response<'r>) {
         let req_uri_path = req.uri().path();
-        let req_headers = req.headers();
 
         // Check if this connection is an Upgrade/WebSocket connection and return early
         // We do not want add any extra headers, this could cause issues with reverse proxies or CloudFlare
-        if req_uri_path.ends_with("notifications/hub") || req_uri_path.ends_with("notifications/anonymous-hub") {
-            match (req_headers.get_one("connection"), req_headers.get_one("upgrade")) {
-                (Some(c), Some(u))
-                    if c.to_lowercase().contains("upgrade") && u.to_lowercase().contains("websocket") =>
-                {
-                    // Remove headers which could cause websocket connection issues
-                    res.remove_header("X-Frame-Options");
-                    res.remove_header("X-Content-Type-Options");
-                    res.remove_header("Permissions-Policy");
-                    return;
-                }
-                (_, _) => (),
-            }
+        if res.upgrade("websocket").is_some() {
+            res.remove_header("X-Frame-Options");
+            res.remove_header("X-Content-Type-Options");
+            res.remove_header("Permissions-Policy");
+            return;
         }
 
         // NOTE: When modifying or adding security headers be sure to also update the diagnostic checks in `src/static/scripts/admin_diagnostics.js` in `checkSecurityHeaders`
