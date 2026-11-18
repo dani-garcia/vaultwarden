@@ -18,7 +18,7 @@ fn impl_derive_uuid_macro(ast: &DeriveInput) -> TokenStream {
 
             #[inline(always)]
             fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-                if uuid::Uuid::parse_str(param).is_ok() {
+                if uuid::Uuid::try_parse(param).is_ok() {
                     Ok(Self(param.to_string()))
                 } else {
                     Err(())

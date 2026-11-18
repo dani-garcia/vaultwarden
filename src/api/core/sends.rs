@@ -1,7 +1,6 @@
 use std::{path::Path, sync::LazyLock, time::Duration};
 
 use chrono::{DateTime, TimeDelta, Utc};
-use num_traits::ToPrimitive;
 use rocket::{
     form::Form,
     fs::{NamedFile, TempFile},
@@ -172,10 +171,7 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
     let mut send = Send::new(data.r#type, data.name, data_str, data.key, data.deletion_date.naive_utc());
     send.user_uuid = Some(user_id);
     send.notes = data.notes;
-    send.max_access_count = match data.max_access_count {
-        Some(m) => Some(m.into_i32()?),
-        _ => None,
-    };
+    send.max_access_count = data.max_access_count.map(|m| m.into_i32()).transpose()?;
     send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
     send.disabled = data.disabled;
     send.hide_email = data.hide_email;
@@ -303,7 +299,7 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn)
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case, reason = "Bitwarden clients use this format")]
 pub struct SendFileData {
     id: SendFileId,
     size: u64,
@@ -357,10 +353,7 @@ async fn post_send_file_v2_data(
         err!("Send file does not match send data.", format!("Expected id {} got {file_id}", send_data.id));
     }
 
-    let Some(size) = data.data.len().to_u64() else {
-        err!("Send file size overflow.");
-    };
-
+    let size = data.data.len();
     if size != send_data.size {
         err!("Send file size does not match.", format!("Expected a file size of {} got {size}", send_data.size));
     }
@@ -538,10 +531,7 @@ async fn update_send_from_data(
     send.akey = data.key;
     send.deletion_date = data.deletion_date.naive_utc();
     send.notes = data.notes;
-    send.max_access_count = match data.max_access_count {
-        Some(m) => Some(m.into_i32()?),
-        _ => None,
-    };
+    send.max_access_count = data.max_access_count.map(|m| m.into_i32()).transpose()?;
     send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
     send.hide_email = data.hide_email;
     send.disabled = data.disabled;

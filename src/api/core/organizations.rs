@@ -13,8 +13,9 @@ use crate::{
     },
     auth::{
         AccessImportExportHeaders, AdminHeaders, CollectionAction, CollectionDeleteHeaders, CollectionReadHeaders,
-        CollectionUsersReadHeaders, Headers, ManageGroupsHeaders, ManagePoliciesHeaders, ManageUsersHeaders,
-        ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, custom_member_may, decode_invite,
+        CollectionUsersReadHeaders, Headers, ManageGroupsHeaders, ManagePoliciesHeaders, ManageResetPasswordHeaders,
+        ManageUsersHeaders, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, custom_member_may,
+        decode_invite,
     },
     db::{
         DbConn,
@@ -115,8 +116,8 @@ struct OrgData {
     key: String,
     name: String,
     keys: Option<OrgKeyData>,
-    #[allow(dead_code)]
-    plan_type: NumberOrString, // Ignored, always use the same plan
+    #[expect(unused, reason = "Ignored, always use the same plan")]
+    plan_type: NumberOrString,
 }
 
 #[derive(Deserialize, Debug)]
@@ -589,23 +590,19 @@ async fn post_bulk_access_collections(
         err!("Can't find organization details")
     }
 
-    // The collections and members are checked below, the groups only here.
-    let org_groups = Group::find_by_organization(&org_id, &conn).await;
-    let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
-    if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
-        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id.escape_debug(), org_id))
-    }
-
-    if data.collection_ids.is_empty()
-        || data.collection_ids.iter().collect::<HashSet<_>>().len() != data.collection_ids.len()
+    // As in Bitwarden, missing, repeated or unmanageable collections are Not Found. Invalid groups and members are
+    // checked after them and are a Bad Request.
     {
-        err!("Invalid collection list")
+        let mut seen = HashSet::new();
+        if data.collection_ids.is_empty() || data.collection_ids.iter().any(|id| !seen.insert(id)) {
+            err_code!("One or more collections not found.", Status::NotFound.code)
+        }
     }
 
     let mut collections = Vec::with_capacity(data.collection_ids.len());
     for col_id in &data.collection_ids {
         let Some(collection) = Collection::find_by_uuid_and_org(col_id, &org_id, &conn).await else {
-            err!("Collection not found")
+            err_code!("One or more collections not found.", Status::NotFound.code)
         };
 
         let manageable = if headers.membership.has_type(MembershipType::Custom) {
@@ -616,10 +613,20 @@ async fn post_bulk_access_collections(
             collection.is_manageable_by_user(&headers.membership.user_uuid, &conn).await
         };
         if !manageable {
-            err!("Collection not found", "The current user isn't a manager for this collection")
+            err_code!(
+                "Resource not found.",
+                "The current user isn't a manager for this collection",
+                Status::NotFound.code
+            )
         }
 
         collections.push(collection);
+    }
+
+    let org_groups = Group::find_by_organization(&org_id, &conn).await;
+    let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
+    if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
+        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id.escape_debug(), org_id))
     }
 
     let mut members = Vec::with_capacity(data.users.len());
@@ -688,11 +695,7 @@ async fn put_organization_collection_update(
     };
 
     collection.name = data.name;
-    collection.external_id = match data.external_id {
-        Some(external_id) if !external_id.trim().is_empty() => Some(external_id),
-        _ => None,
-    };
-
+    collection.external_id = data.external_id.filter(|e| !e.trim().is_empty());
     collection.save(&conn).await?;
 
     log_event(
@@ -1007,13 +1010,18 @@ async fn get_members(
         err!("Organization not found", "Organization id's do not match");
     }
 
-    if !headers.membership.has_full_access() && !headers.membership.has_custom_permission(CustomPermission::ManageUsers)
-    {
+    // As in Bitwarden, Manage account recovery alone only lists the members whose account it can recover
+    let recovery_only = !headers.membership.has_full_access()
+        && !headers.membership.has_custom_permission(CustomPermission::ManageUsers);
+    if recovery_only && !headers.membership.has_custom_permission(CustomPermission::ManageResetPassword) {
         err_code!("Resource not found.", "User does not have full access", Status::NotFound.code);
     }
 
     let mut users_json = Vec::new();
     for u in Membership::find_by_org(&org_id, &conn).await {
+        if recovery_only && (!u.has_status(MembershipStatus::Confirmed) || u.reset_password_key.is_none()) {
+            continue;
+        }
         // The user can be a manager instead of an admin, but we've checked above that they have full access
         users_json.push(
             u.to_json_details_for_admin(
@@ -1036,7 +1044,7 @@ async fn get_members(
 async fn post_org_keys(
     org_id: OrganizationId,
     data: Json<OrgKeyData>,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -1306,7 +1314,7 @@ async fn send_invite(
             if Group::find_by_uuid_and_org(group_id, &org_id, &conn).await.is_none() {
                 err!("Group not found in Organization")
             }
-            let mut group_entry = GroupUser::new(group_id.clone(), new_member.uuid.clone());
+            let group_entry = GroupUser::new(group_id.clone(), new_member.uuid.clone());
             group_entry.save(&conn).await?;
         }
     }
@@ -1786,7 +1794,7 @@ async fn edit_member(
         if Group::find_by_uuid_and_org(group_id, &org_id, &conn).await.is_none() {
             err!("Group not found in Organization")
         }
-        let mut group_entry = GroupUser::new(group_id.clone(), member_to_edit.uuid.clone());
+        let group_entry = GroupUser::new(group_id.clone(), member_to_edit.uuid.clone());
         group_entry.save(&conn).await?;
     }
 
@@ -2268,13 +2276,7 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
     };
     let user_collections: HashMap<CollectionId, Collection> = collections
         .into_iter()
-        .filter_map(|c| {
-            if data.collection_ids.contains(&c.uuid) {
-                Some((c.uuid.clone(), c))
-            } else {
-                None
-            }
-        })
+        .filter_map(|c| data.collection_ids.contains(&c.uuid).then(|| (c.uuid.clone(), c)))
         .collect();
 
     // Verify if all the collections requested exists and are writable for the user, else abort
@@ -2385,10 +2387,9 @@ async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: ManagePolici
         err!("Invalid or unsupported policy type")
     };
 
-    let policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await {
-        Some(p) => p,
-        None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "null".to_owned()),
-    };
+    let policy = OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn)
+        .await
+        .unwrap_or_else(|| OrgPolicy::new(org_id.clone(), pol_type_enum, false, "null".to_owned()));
 
     Ok(Json(policy.to_json()))
 }
@@ -2455,11 +2456,9 @@ async fn put_policy(
     // Maybe we want to enable this by default in the future, but currently it is disabled by default.
     if CONFIG.enforce_single_org_with_reset_pw_policy() {
         if pol_type_enum == OrgPolicyType::ResetPassword && data.enabled {
-            let single_org_policy_enabled =
-                match OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::SingleOrg, &conn).await {
-                    Some(p) => p.enabled,
-                    None => false,
-                };
+            let single_org_policy_enabled = OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::SingleOrg, &conn)
+                .await
+                .is_some_and(|p| p.enabled);
 
             if !single_org_policy_enabled {
                 err!("Single Organization policy is not enabled. It is mandatory for this policy to be enabled.")
@@ -2468,11 +2467,9 @@ async fn put_policy(
 
         // Also prevent the Single Org Policy to be disabled if the Reset Password policy is enabled
         if pol_type_enum == OrgPolicyType::SingleOrg && !data.enabled {
-            let reset_pw_policy_enabled =
-                match OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::ResetPassword, &conn).await {
-                    Some(p) => p.enabled,
-                    None => false,
-                };
+            let reset_pw_policy_enabled = OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::ResetPassword, &conn)
+                .await
+                .is_some_and(|p| p.enabled);
 
             if reset_pw_policy_enabled {
                 err!("Account recovery policy is enabled. It is not allowed to disable this policy.")
@@ -2567,8 +2564,9 @@ async fn enforce_single_org_policy_for_org(
         // Later membership activation still checks the enabled policy independently.
         if member.atype < MembershipType::Admin
             && member.user_uuid != *acting_user_id
-            && member.status != MembershipStatus::Invited as i32
-            && Membership::count_accepted_and_confirmed_by_user(&member.user_uuid, &member.org_uuid, conn).await > 0
+            && (member.has_status(MembershipStatus::Accepted) || member.has_status(MembershipStatus::Confirmed))
+            && Membership::count_accepted_confirmed_or_revoked_by_user(&member.user_uuid, &member.org_uuid, conn).await
+                > 0
         {
             if CONFIG.mail_enabled() {
                 let org = Organization::find_by_uuid(&member.org_uuid, conn).await.unwrap();
@@ -2883,12 +2881,21 @@ async fn get_groups_data(
             || headers.membership.has_custom_permission(CustomPermission::ManageUsers)
             || headers.membership.has_custom_permission(CustomPermission::ManageGroups)
     } else {
-        // Reports need the basic group list, not group details or management rights.
+        // Reports and account recovery need the basic group list, not group details or management rights.
         has_full_access
             || headers.membership.has_custom_permission(CustomPermission::AccessReports)
+            || headers.membership.has_custom_permission(CustomPermission::ManageResetPassword)
             || may_assign_collection_access(&headers.membership, &conn).await
     };
     if !allowed {
+        // Bitwarden's permission requirement on the details answers Forbidden
+        if details {
+            err_code!(
+                "You don't have permission to call this endpoint",
+                "User does not have access",
+                Status::Forbidden.code
+            );
+        }
         err_code!("Resource not found.", "User does not have access", Status::NotFound.code);
     }
 
@@ -3076,12 +3083,12 @@ async fn add_update_group(
     group.save(conn).await?;
 
     for col_selection in collections {
-        let mut collection_group = col_selection.to_collection_group(group.uuid.clone());
+        let collection_group = col_selection.to_collection_group(group.uuid.clone());
         collection_group.save(&org_id, conn).await?;
     }
 
     for assigned_member in members {
-        let mut user_entry = GroupUser::new(group.uuid.clone(), assigned_member.clone());
+        let user_entry = GroupUser::new(group.uuid.clone(), assigned_member.clone());
         user_entry.save(conn).await?;
 
         log_event(
@@ -3230,8 +3237,8 @@ async fn get_group_members(
 
     let group_members: Vec<MembershipId> = GroupUser::find_by_group(&group_id, &org_id, &conn)
         .await
-        .iter()
-        .map(|entry| entry.users_organizations_uuid.clone())
+        .into_iter()
+        .map(|entry| entry.users_organizations_uuid)
         .collect();
 
     Ok(Json(json!(group_members)))
@@ -3322,7 +3329,7 @@ async fn get_organization_keys(org_id: OrganizationId, headers: Headers, conn: D
 async fn put_recover_account(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     data: Json<OrganizationUserRecoverAccountRequest>,
     conn: DbConn,
     nt: Notify<'_>,
@@ -3333,7 +3340,7 @@ async fn put_recover_account(
 async fn recover_account(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     req: OrganizationUserRecoverAccountRequest,
     conn: DbConn,
     nt: Notify<'_>,
@@ -3353,7 +3360,7 @@ async fn recover_account(
         err!("User not found")
     };
 
-    check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers, &conn).await?;
+    check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers.membership, &conn).await?;
 
     if member.reset_password_key.is_none() {
         err!("Password reset not or not correctly enrolled");
@@ -3414,8 +3421,15 @@ async fn recover_account(
         TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
         Device::clear_twofactor_remember_by_user(&user.uuid, &conn).await?;
         if !fallback_2fa_email || two_factor::email::find_and_activate_email_2fa(&user.uuid, &conn).await.is_err() {
-            two_factor::enforce_2fa_policy(&user, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-                .await?;
+            two_factor::enforce_2fa_policy(
+                &user,
+                &headers.user.uuid,
+                headers.device.atype,
+                &headers.ip.ip,
+                true,
+                &conn,
+            )
+            .await?;
         }
     }
 
@@ -3423,12 +3437,14 @@ async fn recover_account(
 
     nt.send_logout(&user, None, &conn).await;
 
-    if req.reset_master_password {
-        headers.log_event(EventType::OrganizationUserAdminResetPassword, &member_id, &org_id, &conn).await;
-    }
-
-    if req.reset_two_factor {
-        headers.log_event(EventType::OrganizationUserAdminResetTwoFactor, &member_id, &org_id, &conn).await;
+    for (reset, event_type) in [
+        (req.reset_master_password, EventType::OrganizationUserAdminResetPassword),
+        (req.reset_two_factor, EventType::OrganizationUserAdminResetTwoFactor),
+    ] {
+        if reset {
+            log_event(event_type, &member_id, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
+                .await;
+        }
     }
 
     Ok(())
@@ -3599,7 +3615,7 @@ async fn get_organization_private_key(org_id: OrganizationId, headers: ManageUse
 async fn get_reset_password_details(
     org_id: OrganizationId,
     member_id: MembershipId,
-    headers: AdminHeaders,
+    headers: ManageResetPasswordHeaders,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -3617,7 +3633,7 @@ async fn get_reset_password_details(
         err!("User not found")
     };
 
-    check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers, &conn).await?;
+    check_reset_password_applicable_and_permissions(&org_id, &member_id, &headers.membership, &conn).await?;
 
     // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/AdminConsole/Models/Response/Organizations/OrganizationUserResponseModel.cs#L190
     Ok(Json(json!({
@@ -3636,7 +3652,7 @@ async fn get_reset_password_details(
 async fn check_reset_password_applicable_and_permissions(
     org_id: &OrganizationId,
     member_id: &MembershipId,
-    headers: &AdminHeaders,
+    caller: &Membership,
     conn: &DbConn,
 ) -> EmptyResult {
     check_reset_password_applicable(org_id, conn).await?;
@@ -3645,11 +3661,25 @@ async fn check_reset_password_applicable_and_permissions(
         err!("Reset target user not found")
     };
 
-    // Resetting user must be higher/equal to user to reset
-    match headers.membership_type {
-        MembershipType::Owner => Ok(()),
-        MembershipType::Admin if target_user.atype <= MembershipType::Admin => Ok(()),
-        _ => err!("No permission to reset this user's password"),
+    if may_recover_account(caller, &target_user) {
+        Ok(())
+    } else {
+        err!("No permission to reset this user's password")
+    }
+}
+
+/// Whether `caller` may recover the account of `target`, who must not have more authority, as in Bitwarden: Owners
+/// may recover every member, Admins every member but Owners, and Custom members with Manage account recovery Users
+/// and the Custom members whose permissions they all have.
+fn may_recover_account(caller: &Membership, target: &Membership) -> bool {
+    if caller.has_type(MembershipType::Owner) {
+        true
+    } else if caller.has_type(MembershipType::Admin) {
+        target.atype <= MembershipType::Admin
+    } else {
+        caller.has_custom_permission(CustomPermission::ManageResetPassword)
+            && custom_member_manages(target.atype)
+            && caller.has_custom_permissions_of(target)
     }
 }
 
@@ -3687,12 +3717,7 @@ async fn put_reset_password_enrollment(
 
     let reset_request = data.into_inner();
 
-    let reset_password_key = match reset_request.reset_password_key {
-        None => None,
-        Some(ref key) if key.is_empty() => None,
-        Some(key) => Some(key),
-    };
-
+    let reset_password_key = reset_request.reset_password_key.filter(|k| !k.is_empty());
     if reset_password_key.is_none() && OrgPolicy::org_is_reset_password_auto_enroll(&org_id, &conn).await {
         err!("Reset password can't be withdrawn due to an enterprise policy");
     }
@@ -4033,6 +4058,56 @@ mod tests {
                         .is_err()
                 );
             }
+        });
+    }
+
+    #[cfg(sqlite)]
+    #[test]
+    fn account_recovery_authorization() {
+        test_db::run(async |db| {
+            use CustomPermission::{ManageResetPassword, ManageUsers};
+            use MembershipType::*;
+            let conn = db.conn();
+            let org = test_db::organization(&conn).await;
+            let mut members = Vec::new();
+            for (role, permissions) in [
+                (Owner, vec![]),
+                (Admin, vec![]),
+                (Manager, vec![]),
+                (User, vec![]),
+                (Custom, vec![ManageResetPassword]),
+                (Custom, vec![ManageResetPassword, ManageUsers]),
+            ] {
+                members.push(test_db::member(&conn, &org.uuid, role, &permissions).await.1);
+            }
+            // Who may recover whom: a row per caller, a column per target, both in the order above
+            for (caller, row) in members.iter().zip(["111111", "011111", "000000", "000000", "000110", "000111"]) {
+                for (target, allowed) in members.iter().zip(row.chars()) {
+                    assert_eq!(
+                        may_recover_account(caller, target),
+                        allowed == '1',
+                        "{} {}",
+                        caller.atype,
+                        target.atype
+                    );
+                }
+            }
+            // Manage account recovery alone lists only the confirmed members enrolled in account recovery
+            for (i, status) in [(2, MembershipStatus::Accepted), (3, MembershipStatus::Confirmed)] {
+                members[i].status = status as i32;
+                members[i].reset_password_key = Some("key".into());
+                members[i].save(&conn).await.unwrap();
+            }
+            let data = GetOrgUserData {
+                include_collections: None,
+                include_groups: None,
+            };
+            let users = get_members(data, org.uuid.clone(), directory_headers(&members[4], &conn).await, db.conn());
+            assert_eq!(
+                users.await.unwrap().0["data"],
+                json!([members[3].to_json_details_for_admin(false, false, &conn).await])
+            );
+            assert!(get_groups(org.uuid.clone(), directory_headers(&members[4], &conn).await, db.conn()).await.is_ok());
         });
     }
 }

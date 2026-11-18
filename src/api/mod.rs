@@ -120,7 +120,7 @@ async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
             }
         }))
     } else if CONFIG.sso_enabled() {
-        CONFIG.sso_master_password_policy_value().unwrap_or(json!({}))
+        CONFIG.sso_master_password_policy_value().unwrap_or_else(|| json!({}))
     } else {
         json!({})
     };

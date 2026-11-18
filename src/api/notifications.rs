@@ -4,6 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bytes::Bytes;
 use chrono::{NaiveDateTime, Utc};
 use rmpv::Value;
 use rocket::{Route, futures::StreamExt};
@@ -212,7 +213,7 @@ fn websockets_hub<'r>(
                         if last_received.elapsed() > WS_CLIENT_TIMEOUT {
                             break;
                         }
-                        yield Message::Ping(PING.to_vec());
+                        yield Message::Ping(PING);
                     }
                 }
             }
@@ -295,7 +296,7 @@ fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> R
                         if last_received.elapsed() > WS_CLIENT_TIMEOUT {
                             break;
                         }
-                        yield Message::Ping(PING.to_vec());
+                        yield Message::Ping(PING);
                     }
                 }
             }
@@ -307,7 +308,7 @@ fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> R
 // Websockets server
 //
 
-fn serialize(val: &Value) -> Vec<u8> {
+fn serialize(val: &Value) -> Bytes {
     use rmpv::encode::write_value;
 
     let mut buf = Vec::new();
@@ -335,7 +336,7 @@ fn serialize(val: &Value) -> Vec<u8> {
     }
 
     len_buf.append(&mut buf);
-    len_buf
+    len_buf.into()
 }
 
 fn serialize_date(date: NaiveDateTime) -> Value {
@@ -358,8 +359,8 @@ fn convert_option<T: Into<Value>>(option: Option<T>) -> Value {
 }
 
 const RECORD_SEPARATOR: u8 = 0x1e;
-const INITIAL_RESPONSE: [u8; 3] = [0x7b, 0x7d, RECORD_SEPARATOR]; // {, }, <RS>
-const PING: [u8; 3] = [0x02, 0x91, 0x06];
+const INITIAL_RESPONSE: Bytes = Bytes::from_static(&[0x7b, 0x7d, RECORD_SEPARATOR]); // {, }, <RS>
+const PING: Bytes = Bytes::from_static(&[0x02, 0x91, 0x06]);
 
 #[derive(Deserialize, Copy, Clone, Eq, PartialEq)]
 struct InitialMessage<'a> {
@@ -380,10 +381,10 @@ pub struct WebSocketUsers {
 }
 
 impl WebSocketUsers {
-    async fn send_update(&self, user_id: &UserId, data: &[u8]) {
+    async fn send_update(&self, user_id: &UserId, data: &Bytes) {
         if let Some(user) = self.map.get(user_id.as_ref()).map(|v| v.clone()) {
             for (_, sender) in &user {
-                if let Err(e) = sender.send(Message::binary(data)).await {
+                if let Err(e) = sender.send(Message::binary(data.clone())).await {
                     error!("Error sending WS update {e}");
                 }
             }
@@ -427,13 +428,12 @@ impl WebSocketUsers {
         if *NOTIFICATIONS_DISABLED {
             return;
         }
-        let acting_device_id = acting_device.map(|d| d.uuid.clone());
         let mut payload =
             vec![("UserId".into(), user.uuid.to_string().into()), ("Date".into(), serialize_date(user.updated_at))];
         if let Some(reason) = reason {
             payload.push(("Reason".into(), (reason as i32).into()));
         }
-        let data = create_update(payload, UpdateType::LogOut, acting_device_id);
+        let data = create_update(payload, UpdateType::LogOut, acting_device.map(|d| &d.uuid));
 
         if CONFIG.enable_websocket() {
             self.send_update(&user.uuid, &data).await;
@@ -456,7 +456,7 @@ impl WebSocketUsers {
                 ("RevisionDate".into(), serialize_date(folder.updated_at)),
             ],
             ut,
-            Some(device.uuid.clone()),
+            Some(&device.uuid),
         );
 
         if CONFIG.enable_websocket() {
@@ -503,7 +503,7 @@ impl WebSocketUsers {
                 ("RevisionDate".into(), revision_date),
             ],
             ut,
-            Some(device.uuid.clone()), // Acting device id (unique device/app uuid)
+            Some(&device.uuid), // Acting device id (unique device/app uuid)
         );
 
         if CONFIG.enable_websocket() {
@@ -559,7 +559,7 @@ impl WebSocketUsers {
         let data = create_update(
             vec![("Id".into(), auth_request_uuid.to_owned().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequest,
-            Some(device.uuid.clone()),
+            Some(&device.uuid),
         );
         if CONFIG.enable_websocket() {
             self.send_update(user_id, &data).await;
@@ -584,7 +584,7 @@ impl WebSocketUsers {
         let data = create_update(
             vec![("Id".into(), auth_request_id.to_string().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequestResponse,
-            Some(device.uuid.clone()),
+            Some(&device.uuid),
         );
         if CONFIG.enable_websocket() {
             self.send_update(user_id, &data).await;
@@ -615,23 +615,22 @@ impl AnonymousWebSocketSubscriptions {
 
     /// Releases a slot taken by `try_reserve`.
     fn release(&self, addr: IpAddr) {
-        let empty = if let Some(mut count) = self.connections.get_mut(&addr) {
-            *count = count.saturating_sub(1);
-            *count == 0
-        } else {
-            false
-        };
+        let empty = self.connections.get_mut(&addr).is_some_and(|mut c| {
+            *c = c.saturating_sub(1);
+            *c == 0
+        });
+
         // Only remove once the guard above is dropped, otherwise this deadlocks.
         if empty {
             self.connections.remove_if(&addr, |_, count| *count == 0);
         }
     }
 
-    async fn send_update(&self, token: &str, data: &[u8]) {
+    async fn send_update(&self, token: &str, data: &Bytes) {
         // Clone the senders so the map isn't kept locked while sending.
-        let senders = self.map.get(token).map(|v| v.clone()).unwrap_or_default();
+        let senders = self.map.get(token).map_or_default(|v| v.clone());
         for (_, sender) in senders {
-            if let Err(e) = sender.send(Message::binary(data)).await {
+            if let Err(e) = sender.send(Message::binary(data.clone())).await {
                 error!("Error sending WS update {e}");
             }
         }
@@ -665,7 +664,7 @@ impl AnonymousWebSocketSubscriptions {
     ]
 ]
 */
-fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id: Option<DeviceId>) -> Vec<u8> {
+fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id: Option<&DeviceId>) -> Bytes {
     use rmpv::Value as V;
 
     let value = V::Array(vec![
@@ -683,7 +682,7 @@ fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id:
     serialize(&value)
 }
 
-fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: &UserId) -> Vec<u8> {
+fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: &UserId) -> Bytes {
     use rmpv::Value as V;
 
     let value = V::Array(vec![

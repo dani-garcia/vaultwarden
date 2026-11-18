@@ -147,8 +147,7 @@ mod s3 {
 
     fn path_segments(url: &Url) -> Vec<String> {
         url.path_segments()
-            .map(|segments| segments.filter(|segment| !segment.is_empty()).map(str::to_owned).collect())
-            .unwrap_or_default()
+            .map_or_default(|segments| segments.filter(|segment| !segment.is_empty()).map(str::to_owned).collect())
     }
 
     fn set_path_segments(url: &mut Url, segments: &[String]) {

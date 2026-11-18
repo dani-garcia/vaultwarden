@@ -269,6 +269,7 @@ table! {
         access_event_logs -> Bool,
         access_import_export -> Bool,
         access_reports -> Bool,
+        manage_reset_password -> Bool,
         v2_upgrade_token -> Nullable<Text>,
     }
 }

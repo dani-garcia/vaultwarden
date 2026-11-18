@@ -481,9 +481,9 @@ async fn password_login(
     let now = Utc::now().naive_utc();
 
     if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
-        if user.last_verifying_at.is_none()
-            || now.signed_duration_since(user.last_verifying_at.unwrap()).num_seconds()
-                > i64::from(CONFIG.signups_verify_resend_time())
+        if user
+            .last_verifying_at
+            .is_none_or(|d| now.signed_duration_since(d).num_seconds() > i64::from(CONFIG.signups_verify_resend_time()))
         {
             let resend_limit = i32::from(CONFIG.signups_verify_resend_limit());
             if resend_limit == 0 || user.login_verify_count < resend_limit {
@@ -587,7 +587,7 @@ async fn passkey_login(
     // The authenticator's user verification replaces two-step login, but an organization's two-step login policy still
     // applies, as for passwords
     if TwoFactor::find_by_user(&user.uuid, conn).await.is_empty() {
-        enforce_2fa_policy(&user, &user.uuid, device.atype, &ip.ip, conn).await?;
+        enforce_2fa_policy(&user, &user.uuid, device.atype, &ip.ip, false, conn).await?;
     }
 
     let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Webauthn, data.client_id);
@@ -952,7 +952,7 @@ async fn twofactor_auth(
 
     // No twofactor token if twofactor is disabled
     if twofactors.is_empty() {
-        enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, conn).await?;
+        enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, false, conn).await?;
         return Ok(None);
     }
 
@@ -1048,7 +1048,7 @@ async fn twofactor_auth(
             Device::clear_twofactor_remember_by_user(&user.uuid, conn).await?;
             device.delete_twofactor_remember();
 
-            enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, conn).await?;
+            enforce_2fa_policy(user, &user.uuid, device.atype, &ip.ip, true, conn).await?;
 
             log_user_event(EventType::UserRecovered2fa, &user.uuid, device.atype, &ip.ip, conn).await;
 
@@ -1074,12 +1074,7 @@ async fn twofactor_auth(
     TwoFactorIncomplete::mark_complete(&user.uuid, &device.uuid, conn).await?;
 
     let remember = data.two_factor_remember.unwrap_or(0);
-    let two_factor = if !CONFIG.disable_2fa_remember() && remember == 1 {
-        Some(device.refresh_twofactor_remember())
-    } else {
-        None
-    };
-    Ok(two_factor)
+    Ok((!CONFIG.disable_2fa_remember() && remember == 1).then(|| device.refresh_twofactor_remember()))
 }
 
 fn selected_data(tf: Option<TwoFactor>) -> ApiResult<String> {
@@ -1233,7 +1228,7 @@ async fn register_verification_email(
             use rand::{RngExt, rngs::SmallRng};
             let mut rng: SmallRng = rand::make_rng();
             let sleep_ms: u64 = rng.random_range(900..=1100);
-            tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
         } else {
             mail::send_register_verify_email(&data.email, &token).await?;
         }
@@ -1311,10 +1306,10 @@ struct ConnectData {
     #[field(name = uncased("device_type"))]
     #[field(name = uncased("devicetype"))]
     device_type: Option<String>,
-    #[allow(unused)]
+    #[expect(unused, reason = "Unused, mobile device push not yet supported")]
     #[field(name = uncased("device_push_token"))]
     #[field(name = uncased("devicepushtoken"))]
-    _device_push_token: Option<String>, // Unused; mobile device push not yet supported.
+    device_push_token: Option<String>,
 
     // Needed for two-factor auth
     #[field(name = uncased("two_factor_provider"))]
@@ -1378,8 +1373,8 @@ fn prevalidate() -> JsonResult {
 const SSO_BINDING_COOKIE: &str = "VW_SSO_BINDING";
 
 #[get("/connect/oidc-signin?<code>&<state>", rank = 1)]
-async fn oidcsignin(code: OIDCCode, state: String, cookies: &CookieJar<'_>, mut conn: DbConn) -> ApiResult<Redirect> {
-    oidcsignin_redirect(state, code, None, cookies, &mut conn).await
+async fn oidcsignin(code: OIDCCode, state: String, cookies: &CookieJar<'_>, conn: DbConn) -> ApiResult<Redirect> {
+    oidcsignin_redirect(state, code, None, cookies, &conn).await
 }
 
 // Bitwarden client appear to only care for code and state
@@ -1391,7 +1386,7 @@ async fn oidcsignin_error(
     error: String,
     error_description: Option<String>,
     cookies: &CookieJar<'_>,
-    mut conn: DbConn,
+    conn: DbConn,
 ) -> ApiResult<Redirect> {
     oidcsignin_redirect(
         state.clone(),
@@ -1401,7 +1396,7 @@ async fn oidcsignin_error(
             error_description,
         }),
         cookies,
-        &mut conn,
+        &conn,
     )
     .await
 }
@@ -1414,7 +1409,7 @@ async fn oidcsignin_redirect(
     code: OIDCCode,
     error: Option<OIDCCodeResponseError>,
     cookies: &CookieJar<'_>,
-    conn: &mut DbConn,
+    conn: &DbConn,
 ) -> ApiResult<Redirect> {
     let state = sso::decode_state(&base64_state)?;
 
@@ -1462,18 +1457,18 @@ struct AuthorizeData {
     #[field(name = uncased("redirect_uri"))]
     #[field(name = uncased("redirecturi"))]
     redirect_uri: String,
-    #[allow(unused)]
+    #[expect(unused)]
     response_type: Option<String>,
-    #[allow(unused)]
+    #[expect(unused)]
     scope: Option<String>,
     state: OIDCState,
     code_challenge: OIDCCodeChallenge,
     code_challenge_method: String,
-    #[allow(unused)]
+    #[expect(unused)]
     response_mode: Option<String>,
-    #[allow(unused)]
+    #[expect(unused)]
     domain_hint: Option<String>,
-    #[allow(unused)]
+    #[expect(unused)]
     #[field(name = uncased("ssoToken"))]
     sso_token: Option<String>,
 }
@@ -1505,7 +1500,7 @@ async fn authorize(data: AuthorizeData, cookies: &CookieJar<'_>, secure: Secure,
     cookies.add(
         Cookie::build((SSO_BINDING_COOKIE, binding_token))
             .path(format!("{}/identity/connect/", CONFIG.domain_path()))
-            .max_age(time::Duration::seconds(sso::SSO_AUTH_EXPIRATION.num_seconds()))
+            .max_age(rocket::time::Duration::seconds(sso::SSO_AUTH_EXPIRATION.num_seconds()))
             .same_site(SameSite::Lax) // Lax is needed because the IdP runs on a different FQDN
             .http_only(true)
             .secure(secure.https)

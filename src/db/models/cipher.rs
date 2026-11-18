@@ -97,8 +97,8 @@ impl CipherAccessScope {
     /// Whether `member` reaches every cipher of their organization with this access.
     fn reaches_all_ciphers(self, member: &Membership) -> bool {
         match self {
-            CipherAccessScope::User => member.has_full_access(),
-            CipherAccessScope::OrganizationAdmin => member.can_edit_any_collection(),
+            Self::User => member.has_full_access(),
+            Self::OrganizationAdmin => member.can_edit_any_collection(),
         }
     }
 
@@ -106,18 +106,18 @@ impl CipherAccessScope {
     /// administrative one still needs a member who may edit any collection.
     pub fn requested(admin_request: Option<bool>) -> Self {
         if admin_request == Some(true) {
-            CipherAccessScope::OrganizationAdmin
+            Self::OrganizationAdmin
         } else {
-            CipherAccessScope::User
+            Self::User
         }
     }
 
     /// The access for a route that does not tell which one it is, from the member's own membership.
     pub fn for_member(member: Option<&Membership>) -> Self {
         if member.is_some_and(Membership::can_edit_any_collection) {
-            CipherAccessScope::OrganizationAdmin
+            Self::OrganizationAdmin
         } else {
-            CipherAccessScope::User
+            Self::User
         }
     }
 }
@@ -306,7 +306,7 @@ impl Cipher {
                     .inspect_err(|e| warn!("Error parsing fields {e:?} for {}", self.uuid))
                     .ok()
             })
-            .map(|d| {
+            .map_or_default(|d| {
                 d.into_iter()
                     .map(|mut f| {
                         // Check if the `type` key is a number, strings break some clients
@@ -326,8 +326,7 @@ impl Cipher {
                         f.data
                     })
                     .collect()
-            })
-            .unwrap_or_default();
+            });
 
         let password_history_json: Vec<_> = self
             .password_history
@@ -337,7 +336,7 @@ impl Cipher {
                     .inspect_err(|e| warn!("Error parsing password history {e:?} for {}", self.uuid))
                     .ok()
             })
-            .map(|d| {
+            .map_or_default(|d| {
                 // Check every password history item if they are valid and return it.
                 // If a password field has the type `null` skip it, it breaks newer Bitwarden clients
                 // A second check is done to verify the lastUsedDate exists and is a valid DateTime string, if not the epoch start time will be used
@@ -356,19 +355,14 @@ impl Cipher {
                         d
                     })
                     .collect()
-            })
-            .unwrap_or_default();
+            });
 
         // Like upstream, fields and password history stored as NULL are sent as null, not `[]`
         let fields_json = self.fields.is_some().then_some(fields_json);
         let password_history_json = self.password_history.is_some().then_some(password_history_json);
 
         let collection_ids = if let Some(cipher_sync_data) = cipher_sync_data {
-            if let Some(cipher_collections) = cipher_sync_data.cipher_collections.get(&self.uuid) {
-                Cow::from(cipher_collections)
-            } else {
-                Cow::from(Vec::new())
-            }
+            cipher_sync_data.cipher_collections.get(&self.uuid).map_or_default(Cow::from)
         } else {
             Cow::from(self.get_admin_collections(user_uuid.clone(), scope, conn).await)
         };
@@ -688,7 +682,7 @@ impl Cipher {
 
     /// Returns whether this cipher is directly owned by the user.
     pub fn is_owned_by_user(&self, user_uuid: &UserId) -> bool {
-        self.user_uuid.is_some() && self.user_uuid.as_ref().unwrap() == user_uuid
+        self.user_uuid.as_ref().is_some_and(|u| u == user_uuid)
     }
 
     /// Returns whether this cipher is owned by an org in which the user reaches every cipher with `scope`.
@@ -875,10 +869,9 @@ impl Cipher {
         scope: CipherAccessScope,
         conn: &DbConn,
     ) -> bool {
-        match self.get_access_restrictions(user_uuid, scope, None, conn).await {
-            Some((read_only, _hide_passwords, manage)) => !read_only || manage,
-            None => false,
-        }
+        self.get_access_restrictions(user_uuid, scope, None, conn)
+            .await
+            .is_some_and(|(read_only, _hide_passwords, manage)| !read_only || manage)
     }
 
     // used for checking if collection can be edited (only if user has access to a collection they
@@ -889,10 +882,9 @@ impl Cipher {
         scope: CipherAccessScope,
         conn: &DbConn,
     ) -> bool {
-        match self.get_access_restrictions(user_uuid, scope, None, conn).await {
-            Some((read_only, hide_passwords, manage)) => (!read_only && !hide_passwords) || manage,
-            None => false,
-        }
+        self.get_access_restrictions(user_uuid, scope, None, conn)
+            .await
+            .is_some_and(|(read_only, hide_passwords, manage)| (!read_only && !hide_passwords) || manage)
     }
 
     pub async fn is_accessible_to_user(&self, user_uuid: &UserId, scope: CipherAccessScope, conn: &DbConn) -> bool {
@@ -1373,7 +1365,7 @@ impl Cipher {
             return (assigned, Vec::new());
         }
 
-        let listed: HashSet<CipherId> = assigned.iter().map(|cipher| cipher.uuid.clone()).collect();
+        let listed: HashSet<&CipherId> = assigned.iter().map(|cipher| &cipher.uuid).collect();
         let in_collections: HashSet<CipherId> =
             Self::get_collections_with_cipher_by_organization(&member.org_uuid, conn)
                 .await

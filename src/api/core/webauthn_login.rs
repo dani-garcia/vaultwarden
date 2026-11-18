@@ -114,8 +114,8 @@ impl TokenScope {
     /// Ref: <https://github.com/bitwarden/server/blob/341acc9d3d8988cec8fe05debfa6d557cf5ab749/src/Core/Auth/Models/Business/Tokenables/WebAuthnLoginAssertionOptionsTokenable.cs#L10-L14>
     fn lifetime(self) -> TimeDelta {
         match self {
-            TokenScope::Registration => TimeDelta::minutes(7),
-            TokenScope::Authentication | TokenScope::UpdateKeySet => TimeDelta::minutes(17),
+            Self::Registration => TimeDelta::minutes(7),
+            Self::Authentication | Self::UpdateKeySet => TimeDelta::minutes(17),
         }
     }
 }
