@@ -129,7 +129,7 @@ macro_rules! make_config {
                 )+)+
                 ];
 
-                #[allow(non_camel_case_types)]
+                #[expect(non_camel_case_types, reason="ConfigBuilder uses different case types")]
                 enum Field {
                 $($(
                     $name,
@@ -362,7 +362,6 @@ macro_rules! make_config {
             elements: Vec<ElementData>,
         }
 
-        #[allow(unused)]
         impl Config {
             $($(
                 $(#[doc = $doc])+
@@ -479,13 +478,11 @@ macro_rules! make_config {
                     let mut json = serde_json::Map::new();
                     $($(
                         json.insert(String::from(stringify!($name)), make_config! { @supportstr $name, cfg.$name, $ty, $none_action });
-                    )+)+;
+                    )+)+
                     // Loop through all privacy sensitive keys and mask them
                     for mask_key in PRIVACY_CONFIG {
-                        if let Some(value) = json.get_mut(*mask_key) {
-                            if let Some(s) = value.as_str() {
-                                *value = privacy_mask(s).into();
-                            }
+                        if let Some(value) = json.get_mut(*mask_key) && let Some(s) = value.as_str() {
+                            *value = privacy_mask(s).into();
                         }
                     }
                     json
@@ -693,7 +690,7 @@ make_config! {
         /// Set to the string "none" (without quotes), to disable any headers and just use the remote IP
         ip_header:              String, true,   def,    "X-Real-IP".to_owned();
         /// Internal IP header property, used to avoid recomputing each time
-        _ip_header_enabled:     bool,   false,  generated,    |c| &c.ip_header.trim().to_lowercase() != "none";
+        _ip_header_enabled:     bool,   false,  generated,    |c| !c.ip_header.trim().eq_ignore_ascii_case("none");
         /// Trusted proxies |> Which addresses the client IP header is accepted from. Requests from any
         /// other address use the remote IP instead, so a client can't spoof the header.
         /// Either the string "local" (the default, any non-global address, which covers a reverse proxy
@@ -1003,11 +1000,11 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     }
 
     let limit = 256;
-    if cfg.database_max_conns < 1 || cfg.database_max_conns > limit {
+    if !(1..=limit).contains(&cfg.database_max_conns) {
         err!(format!("`DATABASE_MAX_CONNS` contains an invalid value. Ensure it is between 1 and {limit}.",));
     }
 
-    if cfg.database_min_conns < 1 || cfg.database_min_conns > limit {
+    if !(1..=limit).contains(&cfg.database_min_conns) {
         err!(format!("`DATABASE_MIN_CONNS` contains an invalid value. Ensure it is between 1 and {limit}.",));
     }
 
@@ -1422,13 +1419,7 @@ fn extract_url_origin(url: &str) -> String {
 /// Extracts the path from a URL.
 /// All trailing '/' chars are trimmed, even if the path is a lone '/'.
 fn extract_url_path(url: &str) -> String {
-    match Url::parse(url) {
-        Ok(u) => u.path().trim_end_matches('/').to_owned(),
-        Err(_) => {
-            // We already print it in the method above, no need to do it again
-            String::new()
-        }
-    }
+    Url::parse(url).map_or_default(|u| u.path().trim_end_matches('/').to_owned())
 }
 
 fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
@@ -1463,10 +1454,7 @@ fn generate_icon_service_url(icon_service: &str) -> String {
 fn generate_icon_service_csp(icon_service: &str, icon_service_url: &str) -> String {
     // We split on the first '{', since that is the variable delimiter for an icon service URL.
     // Everything up until the first '{' should be fixed and can be used as an CSP string.
-    let csp_string = match icon_service_url.split_once('{') {
-        Some((c, _)) => c.to_owned(),
-        None => String::new(),
-    };
+    let csp_string = icon_service_url.split_once('{').map_or_default(|(c, _)| c.to_owned());
 
     // Because Google does a second redirect to there gstatic.com domain, we need to add an extra csp string.
     match icon_service {
@@ -1480,9 +1468,9 @@ fn smtp_convert_deprecated_ssl_options(smtp_ssl: Option<bool>, smtp_explicit_tls
     if smtp_explicit_tls.is_some() || smtp_ssl.is_some() {
         println!("[DEPRECATED]: `SMTP_SSL` or `SMTP_EXPLICIT_TLS` is set. Please use `SMTP_SECURITY` instead.");
     }
-    if smtp_explicit_tls.is_some() && smtp_explicit_tls.unwrap() {
+    if smtp_explicit_tls.is_some_and(|b| b) {
         return "force_tls".to_owned();
-    } else if smtp_ssl.is_some() && !smtp_ssl.unwrap() {
+    } else if smtp_ssl.is_some_and(|b| !b) {
         return "off".to_owned();
     }
     // Return the default `starttls` in all other cases
@@ -1566,7 +1554,7 @@ impl Config {
             validate_config(&config, false)?;
         }
 
-        Ok(Config {
+        Ok(Self {
             inner: RwLock::new(Inner {
                 rocket_shutdown_handle: None,
                 templates: load_templates(&config.templates_folder),
@@ -1625,15 +1613,17 @@ impl Config {
     /// is in signups_domains_whitelist, or if no whitelist is set (so there
     /// are no domain restrictions in effect).
     pub fn is_email_domain_allowed(&self, email: &str) -> bool {
-        let e: Vec<&str> = email.rsplitn(2, '@').collect();
-        if e.len() != 2 || e[0].is_empty() || e[1].is_empty() {
+        let Some((_, domain)) = email.rsplit_once('@').filter(|(name, domain)| !name.is_empty() && !domain.is_empty())
+        else {
             warn!("Failed to parse email address '{}'", email.escape_debug());
             return false;
-        }
-        let email_domain = e[0].to_lowercase();
-        let whitelist = self.signups_domains_whitelist();
+        };
 
-        whitelist.is_empty() || whitelist.split(',').any(|d| d.trim() == email_domain)
+        let domain = &domain.to_lowercase();
+        let whitelist = self.signups_domains_whitelist();
+        let whitelist = whitelist.trim();
+
+        whitelist.is_empty() || whitelist.split(',').any(|d| d.trim() == domain)
     }
 
     /// Tests whether signup is allowed for an email address, taking into
@@ -1724,8 +1714,7 @@ impl Config {
     /// Tests whether the admin token is set to a non-empty value.
     pub fn is_admin_token_set(&self) -> bool {
         let token = self.admin_token();
-
-        token.is_some() && !token.unwrap().trim().is_empty()
+        token.is_some_and(|t| !t.trim().is_empty())
     }
 
     pub fn opendal_operator_for_path_type(&self, path_type: &PathType) -> Result<opendal::Operator, Error> {

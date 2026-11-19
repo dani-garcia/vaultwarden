@@ -32,8 +32,8 @@ enum DuoStatus {
 impl DuoStatus {
     fn data(self) -> Option<DuoData> {
         match self {
-            DuoStatus::Global(data) | DuoStatus::User(data) => Some(data),
-            DuoStatus::Disabled(_) => None,
+            Self::Global(data) | Self::User(data) => Some(data),
+            Self::Disabled(_) => None,
         }
     }
 }
