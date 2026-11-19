@@ -14,17 +14,17 @@ use crate::{
     auth::{
         AccessImportExportHeaders, AdminHeaders, CollectionAction, CollectionDeleteHeaders, CollectionReadHeaders,
         CollectionUsersReadHeaders, Headers, ManageGroupsHeaders, ManagePoliciesHeaders, ManageResetPasswordHeaders,
-        ManageUsersHeaders, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, custom_member_may,
-        decode_invite,
+        ManageUsersHeaders, ManagerHeaders, ManagerHeadersLoose, OrgMemberHeaders, OwnerHeaders, decode_invite,
+        member_may,
     },
     db::{
         DbConn,
         models::{
             Cipher, CipherAccessScope, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId,
-            CollectionUser, CustomPermission, Device, EventType, FillAssistPolicyData, Group, GroupId, GroupUser,
-            Invitation, KeyId, Membership, MembershipId, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType,
-            Organization, OrganizationApiKey, OrganizationId, TwoFactor, TwoFactorType, User, UserId,
-            custom_roles_enabled,
+            CollectionMembership, CollectionUser, CustomPermission, Device, EventType, FillAssistPolicyData, Group,
+            GroupId, GroupUser, Invitation, KeyId, Membership, MembershipId, MembershipStatus, MembershipType,
+            OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, TwoFactor, TwoFactorType, User,
+            UserId, custom_roles_enabled,
         },
     },
     mail,
@@ -217,13 +217,14 @@ async fn create_organization(headers: Headers, data: Json<OrgData>, conn: DbConn
     let collection = Collection::new(org.uuid.clone(), data.collection_name, None);
 
     member.akey = data.key;
-    member.access_all = true;
     member.atype = MembershipType::Owner as i32;
     member.status = MembershipStatus::Confirmed as i32;
 
     org.save(&conn).await?;
     member.save(&conn).await?;
     collection.save(&conn).await?;
+    // Like upstream, the owner manages the default collection, which puts it in their vault
+    CollectionUser::save(&member.user_uuid, &collection.uuid, false, false, true, &conn).await?;
 
     Ok(Json(org.to_json()))
 }
@@ -375,8 +376,8 @@ async fn get_org_collections(org_id: OrganizationId, headers: ManagerHeadersLoos
 
     let collections = if headers.membership.can_list_all_collections() {
         get_org_collections_impl(&org_id, &conn).await
-    } else if headers.membership.has_type(MembershipType::Custom) {
-        // A Custom member gets the collections they may manage
+    } else {
+        // Everyone else gets the collections they manage
         let manageable =
             Collection::find_explicitly_manageable_by_user(&org_id, &headers.membership.user_uuid, &conn).await;
         Collection::find_by_organization(&org_id, &conn)
@@ -385,8 +386,6 @@ async fn get_org_collections(org_id: OrganizationId, headers: ManagerHeadersLoos
             .filter(|collection| manageable.contains(&collection.uuid))
             .map(Collection::to_json)
             .collect::<Value>()
-    } else {
-        err_code!("Resource not found.", "User does not have full access", Status::NotFound.code);
     };
 
     Ok(Json(json!({
@@ -408,18 +407,10 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
 
     // get all collection memberships for the current organization
     let col_users = CollectionUser::find_by_organization_swap_user_uuid_with_member_uuid(&org_id, &conn).await;
-    // Generate a HashMap to get the correct MembershipType per user to determine the manage permission
-    // We use the uuid instead of the user_uuid here, since that is what is used in CollectionUser
-    // This lists other members for admins, so it must not depend on the membership status
-    let membership_type: HashMap<MembershipId, i32> =
-        Membership::find_by_org(&org_id, &conn).await.into_iter().map(|m| (m.uuid, m.atype)).collect();
 
-    // check if current user has full access to the organization (either directly or via any group)
-    let has_full_access_to_org = member.has_full_access()
-        || (CONFIG.org_groups_enabled() && GroupUser::has_full_access_by_member(&org_id, &member.uuid, &conn).await);
-    // Manage users and Manage groups may read collection access details without editing collection metadata.
-    let custom_collections = if member.has_type(MembershipType::Custom)
-        && !member.can_view_all_collection_access_details()
+    // As in Bitwarden, a member who may not read the access of every collection only gets those they manage. Manage
+    // users and Manage groups may read collection access details without editing collection metadata.
+    let manageable_collections = if !member.can_view_all_collection_access_details()
         && !member.has_custom_permission(CustomPermission::ManageGroups)
     {
         Some(Collection::find_explicitly_manageable_by_user(&org_id, &member.user_uuid, &conn).await)
@@ -427,68 +418,32 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
         None
     };
 
-    // Get all admins, owners and managers who can manage/access all
-    // Those are currently not listed in the col_users but need to be listed too.
-    let manage_all_members: Vec<Value> = Membership::find_confirmed_and_manage_all_by_org(&org_id, &conn)
-        .await
-        .into_iter()
-        .map(|member| {
-            json!({
-                "id": member.uuid,
-                "readOnly": false,
-                "hidePasswords": false,
-                "manage": true,
-            })
-        })
-        .collect();
-
     let mut data = Vec::new();
     for col in Collection::find_by_organization(&org_id, &conn).await {
-        // check whether the current user has access to the given collection
-        let assigned = has_full_access_to_org
-            || CollectionUser::has_access_to_collection_by_user(&col.uuid, &member.user_uuid, &conn).await
-            || (CONFIG.org_groups_enabled()
-                && GroupUser::has_access_to_collection_by_member(&col.uuid, &member.uuid, &conn).await);
-
-        // If the user is a manager, and is not assigned to this collection, skip this and continue with the next collection
-        let listed = if member.has_type(MembershipType::Custom) {
-            custom_collections.as_ref().is_none_or(|manageable| manageable.contains(&col.uuid))
-        } else {
-            assigned
-        };
-        if !listed {
+        if manageable_collections.as_ref().is_some_and(|manageable| !manageable.contains(&col.uuid)) {
             continue;
         }
 
-        // get the users assigned directly to the given collection
-        let mut users: Vec<Value> = col_users
-            .iter()
-            .filter(|collection_member| collection_member.collection_uuid == col.uuid)
-            .map(|collection_member| {
-                collection_member.to_json_details_for_member(
-                    *membership_type.get(&collection_member.membership_uuid).unwrap_or(&(MembershipType::User as i32)),
-                )
-            })
-            .collect();
-        users.extend_from_slice(&manage_all_members);
+        // the members assigned directly to the given collection
+        let collection_members: Vec<&CollectionMembership> =
+            col_users.iter().filter(|collection_member| collection_member.collection_uuid == col.uuid).collect();
+        let users: Vec<Value> = collection_members.iter().map(|cm| cm.to_json_details_for_member()).collect();
 
-        // get the group details for the given collection
-        let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
-            CollectionGroup::find_by_collection(&col.uuid, &conn)
-                .await
-                .iter()
-                .map(CollectionGroup::to_json_details_for_group)
-                .collect()
+        // the groups assigned to the given collection
+        let collection_groups = if CONFIG.org_groups_enabled() {
+            CollectionGroup::find_by_collection(&col.uuid, &conn).await
         } else {
             Vec::new()
         };
+        let groups: Vec<Value> = collection_groups.iter().map(CollectionGroup::to_json_details_for_group).collect();
 
         let mut json_object = col.to_json_details(&headers.user.uuid, None, &conn).await;
-        json_object["assigned"] = json!(assigned);
+        // Like Bitwarden, whether the current user is assigned to it themselves, the role doesn't count
+        json_object["assigned"] = json!(Collection::is_assigned(&member, &col.uuid, &conn).await);
         json_object["users"] = json!(users);
         json_object["groups"] = json!(groups);
         json_object["object"] = json!("collectionAccessDetails");
-        json_object["unmanaged"] = json!(false);
+        json_object["unmanaged"] = json!(is_unmanaged(&collection_members, &collection_groups));
         data.push(json_object);
     }
 
@@ -497,6 +452,12 @@ async fn get_org_collections_details(org_id: OrganizationId, headers: ManagerHea
         "object": "list",
         "continuationToken": null,
     })))
+}
+
+/// Whether no member and no group may manage a collection, given everyone assigned to it, like Bitwarden's `Unmanaged`.
+/// The Admin Console offers to add access to such a collection.
+fn is_unmanaged(members: &[&CollectionMembership], groups: &[CollectionGroup]) -> bool {
+    !members.iter().any(|member| member.manage) && !groups.iter().any(|group| group.manage)
 }
 
 async fn get_org_collections_impl(org_id: &OrganizationId, conn: &DbConn) -> Value {
@@ -516,9 +477,9 @@ async fn post_organization_collections(
     let data: FullCollectionData = data.into_inner();
     data.validate(&org_id, &conn).await?;
 
-    if (headers.membership.atype == MembershipType::Manager && !headers.membership.access_all)
-        || (headers.membership.has_type(MembershipType::Custom)
-            && !headers.membership.has_custom_permission(CustomPermission::CreateNewCollections))
+    // The clients are told collection creation is limited
+    if !headers.membership.has_full_access()
+        && !headers.membership.has_custom_permission(CustomPermission::CreateNewCollections)
     {
         err!("You don't have permission to create collections")
     }
@@ -547,10 +508,6 @@ async fn post_organization_collections(
         let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await else {
             err!("User is not part of organization")
         };
-
-        if member.access_all {
-            continue;
-        }
 
         CollectionUser::save(
             &member.user_uuid,
@@ -605,13 +562,9 @@ async fn post_bulk_access_collections(
             err_code!("One or more collections not found.", Status::NotFound.code)
         };
 
-        let manageable = if headers.membership.has_type(MembershipType::Custom) {
-            custom_member_may(CollectionAction::Edit, &headers.membership, &collection.uuid, &conn).await
-                || (headers.membership.has_custom_permission(CustomPermission::ManageUsers)
-                    && headers.membership.has_custom_permission(CustomPermission::ManageGroups))
-        } else {
-            collection.is_manageable_by_user(&headers.membership.user_uuid, &conn).await
-        };
+        let manageable = member_may(CollectionAction::Edit, &headers.membership, &collection.uuid, &conn).await
+            || (headers.membership.has_custom_permission(CustomPermission::ManageUsers)
+                && headers.membership.has_custom_permission(CustomPermission::ManageGroups));
         if !manageable {
             err_code!(
                 "Resource not found.",
@@ -660,10 +613,6 @@ async fn post_bulk_access_collections(
         }
 
         for (user, member) in data.users.iter().zip(&members) {
-            if member.access_all {
-                continue;
-            }
-
             CollectionUser::save(&member.user_uuid, &col_id, user.read_only, user.hide_passwords, user.manage, &conn)
                 .await?;
         }
@@ -723,10 +672,6 @@ async fn put_organization_collection_update(
         let Some(member) = Membership::find_by_uuid_and_org(&user.id, &org_id, &conn).await else {
             err!("User is not part of organization")
         };
-
-        if member.access_all {
-            continue;
-        }
 
         CollectionUser::save(&member.user_uuid, &col_id, user.read_only, user.hide_passwords, user.manage, &conn)
             .await?;
@@ -824,44 +769,31 @@ async fn get_org_collection_detail(
                 err!("Collection is not owned by organization")
             }
 
-            let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
-                CollectionGroup::find_by_collection(&collection.uuid, &conn)
-                    .await
-                    .iter()
-                    .map(CollectionGroup::to_json_details_for_group)
-                    .collect()
+            // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
+            // so just act as if there are no groups.
+            let collection_groups = if CONFIG.org_groups_enabled() {
+                CollectionGroup::find_by_collection(&collection.uuid, &conn).await
             } else {
-                // The Bitwarden clients seem to call this API regardless of whether groups are enabled,
-                // so just act as if there are no groups.
                 Vec::new()
             };
+            let groups: Vec<Value> = collection_groups.iter().map(CollectionGroup::to_json_details_for_group).collect();
 
-            // Generate a HashMap to get the correct MembershipType per user to determine the manage permission
-            // We use the uuid instead of the user_uuid here, since that is what is used in CollectionUser
-            // This lists other members for admins, so it must not depend on the membership status
-            let membership_type: HashMap<MembershipId, i32> =
-                Membership::find_by_org(&org_id, &conn).await.into_iter().map(|m| (m.uuid, m.atype)).collect();
-
-            let users: Vec<Value> =
+            let collection_members =
                 CollectionUser::find_by_org_and_coll_swap_user_uuid_with_member_uuid(&org_id, &collection.uuid, &conn)
-                    .await
-                    .iter()
-                    .map(|collection_member| {
-                        collection_member.to_json_details_for_member(
-                            *membership_type
-                                .get(&collection_member.membership_uuid)
-                                .unwrap_or(&(MembershipType::User as i32)),
-                        )
-                    })
-                    .collect();
+                    .await;
+            let users: Vec<Value> =
+                collection_members.iter().map(CollectionMembership::to_json_details_for_member).collect();
 
-            let assigned = Collection::can_access_collection(&member, &collection.uuid, &conn).await;
+            // Like Bitwarden, whether the current user is assigned to it themselves, the role doesn't count
+            let assigned = Collection::is_assigned(&member, &collection.uuid, &conn).await;
+            let unmanaged = is_unmanaged(&collection_members.iter().collect::<Vec<_>>(), &collection_groups);
 
             let mut json_object = collection.to_json_details(&headers.user.uuid, None, &conn).await;
             json_object["assigned"] = json!(assigned);
             json_object["users"] = json!(users);
             json_object["groups"] = json!(groups);
             json_object["object"] = json!("collectionAccessDetails");
+            json_object["unmanaged"] = json!(unmanaged);
 
             Ok(Json(json_object))
         }
@@ -1022,7 +954,6 @@ async fn get_members(
         if recovery_only && (!u.has_status(MembershipStatus::Confirmed) || u.reset_password_key.is_none()) {
             continue;
         }
-        // The user can be a manager instead of an admin, but we've checked above that they have full access
         users_json.push(
             u.to_json_details_for_admin(
                 data.include_collections.unwrap_or(false),
@@ -1171,19 +1102,16 @@ async fn send_invite(
     let data: InviteData = data.into_inner();
     data.validate(&org_id, &conn).await?;
 
-    // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
-    // Unless Custom roles are enabled, a custom role (4) is converted to a manager role (3)
-    let raw_type = &data.r#type.into_string();
-    let Some(requested_type) = MembershipType::from_str(raw_type) else {
+    let Some(new_type) = MembershipType::from_str(&data.r#type.into_string()) else {
         err!("Invalid type")
     };
+    MembershipType::check_requested(new_type, None)?;
     // Checked before anything is created, so a rejected permission leaves nothing behind
-    let custom_permissions = if requested_type == MembershipType::Custom && custom_roles_enabled() {
+    let custom_permissions = if new_type == MembershipType::Custom {
         Some(CustomPermission::requested(&data.permissions)?)
     } else {
         None
     };
-    let new_type = MembershipType::requested(requested_type, None, custom_permissions.as_ref());
 
     check_role_manageable(headers.membership_type, new_type as i32)?;
     if headers.membership_type == MembershipType::Custom {
@@ -1192,16 +1120,6 @@ async fn send_invite(
         check_custom_member_grants(&headers.membership, custom_permissions.as_ref(), &collections, &groups, &conn)
             .await?;
     }
-
-    // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
-    // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
-    // If the box is not checked, the user will still be a manager, but not with the access_all permission
-    let access_all = new_type >= MembershipType::Admin
-        || (new_type == MembershipType::Manager
-            && raw_type.eq("4")
-            && data.permissions.get("editAnyCollection") == Some(&json!(true))
-            && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
-            && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
     let mut user_created: bool;
     for email in &data.emails {
@@ -1245,7 +1163,6 @@ async fn send_invite(
 
         let mut new_member = Membership::new(user.uuid.clone(), org_id.clone(), Some(headers.user.email.clone()));
         new_member.set_type(new_type);
-        new_member.access_all = access_all;
         if let Some(permissions) = &custom_permissions {
             new_member.set_custom_permissions(permissions);
         }
@@ -1290,22 +1207,19 @@ async fn send_invite(
         )
         .await;
 
-        // If no accessAll, add the collections received
-        if !access_all {
-            for col in data.collections.iter().flatten() {
-                match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn).await {
-                    None => err!("Collection not found in Organization"),
-                    Some(collection) => {
-                        CollectionUser::save(
-                            &user.uuid,
-                            &collection.uuid,
-                            col.read_only,
-                            col.hide_passwords,
-                            col.manage,
-                            &conn,
-                        )
-                        .await?;
-                    }
+        for col in data.collections.iter().flatten() {
+            match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn).await {
+                None => err!("Collection not found in Organization"),
+                Some(collection) => {
+                    CollectionUser::save(
+                        &user.uuid,
+                        &collection.uuid,
+                        col.read_only,
+                        col.hide_passwords,
+                        col.manage,
+                        &conn,
+                    )
+                    .await?;
                 }
             }
         }
@@ -1623,8 +1537,8 @@ async fn get_org_user_mini_details(org_id: OrganizationId, headers: ManagerHeade
     if org_id != headers.membership.org_uuid {
         err!("Organization not found", "Organization id's do not match");
     }
-    // A Custom member may also need basic member details for event logs or reports.
-    if headers.membership.has_type(MembershipType::Custom)
+    // Besides those assigning collection access, a Custom member may need basic member details for event logs or reports.
+    if !headers.membership.has_full_access()
         && !headers.membership.has_custom_permission(CustomPermission::AccessEventLogs)
         && !headers.membership.has_custom_permission(CustomPermission::AccessReports)
         && !may_assign_collection_access(&headers.membership, &conn).await
@@ -1689,40 +1603,20 @@ async fn edit_member(
     }
     let data: EditUserData = data.into_inner();
 
-    // HACK: We need the raw user-type to be sure custom role is selected to determine the access_all permission
-    // Unless Custom roles are enabled, a custom role (4) is converted to a manager role (3)
-    let raw_type = &data.r#type.into_string();
-    let Some(requested_type) = MembershipType::from_str(raw_type) else {
+    let Some(new_type) = MembershipType::from_str(&data.r#type.into_string()) else {
         err!("Invalid type")
     };
 
     let Some(mut member_to_edit) = Membership::find_by_uuid_and_org(&member_id, &org_id, &conn).await else {
         err!("The specified user isn't member of the organization")
     };
+    MembershipType::check_requested(new_type, Some(&member_to_edit))?;
     // While Custom roles are disabled, a Custom member keeps their stored permissions untouched
-    let custom_permissions = if requested_type == MembershipType::Custom && custom_roles_enabled() {
+    let custom_permissions = if new_type == MembershipType::Custom && custom_roles_enabled() {
         Some(CustomPermission::requested(&data.permissions)?)
     } else {
         None
     };
-    let new_type = MembershipType::requested(requested_type, Some(&member_to_edit), custom_permissions.as_ref());
-    // A Manager whose permissions are changed only becomes a Custom member if that keeps what they may do
-    if new_type == MembershipType::Custom
-        && let Some(permissions) = &custom_permissions
-        && let Some(loss) = member_to_edit.custom_role_conversion_loss(permissions, &conn).await
-    {
-        err!(loss)
-    }
-
-    // HACK: This converts the Custom role which has the `Manage all collections` box checked into an access_all flag
-    // Since the parent checkbox is not sent to the server we need to check and verify the child checkboxes
-    // If the box is not checked, the user will still be a manager, but not with the access_all permission
-    let access_all = new_type >= MembershipType::Admin
-        || (new_type == MembershipType::Manager
-            && raw_type.eq("4")
-            && data.permissions.get("editAnyCollection") == Some(&json!(true))
-            && data.permissions.get("deleteAnyCollection") == Some(&json!(true))
-            && data.permissions.get("createNewCollections") == Some(&json!(true)));
 
     // Both the current and the requested role must be one the caller may manage
     check_role_manageable(headers.membership_type, member_to_edit.atype)?;
@@ -1754,7 +1648,6 @@ async fn edit_member(
     }
 
     member_to_edit.set_type(new_type);
-    member_to_edit.access_all = access_all;
     if let Some(permissions) = custom_permissions.as_ref().filter(|_| new_type == MembershipType::Custom) {
         member_to_edit.set_custom_permissions(permissions);
     }
@@ -1768,22 +1661,19 @@ async fn edit_member(
         c.delete(&conn).await?;
     }
 
-    // If no accessAll, add the collections received
-    if !access_all {
-        for col in data.collections.iter().flatten() {
-            match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn).await {
-                None => err!("Collection not found in Organization"),
-                Some(collection) => {
-                    CollectionUser::save(
-                        &member_to_edit.user_uuid,
-                        &collection.uuid,
-                        col.read_only,
-                        col.hide_passwords,
-                        col.manage,
-                        &conn,
-                    )
-                    .await?;
-                }
+    for col in data.collections.iter().flatten() {
+        match Collection::find_by_uuid_and_org(&col.id, &org_id, &conn).await {
+            None => err!("Collection not found in Organization"),
+            Some(collection) => {
+                CollectionUser::save(
+                    &member_to_edit.user_uuid,
+                    &collection.uuid,
+                    col.read_only,
+                    col.hide_passwords,
+                    col.manage,
+                    &conn,
+                )
+                .await?;
             }
         }
     }
@@ -2011,10 +1901,7 @@ async fn validate_org_import_collections(
 ) -> ApiResult<HashMap<CollectionId, Collection>> {
     let existing: HashMap<CollectionId, Collection> =
         Collection::find_by_organization(org_id, conn).await.into_iter().map(|c| (c.uuid.clone(), c)).collect();
-    let manageable = if membership.atype < MembershipType::Admin
-        && !membership.can_edit_any_collection()
-        && !membership.has_type(MembershipType::Manager)
-    {
+    let manageable = if membership.atype < MembershipType::Admin && !membership.can_edit_any_collection() {
         Some(
             Collection::find_explicitly_manageable_by_user(org_id, &membership.user_uuid, conn)
                 .await
@@ -2026,18 +1913,12 @@ async fn validate_org_import_collections(
     };
     for col in imported {
         if let Some(collection) = col.id.as_ref().and_then(|id| existing.get(id)) {
-            if membership.atype < MembershipType::Admin && !membership.can_edit_any_collection() {
-                let can_import = if let Some(manageable) = &manageable {
-                    manageable.contains(&collection.uuid)
-                } else {
-                    collection.is_writable_by_user(&membership.user_uuid, conn).await
-                };
-                if !can_import {
-                    err!(Compact, "The current user isn't allowed to manage this collection")
-                }
+            if let Some(manageable) = &manageable
+                && !manageable.contains(&collection.uuid)
+            {
+                err!(Compact, "The current user isn't allowed to manage this collection")
             }
-        } else if membership.atype <= MembershipType::Manager
-            && !membership.has_full_access()
+        } else if !membership.has_full_access()
             && !membership.has_custom_permission(CustomPermission::CreateNewCollections)
             && !import_export
         {
@@ -2080,7 +1961,6 @@ async fn post_org_import(
         collections: imported_collections,
         ..
     } = data;
-    let grant_new_collection_manage = headers.membership.has_type(MembershipType::Custom);
     let importer_uuid = headers.membership.user_uuid.clone();
     let OrgMemberHeaders {
         host,
@@ -2108,9 +1988,8 @@ async fn post_org_import(
             } else {
                 let new_collection = Collection::new(org_id.clone(), col.name, col.external_id);
                 new_collection.save(&conn).await?;
-                if grant_new_collection_manage {
-                    CollectionUser::save(&importer_uuid, &new_collection.uuid, false, false, true, &conn).await?;
-                }
+                // Like upstream, the importer manages the collections they create
+                CollectionUser::save(&importer_uuid, &new_collection.uuid, false, false, true, &conn).await?;
                 new_collection.uuid
             };
             collections.push(collection_uuid);
@@ -2167,7 +2046,7 @@ mod org_import_tests {
                 ("admin", MembershipType::Admin, CustomPermission::CreateNewCollections),
                 ("cipher", MembershipType::Custom, CustomPermission::CreateNewCollections),
                 ("custom", MembershipType::Custom, CustomPermission::CreateNewCollections),
-                ("legacy", MembershipType::Manager, CustomPermission::CreateNewCollections),
+                ("user", MembershipType::User, CustomPermission::CreateNewCollections),
                 ("authorization", MembershipType::Custom, CustomPermission::CreateNewCollections),
                 ("rollback", MembershipType::Custom, CustomPermission::CreateNewCollections),
                 ("index", MembershipType::Custom, CustomPermission::CreateNewCollections),
@@ -2182,9 +2061,7 @@ mod org_import_tests {
                 } else {
                     vec![]
                 };
-                let (user, mut membership) = test_db::member(&conn, &org.uuid, role, &permissions).await;
-                membership.access_all = role == MembershipType::Manager;
-                membership.save(&conn).await.unwrap();
+                let (user, membership) = test_db::member(&conn, &org.uuid, role, &permissions).await;
                 let mut payload = json!({"ciphers":[{"name":"Cipher","type":2,"encryptedFor":user.uuid,"secureNote":{"type":0}}],
                     "collections":[{"name":"New"}],"collectionRelationships":[{"key":0,"value":0}]});
                 match case {
@@ -2224,17 +2101,14 @@ mod org_import_tests {
                 )
                 .await;
                 conn.run(|c| c.batch_execute("DROP TRIGGER IF EXISTS reject_link")).await.unwrap();
-                let success = matches!(case, "owner" | "admin" | "custom" | "legacy" | "export");
+                let success = matches!(case, "owner" | "admin" | "custom" | "export");
                 assert_eq!(result.is_ok(), success, "{case}");
                 assert_eq!(
                     Collection::find_by_organization(&org.uuid, &conn).await.len(),
                     usize::from(success || case == "authorization")
                 );
                 assert_eq!(Cipher::find_by_org(&org.uuid, &conn).await.len(), usize::from(success));
-                assert_eq!(
-                    CollectionUser::find_by_user(&user_id, &conn).await.len(),
-                    usize::from(success && role == MembershipType::Custom)
-                );
+                assert_eq!(CollectionUser::find_by_user(&user_id, &conn).await.len(), usize::from(success));
                 assert_eq!(
                     Cipher::get_collections_with_cipher_by_organization(&org.uuid, &conn).await.len(),
                     usize::from(success && case != "export")
@@ -2869,13 +2743,9 @@ async fn get_groups_data(
     }
 
     // The details view (group→collection/user mappings) needs full org access; the plain list only
-    // needs manage access to a collection, so a manager of a collection (directly or via a group)
+    // needs manage access to a collection, so a member who manages one (directly or via a group)
     // can load it to assign groups.
-    // A group with access to all collections gives a Custom member access to them, but not to the Admin Console.
-    let has_full_access = headers.membership.has_full_access()
-        || (CONFIG.org_groups_enabled()
-            && !headers.membership.has_type(MembershipType::Custom)
-            && GroupUser::has_full_access_by_member(&org_id, &headers.membership.uuid, &conn).await);
+    let has_full_access = headers.membership.has_full_access();
     let allowed = if details {
         has_full_access
             || headers.membership.has_custom_permission(CustomPermission::ManageUsers)
@@ -2940,7 +2810,6 @@ async fn get_groups_details(org_id: OrganizationId, headers: ManagerHeadersLoose
 #[serde(rename_all = "camelCase")]
 struct GroupRequest {
     name: String,
-    access_all: Option<bool>,
     external_id: Option<String>,
     collections: Vec<CollectionData>,
     users: Vec<MembershipId>,
@@ -2948,14 +2817,11 @@ struct GroupRequest {
 
 impl GroupRequest {
     pub fn to_group(&self, org_uuid: &OrganizationId) -> Group {
-        Group::new(org_uuid.clone(), self.name.clone(), self.access_all.unwrap_or(false), self.external_id.clone())
+        Group::new(org_uuid.clone(), self.name.clone(), self.external_id.clone())
     }
 
     pub fn update_group(&self, mut group: Group) -> Group {
         group.name.clone_from(&self.name);
-        if let Some(access_all) = self.access_all {
-            group.access_all = access_all;
-        }
         // Group Updates do not support changing the external_id
         // These input fields are in a disabled state, and can only be updated/added via ldap_import
 
@@ -3837,6 +3703,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn collections_no_member_or_group_manages_are_unmanaged() {
+        let member = |manage| CollectionMembership {
+            membership_uuid: String::from("member").into(),
+            collection_uuid: String::from("collection").into(),
+            read_only: false,
+            hide_passwords: false,
+            manage,
+        };
+        let group = |manage| {
+            CollectionGroup::new(String::from("collection").into(), String::from("group").into(), false, false, manage)
+        };
+        let (editor, manager) = (member(false), member(true));
+        assert!(is_unmanaged(&[], &[]));
+        assert!(is_unmanaged(&[&editor], &[group(false)]));
+        assert!(!is_unmanaged(&[&editor, &manager], &[group(false)]));
+        assert!(!is_unmanaged(&[&editor], &[group(false), group(true)]));
+    }
+
     #[cfg(sqlite)]
     #[test]
     fn manage_users_grants_are_confined_to_permission_and_organization() {
@@ -3846,7 +3731,7 @@ mod tests {
             let foreign = test_db::organization(&conn).await;
             for org_id in [&org.uuid, &foreign.uuid] {
                 let collection = test_db::collection(&conn, org_id).await;
-                let mut group = Group::new(org_id.clone(), "Group".into(), true, None);
+                let mut group = Group::new(org_id.clone(), "Group".into(), None);
                 group.save(&conn).await.unwrap();
                 let empty = HashSet::new();
                 for (collections, groups) in [
@@ -3854,7 +3739,6 @@ mod tests {
                     (&[][..], HashSet::from([group.uuid.clone()])),
                     (&[&collection.uuid][..], HashSet::from([group.uuid])),
                 ] {
-                    // A group with access to all collections may be given as well, as in Bitwarden
                     assert_eq!(
                         check_custom_member_grants(&member, None, collections, &groups, &conn).await.is_ok(),
                         org_id == &org.uuid
@@ -3862,18 +3746,18 @@ mod tests {
                 }
             }
             let collection = test_db::collection(&conn, &org.uuid).await;
-            assert!(!Collection::can_access_collection(&member, &collection.uuid, &conn).await);
+            assert!(!Collection::is_assigned(&member, &collection.uuid, &conn).await);
             let escalated = HashSet::from([CustomPermission::EditAnyCollection]);
             let empty = HashSet::new();
             for (enabled, status) in [(true, 2), (true, 1), (true, -126), (false, 2)] {
                 test_flag::CUSTOM_ROLES_ENABLED.set(Some(enabled));
                 member.status = status;
                 assert_eq!(
-                    custom_member_may(CollectionAction::Read, &member, &collection.uuid, &conn).await,
+                    member_may(CollectionAction::Read, &member, &collection.uuid, &conn).await,
                     enabled && status == 2
                 );
-                assert!(!custom_member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await);
-                assert!(!custom_member_may(CollectionAction::ReadAccess, &member, &collection.uuid, &conn).await);
+                assert!(!member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await);
+                assert!(!member_may(CollectionAction::ReadAccess, &member, &collection.uuid, &conn).await);
                 assert_eq!(
                     check_custom_member_grants(&member, None, &[], &empty, &conn).await.is_ok(),
                     enabled && status == 2
@@ -3928,7 +3812,7 @@ mod tests {
     }
     #[cfg(sqlite)]
     #[test]
-    fn group_requests_stay_in_their_organization_and_keep_access_all() {
+    fn group_requests_stay_in_their_organization() {
         test_db::run(async |db| {
             let conn = db.conn();
             let (org, _, member) = test_db::custom_member(&conn, CustomPermission::ManageGroups).await;
@@ -3939,13 +3823,9 @@ mod tests {
                     {"id":collection.uuid,"readOnly":false,"hidePasswords":false,"manage":true}],"users":[]}))
                 .unwrap();
                 assert_eq!(request.validate(&org.uuid, &conn).await.is_ok(), org_id == &org.uuid);
-                assert!(!Collection::can_access_collection(&member, &collection.uuid, &conn).await);
-                assert!(!custom_member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await);
+                assert!(!Collection::is_assigned(&member, &collection.uuid, &conn).await);
+                assert!(!member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await);
             }
-            let group = Group::new(org.uuid.clone(), "Group".into(), true, None);
-            let omitted: GroupRequest =
-                serde_json::from_value(json!({"name":"Group","collections":[],"users":[member.uuid]})).unwrap();
-            assert!(omitted.update_group(group).access_all);
         });
     }
 
@@ -4073,7 +3953,7 @@ mod tests {
             for (role, permissions) in [
                 (Owner, vec![]),
                 (Admin, vec![]),
-                (Manager, vec![]),
+                (User, vec![]),
                 (User, vec![]),
                 (Custom, vec![ManageResetPassword]),
                 (Custom, vec![ManageResetPassword, ManageUsers]),
@@ -4081,7 +3961,7 @@ mod tests {
                 members.push(test_db::member(&conn, &org.uuid, role, &permissions).await.1);
             }
             // Who may recover whom: a row per caller, a column per target, both in the order above
-            for (caller, row) in members.iter().zip(["111111", "011111", "000000", "000000", "000110", "000111"]) {
+            for (caller, row) in members.iter().zip(["111111", "011111", "000000", "000000", "001110", "001111"]) {
                 for (target, allowed) in members.iter().zip(row.chars()) {
                     assert_eq!(
                         may_recover_account(caller, target),
