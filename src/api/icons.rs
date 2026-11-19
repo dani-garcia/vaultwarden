@@ -13,7 +13,11 @@ use reqwest::{
     Client, Response,
     header::{self, HeaderMap, HeaderValue},
 };
-use rocket::{Route, http::ContentType, response::Redirect};
+use rocket::{
+    Route,
+    http::ContentType,
+    response::{Redirect, status::NotFound},
+};
 use svg_hush::{Filter, data_url_filter};
 
 use crate::{
@@ -106,33 +110,21 @@ fn icon_external(host: &str) -> Cached<Option<Redirect>> {
 }
 
 #[get("/<host>/icon.png")]
-async fn icon_internal(host: &str) -> Cached<(ContentType, Vec<u8>)> {
-    const FALLBACK_ICON: &[u8] = include_bytes!("../static/images/fallback-icon.png");
+async fn icon_internal(host: &str) -> Result<Cached<(ContentType, Vec<u8>)>, Cached<NotFound<()>>> {
+    let not_found = || Cached::ttl(NotFound(()), CONFIG.icon_cache_negttl(), true);
 
     let Ok(host) = get_valid_host(host) else {
         warn!("Invalid host: {}", host.escape_debug());
-        return Cached::ttl(
-            (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
-            CONFIG.icon_cache_negttl(),
-            true,
-        );
+        return Err(not_found());
     };
 
     if should_block_host(&host).is_err() {
         warn!("Blocked address: {host}");
-        return Cached::ttl(
-            (ContentType::new("image", "png"), FALLBACK_ICON.to_vec()),
-            CONFIG.icon_cache_negttl(),
-            true,
-        );
+        return Err(not_found());
     }
 
-    match get_icon(&host.to_string()).await {
-        Some((icon, icon_type)) => {
-            Cached::ttl((ContentType::new("image", icon_type), icon), CONFIG.icon_cache_ttl(), true)
-        }
-        _ => Cached::ttl((ContentType::new("image", "png"), FALLBACK_ICON.to_vec()), CONFIG.icon_cache_negttl(), true),
-    }
+    let (icon, icon_type) = get_icon(&host.to_string()).await.ok_or_else(not_found)?;
+    Ok(Cached::ttl((ContentType::new("image", icon_type), icon), CONFIG.icon_cache_ttl(), true))
 }
 
 async fn get_icon(domain: &str) -> Option<(Vec<u8>, String)> {
