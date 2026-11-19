@@ -87,6 +87,9 @@ pub enum RepromptType {
 /// regular vault routes, so the handlers state which one applies. They only differ for a Custom member with Edit
 /// any collection, who reaches every cipher of the organization on the administrative routes, but keeps their
 /// own vault limited to the collections they are assigned to.
+///
+/// They also differ for the items stored only in a member's My Items collection: like upstream, members with
+/// organization-wide cipher authority reach those through the administrative routes, never in their vault.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CipherAccessScope {
     User,
@@ -540,6 +543,18 @@ impl Cipher {
             None => {
                 // Belongs to Organization, need to update affected users
                 if let Some(ref org_uuid) = self.organization_uuid {
+                    // My Items-only ciphers belong in the owner's vault, not in the vault/revision stream of
+                    // members that merely have organization- or group-wide access.
+                    if let Some(owners) = CollectionCipher::find_my_items_owners_if_only(&self.uuid, conn).await {
+                        for owner in owners {
+                            if Membership::find_confirmed_by_user_and_org(&owner, org_uuid, conn).await.is_some() {
+                                User::update_uuid_revision(&owner, conn).await;
+                                user_uuids.push(owner);
+                            }
+                        }
+                        return user_uuids;
+                    }
+
                     // users having access to the collection
                     let mut collection_users = Membership::find_by_cipher_and_org(&self.uuid, org_uuid, conn).await;
                     if CONFIG.org_groups_enabled() {
@@ -606,6 +621,28 @@ impl Cipher {
             cipher.delete(conn).await?;
         }
         Ok(())
+    }
+
+    /// Purges the organization vault like upstream's `Cipher_DeleteByOrganizationId`: the items stored in a
+    /// member's My Items collection are kept, they are only removed from the shared collections. In one transaction
+    /// like there; as there, the attachment files are removed along with their items.
+    pub async fn purge_organization(org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
+        conn.transaction(async || {
+            let my_items = CollectionCipher::find_my_items_by_org(org_uuid, conn).await;
+            for cipher in Self::find_by_org(org_uuid, conn).await {
+                if !my_items.contains_key(&cipher.uuid) {
+                    cipher.delete(conn).await?;
+                }
+            }
+
+            if !my_items.is_empty() {
+                CollectionCipher::delete_all_shared_by_organization(org_uuid, conn).await?;
+                let members = Membership::find_by_org(org_uuid, conn).await;
+                User::update_uuid_revisions(members.into_iter().map(|m| m.user_uuid).collect(), conn).await;
+            }
+            Ok(())
+        })
+        .await
     }
 
     pub async fn delete_all_by_user(user_uuid: &UserId, conn: &DbConn) -> EmptyResult {
@@ -705,6 +742,15 @@ impl Cipher {
         false
     }
 
+    /// Whether the cipher is assigned to My Items collections only.
+    async fn is_my_items_only(&self, cipher_sync_data: Option<&CipherSyncData>, conn: &DbConn) -> bool {
+        if let Some(cipher_sync_data) = cipher_sync_data {
+            cipher_sync_data.my_items_only_ciphers.contains(&self.uuid)
+        } else {
+            CollectionCipher::find_my_items_owners_if_only(&self.uuid, conn).await.is_some()
+        }
+    }
+
     /// Returns whether this cipher is owned by an group in which the user has full access.
     async fn is_in_full_access_group(
         &self,
@@ -736,12 +782,28 @@ impl Cipher {
         cipher_sync_data: Option<&CipherSyncData>,
         conn: &DbConn,
     ) -> Option<(bool, bool, bool)> {
+        if let Some(org_uuid) = self.organization_uuid.as_ref()
+            && let Some(cipher_sync_data) = cipher_sync_data
+            && !cipher_sync_data.members.contains_key(org_uuid)
+        {
+            // Cached collection rows can outlive a revoked membership. They are not effective without a confirmed
+            // membership in the same organization.
+            return None;
+        }
+
         // Check whether this cipher is directly owned by the user, or is in
         // a collection that the user has full access to. If so, there are no
         // access restrictions.
-        if self.is_owned_by_user(user_uuid)
-            || self.is_in_full_access_org(user_uuid, scope, cipher_sync_data, conn).await
-            || self.is_in_full_access_group(user_uuid, cipher_sync_data, conn).await
+        if self.is_owned_by_user(user_uuid) {
+            return Some((false, false, true));
+        }
+        // Organization-wide access doesn't reach the items stored only in a member's My Items collection. Like
+        // upstream, only the administrative routes open those, for members with organization-wide cipher authority,
+        // which is what reaching every cipher with `CipherAccessScope::OrganizationAdmin` means.
+        let reaches_org = self.is_in_full_access_org(user_uuid, scope, cipher_sync_data, conn).await;
+        if (reaches_org && scope == CipherAccessScope::OrganizationAdmin)
+            || ((reaches_org || self.is_in_full_access_group(user_uuid, cipher_sync_data, conn).await)
+                && !self.is_my_items_only(cipher_sync_data, conn).await)
         {
             return Some((false, false, true));
         }
@@ -966,10 +1028,12 @@ impl Cipher {
         cipher_uuids: &Vec<CipherId>,
         conn: &DbConn,
     ) -> Vec<Self> {
+        // access_all and admin rights don't reach the items stored only in another member's My Items collection
         if CONFIG.org_groups_enabled() {
             conn.run(move |conn| {
                 let mut query = ciphers::table
                     .left_join(ciphers_collections::table.on(ciphers::uuid.eq(ciphers_collections::cipher_uuid)))
+                    .left_join(collections::table.on(collections::uuid.eq(ciphers_collections::collection_uuid)))
                     .left_join(
                         users_organizations::table.on(ciphers::organization_uuid
                             .eq(users_organizations::org_uuid.nullable())
@@ -997,15 +1061,17 @@ impl Cipher {
                             .and(collections_groups::groups_uuid.eq(groups::uuid))),
                     )
                     .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
-                    .or_filter(users_organizations::access_all.eq(true)) // access_all in org
+                    .or_filter(users_organizations::access_all.eq(true).and(collections::default_user_uuid.is_null())) // access_all in org
                     .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
-                    .or_filter(groups::access_all.eq(true)) // Access via groups
+                    .or_filter(groups::access_all.eq(true).and(collections::default_user_uuid.is_null())) // Access via groups
                     .or_filter(collections_groups::collections_uuid.is_not_null()) // Access via groups
                     .into_boxed();
 
                 if !visible_only {
                     query = query.or_filter(
-                        users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin/owner
+                        users_organizations::atype
+                            .eq_any(ORG_ADMIN_ATYPES) // Org admin/owner
+                            .and(collections::default_user_uuid.is_null()),
                     );
                 }
 
@@ -1021,6 +1087,7 @@ impl Cipher {
             conn.run(move |conn| {
                 let mut query = ciphers::table
                     .left_join(ciphers_collections::table.on(ciphers::uuid.eq(ciphers_collections::cipher_uuid)))
+                    .left_join(collections::table.on(collections::uuid.eq(ciphers_collections::collection_uuid)))
                     .left_join(
                         users_organizations::table.on(ciphers::organization_uuid
                             .eq(users_organizations::org_uuid.nullable())
@@ -1034,13 +1101,15 @@ impl Cipher {
                             .and(users_organizations::user_uuid.eq(users_collections::user_uuid))),
                     )
                     .filter(ciphers::user_uuid.eq(user_uuid)) // Cipher owner
-                    .or_filter(users_organizations::access_all.eq(true)) // access_all in org
+                    .or_filter(users_organizations::access_all.eq(true).and(collections::default_user_uuid.is_null())) // access_all in org
                     .or_filter(users_collections::user_uuid.eq(user_uuid)) // Access to collection
                     .into_boxed();
 
                 if !visible_only {
                     query = query.or_filter(
-                        users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin/owner
+                        users_organizations::atype
+                            .eq_any(ORG_ADMIN_ATYPES) // Org admin/owner
+                            .and(collections::default_user_uuid.is_null()),
                     );
                 }
 
@@ -1160,10 +1229,11 @@ impl Cipher {
                     .filter(
                         users_organizations::access_all
                             .eq(true) // User has access all
+                            .and(collections::default_user_uuid.is_null())
                             .or(users_collections::user_uuid
                                 .eq(user_uuid) // User has access to collection
                                 .and(users_collections::read_only.eq(false)))
-                            .or(groups::access_all.eq(true)) // Access via groups
+                            .or(groups::access_all.eq(true).and(collections::default_user_uuid.is_null())) // Access via groups
                             .or(collections_groups::collections_uuid
                                 .is_not_null() // Access via groups
                                 .and(collections_groups::read_only.eq(false))),
@@ -1192,6 +1262,7 @@ impl Cipher {
                     .filter(
                         users_organizations::access_all
                             .eq(true) // User has access all
+                            .and(collections::default_user_uuid.is_null())
                             .or(users_collections::user_uuid
                                 .eq(user_uuid) // User has access to collection
                                 .and(users_collections::read_only.eq(false))),
@@ -1202,6 +1273,17 @@ impl Cipher {
             })
             .await
         }
+    }
+
+    /// The cipher's collections the user sees it in, whatever they may do there: its `collectionIds` in the user's
+    /// sync, and upstream's `GetManyByUserIdCipherIdAsync`. Unlike `get_collections()`, whose callers need the
+    /// writable assignments.
+    pub async fn get_accessible_collections(&self, user_uuid: UserId, conn: &DbConn) -> Vec<CollectionId> {
+        Self::get_collections_with_cipher_by_user(user_uuid, Some(self.uuid.clone()), conn)
+            .await
+            .into_iter()
+            .map(|(_, collection_uuid)| collection_uuid)
+            .collect()
     }
 
     pub async fn get_admin_collections(
@@ -1242,15 +1324,19 @@ impl Cipher {
                     .filter(
                         users_organizations::access_all
                             .eq(true) // User has access all
+                            .and(collections::default_user_uuid.is_null())
                             .or(users_collections::user_uuid
                                 .eq(user_uuid) // User has access to collection
                                 .and(users_collections::read_only.eq(false)))
-                            .or(groups::access_all.eq(true)) // Access via groups
+                            .or(groups::access_all.eq(true).and(collections::default_user_uuid.is_null())) // Access via groups
                             .or(collections_groups::collections_uuid
                                 .is_not_null() // Access via groups
                                 .and(collections_groups::read_only.eq(false)))
-                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // User is admin or owner
+                            .or(users_organizations::atype
+                                .eq_any(ORG_ADMIN_ATYPES) // User is admin or owner
+                                .and(collections::default_user_uuid.is_null()))
                             .or(custom_edit_any_collection()
+                                .and(collections::default_user_uuid.is_null())
                                 .and::<_, diesel::sql_types::Bool>(scope == CipherAccessScope::OrganizationAdmin)),
                     )
                     .select(ciphers_collections::collection_uuid)
@@ -1277,11 +1363,15 @@ impl Cipher {
                     .filter(
                         users_organizations::access_all
                             .eq(true) // User has access all
+                            .and(collections::default_user_uuid.is_null())
                             .or(users_collections::user_uuid
                                 .eq(user_uuid) // User has access to collection
                                 .and(users_collections::read_only.eq(false)))
-                            .or(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // User is admin or owner
+                            .or(users_organizations::atype
+                                .eq_any(ORG_ADMIN_ATYPES) // User is admin or owner
+                                .and(collections::default_user_uuid.is_null()))
                             .or(custom_edit_any_collection()
+                                .and(collections::default_user_uuid.is_null())
                                 .and::<_, diesel::sql_types::Bool>(scope == CipherAccessScope::OrganizationAdmin)),
                     )
                     .select(ciphers_collections::collection_uuid)
@@ -1294,12 +1384,14 @@ impl Cipher {
 
     /// Return a Vec with (cipher_uuid, collection_uuid)
     /// This is used during a full sync so we only need one query for all collections accessible.
+    /// With `cipher_uuid`, only the ones of that cipher.
     pub async fn get_collections_with_cipher_by_user(
         user_uuid: UserId,
+        cipher_uuid: Option<CipherId>,
         conn: &DbConn,
     ) -> Vec<(CipherId, CollectionId)> {
         conn.run(move |conn| {
-            ciphers_collections::table
+            let mut query = ciphers_collections::table
                 .inner_join(collections::table.on(collections::uuid.eq(ciphers_collections::collection_uuid)))
                 .inner_join(
                     users_organizations::table.on(users_organizations::org_uuid
@@ -1322,12 +1414,23 @@ impl Cipher {
                         .eq(ciphers_collections::collection_uuid)
                         .and(collections_groups::groups_uuid.eq(groups::uuid))),
                 )
+                // access_all and admin rights don't reach another member's My Items collection
                 .or_filter(users_collections::user_uuid.eq(user_uuid)) // User has access to collection
-                .or_filter(users_organizations::access_all.eq(true)) // User has access all
-                .or_filter(users_organizations::atype.eq_any(ORG_ADMIN_ATYPES)) // User is admin or owner
-                .or_filter(groups::access_all.eq(true)) //Access via group
+                .or_filter(users_organizations::access_all.eq(true).and(collections::default_user_uuid.is_null())) // User has access all
+                .or_filter(
+                    users_organizations::atype
+                        .eq_any(ORG_ADMIN_ATYPES) // User is admin or owner
+                        .and(collections::default_user_uuid.is_null()),
+                )
+                .or_filter(groups::access_all.eq(true).and(collections::default_user_uuid.is_null())) //Access via group
                 .or_filter(collections_groups::collections_uuid.is_not_null()) //Access via group
                 .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .into_boxed();
+            // After the alternatives above, so it narrows all of them
+            if let Some(cipher_uuid) = cipher_uuid {
+                query = query.filter(ciphers_collections::cipher_uuid.eq(cipher_uuid));
+            }
+            query
                 .select(ciphers_collections::all_columns)
                 .distinct()
                 .load::<(CipherId, CollectionId)>(conn)
