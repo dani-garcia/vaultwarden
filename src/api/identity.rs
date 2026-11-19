@@ -19,6 +19,7 @@ use crate::{
             two_factor::{
                 authenticator, duo_oidc, email, enforce_2fa_policy, is_twofactor_provider_usable, webauthn, yubikey,
             },
+            webauthn_login,
         },
         identity_master_password_policy,
         push::register_push_device,
@@ -49,6 +50,7 @@ pub fn routes() -> Vec<Route> {
         register_verification_email_clicked,
         register_finish,
         prevalidate,
+        get_webauthn_login_assertion_options,
         authorize,
         oidcsignin,
         oidcsignin_error
@@ -66,7 +68,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
             check_is_some(data.refresh_token.as_ref(), "refresh_token cannot be blank")?;
             refresh_login(data, &conn, &client_header.ip).await
         }
-        "password" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
+        "password" | "webauthn" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
         "password" => {
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
             check_is_some(data.password.as_ref(), "password cannot be blank")?;
@@ -98,6 +100,18 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
             sso_login(data, &mut user_id, &conn, &client_header).await
         }
         "authorization_code" => err!("SSO sign-in is not available"),
+        "webauthn" => {
+            check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
+            check_is_some(data.token.as_ref(), "token cannot be blank")?;
+            check_is_some(data.device_response.as_ref(), "deviceResponse cannot be blank")?;
+            check_is_some(data.scope.as_ref(), "scope cannot be blank")?;
+
+            check_is_some(data.device_identifier.as_ref(), "device_identifier cannot be blank")?;
+            check_is_some(data.device_name.as_ref(), "device_name cannot be blank")?;
+            check_is_some(data.device_type.as_ref(), "device_type cannot be blank")?;
+
+            passkey_login(data, &mut user_id, &conn, &client_header).await
+        }
         "send_access" => {
             crate::ratelimit::check_limit_unauthenticated(&client_header.ip.ip)?;
             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
@@ -518,6 +532,70 @@ async fn password_login(
     let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Password, data.client_id);
 
     authenticated_response(&user, &mut device, auth_tokens, twofactor_token, conn, ip).await
+}
+
+/// Ref: <https://github.com/bitwarden/server/blob/341acc9d3d8988cec8fe05debfa6d557cf5ab749/src/Identity/IdentityServer/RequestValidators/TwoFactorAuthenticationValidator.cs#L50-L53>
+async fn passkey_login(
+    data: ConnectData,
+    user_id: &mut Option<UserId>,
+    conn: &DbConn,
+    client_header: &ClientHeaders,
+) -> JsonResult {
+    let ip = &client_header.ip;
+    AuthMethod::Webauthn.check_scope(data.scope.as_ref())?;
+    crate::ratelimit::check_limit_login(&ip.ip)?;
+    if !webauthn_login::passkey_login_available() {
+        err!("Passkey login is not available")
+    }
+
+    let (user, credential) = webauthn_login::assert_login(
+        data.token.as_deref().unwrap_or_default(),
+        data.device_response.as_deref().unwrap_or_default(),
+        &ip.ip,
+        conn,
+    )
+    .await?;
+
+    // For the event log, only now that the assertion is verified
+    *user_id = Some(user.uuid.clone());
+    let log_username = user.email.escape_debug();
+
+    if !user.enabled {
+        err!(
+            "This user has been disabled",
+            format!("IP: {}. Username: {log_username}.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    }
+
+    check_client_version(&user, client_header)?;
+
+    if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
+        err!(
+            "Please verify your email before trying again.",
+            format!("IP: {}. Username: {log_username}.", ip.ip),
+            ErrorEvent {
+                event: EventType::UserFailedLogIn
+            }
+        )
+    }
+
+    let mut device = get_device(&data, conn, &user).await?;
+
+    // The authenticator's user verification replaces two-step login, but an organization's two-step login policy still
+    // applies, as for passwords
+    if TwoFactor::find_by_user(&user.uuid, conn).await.is_empty() {
+        enforce_2fa_policy(&user, &user.uuid, device.atype, &ip.ip, false, conn).await?;
+    }
+
+    let auth_tokens = auth::AuthTokens::new(&device, &user, AuthMethod::Webauthn, data.client_id);
+    let mut result = authenticated_response(&user, &mut device, auth_tokens, None, conn, ip).await?;
+    if let Some(prf_option) = credential.to_login_prf_option() {
+        result.0["UserDecryptionOptions"]["WebAuthnPrfOption"] = prf_option;
+    }
+    Ok(result)
 }
 
 /// Like upstream's `ClientVersionValidator`, every login needs the `Bitwarden-Client-Version` header, and a V2 account
@@ -1255,12 +1333,29 @@ struct ConnectData {
     // Needed for send access
     send_id: Option<SendId>,
     password_hash_b64: Option<String>,
+
+    // Needed for grant_type = "webauthn", with the assertion as JSON
+    #[field(name = uncased("token"))]
+    token: Option<String>,
+    #[field(name = uncased("device_response"))]
+    #[field(name = uncased("deviceresponse"))]
+    device_response: Option<String>,
 }
 fn check_is_some<T>(value: Option<&T>, msg: &str) -> EmptyResult {
     if value.is_none() {
         err!(msg)
     }
     Ok(())
+}
+
+#[get("/accounts/webauthn/assertion-options")]
+fn get_webauthn_login_assertion_options(ip: ClientIp) -> JsonResult {
+    if !webauthn_login::passkey_login_available() {
+        err!("Passkey login is not available")
+    }
+    // Rate limited: anyone can call it, and each call signs a token
+    crate::ratelimit::check_limit_unauthenticated(&ip.ip)?;
+    webauthn_login::login_assertion_options()
 }
 
 #[get("/sso/prevalidate")]

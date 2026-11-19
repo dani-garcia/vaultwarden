@@ -24,7 +24,7 @@ use crate::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
             EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, KeyId, Membership,
             MembershipId, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, SignatureAlgorithm,
-            User, UserId, UserKdfType, UserSignatureKeyPair,
+            User, UserId, UserKdfType, UserSignatureKeyPair, WebauthnCredential,
         },
     },
     mail,
@@ -1229,7 +1229,7 @@ struct MasterPasswordUnlockData {
     contained_key_id: Option<KeyId>,
 }
 
-/// The unlock data of both rotation endpoints; passkey and device keys are ignored, as we support neither.
+/// The unlock data of both rotation endpoints. Device keys are ignored, as we don't support trusted devices.
 ///
 /// Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Api/KeyManagement/Models/Requests/CommonUnlockDataRequestModel.cs#L7-L14>
 #[derive(Deserialize)]
@@ -1237,8 +1237,7 @@ struct MasterPasswordUnlockData {
 struct CommonUnlockData {
     emergency_access_unlock_data: Vec<UpdateEmergencyAccessData>,
     organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
-    #[expect(dead_code, reason = "Required like upstream, but unused")]
-    passkey_unlock_data: Vec<Value>,
+    passkey_unlock_data: Vec<super::webauthn_login::PasskeyUnlockData>,
     #[expect(dead_code, reason = "Required like upstream, but unused")]
     device_key_unlock_data: Vec<Value>,
     v2_upgrade_token: Option<V2UpgradeTokenData>,
@@ -1474,7 +1473,7 @@ async fn get_key_rotation_data(headers: Headers, conn: DbConn) -> JsonResult {
         "organizationPasswordResetKeyData": organization_data,
         "emergencyAccessKeyData": emergency_access_data,
         "trustedDeviceKeyData": [],
-        "passkeyKeyData": [],
+        "passkeyKeyData": super::webauthn_login::rotation_key_data(user_id, &conn).await,
         "object": "keyRotationData",
     })))
 }
@@ -1636,6 +1635,7 @@ async fn rotate_account(data: RotateData, headers: Headers, conn: DbConn, nt: No
     // We only rotate the reset password key if it is set.
     existing_memberships.retain(|m| m.reset_password_key.is_some());
     let mut existing_sends = Send::find_by_user(user_id, &conn).await;
+    let existing_passkeys = WebauthnCredential::find_by_user(user_id, &conn).await;
 
     validate_rotation_data(
         &data,
@@ -1694,6 +1694,9 @@ async fn rotate_account(data: RotateData, headers: Headers, conn: DbConn, nt: No
         }
     }
 
+    let rotated_passkeys =
+        super::webauthn_login::validate_rotation(existing_passkeys, &data.unlock_data.passkey_unlock_data)?;
+
     // Saving's own checks, so that they can't fail halfway
     for cipher_data in data.account_data.ciphers.iter().filter(|c| c.organization_id.is_none()) {
         if let Some(cipher) = existing_ciphers.iter().find(|c| cipher_data.id.as_ref() == Some(&c.uuid)) {
@@ -1736,6 +1739,10 @@ async fn rotate_account(data: RotateData, headers: Headers, conn: DbConn, nt: No
             membership.v2_upgrade_token.clone_from(&upgrade_token);
             membership.save(&conn).await?;
         }
+    }
+
+    for (passkey, encrypted_user_key, encrypted_public_key) in rotated_passkeys {
+        passkey.rotate_keys(encrypted_user_key, encrypted_public_key, &conn).await?;
     }
 
     // Update send data

@@ -48,17 +48,23 @@ a[href$="/settings/sponsored-families"] {
 }
 {{/if}}
 
-/* Hide the `Log in with passkey` settings */
+{{#unless webauthn_2fa_supported}}
+/* Hide the `Log in with passkey` settings when the `DOMAIN` can't use passkeys */
 app-user-layout app-password-settings app-webauthn-login-settings {
   @extend %vw-hide;
 }
-/* Hide Log in with passkey on the login page */
-.vw-passkey-login {
+{{/unless}}
+{{#unless passkey_login_available}}
+/* Hide Log in with passkey on the login page and adding passkeys. SSO_ONLY keeps the list, so that passkeys can still
+   be removed. */
+.vw-passkey-login,
+app-user-layout app-password-settings app-webauthn-login-settings > button {
   @extend %vw-hide;
 }
+{{/unless}}
 
-/* Hide the or text followed by the two buttons hidden above */
-{{#if (or (not sso_enabled) sso_only)}}
+/* Hide the or text when no button follows it */
+{{#if (and (or (not sso_enabled) sso_only) (not passkey_login_available))}}
 .vw-or-text {
   @extend %vw-hide;
 }
