@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use num_traits::FromPrimitive;
@@ -70,10 +70,13 @@ pub fn routes() -> Vec<rocket::Route> {
         get_known_device,
         get_all_devices,
         get_device,
+        post_device_lost_trust,
         post_device_token,
+        post_devices_untrust,
         put_device_token,
         put_clear_device_token,
         post_clear_device_token,
+        put_device_keys,
         get_tasks,
         post_auth_request,
         get_auth_request,
@@ -1239,9 +1242,17 @@ struct CommonUnlockData {
     organization_account_recovery_unlock_data: Vec<UpdateResetPasswordData>,
     #[expect(dead_code, reason = "Required like upstream, but unused")]
     passkey_unlock_data: Vec<Value>,
-    #[expect(dead_code, reason = "Required like upstream, but unused")]
-    device_key_unlock_data: Vec<Value>,
+    #[serde(default)]
+    device_key_unlock_data: Vec<UpdateDeviceKeysData>,
     v2_upgrade_token: Option<V2UpgradeTokenData>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateDeviceKeysData {
+    device_id: DeviceId,
+    encrypted_user_key: String,
+    encrypted_public_key: String,
 }
 
 /// Lets other sessions with the v1 user key unwrap the v2 one after an upgrade. Opaque to us. Stored on the user and
@@ -1367,6 +1378,7 @@ impl KDFData {
 fn validate_rotation_data(
     data: &RotateData,
     existing_ciphers: &[Cipher],
+    existing_devices: &[Device],
     existing_folders: &[Folder],
     existing_emergency_access: &[EmergencyAccess],
     existing_memberships: &[Membership],
@@ -1407,6 +1419,15 @@ fn validate_rotation_data(
         .collect::<HashSet<&OrganizationId>>();
     if existing_memberships.iter().any(|m| !provided_reset_password_ids.contains(&m.org_uuid)) {
         err!("All existing reset password keys must be included in the rotation")
+    }
+
+    // Check that we're correctly rotating all the user's trusted device
+    let existing_trusted_device_ids =
+        existing_devices.iter().filter(|d| d.is_trusted()).map(|c| &c.uuid).collect::<HashSet<&DeviceId>>();
+    let provided_device_ids =
+        data.unlock_data.device_key_unlock_data.iter().map(|rp| &rp.device_id).collect::<HashSet<&DeviceId>>();
+    if !provided_device_ids.is_superset(&existing_trusted_device_ids) {
+        err!("All existing trusted device keys must be included in the rotation")
     }
 
     // Check that we're correctly rotating all the user's sends
@@ -1628,6 +1649,7 @@ async fn post_rotatekey(data: Json<KeyData>, headers: Headers, conn: DbConn, nt:
 async fn rotate_account(data: RotateData, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let user_id = &headers.user.uuid;
     let mut existing_ciphers = Cipher::find_owned_by_user(user_id, &conn).await;
+    let existing_devices = Device::find_by_user(user_id, &conn).await;
     let mut existing_folders = Folder::find_by_user(user_id, &conn).await;
     let mut existing_emergency_access = EmergencyAccess::find_all_confirmed_by_grantor_uuid(user_id, &conn).await;
     // Like upstream, only the ones with a key take part
@@ -1640,6 +1662,7 @@ async fn rotate_account(data: RotateData, headers: Headers, conn: DbConn, nt: No
     validate_rotation_data(
         &data,
         &existing_ciphers,
+        &existing_devices,
         &existing_folders,
         &existing_emergency_access,
         &existing_memberships,
@@ -1735,6 +1758,20 @@ async fn rotate_account(data: RotateData, headers: Headers, conn: DbConn, nt: No
             }
             membership.v2_upgrade_token.clone_from(&upgrade_token);
             membership.save(&conn).await?;
+        }
+    }
+
+    // Update device
+    let mut device_updates: HashMap<DeviceId, UpdateDeviceKeysData> =
+        data.unlock_data.device_key_unlock_data.into_iter().map(|d| (d.device_id.clone(), d)).collect();
+    for mut device in existing_devices {
+        if let Some(update) = device_updates.remove(&device.uuid) {
+            device.encrypted_public_key = Some(update.encrypted_public_key);
+            device.encrypted_user_key = Some(update.encrypted_user_key);
+            device.save(true, &conn).await?;
+        } else if device.is_trusted() {
+            device.lost_trust();
+            device.save(true, &conn).await?;
         }
     }
 
@@ -2383,6 +2420,52 @@ async fn get_all_devices(headers: Headers, conn: DbConn) -> JsonResult {
     })))
 }
 
+/// Reported by a client that still holds a device key but did not get any keys back from us.
+#[post("/devices/lost-trust")]
+async fn post_device_lost_trust(headers: Headers, conn: DbConn) -> EmptyResult {
+    let mut device = headers.device;
+
+    warn!(
+        "Device {} ({}) of user {} still holds a device key, but has no trusted device keys on the server",
+        device.uuid,
+        DeviceType::from_i32(device.atype),
+        headers.user.uuid
+    );
+
+    // Still ensure that it's the case.
+    if device.lost_trust() {
+        device.save(true, &conn).await?;
+    }
+
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DevicesUntrusted {
+    devices: Vec<DeviceId>,
+}
+
+#[post("/devices/untrust", data = "<data>")]
+async fn post_devices_untrust(headers: Headers, data: Json<DevicesUntrusted>, conn: DbConn) -> EmptyResult {
+    let untrusted = data.into_inner();
+    if !untrusted.devices.is_empty() {
+        for device_id in untrusted.devices {
+            warn!("Cannot find user {} device {} to untrust", device_id, headers.user.email);
+
+            if let Some(mut device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &conn).await {
+                if device.lost_trust() {
+                    device.save(true, &conn).await?;
+                }
+            } else {
+                warn!("Cannot find user {} device {} to untrust", device_id, headers.user.email);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[get("/devices/identifier/<device_id>")]
 async fn get_device(device_id: DeviceId, headers: Headers, conn: DbConn) -> JsonResult {
     let Some(device) = Device::find_by_uuid_and_user(&device_id, &headers.user.uuid, &conn).await else {
@@ -2456,6 +2539,40 @@ async fn put_clear_device_token(device_id: DeviceId, ip: ClientIp, conn: DbConn)
 #[post("/devices/identifier/<device_id>/clear-token")]
 async fn post_clear_device_token(device_id: DeviceId, ip: ClientIp, conn: DbConn) -> EmptyResult {
     put_clear_device_token(device_id, ip, conn).await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceKeysData {
+    #[serde(alias = "EncryptedUserKey")]
+    encrypted_user_key: String,
+    #[serde(alias = "EncryptedPublicKey")]
+    encrypted_public_key: String,
+    #[serde(alias = "EncryptedPrivateKey")]
+    encrypted_private_key: String,
+}
+
+// https://github.com/bitwarden/server/blob/v2026.3.1/src/Api/Controllers/DevicesController.cs
+#[put("/devices/<device_id>/keys", data = "<data>")]
+async fn put_device_keys(
+    device_id: DeviceId,
+    data: Json<DeviceKeysData>,
+    headers: Headers,
+    conn: DbConn,
+) -> JsonResult {
+    if headers.device.uuid != device_id {
+        err!("No device found");
+    }
+
+    let mut device = headers.device;
+    let data = data.into_inner();
+
+    device.encrypted_user_key = Some(data.encrypted_user_key).filter(|k| !k.is_empty());
+    device.encrypted_public_key = Some(data.encrypted_public_key).filter(|k| !k.is_empty());
+    device.encrypted_private_key = Some(data.encrypted_private_key).filter(|k| !k.is_empty());
+    device.save(true, &conn).await?;
+
+    Ok(Json(device.to_json()))
 }
 
 #[get("/tasks")]
