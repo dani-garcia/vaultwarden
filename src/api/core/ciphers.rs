@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{NaiveDateTime, Utc};
-use num_traits::ToPrimitive;
 use rocket::{
     Route,
     form::{Form, FromForm},
@@ -129,12 +128,10 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     let mut ciphers = Cipher::find_by_user_visible(&headers.user.uuid, &conn).await;
 
     // Filter out SSH keys if the client version is less than 2024.12.0
-    let show_ssh_keys = if let Some(client_version) = client_version {
+    let show_ssh_keys = client_version.is_some_and(|v| {
         let ver_match = semver::VersionReq::parse(">=2024.12.0").unwrap();
-        ver_match.matches(&client_version.0)
-    } else {
-        false
-    };
+        ver_match.matches(&v.0)
+    });
     if !show_ssh_keys {
         ciphers.retain(|c| c.atype != 5);
     }
@@ -311,7 +308,7 @@ async fn add_my_items_collection_ids(response: &mut Value, cipher: &Cipher, head
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CipherData {
     // Id is optional as it is included only in bulk share
@@ -365,8 +362,7 @@ pub struct CipherData {
     pub password_history: Option<Value>,
 
     // These are used during key rotation
-    // 'Attachments' is unused, contains map of {id: filename}
-    #[allow(dead_code)]
+    #[cfg_attr(not(feature = "unsafe_test_mode"), expect(unused, reason = "Only read by the unsafe test seeder"))]
     attachments: Option<Value>,
     attachments2: Option<HashMap<AttachmentId, Attachments2Data>>,
 
@@ -577,7 +573,7 @@ async fn post_ciphers(data: Json<CipherData>, headers: Headers, conn: DbConn, nt
 ///
 /// Ref: https://bitwarden.com/help/article/policies/#personal-ownership
 async fn enforce_personal_ownership_policy(data: Option<&CipherData>, headers: &Headers, conn: &DbConn) -> EmptyResult {
-    if data.is_none() || data.unwrap().organization_id.is_none() {
+    if data.is_none_or(|d| d.organization_id.is_none()) {
         let user_id = &headers.user.uuid;
         let policy_type = OrgPolicyType::PersonalOwnership;
         if OrgPolicy::is_applicable_to_user(user_id, policy_type, None, conn).await {
@@ -1276,11 +1272,11 @@ async fn update_collections_by_scope(
                 }
                 let add = posted.contains(id);
                 if add && collection.is_default_user_collection() {
-                    if cipher_my_items.is_none() {
-                        cipher_my_items = Some(CollectionCipher::find_my_items_of_cipher(&cipher.uuid, &conn).await);
-                    }
-                    collection
-                        .check_cipher_assignment(&visible, cipher_my_items.as_ref().unwrap_or(&HashSet::new()))?;
+                    let my_items = match cipher_my_items.take() {
+                        Some(my_items) => my_items,
+                        None => CollectionCipher::find_my_items_of_cipher(&cipher.uuid, &conn).await,
+                    };
+                    collection.check_cipher_assignment(&visible, cipher_my_items.insert(my_items))?;
                     adds_my_items = true;
                 }
                 changes.push((collection.uuid, add));
@@ -1447,7 +1443,7 @@ async fn put_cipher_share_selected(
     if data.ciphers.iter().any(|c| c.id.is_none() || c.organization_id.is_none()) {
         err!("All Ciphers must have an Id and OrganizationId.")
     }
-    if data.ciphers.iter().map(|c| &c.organization_id).collect::<HashSet<_>>().len() != 1 {
+    if data.ciphers.array_windows::<2>().any(|[a, b]| a.organization_id != b.organization_id) {
         err!("All ciphers must be for the same organization.")
     }
     if data.collection_ids.is_empty() {
@@ -1818,7 +1814,7 @@ async fn save_attachment(
 ) -> Result<(Cipher, DbConn), crate::error::Error> {
     let data = data.into_inner();
 
-    let Some(size) = data.data.len().to_i64() else {
+    let Ok(size) = i64::try_from(data.data.len()) else {
         err!("Attachment data size overflow");
     };
     if size < 0 {
@@ -1865,7 +1861,7 @@ async fn save_attachment(
             err!("Invalid attachment size min")
         };
 
-        if min_size <= size && size <= max_size {
+        if (min_size..=max_size).contains(&size) {
             if size != attachment.file_size {
                 // Update the attachment with the actual file size.
                 attachment.file_size = size;
@@ -1873,7 +1869,6 @@ async fn save_attachment(
             }
         } else {
             attachment.delete(&conn).await.ok();
-
             err!(format!("Attachment size mismatch (expected within [{min_size}, {max_size}], got {size})"));
         }
     } else {
@@ -2929,10 +2924,7 @@ mod custom_role_tests {
     use crate::{
         api::notifications::{WS_USERS, WebSocketUsers},
         auth::ClientIp,
-        db::{
-            models::{CustomPermission, Device, User},
-            test_db,
-        },
+        db::{models::Device, test_db},
     };
     use chrono::Datelike;
     use diesel::connection::SimpleConnection;

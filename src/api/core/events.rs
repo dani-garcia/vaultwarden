@@ -140,12 +140,10 @@ fn get_continuation_token(events_json: &[Value]) -> Option<&str> {
     // When the length of the vec equals the max page_size there probably is more data
     // When it is less, then all events are loaded.
     #[expect(clippy::cast_possible_truncation, reason = "PAGE_SIZE fits within usize")]
-    if events_json.len() == Event::PAGE_SIZE as usize {
-        if let Some(last_event) = events_json.last() {
-            last_event["date"].as_str()
-        } else {
-            None
-        }
+    if events_json.len() == Event::PAGE_SIZE as usize
+        && let Some(last_event) = events_json.last()
+    {
+        last_event["date"].as_str()
     } else {
         None
     }

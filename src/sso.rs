@@ -236,7 +236,7 @@ pub struct OIDCIdentifier(String);
 
 impl OIDCIdentifier {
     fn new(issuer: &str, subject: &str) -> Self {
-        OIDCIdentifier(format!("{issuer}/{subject}"))
+        Self(format!("{issuer}/{subject}"))
     }
 }
 
@@ -283,14 +283,14 @@ pub async fn exchange_code(
 
     let user_info = client.user_info(token_response.access_token().to_owned()).await?;
 
-    let email = match id_claims.email().or(user_info.email()) {
+    let email = match id_claims.email().or_else(|| user_info.email()) {
         None => err!("Neither id token nor userinfo contained an email"),
         Some(e) => e.to_string().to_lowercase(),
     };
 
-    let email_verified = id_claims.email_verified().or(user_info.email_verified());
+    let email_verified = id_claims.email_verified().or_else(|| user_info.email_verified());
 
-    let user_name = id_claims.preferred_username().or(user_info.preferred_username()).map(|un| un.to_string());
+    let user_name = id_claims.preferred_username().or_else(|| user_info.preferred_username()).map(|un| un.to_string());
 
     let refresh_token = token_response.refresh_token().map(openidconnect::RefreshToken::secret);
     if refresh_token.is_none() && CONFIG.sso_scopes_vec().contains(&"offline_access".to_owned()) {
@@ -398,7 +398,7 @@ fn create_auth_tokens_impl(
         match decode_token_claims("refresh_token", &rt) {
             Err(_) => {
                 let time_now = Utc::now();
-                let exp = (time_now + *DEFAULT_REFRESH_VALIDITY).timestamp();
+                let exp = (time_now + DEFAULT_REFRESH_VALIDITY).timestamp();
                 debug!("Non jwt refresh_token (expiration set to {exp})");
                 (time_now.timestamp(), exp, TokenWrapper::Refresh(rt))
             }
@@ -454,7 +454,7 @@ pub async fn exchange_refresh_token(
         }
         Some(TokenWrapper::Access(access_token)) => {
             let now = Utc::now();
-            let exp_limit = (now + *BW_EXPIRATION).timestamp();
+            let exp_limit = (now + BW_EXPIRATION).timestamp();
 
             if exp < exp_limit {
                 err_silent!("Access token is close to expiration but we have no refresh token")
