@@ -1502,6 +1502,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "windows-desktop-autotype",
     "windows-desktop-autotype-ga",
     // Key Management Team
+    "innovation-sprint-shared-unlock-part-2",
     "biometrics-sdk-ipc",
     "windows-native-credential-sync",
     "macos-native-credential-sync",
