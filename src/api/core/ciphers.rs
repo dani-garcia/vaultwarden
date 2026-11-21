@@ -393,6 +393,20 @@ fn validate_encrypted_by_user(data: &CipherData, user: &User, is_org_cipher: boo
 /// Upstream's `[StringLength(500000)]` on `CipherRequestModel.Data`
 const MAX_CIPHER_DATA_LENGTH: usize = 500_000;
 
+/// Ensure SSH key type-data carries the mandatory non-empty string fields.
+///
+/// `Cipher::to_json` already discards the type-data of stored SSH ciphers whose
+/// fields are missing or empty; rejecting them here keeps such ciphers from
+/// being written in the first place.
+fn validate_ssh_key_data(type_data: &Value) -> EmptyResult {
+    for field in ["privateKey", "publicKey", "keyFingerprint"] {
+        if type_data[field].as_str().is_none_or(str::is_empty) {
+            err!(format!("SSH key field '{field}' must be a non-empty string"))
+        }
+    }
+    Ok(())
+}
+
 impl CipherData {
     /// Whether `data` is a blob rather than the per-type fields. Parses `data`, so keep the result.
     pub fn is_blob(&self) -> bool {
@@ -414,6 +428,14 @@ impl CipherData {
         };
         if !is_blob && type_data.is_none() {
             err!("Data missing")
+        }
+        // Bitwarden rejects SSH keys with null or empty required fields; accepting them
+        // here would drop sshKey on read-back (see Cipher::to_json).
+        if !is_blob
+            && self.r#type == 5
+            && let Some(ssh_key) = type_data
+        {
+            validate_ssh_key_data(ssh_key)?;
         }
         Ok(())
     }
@@ -2971,5 +2993,38 @@ mod custom_role_tests {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod ssh_key_validation_tests {
+    use super::validate_ssh_key_data;
+    use serde_json::json;
+
+    #[test]
+    fn validate_ssh_key_data_required_fields() {
+        let cases = [
+            ("all fields present", json!({"privateKey": "priv", "publicKey": "pub", "keyFingerprint": "fp"}), true),
+            ("null private key", json!({"privateKey": null, "publicKey": "pub", "keyFingerprint": "fp"}), false),
+            ("empty public key", json!({"privateKey": "priv", "publicKey": "", "keyFingerprint": "fp"}), false),
+            ("missing fingerprint", json!({"privateKey": "priv", "publicKey": "pub"}), false),
+            ("non-string fingerprint", json!({"privateKey": "priv", "publicKey": "pub", "keyFingerprint": 42}), false),
+            ("no fields at all", json!({}), false),
+        ];
+
+        for (case, type_data, expected_ok) in cases {
+            assert_eq!(validate_ssh_key_data(&type_data).is_ok(), expected_ok, "case: {case}");
+        }
+    }
+
+    #[test]
+    fn validate_type_data_rejects_incomplete_ssh_key() {
+        let cipher = |ssh_key: serde_json::Value| -> super::CipherData {
+            serde_json::from_value(json!({"type": 5, "name": "key", "sshKey": ssh_key})).unwrap()
+        };
+        let valid = cipher(json!({"privateKey": "priv", "publicKey": "pub", "keyFingerprint": "fp"}));
+        assert!(valid.validate_type_data(false).is_ok());
+        let null_private_key = cipher(json!({"privateKey": null, "publicKey": "pub", "keyFingerprint": "fp"}));
+        assert!(null_private_key.validate_type_data(false).is_err());
     }
 }
