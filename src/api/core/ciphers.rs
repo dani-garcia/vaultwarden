@@ -1697,7 +1697,7 @@ async fn post_attachment_v2(
     let attachment_id = crypto::generate_attachment_id();
     let attachment =
         Attachment::new(attachment_id.clone(), cipher.uuid.clone(), data.file_name, file_size, Some(data.key));
-    attachment.save(&conn).await.expect("Error saving attachment");
+    attachment.save(&conn).await?;
     notify_attachment_created(&cipher, &headers, &conn, &nt).await;
 
     let url = format!("/ciphers/{}/attachment/{attachment_id}", cipher.uuid);
@@ -1791,7 +1791,7 @@ async fn save_attachment(
             if size != attachment.file_size {
                 // Update the attachment with the actual file size.
                 attachment.file_size = size;
-                attachment.save(&conn).await.expect("Error updating attachment");
+                attachment.save(&conn).await?;
             }
         } else {
             attachment.delete(&conn).await.ok();
@@ -1813,7 +1813,7 @@ async fn save_attachment(
         }
         let attachment =
             Attachment::new(file_id.clone(), cipher_id.clone(), encrypted_filename.unwrap(), size, data.key);
-        attachment.save(&conn).await.expect("Error saving attachment");
+        attachment.save(&conn).await?;
     }
 
     save_temp_file(&PathType::Attachments, &format!("{cipher_id}/{file_id}"), data.data, true).await?;
@@ -2204,6 +2204,16 @@ async fn move_cipher_selected(
 ) -> EmptyResult {
     let data = data.into_inner();
     let user_id = &headers.user.uuid;
+
+    // Validate the cipher IDs are well-formed before they reach the query.
+    // Unlike path parameters (UuidFromParam), IDs deserialized from a JSON body
+    // are not checked, so a malformed value (e.g. one containing a NUL byte)
+    // would otherwise reach the database and error out.
+    for cipher_id in &data.ids {
+        if uuid::Uuid::parse_str(cipher_id.as_ref()).is_err() {
+            err!("Invalid cipher ID provided")
+        }
+    }
 
     if let Some(ref folder_id) = data.folder_id
         && Folder::find_by_uuid_and_user(folder_id, user_id, &conn).await.is_none()
