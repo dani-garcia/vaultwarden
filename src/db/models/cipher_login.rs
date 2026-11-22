@@ -187,7 +187,7 @@ mod tests {
         let out = normalize_login_type_data(json!({
             "fido2Credentials": [{
                 "credentialId": "enc-id",
-                "creationDate": 1717769556
+                "creationDate": 1_717_769_556
             }]
         }));
         assert_eq!(out["fido2Credentials"][0]["creationDate"], EPOCH_RFC3339);
@@ -297,7 +297,7 @@ mod tests {
             }],
             "autofillOnPageLoad": false
         });
-        let once = normalize_login_type_data(input.clone());
+        let once = normalize_login_type_data(input);
         let twice = normalize_login_type_data(once.clone());
         assert_eq!(once, twice);
         assert_eq!(once["fido2Credentials"][0].as_object().unwrap().len(), 13);
