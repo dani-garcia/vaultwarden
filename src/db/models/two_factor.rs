@@ -174,7 +174,7 @@ impl TwoFactor {
         for mut u2f in u2f_factors {
             let mut regs: Vec<U2FRegistration> = serde_json::from_str(&u2f.data)?;
             // If there are no registrations or they are migrated (we do the migration in batch so we can consider them all migrated when the first one is)
-            if regs.is_empty() || regs[0].migrated == Some(true) {
+            if regs.first().is_none_or(|reg| reg.migrated == Some(true)) {
                 continue;
             }
 
@@ -227,7 +227,7 @@ impl TwoFactor {
             u2f.data = serde_json::to_string(&regs)?;
             u2f.save(conn).await?;
 
-            TwoFactor::new(u2f.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&webauthn_regs)?)
+            Self::new(u2f.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&webauthn_regs)?)
                 .save(conn)
                 .await?;
         }
@@ -254,7 +254,7 @@ impl TwoFactor {
 
             let regs = regs.into_iter().map(Into::into).collect::<Vec<WebauthnRegistration>>();
 
-            TwoFactor::new(webauthn_factor.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&regs)?)
+            Self::new(webauthn_factor.user_uuid.clone(), TwoFactorType::Webauthn, serde_json::to_string(&regs)?)
                 .save(conn)
                 .await?;
         }

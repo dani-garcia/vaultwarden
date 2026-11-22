@@ -151,11 +151,7 @@ pub enum EventType {
 /// Local methods
 impl Event {
     pub fn new(event_type: i32, event_date: Option<NaiveDateTime>) -> Self {
-        let event_date = match event_date {
-            Some(d) => d,
-            None => Utc::now().naive_utc(),
-        };
-
+        let event_date = event_date.unwrap_or_else(|| Utc::now().naive_utc());
         Self {
             uuid: EventId(crate::util::get_uuid()),
             event_type,
@@ -230,7 +226,7 @@ impl Event {
         }
     }
 
-    pub async fn save_user_event(events: Vec<Event>, conn: &DbConn) -> EmptyResult {
+    pub async fn save_user_event(events: Vec<Self>, conn: &DbConn) -> EmptyResult {
         // Special save function which is able to handle multiple events.
         // SQLite doesn't support the DEFAULT argument, and does not support inserting multiple values at the same time.
         // MySQL and PostgreSQL do.
@@ -331,6 +327,7 @@ impl Event {
 
     pub async fn find_by_cipher_uuid(
         cipher_uuid: &CipherId,
+        org_uuid: &OrganizationId,
         start: &NaiveDateTime,
         end: &NaiveDateTime,
         conn: &DbConn,
@@ -338,6 +335,7 @@ impl Event {
         conn.run(move |conn| {
             event::table
                 .filter(event::cipher_uuid.eq(cipher_uuid))
+                .filter(event::org_uuid.eq(org_uuid))
                 .filter(event::event_date.between(start, end))
                 .order_by(event::event_date.desc())
                 .limit(Self::PAGE_SIZE)

@@ -1,6 +1,6 @@
 [workspace.package]
 edition = "2024"
-rust-version = "1.97.1"
+rust-version = "1.98.1"
 license = "AGPL-3.0-only"
 repository = "https://github.com/dani-garcia/vaultwarden"
 publish = false
@@ -44,7 +44,6 @@ s3 = [
     "dep:aws-config",
     "dep:aws-credential-types",
     "dep:aws-smithy-runtime-api",
-    "dep:http",
     "dep:reqsign-aws-v4",
     "dep:reqsign-core",
 ]
@@ -57,8 +56,11 @@ oidc-accept-string-booleans = ["openidconnect/accept-string-booleans"]
 # Currently only used to enable rusts official ip support
 unstable = []
 
+# Enables special test mode features. This should NEVER be enabled in production
+unsafe_test_mode = ["dep:serde_cbor_2"]
+
 [target."cfg(unix)".dependencies]
-nix = { version = "0.31.3", features = ["fs"] }
+nix = { version = "0.32.0", features = ["fs"] }
 # Logging
 syslog = "7.0.0"
 
@@ -80,8 +82,8 @@ num-derive = "0.5.1"
 bigdecimal = "0.4.11"
 
 # Web framework
-rocket = { version = "0.5.2", default-features = false, features = ["json", "tls"] }
-rocket_ws = { version = "0.1.1" }
+rocket = { version = "0.5.4", default-features = false, features = ["json", "tls"] }
+rocket_ws = { version = "0.2.0" }
 
 # WebSockets libraries
 rmpv = "1.3.1" # MessagePack library
@@ -107,8 +109,8 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 
 # A safe, extensible ORM and Query builder
-diesel = { version = "2.3.14", features = ["chrono", "r2d2", "numeric"] }
-diesel_migrations = "2.3.2"
+diesel = { version = "2.4.0", features = ["chrono", "r2d2", "numeric", "64-column-tables"] }
+diesel_migrations = "2.4.0"
 
 derive_more = { version = "2.1.1", features = [
     "as_ref",
@@ -120,21 +122,20 @@ derive_more = { version = "2.1.1", features = [
 diesel-derive-newtype = "2.1.3"
 
 # SQLite, statically bundled unless the `sqlite_system` feature is enabled
-libsqlite3-sys = { version = "0.38.2", optional = true }
+libsqlite3-sys = { version = "0.40.0", optional = true }
 
 # Crypto-related libraries
-rand = "0.10.3"
+rand = "0.10.4"
 ring = "0.17.14"
 rustls = { version = "0.23.46", features = ["ring", "std"], default-features = false }
 subtle = "2.6.1"
 
 # UUID generation
-uuid = { version = "1.29.0", features = ["v4"] }
+uuid = { version = "1.29.3", features = ["v4"] }
 
 # Date and time libraries
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 chrono-tz = "0.10.4"
-time = "0.3.55"
 
 # Job scheduler
 job_scheduler_ng = "2.5.0"
@@ -143,7 +144,7 @@ job_scheduler_ng = "2.5.0"
 data-encoding = "2.11.1"
 
 # JWT library
-jsonwebtoken = { version = "11.1.0", default-features = false, features = ["rust_crypto", "use_pem"] }
+jsonwebtoken = { version = "12.0.0", default-features = false, features = ["rust_crypto", "use_pem"] }
 
 # TOTP library
 totp-lite = "2.0.1"
@@ -157,12 +158,13 @@ yubico_ng = { version = "1.0.0", default-features = false }
 webauthn-rs = { version = "0.5.5", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
 webauthn-rs-proto = "0.5.5"
 webauthn-rs-core = "0.5.5"
+serde_cbor_2 = { version = "0.13.0", optional = true }
 
 # Handling of URL's for WebAuthn and favicons
 url = "2.5.8"
 
 # Email libraries
-lettre = { version = "0.11.23", default-features = false, features = [
+lettre = { version = "0.11.24", default-features = false, features = [
     # Misc
     "tracing",
     "serde",
@@ -177,7 +179,7 @@ lettre = { version = "0.11.23", default-features = false, features = [
     "sendmail-transport",
 ] }
 percent-encoding = "2.3.2" # URL encoding library used for URL's in the emails
-email_address = "0.2.9"
+email_address = "0.2.10"
 
 # HTML Template library
 handlebars = { version = "6.4.4", features = ["dir_source"] }
@@ -204,25 +206,22 @@ reqwest = { version = "0.13.5", default-features = false, features = [
 hickory-resolver = "0.26.3"
 
 # Favicon extraction libraries
-html5gum = "0.9.0"
-regex = { version = "1.13.1", default-features = false, features = [
+html5gum = "0.9.2"
+regex = { version = "1.13.2", default-features = false, features = [
     "perf",
     "std",
     "unicode-perl",
 ] }
 data-url = "0.3.2"
-bytes = "1.12.1"
+bytes = "1.12.2"
 svg-hush = "0.9.7"
-
-# Cache function results (Used for version check and favicon fetching)
-cached = { version = "4.1.0", features = ["async"] }
 
 # Used for custom short lived cookie jar during favicon extraction
 cookie = "0.18.2"
 cookie_store = "0.22.1"
 
 # Used by U2F, JWT and PostgreSQL
-openssl = "0.10.81"
+openssl = "0.10.82"
 
 # CLI argument parsing
 pico-args = "0.5.0"
@@ -236,6 +235,8 @@ ipnet = "2.12.2"
 
 # OIDC for SSO
 openidconnect = { version = "4.1.0", default-features = false }
+
+# Used for caching for ODIC/SSO and Admin version check
 moka = { version = "0.12.16", features = ["future"] }
 
 # Check client versions for specific features.
@@ -251,7 +252,7 @@ which = "8.0.6"
 argon2 = "0.6.0"
 
 # Reading a password from the cli for generating the Argon2id ADMIN_TOKEN
-rpassword = "7.5.4"
+rpassword = "7.5.5"
 
 # Loading a dynamic CSS Stylesheet
 grass_compiler = { version = "0.13.4", default-features = false }
@@ -261,17 +262,16 @@ opendal = { version = "0.59.5", default-features = false, features = ["services-
 opendal-http-transport-reqwest = { version = "0.59.5", default-features = false, features = ["rustls-no-provider"], optional = true }
 
 # For retrieving AWS credentials, including temporary SSO credentials
-aws-config = { version = "1.13.0", optional = true, default-features = false, features = [
+aws-config = { version = "1.13.3", optional = true, default-features = false, features = [
     "behavior-version-latest",
     "credentials-process",
     "rt-tokio",
     "sso",
 ] }
 aws-credential-types = { version = "1.3.1", optional = true }
-aws-smithy-runtime-api = { version = "1.19.2", optional = true }
-http = { version = "1.5.0", optional = true }
-reqsign-aws-v4 = { version = "3.3.1", optional = true }
-reqsign-core = { version = "3.3.2", optional = true }
+aws-smithy-runtime-api = { version = "1.22.0", optional = true }
+reqsign-aws-v4 = { version = "3.4.0", optional = true }
+reqsign-core = { version = "3.3.3", optional = true }
 
 # Strip debuginfo from the release builds
 # The debug symbols are to provide better panic traces
@@ -326,6 +326,14 @@ opt-level = 3
 # Linting config
 # https://doc.rust-lang.org/rustc/lints/groups.html
 [workspace.lints.rust]
+# Features
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(sqlite)',
+    'cfg(mysql)',
+    'cfg(postgresql)',
+    'cfg(s3)',
+] }
+
 # Forbid
 unsafe_code = "forbid"
 non_ascii_idents = "forbid"
@@ -355,6 +363,7 @@ unused_import_braces = "deny"
 unused_lifetimes = "deny"
 unused_qualifications = "deny"
 variant_size_differences = "deny"
+redundant_imports = "deny"
 
 # https://rust-lang.github.io/rust-clippy/stable/index.html
 [workspace.lints.clippy]
@@ -382,11 +391,15 @@ iter_on_empty_collections = "deny"
 iter_on_single_items = "deny"
 mem_forget = "deny"
 needless_collect = "deny"
+needless_pass_by_ref_mut = "deny"
+or_fun_call = "deny"
 redundant_clone = "deny"
+significant_drop_in_scrutinee = "deny"
+str_to_string = "deny"
 unnecessary_self_imports = "deny"
+use_self = "deny"
 useless_let_if_seq = "deny"
 verbose_file_reads = "deny"
-str_to_string = "deny"
 
 # Pedantic Opt-Outs
 inline_always = "allow" # We use this sparsely

@@ -281,11 +281,9 @@ impl OrgPolicy {
         exclude_org_uuid: Option<&OrganizationId>,
         conn: &DbConn,
     ) -> bool {
-        for policy in
-            OrgPolicy::find_accepted_and_confirmed_by_user_and_active_policy(user_uuid, policy_type, conn).await
-        {
+        for policy in Self::find_accepted_and_confirmed_by_user_and_active_policy(user_uuid, policy_type, conn).await {
             // Check if we need to skip this organization.
-            if exclude_org_uuid.is_some() && *exclude_org_uuid.unwrap() == policy.org_uuid {
+            if exclude_org_uuid.is_some_and(|u| u == &policy.org_uuid) {
                 continue;
             }
 
@@ -322,12 +320,20 @@ impl OrgPolicy {
 
             if let Some(p) = Self::find_by_org_and_type(&m.org_uuid, OrgPolicyType::SingleOrg, conn).await
                 && p.enabled
-                && Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await > 0
             {
-                err!(format!(
-                    "Cannot {} because the organization policy forbids being part of other organization (membership {})",
-                    action, m.uuid
-                ));
+                // Joining, confirming and restoring count memberships revoked elsewhere too, as in Bitwarden. Bitwarden
+                // does not check a modification at all, so that keeps counting only the active ones.
+                let other_memberships = if action == "modify" {
+                    Membership::count_accepted_and_confirmed_by_user(&m.user_uuid, &m.org_uuid, conn).await
+                } else {
+                    Membership::count_accepted_confirmed_or_revoked_by_user(&m.user_uuid, &m.org_uuid, conn).await
+                };
+                if other_memberships > 0 {
+                    err!(format!(
+                        "Cannot {} because the organization policy forbids being part of other organization (membership {})",
+                        action, m.uuid
+                    ));
+                }
             }
         }
 
@@ -342,7 +348,7 @@ impl OrgPolicy {
             return false;
         }
 
-        match OrgPolicy::find_by_org_and_type(org_uuid, OrgPolicyType::ResetPassword, conn).await {
+        match Self::find_by_org_and_type(org_uuid, OrgPolicyType::ResetPassword, conn).await {
             Some(policy) => match serde_json::from_str::<ResetPasswordDataModel>(&policy.data) {
                 Ok(opts) => {
                     return policy.enabled && opts.auto_enroll_enabled;
@@ -357,7 +363,7 @@ impl OrgPolicy {
 
     pub async fn is_enabled_for_member(member_uuid: &MembershipId, policy_type: OrgPolicyType, conn: &DbConn) -> bool {
         if let Some(member) = Membership::find_by_uuid(member_uuid, conn).await
-            && let Some(policy) = OrgPolicy::find_by_org_and_type(&member.org_uuid, policy_type, conn).await
+            && let Some(policy) = Self::find_by_org_and_type(&member.org_uuid, policy_type, conn).await
         {
             return policy.enabled;
         }
