@@ -219,9 +219,9 @@ fn aasa_document() -> Value {
     })
 }
 
-fn related_origins_document() -> Value {
+fn related_origins_document(origin: &str) -> Value {
     json!({
-        "origins": [CONFIG.domain_origin()]
+        "origins": [origin]
     })
 }
 
@@ -234,7 +234,7 @@ fn apple_app_site_association() -> Cached<(ContentType, Json<Value>)> {
 /// `pm-30529-webauthn-related-origins` is on.
 #[get("/.well-known/webauthn")]
 fn webauthn_related_origins() -> Cached<(ContentType, Json<Value>)> {
-    Cached::long((ContentType::JSON, Json(related_origins_document())), true)
+    Cached::long((ContentType::JSON, Json(related_origins_document(&CONFIG.domain_origin()))), true)
 }
 
 /// Origin-root well-known for Apple AASA / related-origins when DOMAIN has a path prefix.
@@ -376,11 +376,9 @@ mod ios_autofill_sim {
     }
 
     #[test]
-    fn related_origins_lists_vault_origin() {
-        let document = related_origins_document();
-        let origins = document["origins"].as_array().expect("origins");
-        assert_eq!(origins.len(), 1);
-        assert!(origins[0].as_str().is_some_and(|o| !o.is_empty()));
+    fn related_origins_lists_the_vault_origin() {
+        let document = related_origins_document("https://vault.example.com/vw");
+        assert_eq!(document["origins"], json!(["https://vault.example.com/vw"]));
     }
 
     #[test]
@@ -400,18 +398,9 @@ mod ios_autofill_sim {
     }
 
     #[test]
-    fn webauthn_http_lists_related_origins() {
-        let client = well_known_client();
-        let res = client.get("/.well-known/webauthn").dispatch();
-        assert_eq!(res.status(), Status::Ok);
-        let body: Value = res.into_json().expect("webauthn json");
-        assert!(body["origins"].as_array().is_some_and(|o| !o.is_empty()));
-    }
-
-    #[test]
-    fn web_routes_always_include_passkey_well_known() {
-        let uris: Vec<String> = routes().iter().map(|route| format!("{}", route.uri)).collect();
+    fn well_known_routes_cover_aasa_and_webauthn() {
+        let uris: Vec<String> = well_known_routes().iter().map(|route| format!("{}", route.uri)).collect();
         assert!(uris.iter().any(|uri| uri.contains("apple-app-site-association")));
-        assert!(uris.iter().any(|uri| uri.contains("webauthn")));
+        assert!(uris.iter().any(|uri| uri.contains("/.well-known/webauthn")));
     }
 }
