@@ -4,13 +4,13 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-3.0.4
+ *   https://datatables.net/download/#bs5/dt-3.1.5
  *
  * Included libraries:
- *   DataTables 3.0.4
+ *   DataTables 3.1.5
  */
 
-/*! DataTables 3.0.4
+/*! DataTables 3.1.5
  * Copyright (c) SpryMedia Ltd - datatables.net/license
  */
 
@@ -22,9 +22,6 @@
 		});
 	}
 	else if (typeof exports === 'object') {
-		// CommonJS
-		var cjsRequires = function (root) {		};
-
 		if (typeof window === 'undefined') {
 			module.exports = function (root) {
 				if (! root) {
@@ -32,13 +29,11 @@
 					// root. This will give an error otherwise
 					root = window;
 				}
-
-				cjsRequires(root);
+				
 				return factory(root, root.document);
 			};
 		}
 		else {
-			cjsRequires(window);
 			module.exports = factory(window, window.document);
 		}
 	}
@@ -276,7 +271,7 @@ function dom(input) {
  * @returns true if an HTML element was passed in
  */
 function element(input) {
-    return typeof input === 'object' && input.nodeName;
+    return input && typeof input === 'object' && input.nodeName;
 }
 /**
  * Check if a value is empty or not. Note that a string with `-` is considered
@@ -318,7 +313,7 @@ function htmlNum(d, decimalPoint, formatted, allowEmpty) {
     }
     return !html(d)
         ? null
-        : num$1(stripHtml(d), decimalPoint, formatted, allowEmpty)
+        : num(stripHtml(d), decimalPoint, formatted, allowEmpty)
             ? true
             : null;
 }
@@ -341,7 +336,7 @@ function jquery(input) {
  * @param allowEmpty Allow an empty value to be considered a number
  * @returns `true` if numeric
  */
-function num$1(d, decimalPoint, formatted, allowEmpty) {
+function num(d, decimalPoint, formatted, allowEmpty) {
     let type = typeof d;
     if (type === 'number' || type === 'bigint') {
         return true;
@@ -383,7 +378,7 @@ var is = /*#__PURE__*/Object.freeze({
     html: html,
     htmlNum: htmlNum,
     jquery: jquery,
-    num: num$1,
+    num: num,
     plainObject: plainObject
 });
 
@@ -453,6 +448,9 @@ function assignDeep(out, ...inputs) {
             continue;
         }
         for (const [key, value] of Object.entries(input)) {
+            if (key === '__proto__') {
+                continue;
+            }
             if (Array.isArray(value)) {
                 if (!Array.isArray(out[key])) {
                     out[key] = [];
@@ -489,6 +487,9 @@ function assignDeep(out, ...inputs) {
 function assignDeepObjects(out, extender, breakRefs = false) {
     let val;
     for (let prop in extender) {
+        if (prop === '__proto__') {
+            continue;
+        }
         if (Object.prototype.hasOwnProperty.call(extender, prop)) {
             val = extender[prop];
             if (plainObject(val)) {
@@ -534,12 +535,134 @@ var object = /*#__PURE__*/Object.freeze({
     map: map$1
 });
 
+// Can be assigned in DateTable.use()
+var __win;
+var __bootstrap;
+var __foundation;
+var __luxon$1;
+var __moment$1;
+var __dateTime;
+var __dataTable;
+var __jquery;
+function getWin() {
+    if (__win) {
+        return __win;
+    }
+    if (typeof globalThis !== 'undefined' && globalThis.window) {
+        return globalThis.window;
+    }
+    if (typeof window !== 'undefined') {
+        return window;
+    }
+    return {};
+}
+/**
+ * Set the libraries that DataTables uses, or the global objects.
+ * Note that the arguments can be either way around (legacy support)
+ * and the second is optional. See docs.
+ */
+function external (arg1, arg2) {
+    // Reverse arguments for legacy support
+    var module = typeof arg1 === 'string' ? arg2 : arg1;
+    var type = typeof arg2 === 'string' ? arg2 : arg1;
+    // Getter
+    if (module === undefined && typeof type === 'string') {
+        switch (type) {
+            case 'lib':
+            case 'jq':
+                if (__jquery) {
+                    return __jquery;
+                }
+                let local = getWin().jQuery;
+                if (local && local.fn) {
+                    return local;
+                }
+                return null;
+            case 'win':
+                return getWin();
+            case 'doc':
+                return getWin().document;
+            case 'datatable':
+                return __dataTable;
+            case 'datetime':
+                return __dateTime;
+            case 'luxon':
+                return __luxon$1 || getWin().luxon || null;
+            case 'moment':
+                return __moment$1 || getWin().moment || null;
+            case 'bootstrap':
+                // Use local if set, otherwise try window, which could be undefined
+                return __bootstrap || getWin().bootstrap || null;
+            case 'foundation':
+                // Ditto
+                return __foundation || getWin().Foundation || null;
+            default:
+                return null;
+        }
+    }
+    // Setter
+    if (type === 'lib' ||
+        type === 'jq' ||
+        (module && module.fn && module.fn.jquery)) {
+        __jquery = module;
+        jQuerySetup();
+    }
+    else if (type === 'datatable' || (module && module.isDataTable)) {
+        __dataTable = module;
+    }
+    else if (type === 'win' || (module && module.document)) {
+        __win = module;
+    }
+    else if (type === 'datetime' || (module && module.type === 'DateTime')) {
+        __dateTime = module;
+    }
+    else if (type === 'luxon' || (module && module.FixedOffsetZone)) {
+        __luxon$1 = module;
+    }
+    else if (type === 'moment' || (module && module.isMoment)) {
+        __moment$1 = module;
+    }
+    else if (type === 'bootstrap' ||
+        (module && module.Modal && module.Modal.NAME === 'modal')) {
+        // This is currently for BS5 only. BS3/4 attach to jQuery, so no need to use `.use()`
+        __bootstrap = module;
+    }
+    else if (type === 'foundation' || (module && module.Reveal)) {
+        __foundation = module;
+    }
+}
+/**
+ * Attach jQuery to DataTables
+ */
+function jQuerySetup() {
+    if (!__dataTable || !__jquery) {
+        return;
+    }
+    // Provide access to the host jQuery object (circular reference)
+    __dataTable.$ = __jquery;
+    // jQuery integration - expose the core function.
+    __jquery.fn.dataTable = __dataTable;
+    // jQuery wrapper - returning a DataTable instance
+    __jquery.fn.DataTable = function (options) {
+        let table = new __dataTable(this.toArray(), options);
+        return table;
+    };
+    // Legacy aliases
+    __jquery.fn.dataTableSettings = __dataTable.ext.settings;
+    __jquery.fn.dataTableExt = __dataTable.ext;
+    // All properties that are available to $.fn.dataTable should also be available
+    // on $.fn.DataTable
+    each(__dataTable, function (prop, val) {
+        __jquery.fn.DataTable[prop] = val;
+    });
+}
+
 const defaults$5 = {
     cache: true,
     contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
     headers: {},
     traditional: false,
-    url: location.href
+    url: ''
 };
 /**
  * Trigger an Ajax call to the server based on the configuration parameters
@@ -639,7 +762,7 @@ function ajax(optionsIn) {
                 // noop
             }
         }
-        if (statusText === 'success') {
+        if (statusText === 'success' || statusText === 'nocontent') {
             callback(options.success, responseData, statusText, xhr);
         }
         else {
@@ -698,8 +821,9 @@ function convertSpaces(sendData, options) {
  */
 function isCrossDomain(url) {
     // Use the current page as the base to handle relative URLs correctly
-    const target = new URL(url, window.location.origin);
-    return target.origin !== window.location.origin;
+    const win = external('win');
+    const target = new URL(url, win.location.origin);
+    return target.origin !== win.location.origin;
 }
 /**
  * Get the HTTP method from the Ajax request options
@@ -1238,107 +1362,6 @@ var data = /*#__PURE__*/Object.freeze({
     set: set$1
 });
 
-// Can be assigned in DateTable.use()
-var __bootstrap;
-var __foundation;
-var __luxon$1;
-var __moment$1;
-var __dateTime;
-var __dataTable;
-var __jquery;
-/**
- * Set the libraries that DataTables uses, or the global objects.
- * Note that the arguments can be either way around (legacy support)
- * and the second is optional. See docs.
- */
-function external (arg1, arg2) {
-    // Reverse arguments for legacy support
-    var module = typeof arg1 === 'string' ? arg2 : arg1;
-    var type = typeof arg2 === 'string' ? arg2 : arg1;
-    // Getter
-    if (module === undefined && typeof type === 'string') {
-        switch (type) {
-            case 'lib':
-            case 'jq':
-                return __jquery !== undefined ? __jquery : window.jQuery || null;
-            case 'win':
-                return window;
-            case 'datatable':
-                return __dataTable;
-            case 'datetime':
-                return __dateTime;
-            case 'luxon':
-                return __luxon$1 || window.luxon || null;
-            case 'moment':
-                return __moment$1 || window.moment || null;
-            case 'bootstrap':
-                // Use local if set, otherwise try window, which could be undefined
-                return __bootstrap || window.bootstrap || null;
-            case 'foundation':
-                // Ditto
-                return __foundation || window.Foundation || null;
-            default:
-                return null;
-        }
-    }
-    // Setter
-    if (type === 'lib' ||
-        type === 'jq' ||
-        (module && module.fn && module.fn.jquery)) {
-        __jquery = module;
-        jQuerySetup();
-    }
-    else if (type === 'datatable' || (module && module.isDataTable)) {
-        __dataTable = module;
-    }
-    else if (type === 'win' || (module && module.document)) {
-        window = module;
-        document = module.document;
-    }
-    else if (type === 'datetime' || (module && module.type === 'DateTime')) {
-        __dateTime = module;
-    }
-    else if (type === 'luxon' || (module && module.FixedOffsetZone)) {
-        __luxon$1 = module;
-    }
-    else if (type === 'moment' || (module && module.isMoment)) {
-        __moment$1 = module;
-    }
-    else if (type === 'bootstrap' ||
-        (module && module.Modal && module.Modal.NAME === 'modal')) {
-        // This is currently for BS5 only. BS3/4 attach to jQuery, so no need to use `.use()`
-        __bootstrap = module;
-    }
-    else if (type === 'foundation' || (module && module.Reveal)) {
-        __foundation = module;
-    }
-}
-/**
- * Attach jQuery to DataTables
- */
-function jQuerySetup() {
-    if (!__dataTable || !__jquery) {
-        return;
-    }
-    // Provide access to the host jQuery object (circular reference)
-    __dataTable.$ = __jquery;
-    // jQuery integration - expose the core function.
-    __jquery.fn.dataTable = __dataTable;
-    // jQuery wrapper - returning a DataTable instance
-    __jquery.fn.DataTable = function (options) {
-        let table = new __dataTable(this.toArray(), options);
-        return table;
-    };
-    // Legacy aliases
-    __jquery.fn.dataTableSettings = __dataTable.ext.settings;
-    __jquery.fn.dataTableExt = __dataTable.ext;
-    // All properties that are available to $.fn.dataTable should also be available
-    // on $.fn.DataTable
-    each(__dataTable, function (prop, val) {
-        __jquery.fn.DataTable[prop] = val;
-    });
-}
-
 function debounce(fn, timeout = 250) {
     let timer;
     return function (...args) {
@@ -1648,7 +1671,8 @@ function parseEventName(original) {
  */
 function add(el, nameFull, handler, selector, one) {
     let jq = external('jq');
-    if (jq) {
+    let doc = external('doc');
+    if (jq && el.constructor !== EventTarget) {
         let method = one ? 'one' : 'on';
         if (selector) {
             jq(el)[method](nameFull, selector, handler);
@@ -1665,8 +1689,8 @@ function add(el, nameFull, handler, selector, one) {
     }
     // Special handling for the "ready" event - it will trigger when the content
     // is ready, but also if it is already ready, when added.
-    if (el === document && eventName === 'DOMContentLoaded' && nameFull.includes('ready')) {
-        if (document.readyState === 'complete') {
+    if (el === doc && eventName === 'DOMContentLoaded' && nameFull.includes('ready')) {
+        if (doc.readyState === 'complete') {
             handler(new Event('DOMContentLoaded'));
             return;
         }
@@ -1737,7 +1761,7 @@ function add(el, nameFull, handler, selector, one) {
  */
 function remove(el, nameFull, handler, selector) {
     let jq = external('jq');
-    if (jq) {
+    if (jq && el.constructor !== EventTarget) {
         if (selector) {
             jq(el).off(nameFull, selector, handler);
         }
@@ -1805,7 +1829,8 @@ function remove(el, nameFull, handler, selector) {
  */
 function trigger(el, nameFull, bubbles = false, args = [], eventProps = null, returnEvent = false) {
     let jq = external('jq');
-    if (jq) {
+    let win = external('win');
+    if (jq && el.constructor !== EventTarget) {
         let method = bubbles ? 'trigger' : 'triggerHandler';
         let ev = jq.Event(nameFull);
         each(eventProps, (key, val) => {
@@ -1824,10 +1849,19 @@ function trigger(el, nameFull, bubbles = false, args = [], eventProps = null, re
     if (!eventName) {
         return false;
     }
-    let isMouseEvent = _mouseEvents.includes(eventName.toLowerCase());
-    let event = isMouseEvent
-        ? new MouseEvent(eventName, { bubbles, cancelable: true })
-        : new Event(eventName, { bubbles, cancelable: true });
+    let event;
+    // If running in Node, we might be using JSDom which has its own event
+    // classes. The EventTarget is always the global, separate from the window
+    // events. 99% of the time, they will be the same.
+    if (el.constructor === EventTarget) {
+        event = new Event(eventName, { bubbles, cancelable: true });
+    }
+    else {
+        let isMouseEvent = _mouseEvents.includes(eventName.toLowerCase());
+        event = isMouseEvent
+            ? new win.MouseEvent(eventName, { bubbles, cancelable: true })
+            : new win.Event(eventName, { bubbles, cancelable: true });
+    }
     // Set the extra properties for the event
     setEventProp(event, 'namespace', namespaces.join('.'));
     setEventProp(event, '_args', args || []);
@@ -1849,7 +1883,7 @@ var win = {
      */
     height() {
         var _a;
-        return ((_a = document.querySelector('html')) === null || _a === void 0 ? void 0 : _a.clientHeight) || 0;
+        return ((_a = external('doc').querySelector('html')) === null || _a === void 0 ? void 0 : _a.clientHeight) || 0;
     },
     /**
      * Remove an event handler from the window
@@ -1910,17 +1944,21 @@ var win = {
      */
     width() {
         var _a;
-        return ((_a = document.querySelector('html')) === null || _a === void 0 ? void 0 : _a.clientWidth) || 0;
+        return ((_a = external('doc').querySelector('html')) === null || _a === void 0 ? void 0 : _a.clientWidth) || 0;
     }
 };
 
 function create$3(name) {
-    let el = document.createElement(name);
+    let el = external('doc').createElement(name);
     return new Dom(el);
 }
 function select(selector) {
     return new Dom(selector);
 }
+/**
+ * Event target for events which don't use the document
+ */
+const _staticEventTarget = new EventTarget();
 /**
  * `Dom` is a class that provides a chaining UI for simple DOM manipulation and
  * selection.
@@ -1951,7 +1989,7 @@ class Dom {
     add(selector, sort = true) {
         if (selector) {
             if (typeof selector === 'string') {
-                let elements = Array.from(document.querySelectorAll(selector));
+                let elements = Array.from(external('doc').querySelectorAll(selector));
                 addArray(this, elements);
             }
             else if (selector instanceof Dom) {
@@ -2387,7 +2425,7 @@ class Dom {
             include === 'inner' ||
             include === 'outer') {
             let el = this[0];
-            let computed = window.getComputedStyle(this[0]);
+            let computed = external('win').getComputedStyle(this[0]);
             let rectHeight = el.getBoundingClientRect().height;
             if (!include || include === 'content') {
                 // Content. Minus scrollbar if there is one. This is basically
@@ -2465,7 +2503,7 @@ class Dom {
         if (this.count() === 0) {
             return false;
         }
-        return document.body.contains(this[0]);
+        return external('doc').body.contains(this[0]);
     }
     /**
      * Determine if the first element in the result set is visible or not.
@@ -2575,10 +2613,10 @@ class Dom {
             };
         }
         let box = this[0].getBoundingClientRect();
-        let docElem = document.documentElement;
+        let docElem = external('doc').documentElement;
         return {
-            top: box.top + window.pageYOffset - docElem.clientTop,
-            left: box.left + window.pageXOffset - docElem.clientLeft
+            top: box.top + external('win').pageYOffset - docElem.clientTop,
+            left: box.left + external('win').pageXOffset - docElem.clientLeft
         };
     }
     /**
@@ -2589,7 +2627,7 @@ class Dom {
      * @returns Instance with the result set as the offset parents
      */
     offsetParent() {
-        return this.map(el => el.offsetParent || document.body);
+        return this.map(el => el.offsetParent || external('doc').body);
     }
     on(arg1, arg2, arg3) {
         let { handler, names, selector } = normaliseEventParams(arg1, arg2, arg3);
@@ -2657,7 +2695,7 @@ class Dom {
      */
     prepend(content) {
         return this.each(el => {
-            if (content instanceof Dom) {
+            if (arrayLike(content) || dom(content)) {
                 // Reverse the array, so if there are multiple elements, they
                 // end up being added sequentially, just like jQuery
                 let itemsReversed = Array.from(content).reverse();
@@ -2885,7 +2923,7 @@ class Dom {
             include === 'inner' ||
             include === 'outer') {
             let el = this[0];
-            let computed = window.getComputedStyle(el);
+            let computed = external('win').getComputedStyle(el);
             let rectWidth = el.getBoundingClientRect().width;
             if (!include || include === 'content') {
                 // Content. Minus scrollbar if there is one. This is basically
@@ -2939,6 +2977,15 @@ Dom.c = create$3;
  */
 Dom.create = create$3;
 /**
+ * Non-DOM event listener. Add an event listener with no document.
+ *
+ * @param name Event name
+ * @param fn Event callback
+ */
+Dom.on = function (name, fn) {
+    add(_staticEventTarget, name, fn, null, false);
+};
+/**
  * Select items from the document and wrap in a `Dom` instance (alias of
  * `select`)
  *
@@ -2959,6 +3006,20 @@ Dom.select = select;
  * false to disable and have it jump to the end.
  */
 Dom.transitions = true;
+/**
+ * Trigger an event non-DOM events.
+ *
+ * @param name Event name. This can optionally include period separated
+ *   namespaces. Multiple events can be added by space separation of the
+ *   names.
+ * @param args Arguments to pass to the event handlers (after the event
+ *   object, which is always the first parameter).
+ * @param props An object of key/value pairs which should be added to the
+ *   event object that is created and fired for the events.
+ */
+Dom.trigger = function (name, args, props) {
+    trigger(_staticEventTarget, name, true, args, props);
+};
 /**
  * Window object methods
  */
@@ -3010,10 +3071,10 @@ function documentOrder(a, b) {
     let position = a.compareDocumentPosition(b);
     if (position & Node.DOCUMENT_POSITION_DISCONNECTED) {
         // One is disconnected - find which
-        if (document.body.contains(a)) {
+        if (external('doc').body.contains(a)) {
             return -1;
         }
-        else if (document.body.contains(b)) {
+        else if (external('doc').body.contains(b)) {
             return 1;
         }
         return 0;
@@ -3475,7 +3536,7 @@ function invalidateRow(settings, rowIdx, src, colIdx) {
     else {
         // Reading from data object, update the DOM
         var cells = row.cells;
-        var display = getRowDisplay(settings, rowIdx);
+        var display = getDisplay(settings, rowIdx);
         if (cells.length) {
             if (colIdx !== undefined) {
                 writeCell(cells[colIdx], display[colIdx]);
@@ -3734,8 +3795,7 @@ function calculateColumnWidths(settings) {
     // Construct a worst case table with the widest, assign any user defined
     // widths, then insert it into  the DOM and allow the browser to do all
     // the hard work of calculating table widths
-    var tmpTable = Dom
-        .s(table.cloneNode())
+    var tmpTable = Dom.s(table.cloneNode())
         .css('visibility', 'hidden')
         .css('margin', '0')
         .attrRemove('id');
@@ -3781,7 +3841,7 @@ function calculateColumnWidths(settings) {
     }
     if (longestData.length) {
         for (i = 0; i < longestData[0].length; i++) {
-            var tr = Dom.c('tr').appendTo(tmpTable.find('tbody'));
+            var tr = Dom.c('tr').appendTo(tmpTable.children('tbody'));
             for (j = 0; j < visibleColumns.length; j++) {
                 columnIdx = visibleColumns[j];
                 column = columns[columnIdx];
@@ -3789,8 +3849,7 @@ function calculateColumnWidths(settings) {
                 var autoClass = ext.type.className[column.type];
                 var padding = column.contentPadding || (scrollX ? '-' : '');
                 var text = longest + padding;
-                var cell = Dom
-                    .c('td')
+                var cell = Dom.c('td')
                     .classAdd(autoClass)
                     .classAdd(column.className)
                     .appendTo(tr);
@@ -3812,8 +3871,7 @@ function calculateColumnWidths(settings) {
     // with minimal height, so it has no effect on if the container scrolls
     // or not. Otherwise it might trigger scrolling when it actually isn't
     // needed
-    var holder = Dom
-        .c('div')
+    var holder = Dom.c('div')
         .css(scrollX || scrollY
         ? {
             position: 'absolute',
@@ -3883,8 +3941,7 @@ function calculateColumnWidths(settings) {
             // This flag allows the above to be satisfied.
             var first = Dom.s(settings.tableWrapper).isVisible();
             // Use an empty div to attach the observer so it isn't impacted by height changes
-            var resizer = Dom
-                .c('div')
+            var resizer = Dom.c('div')
                 .css({
                 width: '100%',
                 height: '0'
@@ -3937,14 +3994,19 @@ function wrapperWidth(settings) {
  */
 function getWideStrings(settings, colIdx) {
     var column = settings.columns[colIdx];
-    // Do we need to recalculate (i.e. was invalidated), or just use the cached data?
-    if (!column.wideStrings) {
+    // Do we need to recalculate (i.e. was invalidated), or just use the cached
+    // data? Recalculate if display based for the column.
+    if (!column.wideStrings || column.widthCalc === 'display') {
         var allStrings = [];
         var collection = [];
+        let rows = settings.displayMaster;
+        if (column.widthCalc === 'display') {
+            rows = settings.display.slice(settings.displayStart, settings.displayStart + settings.pageLength);
+        }
         // Create an array with the string information for the column
-        for (var i = 0, iLen = settings.displayMaster.length; i < iLen; i++) {
-            var rowIdx = settings.displayMaster[i];
-            var data = getRowDisplay(settings, rowIdx)[colIdx];
+        for (var i = 0, len = rows.length; i < len; i++) {
+            var rowIdx = rows[i];
+            var data = getDisplay(settings, rowIdx, colIdx);
             var cellString = data && typeof data === 'object' && data.nodeType
                 ? data.innerHTML
                 : data + '';
@@ -4123,20 +4185,20 @@ function featureTable(settings) {
     let scrollBody = children.eq(1);
     let scrollFoot = children.eq(2);
     // When the body is scrolled, then we also want to scroll the header and
-    // footer. Note that each element has its own scroll listener, and that in
-    // turn sets the scroll for the other elements. However this doesn't lead to
-    // an infinite loop as `scroll` is only triggered if the value changes.
+    // footer. Equally we want changes in the header / footer to transition the
+    // body. The header and footer are `overflow: hidden`, so the user can't
+    // scroll those elements other than triggering a focus action in them.
     scrollBody.on('scroll.DT', () => {
         let scrollLeft = scrollBody.scrollLeft();
         scrollHead.scrollLeft(scrollLeft);
         scrollFoot.scrollLeft(scrollLeft);
     });
-    scrollHead.on('scroll.DT', () => {
+    scrollHead.on('focusin.DT', () => {
         let scrollLeft = scrollHead.scrollLeft();
         scrollBody.scrollLeft(scrollLeft);
         scrollFoot.scrollLeft(scrollLeft);
     });
-    scrollFoot.on('scroll.DT', () => {
+    scrollFoot.on('focusin.DT', () => {
         let scrollLeft = scrollFoot.scrollLeft();
         scrollHead.scrollLeft(scrollLeft);
         scrollBody.scrollLeft(scrollLeft);
@@ -4310,7 +4372,9 @@ function scrollDraw(settings) {
         .find('[role]')
         .attrRemove('role');
     table.find('tbody tr:not([role])').attr('role', 'row');
-    table.find('tbody td:not([role]), tbody th:not([role])').attr('role', 'cell');
+    table
+        .find('tbody td:not([role]), tbody th:not([role])')
+        .attr('role', 'cell');
     scrollAria(headerCopy);
     scrollAria(footerCopy);
     // Adjust the position of the header in case we loose the y-scrollbar
@@ -5756,8 +5820,12 @@ function ajaxDataSrcParam(settings, param, json) {
     return json[old] !== undefined ? json[old] : json[param];
 }
 
-const __filter_div = Dom.c('div').get(0);
-const __filter_div_textContent = __filter_div.textContent !== undefined;
+let __filter_div;
+let __filter_div_textContent;
+function createFilterDiv() {
+    __filter_div = Dom.c('div').get(0);
+    __filter_div_textContent = __filter_div.textContent !== undefined;
+}
 /**
  * Filter the table using both the global filter and column based filtering
  *
@@ -5945,6 +6013,9 @@ function filterData(settings) {
     let column;
     let j, jen, cellData, row;
     let wasInvalidated = false;
+    if (!__filter_div) {
+        createFilterDiv();
+    }
     for (let rowIdx = 0; rowIdx < data.length; rowIdx++) {
         if (!data[rowIdx]) {
             continue;
@@ -5991,14 +6062,7 @@ function filterData(settings) {
     return wasInvalidated;
 }
 
-/**
- * Render and cache a row's display data for the columns, if required
- *
- * @param settings DataTables settings object
- * @param rowIdx Row index
- * @returns Array with display information
- */
-function getRowDisplay(settings, rowIdx) {
+function getDisplay(settings, rowIdx, colIdx = null) {
     var rowModal = settings.data[rowIdx];
     var columns = settings.columns;
     if (!rowModal) {
@@ -6007,11 +6071,29 @@ function getRowDisplay(settings, rowIdx) {
     if (!rowModal.displayData) {
         // Need to render and cache
         rowModal.displayData = [];
-        for (var colIdx = 0, len = columns.length; colIdx < len; colIdx++) {
-            rowModal.displayData.push(getCellData(settings, rowIdx, colIdx, 'display'));
+    }
+    const displayData = rowModal.displayData;
+    // Check if we need to actually perform the render to get the display data
+    if (!displayData._complete) {
+        if (colIdx !== null) {
+            // Single cell
+            if (!displayData[colIdx]) {
+                displayData[colIdx] = getCellData(settings, rowIdx, colIdx, 'display');
+            }
+        }
+        else {
+            // Whole row
+            for (var i = 0, len = columns.length; i < len; i++) {
+                if (!displayData[i]) {
+                    displayData[i] = getCellData(settings, rowIdx, i, 'display');
+                    displayData._complete = true;
+                }
+            }
         }
     }
-    return rowModal.displayData;
+    // At this point the item(s) we want will have been created - possibly all,
+    // but that doesn't matter, as long as we've got the one we want.
+    return colIdx !== null ? displayData[colIdx] : displayData;
 }
 /**
  * Create a new TR element (and it's TD children) for a row
@@ -6023,10 +6105,10 @@ function getRowDisplay(settings, rowIdx) {
  * @param tds Array of TD|TH elements for the row - must be given if trIn is.
  */
 function createTr(settings, rowIdx, trIn, tds) {
-    var row = settings.data[rowIdx], cells = [], tr, td, column, i, iLen, create, trClass = settings.classes.tbody.row;
+    var row = settings.data[rowIdx], cells = [], tr, td, column, i, iLen, create, trClass = settings.classes.tbody.row, doc = external('doc');
     if (row && row.tr === null) {
         let rowData = row.data;
-        tr = trIn || document.createElement('tr');
+        tr = trIn || doc.createElement('tr');
         row.tr = tr;
         row.cells = cells;
         Dom.s(tr).classAdd(trClass);
@@ -6041,7 +6123,7 @@ function createTr(settings, rowIdx, trIn, tds) {
             column = settings.columns[i];
             create = trIn && tds && tds[i] ? false : true;
             td = create
-                ? document.createElement(column.cellType)
+                ? doc.createElement(column.cellType)
                 : tds[i];
             if (!td) {
                 log(settings, 0, 'Incorrect column count', 18);
@@ -6051,7 +6133,7 @@ function createTr(settings, rowIdx, trIn, tds) {
                 column: i
             };
             cells.push(td);
-            var display = getRowDisplay(settings, rowIdx);
+            var display = getDisplay(settings, rowIdx);
             // Need to create the HTML if new, or if a rendering function is
             // defined
             if (create ||
@@ -6444,10 +6526,8 @@ function _emptyRow(settings) {
     else if (lang.emptyTable && recordsTotal(settings) === 0) {
         zero = lang.emptyTable;
     }
-    return Dom
-        .c('tr')
-        .append(Dom
-        .c('td')
+    return Dom.c('tr')
+        .append(Dom.c('td')
         .attr('colSpan', visibleColumns(settings))
         .classAdd(settings.classes.empty.row)
         .html(zero))
@@ -6574,15 +6654,12 @@ function detectHeader(settings, thead, write) {
                         cell.parent(':not([data-dt-order=disable])').count() !==
                             0 &&
                         cell.find('div.dt-column-order').count() === 0) {
-                        Dom.c('div')
-                            .classAdd('dt-column-order')
-                            .appendTo(cell);
+                        Dom.c('div').classAdd('dt-column-order').appendTo(cell);
                     }
                     // We need to wrap the elements in the header in another
                     // element to use flexbox layout for those elements
                     var headerFooter = isHeader ? 'header' : 'footer';
-                    if (cell.find('div.dt-column-' + headerFooter).count() ===
-                        0) {
+                    if (cell.find('div.dt-column-' + headerFooter).count() === 0) {
                         Dom.c('div')
                             .classAdd('dt-column-' + headerFooter)
                             .append(Array.from(cell.get(0).childNodes))
@@ -6792,6 +6869,12 @@ function callbackFire(ctx, callbackArr, eventName, args, bubbles = false) {
         });
     }
     if (eventName !== null) {
+        // Non-DOM events
+        if (bubbles) {
+            Dom.trigger(eventName + '.dt', args, {
+                dt: ctx.api
+            });
+        }
         let table = Dom.s(ctx.table);
         let result = table.trigger(eventName + '.dt', bubbles, args, {
             dt: ctx.api
@@ -7417,24 +7500,29 @@ function __mlHelper(localeString) {
         };
     };
 }
-// Based on locale, determine standard number formatting
-// Fallback for legacy browsers is US English
-var __thousands = ',';
-var __decimal = '.';
-if (window.Intl !== undefined) {
-    try {
-        var num = new Intl.NumberFormat().formatToParts(100000.1);
-        for (var i = 0; i < num.length; i++) {
-            if (num[i].type === 'group') {
-                __thousands = num[i].value;
-            }
-            else if (num[i].type === 'decimal') {
-                __decimal = num[i].value;
+var __thousands;
+var __decimal;
+function detectIntl() {
+    let win = DataTable.use('win');
+    // Based on locale, determine standard number formatting
+    // Fallback for legacy browsers is US English
+    __thousands = ',';
+    __decimal = '.';
+    if (win.Intl !== undefined) {
+        try {
+            var num = new Intl.NumberFormat().formatToParts(100000.1);
+            for (var i = 0; i < num.length; i++) {
+                if (num[i].type === 'group') {
+                    __thousands = num[i].value;
+                }
+                else if (num[i].type === 'decimal') {
+                    __decimal = num[i].value;
+                }
             }
         }
-    }
-    catch (e) {
-        // noop
+        catch (e) {
+            // noop
+        }
     }
 }
 /**
@@ -7475,6 +7563,9 @@ var helpers = {
     datetime: __mlHelper('toLocaleString'),
     time: __mlHelper('toLocaleTimeString'),
     number: function (thousands, decimal, precision, prefix, postfix) {
+        if (!__thousands && !__decimal) {
+            detectIntl();
+        }
         // Auto locale detection
         if (thousands === null || thousands === undefined) {
             thousands = __thousands;
@@ -7556,7 +7647,8 @@ const defaults$2 = {
     title: null,
     type: null,
     visible: true,
-    width: null
+    width: null,
+    widthCalc: 'all'
 };
 
 /**
@@ -7657,6 +7749,10 @@ class Settings {
          * Width of the column
          */
         this.width = null;
+        /**
+         * Which cells to use when calculating the column width
+         */
+        this.widthCalc = 'all';
         /**
          * Width of the column when it was first "encountered"
          */
@@ -7824,7 +7920,7 @@ function browserDetect(ctx) {
             .css({
             position: 'fixed',
             top: '0',
-            left: -1 * window.pageXOffset + 'px', // allow for scrolling
+            left: -1 * external('win').pageXOffset + 'px', // allow for scrolling
             height: '1px',
             width: '1px',
             overflow: 'hidden'
@@ -7868,9 +7964,7 @@ function addColumn(settings) {
         data: defaults$2.data ? defaults$2.data : columnIdx,
         idx: columnIdx,
         searchFixed: {},
-        colEl: Dom
-            .c('col')
-            .attr('data-dt-column', columnIdx)
+        colEl: Dom.c('col').attr('data-dt-column', columnIdx)
     });
     settings.columns.push(column);
     // Legacy support for `searchCols` property. If set, and there is a value
@@ -7878,9 +7972,7 @@ function addColumn(settings) {
     // specific `search` option is applied in `columnOptions`, but we always
     // want the search object for the column to exist.
     let searchCols = settings.searchCols;
-    settings.searches[columnIdx] = create$1(searchCols[columnIdx]
-        ? hungarianToCamel(searchCols[columnIdx])
-        : {});
+    settings.searches[columnIdx] = create$1(searchCols[columnIdx] ? hungarianToCamel(searchCols[columnIdx]) : {});
     settings.searches[columnIdx].columns = [columnIdx];
 }
 /**
@@ -8370,12 +8462,18 @@ function columnsFromHeader(cell) {
  */
 function columnCells(header, row = null, column = null) {
     var out = [];
+    var included = [];
     for (var i = 0; i < header.length; i++) {
         if (row === null || row === i) {
             for (var j = 0; j < header[i].length; j++) {
                 var cell = header[i][j].cell;
-                if ((column === null || column === j) && !out.includes(cell)) {
-                    out.push(cell);
+                if ((column === null || column === j) &&
+                    !included.includes(cell)) {
+                    included.push(cell);
+                    out.push({
+                        cell,
+                        row: header[i].row
+                    });
                 }
             }
         }
@@ -8390,31 +8488,35 @@ function columnCells(header, row = null, column = null) {
  * @returns Array of selected elements
  */
 function columnOrderingCells(settings, notSelector) {
-    var cells = [];
-    var titleRow = settings.titleRow;
+    let combined = [];
+    let titleRow = settings.titleRow;
     if (titleRow === true) {
         // Top row (legacy `orderCellsTop`)
-        cells = columnCells(settings.header, 0);
+        combined = columnCells(settings.header, 0);
     }
     else if (titleRow === false) {
         // Bottom row (legacy `orderCellsTop`)
-        cells = columnCells(settings.header, settings.header.length - 1);
+        combined = columnCells(settings.header, settings.header.length - 1);
     }
     else if (titleRow !== null) {
         // Specific row
-        cells = columnCells(settings.header, titleRow);
+        combined = columnCells(settings.header, titleRow);
     }
     else {
         // All
-        cells = columnCells(settings.header);
+        combined = columnCells(settings.header);
     }
+    let cells = combined.map(c => c.cell);
+    let rows = combined.map(c => c.row);
     return Dom.s(cells)
         .filter('th' + notSelector + ', td' + notSelector)
         .filter(el => {
-        return (Dom.s(el)
-            .parent()
-            .filter(notSelector)
-            .length !== 0);
+        let idx = cells.indexOf(el);
+        if (idx >= 0) {
+            return Dom.s(rows[idx]).filter(notSelector).length !== 0;
+        }
+        // Shouldn't be able to get here!
+        return true;
     });
 }
 
@@ -8613,7 +8715,7 @@ const ext = {
     /**
      * DataTables build type (expanded by the download builder)
      */
-    builder: 'bs5/dt-3.0.4',
+    builder: 'bs5/dt-3.1.5',
     /**
      * Buttons. For use with the Buttons extension for DataTables. This is
      * defined here so other extensions can define buttons regardless of load
@@ -8759,7 +8861,7 @@ const ext = {
      * Software version
      *  @type string
      */
-    version: '3.0.4'
+    version: '3.1.5'
 };
 //
 // Backwards compatibility. Alias to pre 1.10 Hungarian notation counter parts
@@ -9171,9 +9273,6 @@ const properties = {};
 const classes = {
     Api
 };
-// TODO debug
-window.classes = classes;
-window.properties = properties;
 /**
  * Create a new API "class" (function), used for nested levels of the API - e.g.
  * `ApiRows` and `ApiColumn`.
@@ -9431,8 +9530,10 @@ register('ready()', function (fn) {
             fn.call(api);
         }
         else {
-            this.on('init.dt.DT', function () {
-                fn.call(api);
+            this.on('init.dt.DT', function (e, s) {
+                if (ctx.includes(s)) {
+                    fn.call(api);
+                }
             });
         }
     });
@@ -9461,7 +9562,7 @@ register('destroy()', function (remove) {
         callbackFire(settings, 'destroy', 'destroy', [settings], true);
         // If not being removed from the document, make all columns visible
         if (!remove) {
-            new Api(settings).columns().visible();
+            new Api(settings).columns().visible(true);
         }
         // Container width change listener
         if (settings.resizeObserver) {
@@ -9958,7 +10059,7 @@ function selectColumns(settings, selector, opts) {
                         }
                         // Selector
                         if (match && match[1]) {
-                            let columnElements = columnCells(settings.header, null, col.idx);
+                            let columnElements = columnCells(settings.header, null, col.idx).map(c => c.cell);
                             return Dom.s(columnElements)
                                 .filter(match[1])
                                 .count() > 0
@@ -9995,7 +10096,7 @@ function selectColumns(settings, selector, opts) {
             return [s._DT_CellIndex.column];
         }
         // Selector on the TH elements for the columns
-        var result = Dom.s(columnCells(settings.header))
+        var result = Dom.s(columnCells(settings.header).map(c => c.cell))
             .filter(s)
             .mapTo(el => {
             return columnsFromHeader(el);
@@ -10205,11 +10306,14 @@ registerPlural('columns().widths()', 'column().width()', function () {
     // Injects a fake row into the table for just a moment so the widths can
     // be read, regardless of colspan in the header and rows being present
     // in the body
-    var columns = this.columns(':visible');
-    var row = Dom.c('tr').html('<td>' + Array(columns.count()).join('</td><td>') + '</td>');
+    let columns = this.columns(':visible');
+    let row = Dom.c('tr');
+    for (let i = 0; i < columns.count(); i++) {
+        Dom.c('td').appendTo(row);
+    }
     Dom.s(this.table().body()).append(row);
-    var widths = [];
-    var indexes = columns.indexes();
+    let widths = [];
+    let indexes = columns.indexes();
     row.children().each((el, idx) => {
         widths[indexes[idx]] = Dom.s(el).width('outer');
     });
@@ -10389,7 +10493,7 @@ register('processing()', function (show) {
 });
 
 // Add the state event handler in time for the initial draw to save state
-Dom.s(document).on('preInit.dt', function (e, context) {
+Dom.on('preInit.dt', function (e, context) {
     var api = new Api(context);
     api.on('stateSaveParams.DT', function (ev, settings, d) {
         // This could be more compact with the API, but it is a lot faster as a
@@ -10412,7 +10516,7 @@ Dom.s(document).on('preInit.dt', function (e, context) {
     });
 });
 // But initial details can wait until the end
-Dom.s(document).on('plugin-init.dt', function (e, context) {
+Dom.on('plugin-init.dt', function (e, context) {
     var api = context.api;
     // And the initial load state
     detailsStateLoad(api, api.state.loaded());
@@ -10696,20 +10800,25 @@ function selectRows(settings, selector, opts) {
             }
         }
         // ID selector. Want to always be able to select rows by id, regardless
-        // of if the tr element has been created or not, so can't rely upon
-        // jQuery here - hence a custom implementation. This does not match
-        // Sizzle's fast selector or HTML4 - in HTML5 the ID can be anything,
-        // but to select it using a CSS selector engine (like Sizzle or
-        // querySelect) it would need to need to be escaped for some characters.
-        // DataTables simplifies this for row selectors since you can select
-        // only a row. A # indicates an id any anything that follows is the id -
-        // unescaped.
+        // of if the tr element has been created or not, so can't rely upon the
+        // DOM here - hence a custom implementation. In HTML5 the ID can be
+        // anything, but to select it using a CSS selector engine it would need
+        // to need to be escaped for some characters. DataTables simplifies this
+        // for row selectors since you can select only a row. A # indicates an
+        // id any anything that follows is the id - unescaped.
         if (typeof sel === 'string') {
             if (sel.charAt(0) === '#') {
                 // get row index from id
                 var rowObj = settings.ids[sel.replace(/^#/, '')];
                 if (rowObj !== undefined) {
                     return [rowObj.idx];
+                }
+                // If it was a basic ID selector, and it didn't match, in the
+                // above, then return here, as it won't match at all. Note that
+                // this check is slightly less restrictive than CSS IDs, in that
+                // it allows a leading digit or dash to be used.
+                if (sel.match(/^#[a-zA-Z0-9_-]*$/)) {
+                    return [];
                 }
                 // need to fall through to selector in case there is DOM id that
                 // matches
@@ -11225,7 +11334,7 @@ const _licenseInfo = {
     expires: null,
     valid: null
 };
-const _wm = Dom.c('div');
+let _wm;
 const _publicKey = 'BE1A9w9D9U/4s4/TogY+1sW/dLJ8IquzK1PmV70J93ZTIvXMZ0eV2NAb52ntpgwVFySSB2fOI7geLNO737rQAyo=';
 /**
  * Convert a base64 string to a binary array
@@ -11254,7 +11363,7 @@ function check(releaseDate, software) {
         noticeDisplay();
     }
     else if (_licenseInfo.valid === false) {
-        noticePrep('License key invalid');
+        noticePrep('Invalid license key');
         noticeDisplay();
     }
     else if (_licenseInfo.type === 'trial') {
@@ -11264,7 +11373,7 @@ function check(releaseDate, software) {
             : -1;
         if (remaining < 0) {
             // Trial expires
-            consoleMsg('Your trial has now expired - https://datatables.net/plus', 'warn');
+            consoleMsg('Your trial has now expired. Please visit https://datatables.net/plus to purchase a license', 'warn');
             noticePrep('Trial expired');
             noticeDisplay();
             return false;
@@ -11339,7 +11448,15 @@ const key = function (key) {
  * @returns
  */
 function noticePrep(text) {
+    // Already prep-ed. Rather than possibly showing multiple messages, just
+    // let the first one show.
+    if (_ready) {
+        return;
+    }
     if (!_ready) {
+        if (!_wm) {
+            _wm = Dom.c('div');
+        }
         let shadow = _wm[0].attachShadow({ mode: 'closed' });
         let notice = Dom.c('div').css({
             position: 'fixed',
@@ -11351,37 +11468,59 @@ function noticePrep(text) {
             padding: '0.5em 1em',
             'font-family': 'sans-serif',
             'font-size': '12px',
+            'line-height': '1.4em',
+            'text-align': 'center',
             'border-radius': '4px',
             'z-index': '10000',
-            'box-shadow': '0 2px 5px rgba(0,0,0,0.2)'
+            'box-shadow': '1px 3px 5px rgba(0, 0, 0, 0.333)'
         });
-        Dom.c('a')
-            .attr('href', 'https://datatables.net/tn/25')
-            .attr('target', '_blank')
-            .css({
-            color: 'inherit',
-            'text-decoration': 'none'
-        })
-            .appendTo(notice);
-        if (!text) {
-            text = 'License key required';
-        }
         shadow.appendChild(notice[0]);
         _notice = notice;
         _ready = true;
     }
+    _notice.empty();
     if (text) {
+        // Specific notice
         _notice
-            .find('a')
-            .html('DataTables Plus: ' + text + ' - learn more &#187;');
+            .append(Dom.c('span').text('DataTables Plus'))
+            .append(Dom.c('br'))
+            .append(Dom.c('span').text(text + ' - '))
+            .append(Dom.c('a')
+            .attr('href', 'https://datatables.net/tn/25')
+            .attr('target', '_blank')
+            .css({
+            color: 'inherit'
+        })
+            .html('learn more &#187;'));
+    }
+    else {
+        _notice
+            .append(Dom.c('span').text('DataTables Plus - Evaluation Mode'))
+            .append(Dom.c('br'))
+            .append(Dom.c('a')
+            .attr('href', 'https://datatables.net/plus/trial')
+            .attr('target', '_blank')
+            .css({
+            color: 'inherit'
+        })
+            .text('Start a Free Trial'))
+            .append(Dom.c('span').text(' - '))
+            .append(Dom.c('a')
+            .attr('href', 'https://datatables.net/plus')
+            .attr('target', '_blank')
+            .css({
+            color: 'inherit'
+        })
+            .text('Purchase a License'));
     }
 }
 /**
  * Display the license notice
  */
 function noticeDisplay() {
-    if (!_processingKey && document.body && !document.body.contains(_wm[0])) {
-        document.body.appendChild(_wm[0]);
+    let doc = external('doc');
+    if (!_processingKey && doc.body && !doc.body.contains(_wm[0])) {
+        doc.body.appendChild(_wm[0]);
     }
 }
 /**
@@ -11455,7 +11594,7 @@ function plus (DataTable) {
         value: function (releaseDate, software = '') {
             // Unsecure sites are only useful for development, so allow there
             // and on the site.
-            let host = window.location.hostname;
+            let host = external('win').location.hostname;
             let isDev = host === '192.168.234.234' ||
                 host.endsWith('.datatables.net') ||
                 host === 'datatables.net';
@@ -11479,7 +11618,8 @@ function plus (DataTable) {
 }
 function getSubtle() {
     // Backwards compat for old browsers
-    let cryptoObj = window.crypto || window.msCrypto;
+    let win = external('win');
+    let cryptoObj = win.crypto || win.msCrypto;
     let subtle = cryptoObj.subtle || cryptoObj.webkitSubtle;
     return subtle;
 }
@@ -11565,7 +11705,7 @@ function _divProp(el, prop, val) {
     }
 }
 register$2('div', function (settings, opts) {
-    var n = document.createElement('div');
+    var n = Dom.c('div').get(0);
     if (opts) {
         _divProp(n, 'className', opts.className);
         _divProp(n, 'id', opts.id);
@@ -11723,7 +11863,7 @@ function _pagingDraw(settings, host, opts) {
         buttonEls.push(btn.display);
     }
     let wrapped = renderer(settings, 'pagingContainer')(settings, buttonEls);
-    let activeEl = host.find(document.activeElement).attr('data-dt-idx');
+    let activeEl = host.find(external('doc').activeElement).attr('data-dt-idx');
     host.empty().append(wrapped);
     if (activeEl) {
         host.find('[data-dt-idx="' + activeEl + '"]').trigger('focus');
@@ -12330,7 +12470,10 @@ const defaults = {
     stateDuration: 7200,
     stateLoadCallback: function (settings) {
         try {
-            const state = (settings.stateDuration === -1 ? sessionStorage : localStorage).getItem('DataTables_' + settings.unique + '_' + location.pathname);
+            const state = (settings.stateDuration === -1 ? sessionStorage : localStorage).getItem('DataTables_' +
+                settings.unique +
+                '_' +
+                external('win').location.pathname);
             return state ? JSON.parse(state) : {};
         }
         catch (e) {
@@ -12344,7 +12487,10 @@ const defaults = {
         try {
             (settings.stateDuration === -1
                 ? sessionStorage
-                : localStorage).setItem('DataTables_' + settings.unique + '_' + location.pathname, JSON.stringify(data));
+                : localStorage).setItem('DataTables_' +
+                settings.unique +
+                '_' +
+                external('win').location.pathname, JSON.stringify(data));
         }
         catch (e) {
             // noop
@@ -12362,19 +12508,22 @@ const DataTable = function (selector, options) {
     if (factory(selector, options)) {
         return DataTable;
     }
-    // Allow access to the API from the core class
-    this.api = () => {
-        return new Api(selector);
-    };
     // Backwards compatibility with this "class" being exposed as
     // `$().dataTable()`. We can't simply provide that as a wrapper, as there
     // are properties on this class which are expected to be exposed.
     if (typeof this.jquery === 'string') {
+        let els = this.toArray();
         // Typescript doesn't like the `return api` from the constructor, but is
         // it valid Javascript, and allows backwards compatibility, hence the any
-        new DataTable(this.toArray(), selector); // note argument shift
+        new DataTable(els, selector); // note argument shift
+        // jQuery specific api method
+        this.api = () => new Api(els);
         return this;
     }
+    // Allow access to the API from the core class
+    this.api = () => {
+        return new Api(selector);
+    };
     var emptyInit = options === undefined;
     let tableEls = Dom.s(selector);
     let len = tableEls.count();
@@ -12400,6 +12549,8 @@ const DataTable = function (selector, options) {
         if (init.on && init.on.options) {
             listener(table, 'options', init.on.options);
         }
+        // Don't have the settings object here, so can't use `callbackFire`
+        Dom.trigger('options.dt', [init]);
         table.trigger('options.dt', true, [init]);
         // Backwards compatibility parameter mapping
         compatOpts(defaults, true);
@@ -12794,7 +12945,9 @@ DataTable.feature = {
 };
 // Register the libraries
 util.external(DataTable);
-if (window.jQuery) {
+// If jQuery is present on the global, let DataTables know about it. This is
+// required as it registers the plugin functions on the .fn object.
+if (typeof window !== 'undefined' && window.jQuery) {
     util.external(window.jQuery);
 }
 
@@ -12815,13 +12968,6 @@ return DataTable;
 		});
 	}
 	else if (typeof exports === 'object') {
-		// CommonJS
-		var cjsRequires = function (root) {
-			if (! root.DataTable) {
-				require('datatables.net')(root);
-			}
-		};
-
 		if (typeof window === 'undefined') {
 			module.exports = function (root) {
 				if (! root) {
@@ -12829,14 +12975,20 @@ return DataTable;
 					// root. This will give an error otherwise
 					root = window;
 				}
+				
+				var DataTable = root.DataTable ?
+					root.DataTable :
+					require('datatables.net')(root);
 
-				cjsRequires(root);
-				return factory(root, root.document, root.DataTable);
+				return factory(root, root.document, DataTable);
 			};
 		}
 		else {
-			cjsRequires(window);
-			module.exports = factory(window, window.document, window.DataTable);
+			var DataTable = window.DataTable ?
+				window.DataTable :
+				require('datatables.net');
+
+			module.exports = factory(window, window.document, DataTable);
 		}
 	}
 	else {

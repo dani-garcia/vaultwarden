@@ -13,7 +13,7 @@ use crate::{
 };
 use macros::UuidFromParam;
 
-use super::{CollectionId, Membership, MembershipId, OrganizationId, User, UserId};
+use super::{CollectionId, Membership, MembershipId, MembershipStatus, OrganizationId, User, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = groups)]
@@ -104,7 +104,6 @@ impl Group {
             "id": self.uuid,
             "organizationId": self.organizations_uuid,
             "name": self.name,
-            "accessAll": self.access_all,
             "externalId": self.external_id,
             "collections": collections_groups,
             "object": "groupDetails"
@@ -113,10 +112,7 @@ impl Group {
 
     pub fn set_external_id(&mut self, external_id: Option<String>) {
         // Check if external_id is empty. We do not want to have empty strings in the database
-        self.external_id = match external_id {
-            Some(external_id) if !external_id.trim().is_empty() => Some(external_id),
-            _ => None,
-        };
+        self.external_id = external_id.filter(|e| !e.trim().is_empty());
     }
 }
 
@@ -138,15 +134,15 @@ impl CollectionGroup {
     }
 
     pub fn to_json_details_for_group(&self) -> Value {
-        // If both read_only and hide_passwords are false, then manage should be true
-        // You can't have an entry with read_only and manage, or hide_passwords and manage
-        // Or an entry with everything to false
-        // For backwards compatibility and migration proposes we keep checking read_only and hide_password
+        // Return the stored manage flag. Deriving it from !read_only && !hide_passwords turned the group
+        // permission "Can edit items" (readOnly=false, hidePasswords=false, manage=false) into "Can manage"
+        // in GET /organizations/<org>/collections/details, while GET /groups/<id>/details reported the stored
+        // value. Saving the collection access dialog then persisted manage=true.
         json!({
             "id": self.groups_uuid,
             "readOnly": self.read_only,
             "hidePasswords": self.hide_passwords,
-            "manage": self.manage || (!self.read_only && !self.hide_passwords),
+            "manage": self.manage,
         })
     }
 }
@@ -249,6 +245,7 @@ impl Group {
                         .and(groups::organizations_uuid.eq(users_organizations::org_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(groups::access_all.eq(true))
                 .select(groups::organizations_uuid)
                 .distinct()
@@ -268,6 +265,9 @@ impl Group {
                         .and(users_organizations::org_uuid.eq(groups::organizations_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                // Only allow full access via a confirmed membership, since
+                // groups_users rows are kept when a membership is revoked.
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(groups::organizations_uuid.eq(org_uuid))
                 .filter(groups::access_all.eq(true))
                 .select(groups::access_all)
@@ -312,7 +312,7 @@ impl Group {
 }
 
 impl CollectionGroup {
-    pub async fn save(&mut self, org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
         let group_users = GroupUser::find_by_group(&self.groups_uuid, org_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
@@ -384,6 +384,7 @@ impl CollectionGroup {
                         .and(collections::org_uuid.eq(groups::organizations_uuid))),
                 )
                 .filter(users_organizations::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .select(collections_groups::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading user collection groups")
@@ -444,7 +445,7 @@ impl CollectionGroup {
         org_uuid: &OrganizationId,
         conn: &DbConn,
     ) -> EmptyResult {
-        let collection_assigned_to_groups = CollectionGroup::find_by_collection(collection_uuid, conn).await;
+        let collection_assigned_to_groups = Self::find_by_collection(collection_uuid, conn).await;
         for collection_assigned_to_group in collection_assigned_to_groups {
             let group_users = GroupUser::find_by_group(&collection_assigned_to_group.groups_uuid, org_uuid, conn).await;
             for group_user in group_users {
@@ -463,7 +464,7 @@ impl CollectionGroup {
 }
 
 impl GroupUser {
-    pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+    pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         self.update_user_revision(conn).await;
 
         let values = (
@@ -569,28 +570,8 @@ impl GroupUser {
         }
     }
 
-    pub async fn delete_by_group_and_member(
-        group_uuid: &GroupId,
-        member_uuid: &MembershipId,
-        conn: &DbConn,
-    ) -> EmptyResult {
-        match Membership::find_by_uuid(member_uuid, conn).await {
-            Some(member) => User::update_uuid_revision(&member.user_uuid, conn).await,
-            None => warn!("Member could not be found!"),
-        }
-
-        conn.run(move |conn| {
-            diesel::delete(groups_users::table)
-                .filter(groups_users::groups_uuid.eq(group_uuid))
-                .filter(groups_users::users_organizations_uuid.eq(member_uuid))
-                .execute(conn)
-                .map_res("Error deleting group users")
-        })
-        .await
-    }
-
     pub async fn delete_all_by_group(group_uuid: &GroupId, org_uuid: &OrganizationId, conn: &DbConn) -> EmptyResult {
-        let group_users = GroupUser::find_by_group(group_uuid, org_uuid, conn).await;
+        let group_users = Self::find_by_group(group_uuid, org_uuid, conn).await;
         for group_user in group_users {
             group_user.update_user_revision(conn).await;
         }

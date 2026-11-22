@@ -4,7 +4,12 @@ mod icons;
 mod identity;
 mod notifications;
 mod push;
+#[cfg(feature = "unsafe_test_mode")]
+mod test_seeder;
 mod web;
+
+#[cfg(feature = "unsafe_test_mode")]
+pub use test_seeder::routes as test_seeder_routes;
 
 use rocket::serde::json::Json;
 use serde_json::Value;
@@ -23,16 +28,16 @@ pub use crate::api::{
     icons::routes as icons_routes,
     identity::routes as identity_routes,
     notifications::routes as notifications_routes,
-    notifications::{AnonymousNotify, Notify, UpdateType, WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS},
+    notifications::{AnonymousNotify, LogOutReason, Notify, UpdateType, WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS},
     push::{
-        push_cipher_update, push_folder_update, push_logout, push_send_update, push_user_update, register_push_device,
-        unregister_push_device,
+        push_cipher_update, push_folder_update, push_logout, push_logout_to_relay, push_send_update, push_user_update,
+        register_push_device, unregister_push_device,
     },
     web::catchers as web_catchers,
     web::routes as web_routes,
     web::should_mount_origin_root_well_known,
     web::well_known_routes,
-    web::{invalidate_css_cache, static_files},
+    web::{STATIC_FILES, invalidate_css_cache},
 };
 use crate::{
     CONFIG,
@@ -48,7 +53,7 @@ pub type JsonResult = ApiResult<Json<Value>>;
 pub type EmptyResult = ApiResult<()>;
 
 // Common structs representing JSON data received
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PasswordOrOtpData {
     #[serde(alias = "MasterPasswordHash")]
@@ -117,7 +122,7 @@ async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
             }
         }))
     } else if CONFIG.sso_enabled() {
-        CONFIG.sso_master_password_policy_value().unwrap_or(json!({}))
+        CONFIG.sso_master_password_policy_value().unwrap_or_else(|| json!({}))
     } else {
         json!({})
     };
@@ -125,4 +130,22 @@ async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
     // NOTE: Upstream still uses PascalCase here for `Object`!
     mpp_json["Object"] = json!("masterPasswordPolicy");
     mpp_json
+}
+
+// Identity responses use PascalCase keys like upstream, some clients (Android) only read those
+async fn identity_master_password_policy(user: &User, conn: &DbConn) -> Value {
+    match master_password_policy(user, conn).await {
+        Value::Object(policy) => Value::Object(
+            policy
+                .into_iter()
+                .map(|(mut key, value)| {
+                    if let Some(first) = key.get_mut(..1) {
+                        first.make_ascii_uppercase();
+                    }
+                    (key, value)
+                })
+                .collect(),
+        ),
+        policy => policy,
+    }
 }

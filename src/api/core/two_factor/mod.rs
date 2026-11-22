@@ -7,21 +7,17 @@ use serde_json::Value;
 
 use crate::{
     CONFIG,
-    api::{
-        EmptyResult, JsonResult, PasswordOrOtpData,
-        core::{log_event, log_user_event},
-    },
+    api::{EmptyResult, JsonResult, PasswordOrOtpData, core::log_event},
     auth::Headers,
     crypto,
     db::{
         DbConn, DbPool,
         models::{
-            Device, DeviceType, EventType, Membership, MembershipType, OrgPolicyType, Organization, OrganizationId,
-            TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
+            Device, DeviceType, EventType, Membership, MembershipStatus, MembershipType, OrgPolicyType, Organization,
+            OrganizationId, TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
     },
     mail,
-    util::NumberOrString,
 };
 
 pub mod authenticator;
@@ -69,13 +65,7 @@ pub fn is_twofactor_provider_usable(provider_type: &TwoFactorType, provider_data
 }
 
 pub fn routes() -> Vec<Route> {
-    let mut routes = routes![
-        get_twofactor,
-        get_recover,
-        disable_twofactor,
-        disable_twofactor_put,
-        get_device_verification_settings,
-    ];
+    let mut routes = routes![get_twofactor, get_recover, get_device_verification_settings];
 
     routes.append(&mut authenticator::routes());
     routes.append(&mut duo::routes());
@@ -85,6 +75,12 @@ pub fn routes() -> Vec<Route> {
     routes.append(&mut protected_actions::routes());
 
     routes
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VerificationTokenData {
+    user_verification_token: String,
 }
 
 #[get("/two-factor")]
@@ -126,62 +122,30 @@ async fn generate_recover_code(user: &mut User, conn: &DbConn) {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DisableTwoFactorData {
-    master_password_hash: Option<String>,
-    otp: Option<String>,
-    r#type: NumberOrString,
+/// Call after a 2FA provider, or one of its keys, was removed. No remembered device may keep skipping
+/// the providers that are left, and once every provider is gone the 2FA policy applies.
+pub async fn check_2fa_state(user: &User, device_type: i32, ip: &std::net::IpAddr, conn: &DbConn) -> EmptyResult {
+    Device::clear_twofactor_remember_by_user(&user.uuid, conn).await?;
+    if TwoFactor::find_by_user(&user.uuid, conn).await.is_empty() {
+        enforce_2fa_policy(user, &user.uuid, device_type, ip, true, conn).await?;
+    }
+    Ok(())
 }
 
-#[post("/two-factor/disable", data = "<data>")]
-async fn disable_twofactor(data: Json<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let data: DisableTwoFactorData = data.into_inner();
-    let user = headers.user;
-
-    // Delete directly after a valid token has been provided
-    PasswordOrOtpData {
-        master_password_hash: data.master_password_hash,
-        otp: data.otp,
-    }
-    .validate(&user, true, &conn)
-    .await?;
-
-    let type_ = data.r#type.into_i32()?;
-
-    if let Some(twofactor) = TwoFactor::find_by_user_and_type(&user.uuid, type_, &conn).await {
-        twofactor.delete(&conn).await?;
-        Device::clear_twofactor_remember_by_user(&user.uuid, &conn).await?;
-        log_user_event(EventType::UserDisabled2fa as i32, &user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-            .await;
-    }
-
-    if TwoFactor::find_by_user(&user.uuid, &conn).await.is_empty() {
-        enforce_2fa_policy(&user, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await?;
-    }
-
-    Ok(Json(json!({
-        "enabled": false,
-        "type": type_,
-        "object": "twoFactorProvider"
-    })))
-}
-
-#[put("/two-factor/disable", data = "<data>")]
-async fn disable_twofactor_put(data: Json<DisableTwoFactorData>, headers: Headers, conn: DbConn) -> JsonResult {
-    disable_twofactor(data, headers, conn).await
-}
-
+/// Revokes the user's memberships that the 2FA policy no longer allows. With `accepted_too`, which is for removing the
+/// user's last 2FA method, accepted memberships are revoked as well, as in Bitwarden. Otherwise only confirmed ones
+/// are: an accepted member still has to set up 2FA before being confirmed.
 pub async fn enforce_2fa_policy(
     user: &User,
     act_user_id: &UserId,
     device_type: i32,
     ip: &std::net::IpAddr,
+    accepted_too: bool,
     conn: &DbConn,
 ) -> EmptyResult {
     for member in Membership::find_by_user_and_policy(&user.uuid, OrgPolicyType::TwoFactorAuthentication, conn).await {
         // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
-        if member.atype < MembershipType::Admin {
+        if member.atype < MembershipType::Admin && (accepted_too || member.has_status(MembershipStatus::Confirmed)) {
             if CONFIG.mail_enabled() {
                 let org = Organization::find_by_uuid(&member.org_uuid, conn).await.unwrap();
                 mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
@@ -191,7 +155,7 @@ pub async fn enforce_2fa_policy(
             member.save(conn).await?;
 
             log_event(
-                EventType::OrganizationUserRevoked,
+                EventType::OrganizationUserRevokedTwoFactorNonCompliance,
                 &member.uuid,
                 &member.org_uuid,
                 act_user_id,
@@ -214,9 +178,14 @@ pub async fn enforce_2fa_policy_for_org(
     conn: &DbConn,
 ) -> EmptyResult {
     let org = Organization::find_by_uuid(org_id, conn).await.unwrap();
-    for member in Membership::find_confirmed_by_org(org_id, conn).await {
-        // Don't enforce the policy for Admins and Owners.
-        if member.atype < MembershipType::Admin && TwoFactor::find_by_user(&member.user_uuid, conn).await.is_empty() {
+    for member in Membership::find_by_org(org_id, conn).await {
+        // As in Bitwarden, accepted and confirmed members lose access, except Owners, Admins and the member enabling
+        // the policy.
+        if (member.has_status(MembershipStatus::Accepted) || member.has_status(MembershipStatus::Confirmed))
+            && member.atype < MembershipType::Admin
+            && member.user_uuid != *act_user_id
+            && TwoFactor::find_by_user(&member.user_uuid, conn).await.is_empty()
+        {
             if CONFIG.mail_enabled() {
                 let user = User::find_by_uuid(&member.user_uuid, conn).await.unwrap();
                 mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
@@ -225,8 +194,16 @@ pub async fn enforce_2fa_policy_for_org(
             member.revoke();
             member.save(conn).await?;
 
-            log_event(EventType::OrganizationUserRevoked, &member.uuid, org_id, act_user_id, device_type, ip, conn)
-                .await;
+            log_event(
+                EventType::OrganizationUserRevokedTwoFactorNonCompliance,
+                &member.uuid,
+                org_id,
+                act_user_id,
+                device_type,
+                ip,
+                conn,
+            )
+            .await;
         }
     }
 
@@ -236,7 +213,7 @@ pub async fn enforce_2fa_policy_for_org(
 pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
     debug!("Sending notifications for incomplete 2FA logins");
 
-    if CONFIG.incomplete_2fa_time_limit() <= 0 || !CONFIG.mail_enabled() {
+    if CONFIG.incomplete_2fa_time_limit() == 0 || !CONFIG.mail_enabled() {
         return;
     }
 
@@ -246,11 +223,21 @@ pub async fn send_incomplete_2fa_notifications(pool: DbPool) {
     };
 
     let now = Utc::now().naive_utc();
-    let time_limit = TimeDelta::try_minutes(CONFIG.incomplete_2fa_time_limit()).unwrap();
-    let time_before = now - time_limit;
+    let Some(time_limit) = TimeDelta::try_minutes(i64::from(CONFIG.incomplete_2fa_time_limit())) else {
+        error!("Failed to calculate the time limit for sending incomplete 2fa attempts");
+        return;
+    };
+    let Some(time_before) = now.checked_sub_signed(time_limit) else {
+        error!("Failed to calculate the timestamp for sending incomplete 2fa attempts");
+        return;
+    };
+
     let incomplete_logins = TwoFactorIncomplete::find_logins_before(&time_before, &conn).await;
     for login in incomplete_logins {
-        let user = User::find_by_uuid(&login.user_uuid, &conn).await.expect("User not found");
+        let Some(user) = User::find_by_uuid(&login.user_uuid, &conn).await else {
+            error!("User '{}', not found!", login.user_uuid);
+            continue;
+        };
         info!(
             "User {} did not complete a 2FA login within the configured time limit. IP: {}",
             user.email, login.ip_address

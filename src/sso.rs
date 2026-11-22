@@ -2,7 +2,6 @@ use std::{sync::LazyLock, time::Duration};
 
 use chrono::Utc;
 use derive_more::{AsRef, Deref, Display, From, Into};
-use regex::Regex;
 use url::Url;
 
 use crate::{
@@ -175,16 +174,16 @@ pub fn decode_state(base64_state: &str) -> ApiResult<OIDCState> {
         if let Ok(valid) = String::from_utf8(vec) {
             OIDCState(valid)
         } else {
-            err!(format!("Invalid utf8 chars in {base64_state} after base64 decoding"))
+            err!(format!("Invalid utf8 chars in {} after base64 decoding", base64_state.escape_debug()))
         }
     } else {
-        err!(format!("Failed to decode {base64_state} using base64"))
+        err!(format!("Failed to decode {} using base64", base64_state.escape_debug()))
     };
 
     Ok(state)
 }
 
-// redirect_uri from: https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/ApiClient.cs
+// redirect_uri from: https://github.com/bitwarden/server/blob/main/src/Identity/IdentityServer/StaticClientStore.cs
 pub async fn authorize_url(
     state: OIDCState,
     client_challenge: OIDCCodeChallenge,
@@ -193,20 +192,21 @@ pub async fn authorize_url(
     binding_hash: Option<String>,
     conn: DbConn,
 ) -> ApiResult<Url> {
+    // The desktop app uses the localhost callback when it can't register the custom scheme (AppImage, dev builds)
+    let localhost_redirect_uri =
+        (8065..=8070).map(|port| format!("http://localhost:{port}")).find(|uri| uri == raw_redirect_uri);
+
     let redirect_uri = match client_id {
         "web" | "browser" => format!("{}/sso-connector.html", CONFIG.domain()),
-        "desktop" | "mobile" => "bitwarden://sso-callback".to_owned(),
+        "desktop" => localhost_redirect_uri.unwrap_or_else(|| "bitwarden://sso-callback".to_owned()),
+        "mobile" => "bitwarden://sso-callback".to_owned(),
         "cli" => {
-            let port_regex = Regex::new(r"^http://localhost:([0-9]{4})$").unwrap();
-            if let Some(port) =
-                port_regex.captures(raw_redirect_uri).and_then(|captures| captures.get(1).map(|c| c.as_str()))
-            {
-                format!("http://localhost:{port}")
-            } else {
-                err!("Failed to extract port number")
-            }
+            let Some(uri) = localhost_redirect_uri else {
+                err!(format!("Unsupported redirect uri {}", raw_redirect_uri.escape_debug()))
+            };
+            uri
         }
-        _ => err!(format!("Unsupported client {client_id}")),
+        _ => err!(format!("Unsupported client {}", client_id.escape_debug())),
     };
 
     let (auth_url, sso_auth) = Client::authorize_url(state, client_challenge, redirect_uri, binding_hash).await?;
@@ -236,13 +236,14 @@ pub struct OIDCIdentifier(String);
 
 impl OIDCIdentifier {
     fn new(issuer: &str, subject: &str) -> Self {
-        OIDCIdentifier(format!("{issuer}/{subject}"))
+        Self(format!("{issuer}/{subject}"))
     }
 }
 
 // During the 2FA flow we will
 //  - retrieve the user information and then only discover he needs 2FA.
-//  - second time we will rely on `SsoAuth.auth_response` since the `code` has already been exchanged.
+//  - second time we will rely on `SsoAuth.auth_response` since the `code` has already been exchanged,
+//    after checking the PKCE verifier again like upstream does on every redemption.
 // The `SsoAuth` will ensure that the user is authorized only once.
 pub async fn exchange_code(
     code: &OIDCCode,
@@ -256,6 +257,7 @@ pub async fn exchange_code(
     };
 
     if let Some(authenticated_user) = sso_auth.auth_response.clone() {
+        Client::check_client_verifier(&client_verifier, &sso_auth)?;
         return Ok((sso_auth, authenticated_user));
     }
 
@@ -264,8 +266,8 @@ pub async fn exchange_code(
         (_, Some(re)) => {
             let error_msg = format!(
                 "SSO authorization failed: {}, {}",
-                re.error,
-                re.error_description.as_ref().unwrap_or(&String::new())
+                re.error.escape_debug(),
+                re.error_description.as_deref().unwrap_or_default().escape_debug()
             );
             sso_auth.delete(conn).await?;
             err!(error_msg);
@@ -281,14 +283,14 @@ pub async fn exchange_code(
 
     let user_info = client.user_info(token_response.access_token().to_owned()).await?;
 
-    let email = match id_claims.email().or(user_info.email()) {
+    let email = match id_claims.email().or_else(|| user_info.email()) {
         None => err!("Neither id token nor userinfo contained an email"),
         Some(e) => e.to_string().to_lowercase(),
     };
 
-    let email_verified = id_claims.email_verified().or(user_info.email_verified());
+    let email_verified = id_claims.email_verified().or_else(|| user_info.email_verified());
 
-    let user_name = id_claims.preferred_username().or(user_info.preferred_username()).map(|un| un.to_string());
+    let user_name = id_claims.preferred_username().or_else(|| user_info.preferred_username()).map(|un| un.to_string());
 
     let refresh_token = token_response.refresh_token().map(openidconnect::RefreshToken::secret);
     if refresh_token.is_none() && CONFIG.sso_scopes_vec().contains(&"offline_access".to_owned()) {
@@ -307,7 +309,11 @@ pub async fn exchange_code(
         user_name: user_name.clone(),
     };
 
-    debug!("Authenticated user {authenticated_user:?}");
+    if CONFIG.sso_debug_tokens() {
+        debug!("Authenticated user {authenticated_user:?}");
+    } else {
+        debug!("Authenticated user {identifier}");
+    }
     sso_auth.auth_response = Some(authenticated_user.clone());
     sso_auth.updated_at = Utc::now().naive_utc();
     sso_auth.save(conn).await?;
@@ -392,7 +398,7 @@ fn create_auth_tokens_impl(
         match decode_token_claims("refresh_token", &rt) {
             Err(_) => {
                 let time_now = Utc::now();
-                let exp = (time_now + *DEFAULT_REFRESH_VALIDITY).timestamp();
+                let exp = (time_now + DEFAULT_REFRESH_VALIDITY).timestamp();
                 debug!("Non jwt refresh_token (expiration set to {exp})");
                 (time_now.timestamp(), exp, TokenWrapper::Refresh(rt))
             }
@@ -448,7 +454,7 @@ pub async fn exchange_refresh_token(
         }
         Some(TokenWrapper::Access(access_token)) => {
             let now = Utc::now();
-            let exp_limit = (now + *BW_EXPIRATION).timestamp();
+            let exp_limit = (now + BW_EXPIRATION).timestamp();
 
             if exp < exp_limit {
                 err_silent!("Access token is close to expiration but we have no refresh token")

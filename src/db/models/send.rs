@@ -58,9 +58,9 @@ pub enum SendType {
 }
 
 enum SendAuthType {
-    #[allow(dead_code)]
+    #[expect(unused, reason = "Not yet supported")]
     // Send requires email OTP verification
-    Email = 0, // Not yet supported by Vaultwarden
+    Email = 0,
     // Send requires a password
     Password = 1,
     // Send requires no auth
@@ -140,8 +140,12 @@ impl Send {
         None
     }
 
+    fn access_id(&self) -> String {
+        BASE64URL_NOPAD.encode(Uuid::parse_str(&self.uuid).unwrap_or_default().as_bytes())
+    }
+
     pub fn to_json(&self) -> Value {
-        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map_or_default(|d| d.data);
 
         // Mobile clients expect size to be a string instead of a number
         if let Some(size) = data.get("size").and_then(Value::as_i64) {
@@ -150,13 +154,13 @@ impl Send {
 
         json!({
             "id": self.uuid,
-            "accessId": BASE64URL_NOPAD.encode(Uuid::parse_str(&self.uuid).unwrap_or_default().as_bytes()),
+            "accessId": self.access_id(),
             "type": self.atype,
 
             "name": self.name,
             "notes": self.notes,
-            "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
-            "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "text": (self.atype == SendType::Text as i32).then_some(&data),
+            "file": (self.atype == SendType::File as i32).then_some(&data),
 
             "key": self.akey,
             "maxAccessCount": self.max_access_count,
@@ -174,7 +178,7 @@ impl Send {
     }
 
     pub async fn to_json_access(&self, conn: &DbConn) -> Value {
-        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map_or_default(|d| d.data);
 
         // Mobile clients expect size to be a string instead of a number
         if let Some(size) = data.get("size").and_then(Value::as_i64) {
@@ -182,12 +186,12 @@ impl Send {
         }
 
         json!({
-            "id": self.uuid,
+            "id": self.access_id(),
             "type": self.atype,
 
             "name": self.name,
-            "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
-            "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "text": (self.atype == SendType::Text as i32).then_some(&data),
+            "file": (self.atype == SendType::File as i32).then_some(&data),
 
             "expirationDate": self.expiration_date.as_ref().map(format_date),
             "creatorIdentifier": self.creator_identifier(conn).await,
@@ -256,7 +260,7 @@ impl Send {
 
     /// Whether the Send is currently within its validity window: not disabled, not past its
     /// expiration date, and not past its deletion date. Does not consider `max_access_count`
-    /// (consumed at token issuance) or the password.
+    /// (counted on each access) or the password.
     pub fn is_accessible(&self) -> bool {
         let now = Utc::now().naive_utc();
         if self.disabled {
@@ -309,19 +313,6 @@ impl Send {
         Ok(())
     }
 
-    pub async fn find_by_access_id(access_id: &str, conn: &DbConn) -> Option<Self> {
-        let Ok(uuid_vec) = BASE64URL_NOPAD.decode(access_id.as_bytes()) else {
-            return None;
-        };
-
-        let uuid = match Uuid::from_slice(&uuid_vec) {
-            Ok(u) => SendId::from(u.to_string()),
-            Err(_) => return None,
-        };
-
-        Self::find_by_uuid(&uuid, conn).await
-    }
-
     pub async fn find_by_uuid(uuid: &SendId, conn: &DbConn) -> Option<Self> {
         conn.run(move |conn| sends::table.filter(sends::uuid.eq(uuid)).first::<Self>(conn).ok()).await
     }
@@ -343,7 +334,6 @@ impl Send {
     pub async fn size_by_user(user_uuid: &UserId, conn: &DbConn) -> Option<i64> {
         #[derive(serde::Deserialize)]
         struct FileData {
-            #[serde(rename = "size", alias = "Size")]
             size: NumberOrString,
         }
 
@@ -359,13 +349,6 @@ impl Send {
         }
 
         Some(total)
-    }
-
-    pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
-        conn.run(move |conn| {
-            sends::table.filter(sends::organization_uuid.eq(org_uuid)).load::<Self>(conn).expect("Error loading sends")
-        })
-        .await
     }
 
     pub async fn find_by_past_deletion_date(conn: &DbConn) -> Vec<Self> {

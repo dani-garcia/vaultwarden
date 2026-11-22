@@ -32,9 +32,17 @@
     # https://github.com/tonistiigi/xx/pull/108#issuecomment-3700635977
     # https://github.com/dani-garcia/vaultwarden/discussions/7522
     if xx-info is-cross; then \
-        XX_RUSTFLAGS="-C link-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
-        export XX_RUSTFLAGS; \
+        XX_RUSTFLAGS="-Clink-arg=-Wl,-rpath-link,/usr/lib/$(xx-info triple)"; \
     fi && \
+    # Debian's GCC adds a special fix for cortex-a53 arch's which gets losts when using xx-cargo, which uses clang
+    # Checking if the arch is arm64 and adding this extra link-arg should cause this fix to be applied
+    # This should fix issues reported when running on a RPi3 which is a Cortex-A35 chip
+    # See: https://salsa.debian.org/toolchain-team/gcc/-/blob/master/debian/rules2?pow_referer=#L543-548
+    # See: https://github.com/dani-garcia/vaultwarden/issues/7754
+    if [ "$(xx-info arch)" = "arm64" ]; then \
+        XX_RUSTFLAGS="${XX_RUSTFLAGS} -Clink-arg=-Wl,--fix-cortex-a53-843419"; \
+    fi && \
+    export XX_RUSTFLAGS && \
     PKG_CONFIG="$(command -v "$(xx-info)-pkg-config")" xx-cargo build --features ${DB} --profile "${CARGO_PROFILE}"
 {%- endmacro %}
 FROM --platform=linux/amd64 docker.io/vaultwarden/web-vault@{{ vault_image_digest }} AS vault
