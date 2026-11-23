@@ -237,12 +237,14 @@ async fn delete_organization(
     headers: OwnerHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    let mut user = headers.user;
+
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
     let data: PasswordOrOtpData = data.into_inner();
 
-    data.validate(&headers.user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     match Organization::find_by_uuid(&org_id, &conn).await {
         None => err!("Organization not found"),
@@ -2500,7 +2502,10 @@ async fn list_policies(org_id: OrganizationId, headers: ManagePoliciesHeaders, c
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let policies = OrgPolicy::find_by_org(&org_id, &conn).await;
+    let mut policies = OrgPolicy::find_by_org(&org_id, &conn).await;
+    if !policies.iter().any(|p| p.has_type(OrgPolicyType::SendControls)) {
+        policies.push(OrgPolicy::synthesize_send_controls(&org_id, &policies));
+    }
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 
     Ok(Json(json!({
@@ -2571,9 +2576,13 @@ async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: ManagePolici
         err!("Invalid or unsupported policy type")
     };
 
-    let policy = OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn)
-        .await
-        .unwrap_or_else(|| OrgPolicy::new(org_id.clone(), pol_type_enum, false, "null".to_owned()));
+    let policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await {
+        Some(p) => p,
+        None if pol_type_enum == OrgPolicyType::SendControls => {
+            OrgPolicy::synthesize_send_controls(&org_id, &OrgPolicy::find_by_org(&org_id, &conn).await)
+        }
+        None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "null".to_owned()),
+    };
 
     Ok(Json(policy.to_json()))
 }
@@ -2723,6 +2732,8 @@ async fn put_policy(
             .await?;
     }
 
+    let policy_data = OrgPolicy::send_policy_data(pol_type_enum, data.data)?;
+
     let mut policy = match current_policy {
         Some(p) => p,
         None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "{}".to_owned()),
@@ -2731,7 +2742,7 @@ async fn put_policy(
     // Bitwarden provisions default collections on first enable or re-enable, not on ordinary updates.
     let policy_becomes_enabled = data.enabled && !policy.enabled;
     policy.enabled = data.enabled;
-    policy.data = serde_json::to_string(&data.data)?;
+    policy.data = serde_json::to_string(&policy_data)?;
     policy.save(&conn).await?;
 
     log_event(
@@ -2744,6 +2755,8 @@ async fn put_policy(
         &conn,
     )
     .await;
+
+    OrgPolicy::sync_send_policies(&policy, &conn).await?;
 
     // Like upstream, provision on first enable or re-enable, after the policy has been saved.
     // A subsequent ordinary policy update must not create new My Items collections.
@@ -3971,11 +3984,12 @@ async fn put_reset_password_enrollment(
     data: Json<OrganizationUserResetPasswordEnrollmentRequest>,
     conn: DbConn,
 ) -> EmptyResult {
-    if user_id != headers.user.uuid {
+    let mut membership = headers.membership;
+    let mut user = headers.user;
+
+    if user_id != user.uuid {
         err!("User to enroll isn't member of required organization", "The user_id and acting user do not match");
     }
-
-    let mut membership = headers.membership;
 
     check_reset_password_applicable(&org_id, &conn).await?;
 
@@ -3991,7 +4005,7 @@ async fn put_reset_password_enrollment(
             master_password_hash: reset_request.master_password_hash,
             otp: reset_request.otp,
         }
-        .validate(&headers.user, true, &conn)
+        .validate(&mut user, true, &conn)
         .await?;
     }
 
@@ -4007,8 +4021,7 @@ async fn put_reset_password_enrollment(
         EventType::OrganizationUserResetPasswordWithdraw
     };
 
-    log_event(event_type, &membership.uuid, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-        .await;
+    log_event(event_type, &membership.uuid, &org_id, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(())
 }
@@ -4042,10 +4055,10 @@ async fn api_key(
         err!("Organization not found", "Organization id's do not match");
     }
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
     // Validate the owner users password/otp
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     let org_api_key = if let Some(mut org_api_key) = OrganizationApiKey::find_by_org_uuid(org_id, &conn).await {
         if rotate {

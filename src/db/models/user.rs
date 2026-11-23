@@ -2,6 +2,7 @@ use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
 use serde_json::Value;
+use std::cmp;
 
 use crate::{
     CONFIG,
@@ -133,7 +134,6 @@ impl UserStampException {
 /// Local methods
 impl User {
     pub const CLIENT_KDF_TYPE_DEFAULT: i32 = UserKdfType::Pbkdf2 as i32;
-    pub const CLIENT_KDF_ITER_DEFAULT: i32 = 600_000;
 
     pub fn new(email: &str, name: Option<String>) -> Self {
         let now = Utc::now().naive_utc();
@@ -171,7 +171,7 @@ impl User {
             excluded_globals: "[]".to_owned(),
 
             client_kdf_type: Self::CLIENT_KDF_TYPE_DEFAULT,
-            client_kdf_iter: Self::CLIENT_KDF_ITER_DEFAULT,
+            client_kdf_iter: CONFIG.client_kdf_iter(),
             client_kdf_memory: None,
             client_kdf_parallelism: None,
 
@@ -248,6 +248,7 @@ impl User {
         allow_next_route: Option<Vec<String>>,
         conn: &DbConn,
     ) -> EmptyResult {
+        self.password_iterations = cmp::max(self.password_iterations, CONFIG.password_iterations());
         self.password_hash =
             crypto::hash_password(password.as_bytes(), &self.salt, self.password_iterations.cast_unsigned());
 
@@ -474,6 +475,34 @@ impl User {
                     .execute(conn)
                     .map_res("Error saving user")
             }
+        }
+    }
+
+    pub async fn check_persist_kdf_upgrade(&mut self, pwd_hash: &str, conn: &DbConn) -> EmptyResult {
+        if self.password_iterations < CONFIG.password_iterations() {
+            let old_iteration = self.password_iterations;
+            let old_hash = self.password_hash.clone();
+
+            self.set_password(pwd_hash, None, false, None, conn).await?;
+
+            conn.run(move |conn| {
+                diesel::update(
+                    users::table
+                        .filter(users::uuid.eq(&self.uuid))
+                        .filter(users::password_iterations.eq(old_iteration))
+                        .filter(users::password_hash.eq(old_hash)),
+                )
+                .set((
+                    users::updated_at.eq(Utc::now().naive_utc()),
+                    users::password_iterations.eq(&self.password_iterations),
+                    users::password_hash.eq(&self.password_hash),
+                ))
+                .execute(conn)
+                .map_res("Error updating user KDF iterations")
+            })
+            .await
+        } else {
+            Ok(())
         }
     }
 

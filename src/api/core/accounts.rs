@@ -1039,8 +1039,8 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
 }
 
 fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
-    if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < 100_000 {
-        err!("PBKDF2 KDF iterations must be at least 100000.")
+    if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < CONFIG.client_kdf_iter() {
+        err!(format!("PBKDF2 KDF iterations must be at least {}.", CONFIG.client_kdf_iter()))
     }
 
     if data.kdf == UserKdfType::Argon2id as i32 {
@@ -1878,7 +1878,7 @@ async fn post_sstamp(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbCo
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     user.reset_security_stamp(&conn).await?;
     let save_result = user.save(&conn).await;
@@ -2136,9 +2136,9 @@ async fn post_delete_account(
 #[delete("/accounts", data = "<data>")]
 async fn delete_account(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     // The devices are deleted together with the user, so check for push devices beforehand
     let has_push_device = CONFIG.push_enabled() && Device::check_user_has_push_device(&user.uuid, &conn).await;
@@ -2219,15 +2219,15 @@ fn unknown_email_kdf(email: &str) -> (i32, i32, Option<i32>, Option<i32>) {
     const PBKDF2: i32 = UserKdfType::Pbkdf2 as i32;
     const ARGON2ID: i32 = UserKdfType::Argon2id as i32;
     // Same list as upstream, the default is in it twice to give it more weight
-    const KDF_SETTINGS: [(i32, i32, Option<i32>, Option<i32>); 6] = [
-        (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
-        (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+    let kdf_settings: [(i32, i32, Option<i32>, Option<i32>); 6] = [
+        (User::CLIENT_KDF_TYPE_DEFAULT, CONFIG.client_kdf_iter(), None, None),
+        (User::CLIENT_KDF_TYPE_DEFAULT, CONFIG.client_kdf_iter(), None, None),
         (PBKDF2, 100_000, None, None),
         (PBKDF2, 5_000, None, None),
         (ARGON2ID, 3, Some(64), Some(4)),
         (ARGON2ID, 6, Some(32), Some(4)),
     ];
-    KDF_SETTINGS[crate::auth::prelogin_kdf_index(email, KDF_SETTINGS.len())]
+    kdf_settings[crate::auth::prelogin_kdf_index(email, kdf_settings.len())]
 }
 
 pub async fn prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
@@ -2264,19 +2264,6 @@ struct SecretVerificationRequest {
     master_password_hash: String,
 }
 
-// Change the KDF Iterations if necessary
-pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &DbConn) -> ApiResult<()> {
-    if user.password_iterations < CONFIG.password_iterations() {
-        user.password_iterations = CONFIG.password_iterations();
-        user.set_password(pwd_hash, None, false, None, conn).await?;
-
-        if let Err(e) = user.save(conn).await {
-            error!("Error updating user: {e:#?}");
-        }
-    }
-    Ok(())
-}
-
 #[post("/accounts/verify-password", data = "<data>")]
 async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner();
@@ -2286,7 +2273,7 @@ async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers
         err!("Invalid password")
     }
 
-    kdf_upgrade(&mut user, &data.master_password_hash, &conn).await?;
+    user.check_persist_kdf_upgrade(&data.master_password_hash, &conn).await?;
 
     Ok(Json(master_password_policy(&user, &conn).await))
 }
@@ -2295,7 +2282,7 @@ async fn update_api_key(data: Json<PasswordOrOtpData>, rotate: bool, headers: He
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     if rotate || user.api_key.is_none() {
         user.api_key = Some(crypto::generate_api_key());
