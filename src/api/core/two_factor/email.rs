@@ -54,18 +54,9 @@ async fn send_email_login(data: Json<SendEmailLoginData>, client_headers: Client
     crate::ratelimit::check_limit_login(&client_headers.ip.ip)?;
 
     // Get the user
-    let email = match &data.email {
-        Some(email) if !email.is_empty() => Some(email),
-        _ => None,
-    };
-    let master_password_hash = match &data.master_password_hash {
-        Some(password_hash) if !password_hash.is_empty() => Some(password_hash),
-        _ => None,
-    };
-    let auth_request_id = match &data.auth_request_id {
-        Some(auth_request_id) if !auth_request_id.is_empty() => Some(auth_request_id),
-        _ => None,
-    };
+    let email = data.email.as_ref().filter(|e| !e.is_empty());
+    let master_password_hash = data.master_password_hash.as_ref().filter(|h| !h.is_empty());
+    let auth_request_id = data.auth_request_id.as_ref().filter(|a| !a.is_empty());
 
     let user = if let Some(email) = email {
         let Some(user) = User::find_by_mail(email, &conn).await else {
@@ -163,9 +154,9 @@ pub async fn send_token(user_id: &UserId, conn: &DbConn) -> EmptyResult {
 #[post("/two-factor/get-email", data = "<data>")]
 async fn get_email(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&mut user, false, &conn).await?;
 
     let (enabled, mfa_email) =
         if let Some(x) = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Email, &conn).await {
@@ -349,8 +340,8 @@ pub struct EmailTokenData {
 }
 
 impl EmailTokenData {
-    pub fn new(email: String, token: Option<String>) -> EmailTokenData {
-        EmailTokenData {
+    pub fn new(email: String, token: Option<String>) -> Self {
+        Self {
             email,
             last_token: token,
             token_sent: Utc::now().timestamp(),
@@ -376,8 +367,8 @@ impl EmailTokenData {
         serde_json::to_string(&self).unwrap()
     }
 
-    pub fn from_json(string: &str) -> Result<EmailTokenData, Error> {
-        let res: Result<EmailTokenData, serde_json::Error> = serde_json::from_str(string);
+    pub fn from_json(string: &str) -> Result<Self, Error> {
+        let res: Result<Self, serde_json::Error> = serde_json::from_str(string);
         if let Ok(x) = res {
             Ok(x)
         } else {
@@ -398,22 +389,21 @@ pub async fn activate_email_2fa(user: &User, conn: &DbConn) -> EmptyResult {
 
 /// Takes an email address and obscures it by replacing it with asterisks except two characters.
 pub fn obscure_email(email: &str) -> String {
-    let split: Vec<&str> = email.rsplitn(2, '@').collect();
-
-    let mut name = split[1].to_owned();
-    let domain = &split[0];
-
-    let name_size = name.chars().count();
-
-    let new_name = if let 1..=3 = name_size {
-        "*".repeat(name_size)
-    } else {
-        let stars = "*".repeat(name_size - 2);
-        name.truncate(2);
-        format!("{name}{stars}")
+    let Some((name, domain)) = email.rsplit_once('@') else {
+        return "*".repeat(email.chars().count());
     };
 
-    format!("{new_name}@{domain}")
+    let len = name.chars().count();
+    let keep = if len > 3 {
+        2
+    } else {
+        0
+    };
+
+    // Byte offset after the first `keep` chars (UTF-8 safe).
+    let end = name.char_indices().nth(keep).map_or(name.len(), |(i, _)| i);
+
+    format!("{}{}@{domain}", &name[..end], "*".repeat(len - keep))
 }
 
 pub async fn find_and_activate_email_2fa(user_id: &UserId, conn: &DbConn) -> EmptyResult {
@@ -431,7 +421,6 @@ mod tests {
     #[test]
     fn test_obscure_email_long() {
         let email = "bytes@example.ext";
-
         let result = obscure_email(email);
 
         // Only first two characters should be visible.
@@ -441,10 +430,37 @@ mod tests {
     #[test]
     fn test_obscure_email_short() {
         let email = "byt@example.ext";
-
         let result = obscure_email(email);
 
         // If it's smaller than 3 characters it should only show asterisks.
         assert_eq!(result, "***@example.ext");
+    }
+
+    // Test unicode email address, as that might cut a unicode char in half and cause a panic
+    #[test]
+    fn test_obscure_email_unicode_long() {
+        let email = "bɏtes@example.ext";
+        let result = obscure_email(email);
+
+        // Only first two characters should be visible.
+        assert_eq!(result, "bɏ***@example.ext");
+    }
+
+    #[test]
+    fn test_obscure_email_unicode_short() {
+        let email = "bɏt@example.ext";
+        let result = obscure_email(email);
+
+        // If it's smaller than 3 characters it should only show asterisks.
+        assert_eq!(result, "***@example.ext");
+    }
+
+    #[test]
+    fn test_missing_at() {
+        let email = "bɏt_at_example.ext";
+        let result = obscure_email(email);
+
+        // With a missing `@` the whole string should show asterisks
+        assert_eq!(result, "******************");
     }
 }

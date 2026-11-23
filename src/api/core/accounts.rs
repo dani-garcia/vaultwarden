@@ -173,8 +173,8 @@ impl RegisterDataCompat {
         fcu: impl FnOnce(&'a RegisterDataCur) -> &'a T,
     ) -> &'a T {
         match self {
-            RegisterDataCompat::RegisterDataOld(rdc) => fct(rdc),
-            RegisterDataCompat::RegisterDataCur(rdcu) => fcu(rdcu),
+            Self::RegisterDataOld(rdc) => fct(rdc),
+            Self::RegisterDataCur(rdcu) => fcu(rdcu),
         }
     }
 
@@ -193,8 +193,8 @@ impl RegisterDataCompat {
     /// The id of the user key, which only the current format carries.
     fn key_id(&self) -> Option<KeyId> {
         match self {
-            RegisterDataCompat::RegisterDataOld(_) => None,
-            RegisterDataCompat::RegisterDataCur(rdcu) => rdcu.master_password_unlock.contained_key_id.clone(),
+            Self::RegisterDataOld(_) => None,
+            Self::RegisterDataCur(rdcu) => rdcu.master_password_unlock.contained_key_id.clone(),
         }
     }
 
@@ -306,7 +306,7 @@ impl AccountKeysData {
         }
         if let Some(security_state) = &self.security_state {
             required(Some(security_state.security_state.clone()), "SecurityState")?;
-            if security_state.security_state.encode_utf16().count() > 10_000 {
+            if security_state.security_state.encode_utf16().nth(10_000).is_some() {
                 err!("The field SecurityState must be a string with a maximum length of 10000.")
             }
         }
@@ -741,7 +741,7 @@ async fn post_set_password(data: Json<Value>, headers: Headers, conn: DbConn) ->
     let Ok(data) = serde_json::from_value::<SetPasswordData>(data) else {
         err_code!("Unexpected SetPasswordData format", Status::UnprocessableEntity.code)
     };
-    if data.master_password_hint.as_ref().is_some_and(|h| h.encode_utf16().count() > 50) {
+    if data.master_password_hint.as_ref().is_some_and(|h| h.encode_utf16().nth(50).is_some()) {
         err!("The field MasterPasswordHint must be a string with a maximum length of 50.")
     }
     let mut user = headers.user;
@@ -1200,8 +1200,8 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
 }
 
 fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
-    if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < 100_000 {
-        err!("PBKDF2 KDF iterations must be at least 100000.")
+    if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < CONFIG.client_kdf_iter() {
+        err!(format!("PBKDF2 KDF iterations must be at least {}.", CONFIG.client_kdf_iter()))
     }
 
     if data.kdf == UserKdfType::Argon2id as i32 {
@@ -1601,7 +1601,6 @@ fn validate_rotation_data(
     existing_sends: &[Send],
 ) -> EmptyResult {
     // Check that we're correctly rotating all the user's ciphers
-    let existing_cipher_ids = existing_ciphers.iter().map(|c| &c.uuid).collect::<HashSet<&CipherId>>();
     let provided_cipher_ids = data
         .account_data
         .ciphers
@@ -1609,44 +1608,38 @@ fn validate_rotation_data(
         .filter(|c| c.organization_id.is_none())
         .filter_map(|c| c.id.as_ref())
         .collect::<HashSet<&CipherId>>();
-    if !provided_cipher_ids.is_superset(&existing_cipher_ids) {
+    if existing_ciphers.iter().any(|c| !provided_cipher_ids.contains(&c.uuid)) {
         err!("All existing ciphers must be included in the rotation")
     }
 
     // Check that we're correctly rotating all the user's folders
-    let existing_folder_ids = existing_folders.iter().map(|f| &f.uuid).collect::<HashSet<&FolderId>>();
     let provided_folder_ids =
         data.account_data.folders.iter().filter_map(|f| f.id.as_ref()).collect::<HashSet<&FolderId>>();
-    if !provided_folder_ids.is_superset(&existing_folder_ids) {
+    if existing_folders.iter().any(|f| !provided_folder_ids.contains(&f.uuid)) {
         err!("All existing folders must be included in the rotation")
     }
 
     // Check that we're correctly rotating all the user's emergency access keys
-    let existing_emergency_access_ids =
-        existing_emergency_access.iter().map(|ea| &ea.uuid).collect::<HashSet<&EmergencyAccessId>>();
     let provided_emergency_access_ids =
         data.unlock_data.emergency_access_unlock_data.iter().map(|ea| &ea.id).collect::<HashSet<&EmergencyAccessId>>();
-    if !provided_emergency_access_ids.is_superset(&existing_emergency_access_ids) {
+    if existing_emergency_access.iter().any(|ea| !provided_emergency_access_ids.contains(&ea.uuid)) {
         err!("All existing emergency access keys must be included in the rotation")
     }
 
     // Check that we're correctly rotating all the user's reset password keys
-    let existing_reset_password_ids =
-        existing_memberships.iter().map(|m| &m.org_uuid).collect::<HashSet<&OrganizationId>>();
     let provided_reset_password_ids = data
         .unlock_data
         .organization_account_recovery_unlock_data
         .iter()
         .map(|rp| &rp.organization_id)
         .collect::<HashSet<&OrganizationId>>();
-    if !provided_reset_password_ids.is_superset(&existing_reset_password_ids) {
+    if existing_memberships.iter().any(|m| !provided_reset_password_ids.contains(&m.org_uuid)) {
         err!("All existing reset password keys must be included in the rotation")
     }
 
     // Check that we're correctly rotating all the user's sends
-    let existing_send_ids = existing_sends.iter().map(|s| &s.uuid).collect::<HashSet<&SendId>>();
     let provided_send_ids = data.account_data.sends.iter().filter_map(|s| s.id.as_ref()).collect::<HashSet<&SendId>>();
-    if !provided_send_ids.is_superset(&existing_send_ids) {
+    if existing_sends.iter().any(|s| !provided_send_ids.contains(&s.uuid)) {
         err!("All existing sends must be included in the rotation")
     }
 
@@ -1744,7 +1737,7 @@ struct RotateData {
 
 /// Upstream's `[StringLength(max)]`, which counts UTF-16 code units.
 fn validate_max_length(value: &str, max: usize, field: &str) -> EmptyResult {
-    if value.encode_utf16().count() > max {
+    if value.encode_utf16().nth(max).is_some() {
         err!(format!("The field {field} must be a string with a maximum length of {max}."))
     }
     Ok(())
@@ -1785,7 +1778,7 @@ impl MasterPasswordUnlockData {
         if let Some(hint) = &self.master_password_hint {
             validate_max_length(hint, 50, "MasterPasswordHint")?;
         }
-        if self.master_password_salt.as_ref().is_some_and(|salt| salt.encode_utf16().count() > 256) {
+        if self.master_password_salt.as_ref().is_some_and(|salt| salt.encode_utf16().nth(256).is_some()) {
             err!("The field MasterPasswordSalt must be a string or array type with a maximum length of '256'.")
         }
         Ok(())
@@ -2138,7 +2131,7 @@ async fn post_sstamp(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbCo
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     user.reset_security_stamp(&conn).await?;
     let save_result = user.save(&conn).await;
@@ -2396,9 +2389,9 @@ async fn post_delete_account(
 #[delete("/accounts", data = "<data>")]
 async fn delete_account(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     // The devices are deleted together with the user, so check for push devices beforehand
     let has_push_device = CONFIG.push_enabled() && Device::check_user_has_push_device(&user.uuid, &conn).await;
@@ -2447,7 +2440,7 @@ async fn password_hint(data: Json<PasswordHintData>, ip: ClientIp, conn: DbConn)
                 use rand::{RngExt, rngs::SmallRng};
                 let mut rng: SmallRng = rand::make_rng();
                 let sleep_ms: u64 = rng.random_range(900..=1100);
-                tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
                 Ok(())
             } else {
                 err!(NO_HINT);
@@ -2479,15 +2472,15 @@ fn unknown_email_kdf(email: &str) -> (i32, i32, Option<i32>, Option<i32>) {
     const PBKDF2: i32 = UserKdfType::Pbkdf2 as i32;
     const ARGON2ID: i32 = UserKdfType::Argon2id as i32;
     // Same list as upstream, the default is in it twice to give it more weight
-    const KDF_SETTINGS: [(i32, i32, Option<i32>, Option<i32>); 6] = [
-        (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
-        (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+    let kdf_settings: [(i32, i32, Option<i32>, Option<i32>); 6] = [
+        (User::CLIENT_KDF_TYPE_DEFAULT, CONFIG.client_kdf_iter(), None, None),
+        (User::CLIENT_KDF_TYPE_DEFAULT, CONFIG.client_kdf_iter(), None, None),
         (PBKDF2, 100_000, None, None),
         (PBKDF2, 5_000, None, None),
         (ARGON2ID, 3, Some(64), Some(4)),
         (ARGON2ID, 6, Some(32), Some(4)),
     ];
-    KDF_SETTINGS[crate::auth::prelogin_kdf_index(email, KDF_SETTINGS.len())]
+    kdf_settings[crate::auth::prelogin_kdf_index(email, kdf_settings.len())]
 }
 
 pub async fn prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
@@ -2524,19 +2517,6 @@ struct SecretVerificationRequest {
     master_password_hash: String,
 }
 
-// Change the KDF Iterations if necessary
-pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &DbConn) -> ApiResult<()> {
-    if user.password_iterations < CONFIG.password_iterations() {
-        user.password_iterations = CONFIG.password_iterations();
-        user.set_password(pwd_hash, None, false, None, conn).await?;
-
-        if let Err(e) = user.save(conn).await {
-            error!("Error updating user: {e:#?}");
-        }
-    }
-    Ok(())
-}
-
 #[post("/accounts/verify-password", data = "<data>")]
 async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner();
@@ -2546,7 +2526,7 @@ async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers
         err!("Invalid password")
     }
 
-    kdf_upgrade(&mut user, &data.master_password_hash, &conn).await?;
+    user.check_persist_kdf_upgrade(&data.master_password_hash, &conn).await?;
 
     Ok(Json(master_password_policy(&user, &conn).await))
 }
@@ -2555,7 +2535,7 @@ async fn update_api_key(data: Json<PasswordOrOtpData>, rotate: bool, headers: He
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     if rotate || user.api_key.is_none() {
         user.api_key = Some(crypto::generate_api_key());
@@ -2624,7 +2604,7 @@ impl<'r> FromRequest<'r> for KnownDevice {
             return Outcome::Error((Status::BadRequest, "X-Device-Identifier value is required"));
         };
 
-        Outcome::Success(KnownDevice {
+        Outcome::Success(Self {
             email,
             uuid,
         })
@@ -3050,10 +3030,8 @@ async fn notify_device_approval_requested(user: &User, org_id: &OrganizationId, 
 
     // The same set that may answer the request, see `ManageResetPasswordHeaders`. Mailing anyone
     // else would tell them who is asking for something they cannot do anything about.
-    let approvers = Membership::find_confirmed_by_org(org_id, conn)
-        .await
-        .into_iter()
-        .filter(Membership::can_manage_reset_password_now);
+    let approvers =
+        Membership::find_by_org(org_id, conn).await.into_iter().filter(Membership::can_manage_reset_password_now);
 
     for approver in approvers {
         let Some(admin) = User::find_by_uuid(&approver.user_uuid, conn).await else {

@@ -141,8 +141,8 @@ pub enum EmergencyAccessType {
 impl EmergencyAccessType {
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "0" | "View" => Some(EmergencyAccessType::View),
-            "1" | "Takeover" => Some(EmergencyAccessType::Takeover),
+            "0" | "View" => Some(Self::View),
+            "1" | "Takeover" => Some(Self::Takeover),
             _ => None,
         }
     }
@@ -397,7 +397,7 @@ impl EmergencyAccess {
     }
 
     pub async fn accept_invite(&mut self, grantee_uuid: &UserId, grantee_email: &str, conn: &DbConn) -> EmptyResult {
-        if self.email.is_none() || self.email.as_ref().unwrap() != grantee_email {
+        if self.email.as_ref().is_none_or(|e| e != grantee_email) {
             err!("User email does not match invite.");
         }
 

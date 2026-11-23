@@ -82,18 +82,8 @@ impl Collection {
     }
 
     pub fn set_external_id(&mut self, external_id: Option<String>) {
-        //Check if external id is empty. We don't want to have
-        //empty strings in the database
-        match external_id {
-            Some(external_id) => {
-                if external_id.is_empty() {
-                    self.external_id = None;
-                } else {
-                    self.external_id = Some(external_id);
-                }
-            }
-            None => self.external_id = None,
-        }
+        // Check if external id is empty. We don't want to have empty strings in the database
+        self.external_id = external_id.filter(|e| !e.trim().is_empty());
     }
 
     pub async fn to_json_details(
@@ -878,7 +868,7 @@ impl CollectionUser {
     }
 
     pub async fn delete_all_by_collection(collection_uuid: &CollectionId, conn: &DbConn) -> EmptyResult {
-        for collection in &CollectionUser::find_by_collection(collection_uuid, conn).await {
+        for collection in &Self::find_by_collection(collection_uuid, conn).await {
             User::update_uuid_revision(&collection.user_uuid, conn).await;
         }
 

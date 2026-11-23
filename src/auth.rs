@@ -43,12 +43,12 @@ use crate::{
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
-// Limit when BitWarden consider the token as expired
-pub static BW_EXPIRATION: LazyLock<TimeDelta> = LazyLock::new(|| TimeDelta::try_minutes(5).unwrap());
+// Limit when Bitwarden consider the token as expired
+pub static BW_EXPIRATION: TimeDelta = TimeDelta::try_minutes(5).unwrap();
 
-pub static DEFAULT_REFRESH_VALIDITY: LazyLock<TimeDelta> = LazyLock::new(|| TimeDelta::try_days(30).unwrap());
-pub static MOBILE_REFRESH_VALIDITY: LazyLock<TimeDelta> = LazyLock::new(|| TimeDelta::try_days(90).unwrap());
-pub static DEFAULT_ACCESS_VALIDITY: LazyLock<TimeDelta> = LazyLock::new(|| TimeDelta::try_hours(2).unwrap());
+pub static DEFAULT_REFRESH_VALIDITY: TimeDelta = TimeDelta::try_days(30).unwrap();
+pub static MOBILE_REFRESH_VALIDITY: TimeDelta = TimeDelta::try_days(90).unwrap();
+pub static DEFAULT_ACCESS_VALIDITY: TimeDelta = TimeDelta::try_hours(2).unwrap();
 static JWT_HEADER: LazyLock<Header> = LazyLock::new(|| Header::new(JWT_ALGORITHM));
 
 pub static JWT_LOGIN_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|login", CONFIG.domain_origin()));
@@ -86,7 +86,8 @@ pub async fn initialize_keys() -> Result<(), Error> {
     };
 
     let (priv_key, priv_key_buffer) = if let Some(priv_key_buffer) = priv_key_buffer {
-        (Rsa::private_key_from_pem(priv_key_buffer.to_vec().as_slice())?, priv_key_buffer.to_vec())
+        let pem = priv_key_buffer.to_vec();
+        (Rsa::private_key_from_pem(&pem)?, pem)
     } else {
         let rsa_key = Rsa::generate(2048)?;
         let priv_key_buffer = rsa_key.private_key_to_pem()?;
@@ -258,7 +259,7 @@ impl LoginJwtClaims {
         // let orguser: Vec<_> = orgs.iter().filter(|o| o.atype == 2).map(|o| o.org_uuid.clone()).collect();
         // let orgmanager: Vec<_> = orgs.iter().filter(|o| o.atype == 3).map(|o| o.org_uuid.clone()).collect();
 
-        if exp <= (now + *BW_EXPIRATION).timestamp() {
+        if exp <= (now + BW_EXPIRATION).timestamp() {
             warn!("Raise access_token lifetime to more than 5min.");
         }
 
@@ -286,7 +287,7 @@ impl LoginJwtClaims {
             sstamp: user.security_stamp.clone(),
             device: device.uuid.clone(),
             devicetype: DeviceType::from_i32(device.atype).to_string(),
-            client_id: client_id.unwrap_or("undefined".to_owned()),
+            client_id: client_id.unwrap_or_else(|| "undefined".to_owned()),
             scope,
             amr: vec!["Application".into()],
         }
@@ -298,7 +299,7 @@ impl LoginJwtClaims {
             device,
             user,
             time_now.timestamp(),
-            (time_now + *DEFAULT_ACCESS_VALIDITY).timestamp(),
+            (time_now + DEFAULT_ACCESS_VALIDITY).timestamp(),
             auth_method.scope_vec(),
             client_id,
             time_now,
@@ -623,7 +624,7 @@ impl<'r> FromRequest<'r> for Host {
             format!("{protocol}://{host}")
         };
 
-        Outcome::Success(Host {
+        Outcome::Success(Self {
             host,
         })
     }
@@ -654,7 +655,7 @@ impl<'r> FromRequest<'r> for ClientHeaders {
         let client_version =
             request.headers().get_one("Bitwarden-Client-Version").and_then(|v| semver::Version::parse(v).ok());
 
-        Outcome::Success(ClientHeaders {
+        Outcome::Success(Self {
             device_type,
             ip,
             client_version,
@@ -723,7 +724,7 @@ impl<'r> FromRequest<'r> for Headers {
             }
         }
 
-        Outcome::Success(Headers {
+        Outcome::Success(Self {
             host,
             device,
             user,
@@ -789,7 +790,7 @@ impl<'r> FromRequest<'r> for OrgIdGuard {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         match get_org_id(request) {
-            Some(_) => Outcome::Success(OrgIdGuard),
+            Some(_) => Outcome::Success(Self),
             None => Outcome::Forward(rocket::http::Status::NotFound),
         }
     }
@@ -1065,8 +1066,8 @@ macro_rules! collection_headers {
         }
 
         impl From<$name> for Headers {
-            fn from(h: $name) -> Headers {
-                Headers {
+            fn from(h: $name) -> Self {
+                Self {
                     host: h.host,
                     device: h.device,
                     user: h.user,
@@ -1132,8 +1133,8 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
 }
 
 impl From<ManagerHeadersLoose> for Headers {
-    fn from(h: ManagerHeadersLoose) -> Headers {
-        Headers {
+    fn from(h: ManagerHeadersLoose) -> Self {
+        Self {
             host: h.host,
             device: h.device,
             user: h.user,
@@ -1147,7 +1148,7 @@ impl CollectionDeleteHeaders {
         h: ManagerHeadersLoose,
         collections: &Vec<CollectionId>,
         conn: &DbConn,
-    ) -> Result<CollectionDeleteHeaders, Error> {
+    ) -> Result<Self, Error> {
         let is_custom = h.membership.has_type(MembershipType::Custom) && custom_roles_enabled();
         for col_id in collections {
             if uuid::Uuid::parse_str(col_id.as_ref()).is_err() {
@@ -1164,7 +1165,7 @@ impl CollectionDeleteHeaders {
             }
         }
 
-        Ok(CollectionDeleteHeaders {
+        Ok(Self {
             host: h.host,
             device: h.device,
             user: h.user,
@@ -1229,8 +1230,8 @@ impl<'r> FromRequest<'r> for OrgMemberHeaders {
 }
 
 impl From<OrgMemberHeaders> for Headers {
-    fn from(h: OrgMemberHeaders) -> Headers {
-        Headers {
+    fn from(h: OrgMemberHeaders) -> Self {
+        Self {
             host: h.host,
             device: h.device,
             user: h.user,
@@ -1286,10 +1287,10 @@ fn client_ip_from_header(req: &Request<'_>, header: &str, is_trusted: impl Fn(Ip
 }
 
 fn client_ip_from_header_values(values: &[&str], header: &str, is_trusted: impl Fn(IpAddr) -> bool) -> Option<IpAddr> {
-    let entries: Vec<&str> = values.iter().flat_map(|value| value.split(',')).map(str::trim).collect();
+    let entries = values.iter().flat_map(|value| value.split(',')).rev().map(str::trim);
 
     let mut client_ip = None;
-    for entry in entries.into_iter().rev() {
+    for entry in entries {
         let Ok(ip) = entry.parse() else {
             warn!("'{header}' header is malformed: {entry}");
             break;
@@ -1322,7 +1323,7 @@ impl<'r> FromRequest<'r> for ClientIp {
 
         let ip = ip.or(remote).unwrap_or_else(|| "0.0.0.0".parse().unwrap());
 
-        Outcome::Success(ClientIp {
+        Outcome::Success(Self {
             ip,
         })
     }
@@ -1352,7 +1353,7 @@ impl<'r> FromRequest<'r> for Secure {
             }
         };
 
-        Outcome::Success(Secure {
+        Outcome::Success(Self {
             https: protocol == "https",
         })
     }
@@ -1398,7 +1399,7 @@ impl<'r> FromRequest<'r> for ClientVersion {
             err_handler!("Invalid Bitwarden-Client-Version header provided")
         };
 
-        Outcome::Success(ClientVersion(version))
+        Outcome::Success(Self(version))
     }
 }
 
@@ -1414,9 +1415,9 @@ pub enum AuthMethod {
 impl AuthMethod {
     pub fn scope(&self) -> String {
         match self {
-            AuthMethod::OrgApiKey => "api.organization".to_owned(),
-            AuthMethod::UserApiKey => "api".to_owned(),
-            AuthMethod::Password | AuthMethod::Sso => "api offline_access".to_owned(),
+            Self::OrgApiKey => "api.organization".to_owned(),
+            Self::UserApiKey => "api".to_owned(),
+            Self::Password | Self::Sso => "api offline_access".to_owned(),
         }
     }
 
@@ -1486,9 +1487,9 @@ impl AuthTokens {
         let access_claims = LoginJwtClaims::default(device, user, &sub, client_id);
 
         let validity = if device.is_mobile() {
-            *MOBILE_REFRESH_VALIDITY
+            MOBILE_REFRESH_VALIDITY
         } else {
-            *DEFAULT_REFRESH_VALIDITY
+            DEFAULT_REFRESH_VALIDITY
         };
 
         let refresh_claims = RefreshJwtClaims {

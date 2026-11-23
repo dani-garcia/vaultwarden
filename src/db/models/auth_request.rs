@@ -59,9 +59,9 @@ pub enum AuthRequestType {
 impl AuthRequestType {
     pub fn from_i32(value: i32) -> Option<Self> {
         match value {
-            0 => Some(AuthRequestType::AuthenticateAndUnlock),
-            1 => Some(AuthRequestType::Unlock),
-            2 => Some(AuthRequestType::AdminApproval),
+            0 => Some(Self::AuthenticateAndUnlock),
+            1 => Some(Self::Unlock),
+            2 => Some(Self::AdminApproval),
             _ => None,
         }
     }

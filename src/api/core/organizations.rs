@@ -121,8 +121,8 @@ struct OrgData {
     key: String,
     name: String,
     keys: Option<OrgKeyData>,
-    #[allow(dead_code)]
-    plan_type: NumberOrString, // Ignored, always use the same plan
+    #[expect(unused, reason = "Ignored, always use the same plan")]
+    plan_type: NumberOrString,
 }
 
 #[derive(Deserialize, Debug)]
@@ -240,12 +240,14 @@ async fn delete_organization(
     headers: OwnerHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    let mut user = headers.user;
+
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
     let data: PasswordOrOtpData = data.into_inner();
 
-    data.validate(&headers.user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     match Organization::find_by_uuid(&org_id, &conn).await {
         None => err!("Organization not found"),
@@ -595,23 +597,19 @@ async fn post_bulk_access_collections(
         err!("Can't find organization details")
     }
 
-    // The collections and members are checked below, the groups only here.
-    let org_groups = Group::find_by_organization(&org_id, &conn).await;
-    let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
-    if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
-        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id.escape_debug(), org_id))
-    }
-
-    if data.collection_ids.is_empty()
-        || data.collection_ids.iter().collect::<HashSet<_>>().len() != data.collection_ids.len()
+    // As in Bitwarden, missing, repeated or unmanageable collections are Not Found. Invalid groups and members are
+    // checked after them and are a Bad Request.
     {
-        err!("Invalid collection list")
+        let mut seen = HashSet::new();
+        if data.collection_ids.is_empty() || data.collection_ids.iter().any(|id| !seen.insert(id)) {
+            err_code!("One or more collections not found.", Status::NotFound.code)
+        }
     }
 
     let mut collections = Vec::with_capacity(data.collection_ids.len());
     for col_id in &data.collection_ids {
         let Some(collection) = Collection::find_by_uuid_and_org(col_id, &org_id, &conn).await else {
-            err!("Collection not found")
+            err_code!("One or more collections not found.", Status::NotFound.code)
         };
 
         let manageable = if headers.membership.has_type(MembershipType::Custom) {
@@ -622,10 +620,20 @@ async fn post_bulk_access_collections(
             collection.is_manageable_by_user(&headers.membership.user_uuid, &conn).await
         };
         if !manageable {
-            err!("Collection not found", "The current user isn't a manager for this collection")
+            err_code!(
+                "Resource not found.",
+                "The current user isn't a manager for this collection",
+                Status::NotFound.code
+            )
         }
 
         collections.push(collection);
+    }
+
+    let org_groups = Group::find_by_organization(&org_id, &conn).await;
+    let org_group_ids: HashSet<&GroupId> = org_groups.iter().map(|g| &g.uuid).collect();
+    if let Some(g) = data.groups.iter().find(|g| !org_group_ids.contains(&g.id)) {
+        err!("Invalid group", format!("Group {} does not belong to organization {}!", g.id.escape_debug(), org_id))
     }
 
     let mut members = Vec::with_capacity(data.users.len());
@@ -694,11 +702,7 @@ async fn put_organization_collection_update(
     };
 
     collection.name = data.name;
-    collection.external_id = match data.external_id {
-        Some(external_id) if !external_id.trim().is_empty() => Some(external_id),
-        _ => None,
-    };
-
+    collection.external_id = data.external_id.filter(|e| !e.trim().is_empty());
     collection.save(&conn).await?;
 
     log_event(
@@ -1317,7 +1321,7 @@ async fn send_invite(
             if Group::find_by_uuid_and_org(group_id, &org_id, &conn).await.is_none() {
                 err!("Group not found in Organization")
             }
-            let mut group_entry = GroupUser::new(group_id.clone(), new_member.uuid.clone());
+            let group_entry = GroupUser::new(group_id.clone(), new_member.uuid.clone());
             group_entry.save(&conn).await?;
         }
     }
@@ -1797,7 +1801,7 @@ async fn edit_member(
         if Group::find_by_uuid_and_org(group_id, &org_id, &conn).await.is_none() {
             err!("Group not found in Organization")
         }
-        let mut group_entry = GroupUser::new(group_id.clone(), member_to_edit.uuid.clone());
+        let group_entry = GroupUser::new(group_id.clone(), member_to_edit.uuid.clone());
         group_entry.save(&conn).await?;
     }
 
@@ -2279,13 +2283,7 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
     };
     let user_collections: HashMap<CollectionId, Collection> = collections
         .into_iter()
-        .filter_map(|c| {
-            if data.collection_ids.contains(&c.uuid) {
-                Some((c.uuid.clone(), c))
-            } else {
-                None
-            }
-        })
+        .filter_map(|c| data.collection_ids.contains(&c.uuid).then(|| (c.uuid.clone(), c)))
         .collect();
 
     // Verify if all the collections requested exists and are writable for the user, else abort
@@ -2325,7 +2323,10 @@ async fn list_policies(org_id: OrganizationId, headers: ManagePoliciesHeaders, c
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let policies = OrgPolicy::find_by_org(&org_id, &conn).await;
+    let mut policies = OrgPolicy::find_by_org(&org_id, &conn).await;
+    if !policies.iter().any(|p| p.has_type(OrgPolicyType::SendControls)) {
+        policies.push(OrgPolicy::synthesize_send_controls(&org_id, &policies));
+    }
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 
     Ok(Json(json!({
@@ -2398,6 +2399,9 @@ async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: ManagePolici
 
     let policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await {
         Some(p) => p,
+        None if pol_type_enum == OrgPolicyType::SendControls => {
+            OrgPolicy::synthesize_send_controls(&org_id, &OrgPolicy::find_by_org(&org_id, &conn).await)
+        }
         None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "null".to_owned()),
     };
 
@@ -2466,11 +2470,9 @@ async fn put_policy(
     // Maybe we want to enable this by default in the future, but currently it is disabled by default.
     if CONFIG.enforce_single_org_with_reset_pw_policy() {
         if pol_type_enum == OrgPolicyType::ResetPassword && data.enabled {
-            let single_org_policy_enabled =
-                match OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::SingleOrg, &conn).await {
-                    Some(p) => p.enabled,
-                    None => false,
-                };
+            let single_org_policy_enabled = OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::SingleOrg, &conn)
+                .await
+                .is_some_and(|p| p.enabled);
 
             if !single_org_policy_enabled {
                 err!("Single Organization policy is not enabled. It is mandatory for this policy to be enabled.")
@@ -2479,11 +2481,9 @@ async fn put_policy(
 
         // Also prevent the Single Org Policy to be disabled if the Reset Password policy is enabled
         if pol_type_enum == OrgPolicyType::SingleOrg && !data.enabled {
-            let reset_pw_policy_enabled =
-                match OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::ResetPassword, &conn).await {
-                    Some(p) => p.enabled,
-                    None => false,
-                };
+            let reset_pw_policy_enabled = OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::ResetPassword, &conn)
+                .await
+                .is_some_and(|p| p.enabled);
 
             if reset_pw_policy_enabled {
                 err!("Account recovery policy is enabled. It is not allowed to disable this policy.")
@@ -2543,13 +2543,15 @@ async fn put_policy(
             .await?;
     }
 
+    let policy_data = OrgPolicy::send_policy_data(pol_type_enum, data.data)?;
+
     let mut policy = match current_policy {
         Some(p) => p,
         None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "{}".to_owned()),
     };
 
     policy.enabled = data.enabled;
-    policy.data = serde_json::to_string(&data.data)?;
+    policy.data = serde_json::to_string(&policy_data)?;
     policy.save(&conn).await?;
 
     log_event(
@@ -2562,6 +2564,8 @@ async fn put_policy(
         &conn,
     )
     .await;
+
+    OrgPolicy::sync_send_policies(&policy, &conn).await?;
 
     Ok(Json(policy.to_json()))
 }
@@ -2578,8 +2582,9 @@ async fn enforce_single_org_policy_for_org(
         // Later membership activation still checks the enabled policy independently.
         if member.atype < MembershipType::Admin
             && member.user_uuid != *acting_user_id
-            && member.status != MembershipStatus::Invited as i32
-            && Membership::count_accepted_and_confirmed_by_user(&member.user_uuid, &member.org_uuid, conn).await > 0
+            && (member.has_status(MembershipStatus::Accepted) || member.has_status(MembershipStatus::Confirmed))
+            && Membership::count_accepted_confirmed_or_revoked_by_user(&member.user_uuid, &member.org_uuid, conn).await
+                > 0
         {
             if CONFIG.mail_enabled() {
                 let org = Organization::find_by_uuid(&member.org_uuid, conn).await.unwrap();
@@ -2901,6 +2906,14 @@ async fn get_groups_data(
             || may_assign_collection_access(&headers.membership, &conn).await
     };
     if !allowed {
+        // Bitwarden's permission requirement on the details answers Forbidden
+        if details {
+            err_code!(
+                "You don't have permission to call this endpoint",
+                "User does not have access",
+                Status::Forbidden.code
+            );
+        }
         err_code!("Resource not found.", "User does not have access", Status::NotFound.code);
     }
 
@@ -3088,12 +3101,12 @@ async fn add_update_group(
     group.save(conn).await?;
 
     for col_selection in collections {
-        let mut collection_group = col_selection.to_collection_group(group.uuid.clone());
+        let collection_group = col_selection.to_collection_group(group.uuid.clone());
         collection_group.save(&org_id, conn).await?;
     }
 
     for assigned_member in members {
-        let mut user_entry = GroupUser::new(group.uuid.clone(), assigned_member.clone());
+        let user_entry = GroupUser::new(group.uuid.clone(), assigned_member.clone());
         user_entry.save(conn).await?;
 
         log_event(
@@ -3242,8 +3255,8 @@ async fn get_group_members(
 
     let group_members: Vec<MembershipId> = GroupUser::find_by_group(&group_id, &org_id, &conn)
         .await
-        .iter()
-        .map(|entry| entry.users_organizations_uuid.clone())
+        .into_iter()
+        .map(|entry| entry.users_organizations_uuid)
         .collect();
 
     Ok(Json(json!(group_members)))
@@ -3426,8 +3439,15 @@ async fn recover_account(
         TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
         Device::clear_twofactor_remember_by_user(&user.uuid, &conn).await?;
         if !fallback_2fa_email || two_factor::email::find_and_activate_email_2fa(&user.uuid, &conn).await.is_err() {
-            two_factor::enforce_2fa_policy(&user, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-                .await?;
+            two_factor::enforce_2fa_policy(
+                &user,
+                &headers.user.uuid,
+                headers.device.atype,
+                &headers.ip.ip,
+                true,
+                &conn,
+            )
+            .await?;
         }
     }
 
@@ -3705,22 +3725,18 @@ async fn put_reset_password_enrollment(
     data: Json<OrganizationUserResetPasswordEnrollmentRequest>,
     conn: DbConn,
 ) -> EmptyResult {
-    if user_id != headers.user.uuid {
+    let mut membership = headers.membership;
+    let mut user = headers.user;
+
+    if user_id != user.uuid {
         err!("User to enroll isn't member of required organization", "The user_id and acting user do not match");
     }
-
-    let mut membership = headers.membership;
 
     check_reset_password_applicable(&org_id, &conn).await?;
 
     let reset_request = data.into_inner();
 
-    let reset_password_key = match reset_request.reset_password_key {
-        None => None,
-        Some(ref key) if key.is_empty() => None,
-        Some(key) => Some(key),
-    };
-
+    let reset_password_key = reset_request.reset_password_key.filter(|k| !k.is_empty());
     if reset_password_key.is_none() && OrgPolicy::org_is_reset_password_auto_enroll(&org_id, &conn).await {
         err!("Reset password can't be withdrawn due to an enterprise policy");
     }
@@ -3729,14 +3745,14 @@ async fn put_reset_password_enrollment(
     // clients send nothing but the key when they enroll as part of that flow. Upstream carves out the
     // same exception, keyed on the organization's SSO configuration rather than a server-wide setting.
     // https://github.com/bitwarden/server/blob/main/src/Api/AdminConsole/Controllers/OrganizationUsersController.cs
-    let trusted_device_enrollment = CONFIG.sso_trusted_device_encryption() && headers.user.password_hash.is_empty();
+    let trusted_device_enrollment = CONFIG.sso_trusted_device_encryption() && user.password_hash.is_empty();
 
     if reset_password_key.is_some() && !trusted_device_enrollment {
         PasswordOrOtpData {
             master_password_hash: reset_request.master_password_hash,
             otp: reset_request.otp,
         }
-        .validate(&headers.user, true, &conn)
+        .validate(&mut user, true, &conn)
         .await?;
     }
 
@@ -3752,8 +3768,8 @@ async fn put_reset_password_enrollment(
     // only thing proving the address belongs to the account.
     if enrolled && trusted_device_enrollment && membership.status == MembershipStatus::Invited as i32 {
         // Do not leave the open invitation behind, it would keep the address signup-eligible.
-        Invitation::take(&headers.user.email, &conn).await;
-        accept_org_invite(&headers.user, membership, reset_password_key, &conn).await?;
+        Invitation::take(&user.email, &conn).await;
+        accept_org_invite(&user, membership, reset_password_key, &conn).await?;
     } else {
         membership.reset_password_key = reset_password_key;
         membership.save(&conn).await?;
@@ -3767,8 +3783,7 @@ async fn put_reset_password_enrollment(
         EventType::OrganizationUserResetPasswordWithdraw
     };
 
-    log_event(event_type, &membership_id, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-        .await;
+    log_event(event_type, &membership_id, &org_id, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(())
 }
@@ -4086,10 +4101,10 @@ async fn api_key(
         err!("Organization not found", "Organization id's do not match");
     }
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
     // Validate the owner users password/otp
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     let org_api_key = if let Some(mut org_api_key) = OrganizationApiKey::find_by_org_uuid(org_id, &conn).await {
         if rotate {
