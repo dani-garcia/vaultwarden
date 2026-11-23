@@ -1065,3 +1065,25 @@ mod encrypted_string_tests {
         assert!(!valid(""));
     }
 }
+
+#[cfg(test)]
+mod display_size_tests {
+    use super::get_display_size;
+
+    #[test]
+    fn sizes_format_to_the_largest_unit_that_fits() {
+        assert_eq!(get_display_size(0), "0.00 bytes");
+        assert_eq!(get_display_size(512), "512.00 bytes");
+        // Exactly at the KB boundary is not greater than 1024, so it stays in bytes
+        assert_eq!(get_display_size(1024), "1024.00 bytes");
+        assert_eq!(get_display_size(1536), "1.50 KB");
+        assert_eq!(get_display_size(2 * 1024 * 1024), "2.00 MB");
+        assert_eq!(get_display_size(2050 * 1024 * 1024 * 1024), "2.00 TB");
+    }
+
+    #[test]
+    fn huge_sizes_stop_at_the_last_unit() {
+        // i64::MAX is 8192 PB; dividing further would run off the units table
+        assert_eq!(get_display_size(i64::MAX), "8192.00 PB");
+    }
+}

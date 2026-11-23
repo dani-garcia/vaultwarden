@@ -388,3 +388,51 @@ pub struct DeviceId(String);
 
 #[derive(Clone, Debug, DieselNewType, Display, From, FromForm, Serialize, Deserialize, UuidFromParam)]
 pub struct PushId(pub String);
+
+#[cfg(test)]
+mod tests {
+    use super::DeviceType;
+
+    #[test]
+    fn from_i32_maps_every_known_client_value() {
+        let expected = [
+            (0, DeviceType::Android),
+            (1, DeviceType::Ios),
+            (2, DeviceType::ChromeExtension),
+            (3, DeviceType::FirefoxExtension),
+            (4, DeviceType::OperaExtension),
+            (5, DeviceType::EdgeExtension),
+            (6, DeviceType::WindowsDesktop),
+            (7, DeviceType::MacOsDesktop),
+            (8, DeviceType::LinuxDesktop),
+            (9, DeviceType::ChromeBrowser),
+            (10, DeviceType::FirefoxBrowser),
+            (11, DeviceType::OperaBrowser),
+            (12, DeviceType::EdgeBrowser),
+            (13, DeviceType::IEBrowser),
+            (14, DeviceType::UnknownBrowser),
+            (15, DeviceType::AndroidAmazon),
+            (16, DeviceType::Uwp),
+            (17, DeviceType::SafariBrowser),
+            (18, DeviceType::VivaldiBrowser),
+            (19, DeviceType::VivaldiExtension),
+            (20, DeviceType::SafariExtension),
+            (21, DeviceType::Sdk),
+            (22, DeviceType::Server),
+            (23, DeviceType::WindowsCLI),
+            (24, DeviceType::MacOsCLI),
+            (25, DeviceType::LinuxCLI),
+            (26, DeviceType::DuckDuckGoBrowser),
+        ];
+        for (value, expected) in expected {
+            assert_eq!(DeviceType::from_i32(value) as i32, expected as i32);
+        }
+    }
+
+    #[test]
+    fn from_i32_maps_unknown_values_to_unknown_browser() {
+        for value in [27, i32::MAX, -1, i32::MIN] {
+            assert_eq!(DeviceType::from_i32(value) as i32, DeviceType::UnknownBrowser as i32);
+        }
+    }
+}
