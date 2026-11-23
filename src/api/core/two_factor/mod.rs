@@ -13,8 +13,8 @@ use crate::{
     db::{
         DbConn, DbPool,
         models::{
-            Device, DeviceType, EventType, Membership, MembershipType, OrgPolicyType, Organization, OrganizationId,
-            TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
+            Device, DeviceType, EventType, Membership, MembershipStatus, MembershipType, OrgPolicyType, Organization,
+            OrganizationId, TwoFactor, TwoFactorIncomplete, TwoFactorType, User, UserId,
         },
     },
     mail,
@@ -104,9 +104,9 @@ async fn get_twofactor(headers: Headers, conn: DbConn) -> Json<Value> {
 #[post("/two-factor/get-recover", data = "<data>")]
 async fn get_recover(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     Ok(Json(json!({
         "code": user.totp_recover,
@@ -127,21 +127,26 @@ async fn generate_recover_code(user: &mut User, conn: &DbConn) {
 pub async fn check_2fa_state(user: &User, device_type: i32, ip: &std::net::IpAddr, conn: &DbConn) -> EmptyResult {
     Device::clear_twofactor_remember_by_user(&user.uuid, conn).await?;
     if TwoFactor::find_by_user(&user.uuid, conn).await.is_empty() {
-        enforce_2fa_policy(user, &user.uuid, device_type, ip, conn).await?;
+        enforce_2fa_policy(user, &user.uuid, device_type, ip, true, conn).await?;
     }
+
     Ok(())
 }
 
+/// Revokes the user's memberships that the 2FA policy no longer allows. With `accepted_too`, which is for removing the
+/// user's last 2FA method, accepted memberships are revoked as well, as in Bitwarden. Otherwise only confirmed ones
+/// are: an accepted member still has to set up 2FA before being confirmed.
 pub async fn enforce_2fa_policy(
     user: &User,
     act_user_id: &UserId,
     device_type: i32,
     ip: &std::net::IpAddr,
+    accepted_too: bool,
     conn: &DbConn,
 ) -> EmptyResult {
     for member in Membership::find_by_user_and_policy(&user.uuid, OrgPolicyType::TwoFactorAuthentication, conn).await {
         // Policy only applies to non-Owner/non-Admin members who have accepted joining the org
-        if member.atype < MembershipType::Admin {
+        if member.atype < MembershipType::Admin && (accepted_too || member.has_status(MembershipStatus::Confirmed)) {
             if CONFIG.mail_enabled() {
                 let org = Organization::find_by_uuid(&member.org_uuid, conn).await.unwrap();
                 mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
@@ -151,7 +156,7 @@ pub async fn enforce_2fa_policy(
             member.save(conn).await?;
 
             log_event(
-                EventType::OrganizationUserRevoked,
+                EventType::OrganizationUserRevokedTwoFactorNonCompliance,
                 &member.uuid,
                 &member.org_uuid,
                 act_user_id,
@@ -174,9 +179,14 @@ pub async fn enforce_2fa_policy_for_org(
     conn: &DbConn,
 ) -> EmptyResult {
     let org = Organization::find_by_uuid(org_id, conn).await.unwrap();
-    for member in Membership::find_confirmed_by_org(org_id, conn).await {
-        // Don't enforce the policy for Admins and Owners.
-        if member.atype < MembershipType::Admin && TwoFactor::find_by_user(&member.user_uuid, conn).await.is_empty() {
+    for member in Membership::find_by_org(org_id, conn).await {
+        // As in Bitwarden, accepted and confirmed members lose access, except Owners, Admins and the member enabling
+        // the policy.
+        if (member.has_status(MembershipStatus::Accepted) || member.has_status(MembershipStatus::Confirmed))
+            && member.atype < MembershipType::Admin
+            && member.user_uuid != *act_user_id
+            && TwoFactor::find_by_user(&member.user_uuid, conn).await.is_empty()
+        {
             if CONFIG.mail_enabled() {
                 let user = User::find_by_uuid(&member.user_uuid, conn).await.unwrap();
                 mail::send_2fa_removed_from_org(&user.email, &org.name).await?;
@@ -185,8 +195,16 @@ pub async fn enforce_2fa_policy_for_org(
             member.revoke();
             member.save(conn).await?;
 
-            log_event(EventType::OrganizationUserRevoked, &member.uuid, org_id, act_user_id, device_type, ip, conn)
-                .await;
+            log_event(
+                EventType::OrganizationUserRevokedTwoFactorNonCompliance,
+                &member.uuid,
+                org_id,
+                act_user_id,
+                device_type,
+                ip,
+                conn,
+            )
+            .await;
         }
     }
 

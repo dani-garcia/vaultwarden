@@ -20,9 +20,9 @@ pub fn routes() -> Vec<Route> {
 
 #[post("/two-factor/get-authenticator", data = "<data>")]
 async fn generate_authenticator(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&mut user, false, &conn).await?;
 
     let twofactor = TwoFactor::find_by_user_and_type(&user.uuid, TwoFactorType::Authenticator, &conn).await;
 
@@ -116,10 +116,9 @@ pub async fn validate_totp_code(
         err!("Invalid TOTP secret")
     };
 
-    let mut twofactor = match TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Authenticator, conn).await {
-        Some(tf) => tf,
-        _ => TwoFactor::new(user_id.clone(), TwoFactorType::Authenticator, secret.to_owned()),
-    };
+    let mut twofactor = TwoFactor::find_by_user_and_type(user_id, TwoFactorType::Authenticator, conn)
+        .await
+        .unwrap_or_else(|| TwoFactor::new(user_id.clone(), TwoFactorType::Authenticator, secret.to_owned()));
 
     // The amount of steps back and forward in time
     // Also check if we need to disable time drifted TOTP codes.
