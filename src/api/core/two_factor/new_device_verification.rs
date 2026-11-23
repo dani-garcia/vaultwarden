@@ -296,7 +296,7 @@ async fn resend_new_device_otp(
         return Ok(());
     }
 
-    let Some(user) = User::find_by_mail(data.email.trim(), &conn).await else {
+    let Some(mut user) = User::find_by_mail(data.email.trim(), &conn).await else {
         return Ok(());
     };
 
@@ -308,7 +308,7 @@ async fn resend_new_device_otp(
         master_password_hash: data.master_password_hash,
         otp: data.otp,
     };
-    if secret.validate(&user, true, &conn).await.is_err() {
+    if secret.validate(&mut user, true, &conn).await.is_err() {
         return Ok(());
     }
 
@@ -356,7 +356,7 @@ async fn post_verify_devices(data: Json<SetVerifyDevicesData>, headers: Headers,
         master_password_hash: data.master_password_hash,
         otp: data.otp,
     }
-    .validate(&user, true, &conn)
+    .validate(&mut user, true, &conn)
     .await?;
 
     user.verify_devices = data.verify_devices;
