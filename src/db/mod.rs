@@ -1,7 +1,10 @@
 mod query_logger;
 
 use std::{
-    sync::{Arc, OnceLock},
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
@@ -123,6 +126,7 @@ pub static ACTIVE_DB_TYPE: OnceLock<DbConnType> = OnceLock::new();
 pub struct DbConn {
     conn: Arc<Mutex<Option<PooledConnection<DbConnManager>>>>,
     permit: Option<OwnedSemaphorePermit>,
+    transaction_open: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -150,6 +154,7 @@ impl Drop for DbConn {
     fn drop(&mut self) {
         let conn = Arc::clone(&self.conn);
         let permit = self.permit.take();
+        let transaction_open = self.transaction_open.load(Ordering::Acquire);
 
         // Since connection can't be on the stack in an async fn during an
         // await, we have to spawn a new blocking-safe thread...
@@ -157,7 +162,13 @@ impl Drop for DbConn {
             // And then re-enter the runtime to wait on the async mutex, but in a blocking fashion.
             let mut conn = tokio::runtime::Handle::current().block_on(conn.lock_owned());
 
-            if let Some(conn) = conn.take() {
+            if let Some(mut conn) = conn.take() {
+                if transaction_open {
+                    // A cancelled request must not return an open transaction to the pool.
+                    if let Err(error) = conn.batch_execute("ROLLBACK") {
+                        error!("Failed to roll back a cancelled database transaction: {error}");
+                    }
+                }
                 drop(conn);
             }
 
@@ -225,7 +236,7 @@ impl DbPool {
             error!("Tried to set the active database connection type more than once.");
         }
 
-        Ok(DbPool {
+        Ok(Self {
             pool: Some(pool),
             semaphore: Arc::new(Semaphore::new(max_conns as usize)),
         })
@@ -248,6 +259,7 @@ impl DbPool {
         Ok(DbConn {
             conn: Arc::new(Mutex::new(Some(c))),
             permit: Some(permit),
+            transaction_open: AtomicBool::new(false),
         })
     }
 }
@@ -255,25 +267,25 @@ impl DbPool {
 impl DbConnType {
     pub fn from_url(url: &str) -> Result<Self, Error> {
         // Mysql
-        if url.len() > 6 && &url[..6] == "mysql:" {
+        if url.starts_with("mysql:") {
             #[cfg(mysql)]
-            return Ok(DbConnType::Mysql);
+            return Ok(Self::Mysql);
 
             #[cfg(not(mysql))]
             err!("`DATABASE_URL` is a MySQL URL, but the 'mysql' feature is not enabled")
 
         // Postgresql
-        } else if url.len() > 11 && (&url[..11] == "postgresql:" || &url[..9] == "postgres:") {
+        } else if url.starts_with("postgresql:") || url.starts_with("postgres:") {
             #[cfg(postgresql)]
-            return Ok(DbConnType::Postgresql);
+            return Ok(Self::Postgresql);
 
             #[cfg(not(postgresql))]
             err!("`DATABASE_URL` is a PostgreSQL URL, but the 'postgresql' feature is not enabled")
 
         // Sqlite (explicit)
-        } else if url.len() > 7 && &url[..7] == "sqlite:" {
+        } else if url.starts_with("sqlite:") {
             #[cfg(sqlite)]
-            return Ok(DbConnType::Sqlite);
+            return Ok(Self::Sqlite);
 
             #[cfg(not(sqlite))]
             err!("`DATABASE_URL` is a SQLite URL, but the 'sqlite' feature is not enabled")
@@ -284,7 +296,7 @@ impl DbConnType {
         #[cfg(sqlite)]
         {
             if std::path::Path::new(url).exists() {
-                return Ok(DbConnType::Sqlite);
+                return Ok(Self::Sqlite);
             }
             err!(format!(
                 "`DATABASE_URL` does not match any known database scheme (mysql://, postgresql://, sqlite://) \
@@ -320,6 +332,29 @@ impl DbConnType {
 }
 
 impl DbConn {
+    /// Run asynchronous model calls on this request's pooled connection in one transaction.
+    /// Send external notifications only after this returns successfully.
+    pub async fn transaction<F, Fut, T>(&self, operation: F) -> Result<T, Error>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, Error>>,
+    {
+        self.run(|conn| conn.batch_execute("BEGIN")).await.map_res("Error starting database transaction")?;
+        self.transaction_open.store(true, Ordering::Release);
+        let result = operation().await;
+        if result.is_ok() {
+            let committed = self.run(|conn| conn.batch_execute("COMMIT")).await;
+            let closed = committed.is_ok() || self.run(|conn| conn.batch_execute("ROLLBACK")).await.is_ok();
+            if closed {
+                self.transaction_open.store(false, Ordering::Release);
+            }
+            committed.map_res("Error committing database transaction")?;
+        } else if self.run(|conn| conn.batch_execute("ROLLBACK")).await.is_ok() {
+            self.transaction_open.store(false, Ordering::Release);
+        }
+        result
+    }
+
     pub async fn run<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut DbConnInner) -> R + Send,
@@ -402,8 +437,6 @@ pub mod models;
 /// MySQL/MariaDB and PostgreSQL are not supported.
 #[cfg(sqlite)]
 pub fn backup_sqlite() -> Result<String, Error> {
-    use diesel::Connection;
-
     let db_url = CONFIG.database_url();
     if DbConnType::from_url(&CONFIG.database_url()).is_ok_and(|t| t == DbConnType::Sqlite) {
         // Strip the sqlite:// prefix if present to get the raw file path
@@ -532,5 +565,268 @@ mod postgresql_migrations {
 
         connection.run_pending_migrations(MIGRATIONS).expect("Error running migrations");
         Ok(())
+    }
+}
+
+/// A throwaway SQLite database with the real schema, for tests that need to run queries.
+#[cfg(all(test, sqlite))]
+pub mod test_db {
+    use super::{DbConn, DbConnManager, sqlite_migrations::MIGRATIONS};
+    use diesel::{Connection, connection::SimpleConnection, r2d2::Pool, sqlite::SqliteConnection};
+    use diesel_migrations::MigrationHarness;
+    use std::sync::{Arc, atomic::AtomicBool};
+    use tokio::sync::Mutex;
+
+    pub struct TestDb {
+        pool: Pool<DbConnManager>,
+        // Keep the named in-memory database alive across pooled connections.
+        _keeper: SqliteConnection,
+    }
+
+    impl TestDb {
+        fn new() -> Self {
+            let url = format!("sqlite://{}?mode=memory&cache=shared", crate::util::get_uuid());
+            let mut keeper = SqliteConnection::establish(&url).unwrap();
+            keeper.run_pending_migrations(MIGRATIONS).unwrap();
+            let pool = Pool::builder().max_size(2).build(DbConnManager::new(&url)).unwrap();
+            Self {
+                pool,
+                _keeper: keeper,
+            }
+        }
+
+        pub fn conn(&self) -> DbConn {
+            DbConn {
+                conn: Arc::new(Mutex::new(Some(self.pool.get().unwrap()))),
+                permit: None,
+                transaction_open: AtomicBool::new(false),
+            }
+        }
+    }
+
+    // CONFIG must initialize in a child process: the DNS bootstrap test needs it uninitialized.
+    pub fn run(test: impl AsyncFnOnce(&TestDb)) {
+        if std::env::var_os("VAULTWARDEN_ISOLATED_CONFIG_TEST").is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", std::thread::current().name().unwrap(), "--nocapture"])
+                .env("VAULTWARDEN_ISOLATED_CONFIG_TEST", "1")
+                .env("DATABASE_URL", "sqlite://:memory:")
+                // Keep a local `.env` out of the tests, such as SMTP settings that would send mail
+                .env(
+                    "ENV_FILE",
+                    if cfg!(windows) {
+                        "NUL"
+                    } else {
+                        "/dev/null"
+                    },
+                )
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        // DbConn::run uses block_in_place, requiring a multi-threaded runtime.
+        tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap().block_on(async {
+            super::models::test_flag::CUSTOM_ROLES_ENABLED.set(Some(true));
+            test(&TestDb::new()).await;
+        });
+    }
+
+    #[test]
+    fn custom_role_migration_preserves_memberships_and_guards_downgrade() {
+        use super::schema::users_organizations::dsl::*;
+        use diesel::{migration::MigrationSource, prelude::*};
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        for migration in conn.pending_migrations(MIGRATIONS).unwrap() {
+            if migration.name().version().to_string() == "20261010120000" {
+                break;
+            }
+            conn.run_migration(&migration).unwrap();
+        }
+        conn.batch_execute(
+            "PRAGMA foreign_keys=OFF;
+            INSERT INTO organizations (uuid,name,billing_email) VALUES ('org','Org','a@b');
+            INSERT INTO users_organizations (uuid,user_uuid,org_uuid,access_all,akey,status,atype) VALUES
+            ('0','0','org',TRUE,'key',2,0), ('1','1','org',TRUE,'key',2,1),
+            ('2','2','org',FALSE,'key',1,2), ('3','3','org',FALSE,'key',2,3), ('4','4','org',TRUE,'key',2,3);",
+        )
+        .unwrap();
+        let rows = |conn: &mut SqliteConnection| {
+            users_organizations
+                .select((uuid, user_uuid, org_uuid, access_all, akey, status, atype))
+                .order(uuid)
+                .load::<(String, String, String, bool, String, i32, i32)>(conn)
+                .unwrap()
+        };
+        let before = rows(&mut conn);
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        assert_eq!(rows(&mut conn), before);
+        let grants = |conn: &mut SqliteConnection| {
+            diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>(
+                "(SELECT COUNT(*) FROM users_organizations WHERE manage_users OR manage_groups OR manage_policies
+                OR create_new_collections OR edit_any_collection OR delete_any_collection
+                OR access_event_logs OR access_import_export OR access_reports)",
+            ))
+            .get_result::<i64>(conn)
+            .unwrap()
+        };
+        assert_eq!(grants(&mut conn), 0);
+        let migration = MigrationSource::<diesel::sqlite::Sqlite>::migrations(&MIGRATIONS)
+            .unwrap()
+            .into_iter()
+            .find(|m| m.name().version().to_string() == "20261010120000")
+            .unwrap();
+        for member_status in [1, 2] {
+            conn.batch_execute(&format!(
+                "UPDATE users_organizations SET atype=4,manage_users=TRUE,status={member_status} WHERE uuid='2'"
+            ))
+            .unwrap();
+            let custom = rows(&mut conn);
+            assert!(conn.revert_migration(&*migration).is_err());
+            assert_eq!(rows(&mut conn), custom);
+            assert!(users_organizations.filter(uuid.eq("2")).select(manage_users).first::<bool>(&mut conn).unwrap());
+        }
+        conn.batch_execute("UPDATE users_organizations SET atype=2,manage_users=FALSE,status=1 WHERE uuid='2'")
+            .unwrap();
+        conn.revert_migration(&*migration).unwrap();
+        assert!(diesel::sql_query("SELECT manage_users FROM users_organizations").execute(&mut conn).is_err());
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        assert_eq!(grants(&mut conn), 0);
+        assert_eq!(rows(&mut conn), before);
+    }
+
+    use super::models::{Collection, CustomPermission, Membership, MembershipType, Organization, OrganizationId, User};
+
+    pub async fn organization(conn: &DbConn) -> Organization {
+        let org = Organization::new("Org".into(), "billing@example.com", None, None);
+        org.save(conn).await.unwrap();
+        org
+    }
+
+    pub async fn member(
+        conn: &DbConn,
+        org: &OrganizationId,
+        role: MembershipType,
+        permissions: &[CustomPermission],
+    ) -> (User, Membership) {
+        let mut user = User::new(&format!("{}@example.com", crate::util::get_uuid()), None);
+        user.password_hash = b"existing-account".to_vec();
+        user.save(conn).await.unwrap();
+        let mut member = Membership::new(user.uuid.clone(), org.clone(), None);
+        member.set_type(role);
+        member.status = 2;
+        member.set_custom_permissions(&permissions.iter().copied().collect());
+        member.save(conn).await.unwrap();
+        (user, member)
+    }
+
+    pub async fn custom_member(conn: &DbConn, permission: CustomPermission) -> (Organization, User, Membership) {
+        let org = organization(conn).await;
+        let (user, member) = member(conn, &org.uuid, MembershipType::Custom, &[permission]).await;
+        (org, user, member)
+    }
+
+    pub async fn collection(conn: &DbConn, org: &OrganizationId) -> Collection {
+        let collection = Collection::new(org.clone(), "Collection".into(), None);
+        collection.save(conn).await.unwrap();
+        collection
+    }
+
+    #[test]
+    fn transactions_rollback_before_connection_reuse_and_commit_success() {
+        use crate::error::MapResult;
+        use diesel::RunQueryDsl;
+        run(async |db| {
+            let conn = db.conn();
+            conn.run(|c| c.batch_execute("CREATE TABLE probe (id INTEGER PRIMARY KEY)")).await.unwrap();
+            for (sql, expected) in [
+                ("INSERT INTO probe VALUES (1); INSERT INTO probe VALUES (1)", 0_i64),
+                ("INSERT INTO probe VALUES (1)", 1),
+            ] {
+                let result: Result<(), super::Error> = conn
+                    .transaction(async || conn.run(move |c| c.batch_execute(sql)).await.map_res("Insert failed"))
+                    .await;
+                assert_eq!(result.is_ok(), expected == 1);
+                let count: i64 = conn
+                    .run(|c| {
+                        diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>("(SELECT COUNT(*) FROM probe)"))
+                            .get_result(c)
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(count, expected);
+                // The same live connection must accept another transaction, before DbConn::drop can help.
+                conn.run(|c| c.batch_execute("BEGIN; ROLLBACK")).await.unwrap();
+            }
+        });
+    }
+
+    #[test]
+    fn collection_and_cipher_access_requires_active_membership_and_enabled_groups() {
+        use super::models::{Cipher, CipherAccessScope, CollectionCipher, CollectionUser, test_flag};
+        use crate::{
+            api::core::{CipherSyncData, CipherSyncType},
+            auth::{CollectionAction, custom_member_may},
+        };
+        run(async |db| {
+            let conn = db.conn();
+            let (org, user, mut member) = custom_member(&conn, CustomPermission::EditAnyCollection).await;
+            let collection = collection(&conn, &org.uuid).await;
+            let mut cipher = Cipher::new(2);
+            cipher.name = "Cipher".into();
+            cipher.organization_uuid = Some(org.uuid.clone());
+            cipher.save(&conn).await.unwrap();
+            CollectionCipher::save(&cipher.uuid, &collection.uuid, &conn).await.unwrap();
+            for (enabled, status, allowed) in [(true, 2, true), (false, 2, false), (true, 1, false)] {
+                test_flag::CUSTOM_ROLES_ENABLED.set(Some(enabled));
+                member.status = status;
+                member.save(&conn).await.unwrap();
+                assert!(!cipher.is_accessible_to_user(&user.uuid, CipherAccessScope::User, &conn).await);
+                assert_eq!(
+                    cipher.is_write_accessible_to_user(&user.uuid, CipherAccessScope::OrganizationAdmin, &conn).await,
+                    allowed
+                );
+            }
+            test_flag::CUSTOM_ROLES_ENABLED.set(Some(true));
+            member.status = 2;
+            member.save(&conn).await.unwrap();
+            let foreign = organization(&conn).await;
+            cipher.organization_uuid = Some(foreign.uuid);
+            assert!(!cipher.is_accessible_to_user(&user.uuid, CipherAccessScope::OrganizationAdmin, &conn).await);
+            cipher.organization_uuid = Some(org.uuid.clone());
+            member.set_custom_permissions(&std::collections::HashSet::new());
+            member.save(&conn).await.unwrap();
+            let sql=format!("INSERT INTO groups (uuid,organizations_uuid,name,access_all,creation_date,revision_date)
+                VALUES ('g','{}','Group',FALSE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+                INSERT INTO groups_users (groups_uuid,users_organizations_uuid) VALUES ('g','{}');
+                INSERT INTO collections_groups (collections_uuid,groups_uuid,read_only,hide_passwords,manage) VALUES ('{}','g',FALSE,FALSE,TRUE);",
+                org.uuid,member.uuid,collection.uuid);
+            conn.run(move |c| c.batch_execute(&sql)).await.unwrap();
+            for status in [2, 1, -3, -126] {
+                member.status = status;
+                member.save(&conn).await.unwrap();
+                let allowed = status == 2 && crate::CONFIG.org_groups_enabled();
+                assert_eq!(custom_member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await, allowed);
+                let sync = CipherSyncData::new(&user.uuid, CipherSyncType::User, &conn).await;
+                for cached in [None, Some(&sync)] {
+                    assert_eq!(
+                        cipher
+                            .get_access_restrictions(&user.uuid, CipherAccessScope::User, cached, &conn)
+                            .await
+                            .is_some(),
+                        allowed
+                    );
+                }
+            }
+            member.status = 2;
+            member.save(&conn).await.unwrap();
+            CollectionUser::save(&user.uuid, &collection.uuid, false, false, true, &conn).await.unwrap();
+            assert!(custom_member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await);
+        });
     }
 }

@@ -45,7 +45,7 @@ impl SendTokens {
         })
     }
 
-    fn expected_error(msg: &str, error_type: &str) -> ApiResult<SendTokens> {
+    fn expected_error(msg: &str, error_type: &str) -> ApiResult<Self> {
         let err = json!({
             "kind": "expected_server",
             "error": "invalid_request",
@@ -55,7 +55,7 @@ impl SendTokens {
         Err(Error::new_msg(msg).with_kind(ErrorKind::Json(err)).silent())
     }
 
-    fn invalid_error(msg: &str, error_type: &str, silent: bool) -> ApiResult<SendTokens> {
+    fn invalid_error(msg: &str, error_type: &str, silent: bool) -> ApiResult<Self> {
         let err = json!({
             "kind": "expected_server",
             "error": "invalid_grant",
@@ -70,9 +70,13 @@ impl SendTokens {
         password: Option<String>,
         ip: &ClientIp,
         conn: &DbConn,
-    ) -> ApiResult<SendTokens> {
+    ) -> ApiResult<Self> {
         let Some(send_id) = Self::as_send_id(access_id) else {
-            return Self::invalid_error(&format!("Can't convert {access_id}"), "send_id_invalid", false);
+            return Self::invalid_error(
+                &format!("Can't convert {}", access_id.escape_debug()),
+                "send_id_invalid",
+                false,
+            );
         };
 
         let Some(send) = Send::find_by_uuid(&send_id, conn).await else {
@@ -136,7 +140,7 @@ impl<'r> FromRequest<'r> for SendHeaders {
             err_handler!("Invalid claim")
         };
 
-        Outcome::Success(SendHeaders {
+        Outcome::Success(Self {
             send_id: claims.sub.into(),
         })
     }

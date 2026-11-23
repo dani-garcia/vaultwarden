@@ -238,8 +238,7 @@ impl Serialize for ApiErrorResponse<'_> {
 
         state.serialize_field("message", self.0.message)?;
 
-        let mut validation_errors = std::collections::HashMap::with_capacity(1);
-        validation_errors.insert("", vec![self.0.message]);
+        let validation_errors = std::collections::HashMap::from([("", vec![self.0.message])]);
         state.serialize_field("validationErrors", &validation_errors)?;
 
         let error_model = ErrorModel {
