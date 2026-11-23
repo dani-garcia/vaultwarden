@@ -4,7 +4,12 @@ mod icons;
 mod identity;
 mod notifications;
 mod push;
+#[cfg(feature = "unsafe_test_mode")]
+mod test_seeder;
 mod web;
+
+#[cfg(feature = "unsafe_test_mode")]
+pub use test_seeder::routes as test_seeder_routes;
 
 use rocket::serde::json::Json;
 use serde_json::Value;
@@ -23,7 +28,7 @@ pub use crate::api::{
     icons::routes as icons_routes,
     identity::routes as identity_routes,
     notifications::routes as notifications_routes,
-    notifications::{AnonymousNotify, Notify, UpdateType, WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS},
+    notifications::{AnonymousNotify, LogOutReason, Notify, UpdateType, WS_ANONYMOUS_SUBSCRIPTIONS, WS_USERS},
     push::{
         push_cipher_update, push_folder_update, push_logout, push_logout_to_relay, push_send_update, push_user_update,
         register_push_device, unregister_push_device,
@@ -58,7 +63,7 @@ impl PasswordOrOtpData {
     /// Tokens used via this struct can be used multiple times during the process
     /// First for the validation to continue, after that to enable or validate the following actions
     /// This is different per caller, so it can be adjusted to delete the token or not
-    pub async fn validate(&self, user: &User, delete_if_valid: bool, conn: &DbConn) -> EmptyResult {
+    pub async fn validate(&self, user: &mut User, delete_if_valid: bool, conn: &DbConn) -> EmptyResult {
         use crate::api::core::two_factor::protected_actions::validate_protected_action_otp;
 
         match (self.master_password_hash.as_deref(), self.otp.as_deref()) {
@@ -66,6 +71,8 @@ impl PasswordOrOtpData {
                 if !user.check_valid_password(pw_hash) {
                     err!("Invalid password");
                 }
+
+                user.check_persist_kdf_upgrade(pw_hash, conn).await?;
             }
             (None, Some(otp)) => {
                 validate_protected_action_otp(otp, &user.uuid, delete_if_valid, conn).await?;
@@ -115,7 +122,7 @@ async fn master_password_policy(user: &User, conn: &DbConn) -> Value {
             }
         }))
     } else if CONFIG.sso_enabled() {
-        CONFIG.sso_master_password_policy_value().unwrap_or(json!({}))
+        CONFIG.sso_master_password_policy_value().unwrap_or_else(|| json!({}))
     } else {
         json!({})
     };

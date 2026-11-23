@@ -85,9 +85,16 @@ macro_rules! make_config {
     ( @type $ty:ty, option) => { Option<$ty> };
     ( @type $ty:ty, $id:ident) => { $ty };
 
+    // Options that only builds with the `unsafe_test_mode` feature read
+    ( @test_only test_def ) => { true };
+    ( @test_only $none_action:ident ) => { false };
+
     // Generate the values depending on none_action
     ( @build $value:expr, $config:expr, option, ) => { $value };
     ( @build $value:expr, $config:expr, def, $default:expr ) => { $value.unwrap_or($default) };
+    ( @build $value:expr, $config:expr, test_def, $default:expr ) => {
+        if cfg!(feature = "unsafe_test_mode") { $value.unwrap_or($default) } else { $default }
+    };
     ( @build $value:expr, $config:expr, auto, $default_fn:expr ) => {{
         match $value {
             Some(v) => v,
@@ -143,7 +150,7 @@ macro_rules! make_config {
                 )+)+
                 ];
 
-                #[allow(non_camel_case_types)]
+                #[expect(non_camel_case_types, reason="ConfigBuilder uses different case types")]
                 enum Field {
                 $($(
                     $name,
@@ -275,6 +282,10 @@ macro_rules! make_config {
             }
 
             async fn from_file() -> Result<Option<Self>, Error> {
+                // The Fs operator would create the folder if it doesn't exist, which we never want
+                if !CONFIG_FILE_PARENT_DIR.starts_with("s3://") && !std::path::Path::new(&*CONFIG_FILE_PARENT_DIR).is_dir() {
+                    return Ok(None);
+                }
                 let operator = storage::operator_for_path(&CONFIG_FILE_PARENT_DIR)?;
                 let config_bytes = match operator.read(&CONFIG_FILENAME).await {
                     Ok(bytes) => bytes,
@@ -292,6 +303,22 @@ macro_rules! make_config {
                 $($(
                     if !$editable {
                         self.$name = None;
+                    }
+                )+)+
+            }
+
+            /// Warns about each set `test_def` option in a build without the `unsafe_test_mode` feature, which ignores them.
+            fn warn_test_only_options(&self) {
+                if cfg!(feature = "unsafe_test_mode") {
+                    return;
+                }
+                $($(
+                    if make_config! { @test_only $none_action } && self.$name.is_some() {
+                        // We can't use warn! here because logging isn't setup yet.
+                        println!(
+                            "[WARNING] {} is only read by builds with the `unsafe_test_mode` feature, ignoring it.",
+                            pastey::paste!(stringify!([<$name:upper>]))
+                        );
                     }
                 )+)+
             }
@@ -365,6 +392,8 @@ macro_rules! make_config {
             r#type: &'static str,
             doc: ElementDoc,
             overridden: bool,
+            #[serde(skip)]
+            test_only: bool,
         }
 
         #[derive(Serialize)]
@@ -375,7 +404,6 @@ macro_rules! make_config {
             elements: Vec<ElementData>,
         }
 
-        #[allow(unused)]
         impl Config {
             $($(
                 $(#[doc = $doc])+
@@ -428,10 +456,20 @@ macro_rules! make_config {
                                 r#type: get_form_type(stringify!($ty)),
                                 doc: get_doc(concat!($($doc),+)),
                                 overridden: overridden.contains(&pastey::paste!(stringify!([<$name:upper>]))),
+                                test_only: make_config! { @test_only $none_action },
                             },
                         )+], // End of elements repetition
                     },
                 )+]; // End of groups repetition
+
+                // Options only test builds read aren't shown in the others
+                let data: Vec<GroupData> = data
+                    .into_iter()
+                    .map(|mut group| {
+                        group.elements.retain(|e| !e.test_only || cfg!(feature = "unsafe_test_mode"));
+                        group
+                    })
+                    .collect();
                 serde_json::to_value(data).unwrap()
             }
 
@@ -495,13 +533,11 @@ macro_rules! make_config {
                     let mut json = serde_json::Map::new();
                     $($(
                         json.insert(String::from(stringify!($name)), make_config! { @supportstr $name, cfg.$name, $ty, $none_action });
-                    )+)+;
+                    )+)+
                     // Loop through all privacy sensitive keys and mask them
                     for mask_key in PRIVACY_CONFIG {
-                        if let Some(value) = json.get_mut(*mask_key) {
-                            if let Some(s) = value.as_str() {
-                                *value = privacy_mask(s).into();
-                            }
+                        if let Some(value) = json.get_mut(*mask_key) && let Some(s) = value.as_str() {
+                            *value = privacy_mask(s).into();
                         }
                     }
                     json
@@ -532,6 +568,8 @@ macro_rules! make_config {
 //
 // Where action applied when the value wasn't provided and can be:
 //  def:       Use a default value
+//  test_def:  Use a default value, which only builds with the `unsafe_test_mode` feature let you change. Other builds
+//             warn at startup when it's set, ignore it, and don't show it in the admin panel
 //  auto:      Value is auto generated based on other values
 //  option:    Value is optional
 //  generated: Value is always autogenerated and it's original value ignored
@@ -704,6 +742,8 @@ make_config! {
     client {
         /// Control whether clients onboarding interstitials are suppressed |> post-login welcome dialogs, extension install prompts, setup extension redirects, and premium upsell modals
         client_suppress_onboarding:         bool, true,   def,    false;
+        /// In most cases this value is set by the client |> Will block clients from setting too low of a value in `accounts::post_kdf`
+        client_kdf_iter:                    i32,  false,  test_def, 600_000;
     },
 
     /// Advanced settings
@@ -712,7 +752,7 @@ make_config! {
         /// Set to the string "none" (without quotes), to disable any headers and just use the remote IP
         ip_header:              String, true,   def,    "X-Real-IP".to_owned();
         /// Internal IP header property, used to avoid recomputing each time
-        _ip_header_enabled:     bool,   false,  generated,    |c| &c.ip_header.trim().to_lowercase() != "none";
+        _ip_header_enabled:     bool,   false,  generated,    |c| !c.ip_header.trim().eq_ignore_ascii_case("none");
         /// Trusted proxies |> Which addresses the client IP header is accepted from. Requests from any
         /// other address use the remote IP instead, so a client can't spoof the header.
         /// Either the string "local" (the default, any non-global address, which covers a reverse proxy
@@ -839,6 +879,10 @@ make_config! {
 
         /// Enable groups (BETA!) (Know the risks!) |> Enables groups support for organizations (Currently contains known issues!).
         org_groups_enabled:            bool, false, def, false;
+
+        /// Enable Custom roles (EXPERIMENTAL!) (Know the risks!) |> Enables the in-development Custom member role with granular permissions for organizations.
+        /// Only the permissions this version enforces can be granted. Disabling it again keeps the stored Custom roles, but they grant nothing until it is re-enabled.
+        experimental_custom_roles:     bool, false, def, false;
 
         /// Increase note size limit (Know the risks!) |> Sets the secure note size limit to 100_000 instead of the default 10_000.
         /// WARNING: This could cause issues with clients. Also exports will not work on Bitwarden servers!
@@ -1001,6 +1045,17 @@ fn validate_admin_totp_secret(secret: &str) -> Result<(), Error> {
     Ok(())
 }
 
+fn check_iterations(iterations: i32, key: &str) -> Result<(), Error> {
+    if iterations < 100_000 {
+        #[cfg(feature = "unsafe_test_mode")]
+        println!("[WARNING] {key} should be at least 100000 or higher. The default is 600000!");
+        #[cfg(not(feature = "unsafe_test_mode"))]
+        err!(format!("{key} should be at least 100000 or higher. The default is 600000!"));
+    }
+
+    Ok(())
+}
+
 fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     // Validate connection URL is valid and DB feature is enabled
     #[cfg(sqlite)]
@@ -1035,16 +1090,15 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
         }
     }
 
-    if cfg.password_iterations < 100_000 {
-        err!("PASSWORD_ITERATIONS should be at least 100000 or higher. The default is 600000!");
-    }
+    check_iterations(cfg.password_iterations, "PASSWORD_ITERATIONS")?;
+    check_iterations(cfg.client_kdf_iter, "CLIENT_KDF_ITER")?;
 
     let limit = 256;
-    if cfg.database_max_conns < 1 || cfg.database_max_conns > limit {
+    if !(1..=limit).contains(&cfg.database_max_conns) {
         err!(format!("`DATABASE_MAX_CONNS` contains an invalid value. Ensure it is between 1 and {limit}.",));
     }
 
-    if cfg.database_min_conns < 1 || cfg.database_min_conns > limit {
+    if !(1..=limit).contains(&cfg.database_min_conns) {
         err!(format!("`DATABASE_MIN_CONNS` contains an invalid value. Ensure it is between 1 and {limit}.",));
     }
 
@@ -1463,13 +1517,7 @@ fn extract_url_origin(url: &str) -> String {
 /// Extracts the path from a URL.
 /// All trailing '/' chars are trimmed, even if the path is a lone '/'.
 fn extract_url_path(url: &str) -> String {
-    match Url::parse(url) {
-        Ok(u) => u.path().trim_end_matches('/').to_owned(),
-        Err(_) => {
-            // We already print it in the method above, no need to do it again
-            String::new()
-        }
-    }
+    Url::parse(url).map_or_default(|u| u.path().trim_end_matches('/').to_owned())
 }
 
 fn generate_smtp_img_src(embed_images: bool, domain: &str) -> String {
@@ -1504,10 +1552,7 @@ fn generate_icon_service_url(icon_service: &str) -> String {
 fn generate_icon_service_csp(icon_service: &str, icon_service_url: &str) -> String {
     // We split on the first '{', since that is the variable delimiter for an icon service URL.
     // Everything up until the first '{' should be fixed and can be used as an CSP string.
-    let csp_string = match icon_service_url.split_once('{') {
-        Some((c, _)) => c.to_owned(),
-        None => String::new(),
-    };
+    let csp_string = icon_service_url.split_once('{').map_or_default(|(c, _)| c.to_owned());
 
     // Because Google does a second redirect to there gstatic.com domain, we need to add an extra csp string.
     match icon_service {
@@ -1521,9 +1566,9 @@ fn smtp_convert_deprecated_ssl_options(smtp_ssl: Option<bool>, smtp_explicit_tls
     if smtp_explicit_tls.is_some() || smtp_ssl.is_some() {
         println!("[DEPRECATED]: `SMTP_SSL` or `SMTP_EXPLICIT_TLS` is set. Please use `SMTP_SECURITY` instead.");
     }
-    if smtp_explicit_tls.is_some() && smtp_explicit_tls.unwrap() {
+    if smtp_explicit_tls.is_some_and(|b| b) {
         return "force_tls".to_owned();
-    } else if smtp_ssl.is_some() && !smtp_ssl.unwrap() {
+    } else if smtp_ssl.is_some_and(|b| !b) {
         return "off".to_owned();
     }
     // Return the default `starttls` in all other cases
@@ -1555,12 +1600,18 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "windows-desktop-autotype",
     "windows-desktop-autotype-ga",
     // Key Management Team
+    "innovation-sprint-shared-unlock-part-2",
     "biometrics-sdk-ipc",
     "windows-native-credential-sync",
+    "macos-native-credential-sync",
+    "enable-account-encryption-v2-jit-password-registration",
+    "pm-27278-v2-password-registration",
     // Mobile Team
     "pm-34171-card-scanner",
     // Platform Team
     "pm-30529-webauthn-related-origins",
+    // Tools Team: read by the clients up to 2026.10 and by the Android and iOS apps
+    "pm-31885-send-controls",
     // Vault Team
     "pm-32009-new-item-types",
 ];
@@ -1601,10 +1652,11 @@ impl Config {
         // Fill any missing with defaults
         let config = builder.build();
         if !SKIP_CONFIG_VALIDATION.load(Ordering::Relaxed) {
+            builder.warn_test_only_options();
             validate_config(&config, false)?;
         }
 
-        Ok(Config {
+        Ok(Self {
             inner: RwLock::new(Inner {
                 rocket_shutdown_handle: None,
                 templates: load_templates(&config.templates_folder),
@@ -1665,15 +1717,17 @@ impl Config {
     /// is in signups_domains_whitelist, or if no whitelist is set (so there
     /// are no domain restrictions in effect).
     pub fn is_email_domain_allowed(&self, email: &str) -> bool {
-        let e: Vec<&str> = email.rsplitn(2, '@').collect();
-        if e.len() != 2 || e[0].is_empty() || e[1].is_empty() {
-            warn!("Failed to parse email address '{email}'");
+        let Some((_, domain)) = email.rsplit_once('@').filter(|(name, domain)| !name.is_empty() && !domain.is_empty())
+        else {
+            warn!("Failed to parse email address '{}'", email.escape_debug());
             return false;
-        }
-        let email_domain = e[0].to_lowercase();
-        let whitelist = self.signups_domains_whitelist();
+        };
 
-        whitelist.is_empty() || whitelist.split(',').any(|d| d.trim() == email_domain)
+        let domain = &domain.to_lowercase();
+        let whitelist = self.signups_domains_whitelist();
+        let whitelist = whitelist.trim();
+
+        whitelist.is_empty() || whitelist.split(',').any(|d| d.trim() == domain)
     }
 
     /// Tests whether signup is allowed for an email address, taking into
@@ -1764,8 +1818,7 @@ impl Config {
     /// Tests whether the admin token is set to a non-empty value.
     pub fn is_admin_token_set(&self) -> bool {
         let token = self.admin_token();
-
-        token.is_some() && !token.unwrap().trim().is_empty()
+        token.is_some_and(|t| !t.trim().is_empty())
     }
 
     pub fn opendal_operator_for_path_type(&self, path_type: &PathType) -> Result<opendal::Operator, Error> {
