@@ -35,7 +35,7 @@ use crate::{
 static WEBAUTHN: LazyLock<Webauthn> = LazyLock::new(|| {
     let domain = CONFIG.domain();
     let domain_origin = CONFIG.domain_origin();
-    let rp_id = Url::parse(&domain).map(|u| u.domain().map(str::to_owned)).ok().flatten().unwrap_or_default();
+    let rp_id = Url::parse(&domain).map_or_default(|u| u.domain().map_or_default(str::to_owned));
     let rp_origin = Url::parse(&domain_origin).unwrap();
 
     let webauthn = WebauthnBuilder::new(&rp_id, &rp_origin)
@@ -123,9 +123,9 @@ async fn get_webauthn(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbC
     }
 
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&mut user, false, &conn).await?;
 
     let (enabled, registrations) = get_webauthn_registrations(&user.uuid, &conn).await?;
     let keys: Vec<i32> = registrations.iter().map(|r| r.id).collect();
@@ -355,13 +355,9 @@ async fn inner_delete_webauthns(
     let mut removed: HashSet<Vec<u8>> = HashSet::new();
     let mut migrated = false;
 
-    keys.retain(|key| {
-        let retained = retain(key);
-        if !retained {
-            removed.insert(key.credential.cred_id().to_vec());
-            migrated = migrated || key.migrated;
-        }
-        retained
+    keys.extract_if(.., |key| !retain(key)).for_each(|key| {
+        removed.insert(key.credential.cred_id().to_vec());
+        migrated |= key.migrated;
     });
 
     if removed.is_empty() {

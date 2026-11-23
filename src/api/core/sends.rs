@@ -1,7 +1,6 @@
 use std::{path::Path, sync::LazyLock, time::Duration};
 
 use chrono::{DateTime, TimeDelta, Utc};
-use num_traits::ToPrimitive;
 use rocket::{
     form::Form,
     fs::{NamedFile, TempFile},
@@ -16,7 +15,7 @@ use crate::{
     config::PathType,
     db::{
         DbConn, DbPool,
-        models::{Device, OrgPolicy, OrgPolicyType, Send, SendFileId, SendId, SendType, UserId},
+        models::{Device, OrgPolicy, Send, SendFileId, SendId, SendType, UserId},
     },
     util::{NumberOrString, save_temp_file},
 };
@@ -90,40 +89,33 @@ pub struct SendData {
     pub id: Option<SendId>,
 }
 
-/// Enforces the `Disable Send` policy. A non-owner/admin user belonging to
-/// an org with this policy enabled isn't allowed to create new Sends or
-/// modify existing ones, but is allowed to delete them.
-///
-/// Ref: https://bitwarden.com/help/article/policies/#disable-send
+/// Enforces the Send policies (`Send controls` and the legacy `Disable Send` and `Send Options` it
+/// absorbs) on the Send as it would be saved. Deleting a Send is always allowed.
 ///
 /// There is also a Vaultwarden-specific `sends_allowed` config setting that
 /// controls this policy globally.
-async fn enforce_disable_send_policy(headers: &Headers, conn: &DbConn) -> EmptyResult {
-    let user_id = &headers.user.uuid;
-    if !CONFIG.sends_allowed()
-        || OrgPolicy::is_applicable_to_user(user_id, OrgPolicyType::DisableSend, None, conn).await
-    {
+async fn enforce_send_policy(send: &Send, headers: &Headers, conn: &DbConn) -> EmptyResult {
+    if !CONFIG.sends_allowed() {
         err!("Due to an Enterprise Policy, you are only able to delete an existing Send.")
     }
-    Ok(())
+    OrgPolicy::check_send(&headers.user.uuid, send, conn).await
 }
 
-/// Enforces the `DisableHideEmail` option of the `Send Options` policy.
-/// A non-owner/admin user belonging to an org with this option enabled isn't
-/// allowed to hide their email address from the recipient of a Bitwarden Send,
-/// but is allowed to remove this option from an existing Send.
-///
-/// Ref: https://bitwarden.com/help/article/policies/#send-options
-async fn enforce_disable_hide_email_policy(data: &SendData, headers: &Headers, conn: &DbConn) -> EmptyResult {
-    let user_id = &headers.user.uuid;
-    let hide_email = data.hide_email.unwrap_or(false);
-    if hide_email && OrgPolicy::is_hide_email_disabled(user_id, conn).await {
-        err!(
-            "Due to an Enterprise Policy, you are not allowed to hide your email address \
-              from recipients when creating or editing a Send."
-        )
+/// Stores a text Send that is already encrypted, as [`create_send`] does, for the test seeder (`unsafe_test_mode`).
+/// Its deletion date becomes a week from now: a recorded one can be years ahead, more than a Send may be.
+#[cfg(feature = "unsafe_test_mode")]
+pub async fn seed_send(mut encrypted: Value, user_id: &UserId, conn: &DbConn) -> ApiResult<SendId> {
+    let Some(fields) = encrypted.as_object_mut() else {
+        err!("A seeded Send has to be a JSON object")
+    };
+    fields.insert("deletionDate".to_owned(), serde_json::to_value(Utc::now() + TimeDelta::try_days(7).unwrap())?);
+    let data: SendData = serde_json::from_value(encrypted)?;
+    if data.r#type != SendType::Text as i32 {
+        err!("Only text Sends can be seeded: a file Send needs its file")
     }
-    Ok(())
+    let mut send = create_send(data, user_id.clone())?;
+    send.save(conn).await?;
+    Ok(send.uuid)
 }
 
 fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
@@ -155,10 +147,7 @@ fn create_send(data: SendData, user_id: UserId) -> ApiResult<Send> {
     let mut send = Send::new(data.r#type, data.name, data_str, data.key, data.deletion_date.naive_utc());
     send.user_uuid = Some(user_id);
     send.notes = data.notes;
-    send.max_access_count = match data.max_access_count {
-        Some(m) => Some(m.into_i32()?),
-        _ => None,
-    };
+    send.max_access_count = data.max_access_count.map(|m| m.into_i32()).transpose()?;
     send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
     send.disabled = data.disabled;
     send.hide_email = data.hide_email;
@@ -192,16 +181,14 @@ async fn get_send(send_id: SendId, headers: Headers, conn: DbConn) -> JsonResult
 
 #[post("/sends", data = "<data>")]
 async fn post_send(data: Json<SendData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    enforce_disable_send_policy(&headers, &conn).await?;
-
     let data: SendData = data.into_inner();
-    enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
     if data.r#type == SendType::File as i32 {
         err!("File sends should use /api/sends/file/v2")
     }
 
-    let mut send = create_send(data, headers.user.uuid)?;
+    let mut send = create_send(data, headers.user.uuid.clone())?;
+    enforce_send_policy(&send, &headers, &conn).await?;
     send.save(&conn).await?;
     nt.send_send_update(
         UpdateType::SyncSendCreate,
@@ -223,15 +210,11 @@ struct UploadDataV2<'f> {
 // Upstream: https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Api/Tools/Controllers/SendsController.cs#L165
 #[post("/sends/file/v2", data = "<data>")]
 async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn) -> JsonResult {
-    enforce_disable_send_policy(&headers, &conn).await?;
-
     let data = data.into_inner();
 
     if data.r#type != SendType::File as i32 {
         err!("Send content is not a file");
     }
-
-    enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
     let file_length = if let Some(m) = &data.file_length {
         m.into_i64()?
@@ -263,16 +246,18 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn)
         err!("Send storage limit exceeded with this file");
     }
 
-    let mut send = create_send(data, headers.user.uuid)?;
+    let mut send = create_send(data, headers.user.uuid.clone())?;
+    enforce_send_policy(&send, &headers, &conn).await?;
 
     let file_id = crate::crypto::generate_send_file_id();
 
     let mut data_value: Value = serde_json::from_str(&send.data)?;
-    if let Some(o) = data_value.as_object_mut() {
-        o.insert(String::from("id"), Value::String(file_id.clone()));
-        o.insert(String::from("size"), Value::Number(file_length.into()));
-        o.insert(String::from("sizeName"), Value::String(crate::util::get_display_size(file_length)));
-    }
+    let Some(o) = data_value.as_object_mut() else {
+        err!("Invalid Send file data")
+    };
+    o.insert(String::from("id"), Value::String(file_id.clone()));
+    o.insert(String::from("size"), Value::Number(file_length.into()));
+    o.insert(String::from("sizeName"), Value::String(crate::util::get_display_size(file_length)));
     send.data = serde_json::to_string(&data_value)?;
     send.save(&conn).await?;
 
@@ -285,7 +270,7 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn)
 }
 
 #[derive(Deserialize)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case, reason = "Bitwarden clients use this format")]
 pub struct SendFileData {
     id: SendFileId,
     size: u64,
@@ -302,8 +287,6 @@ async fn post_send_file_v2_data(
     conn: DbConn,
     nt: Notify<'_>,
 ) -> EmptyResult {
-    enforce_disable_send_policy(&headers, &conn).await?;
-
     let data = data.into_inner();
 
     let Some(send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await else {
@@ -313,6 +296,7 @@ async fn post_send_file_v2_data(
     if send.atype != SendType::File as i32 {
         err!("Send is not a file type send.");
     }
+    enforce_send_policy(&send, &headers, &conn).await?;
 
     let Ok(send_data) = serde_json::from_str::<SendFileData>(&send.data) else {
         err!("Unable to decode send data as json.")
@@ -339,10 +323,7 @@ async fn post_send_file_v2_data(
         err!("Send file does not match send data.", format!("Expected id {} got {file_id}", send_data.id));
     }
 
-    let Some(size) = data.data.len().to_u64() else {
-        err!("Send file size overflow.");
-    };
-
+    let size = data.data.len();
     if size != send_data.size {
         err!("Send file size does not match.", format!("Expected a file size of {} got {size}", send_data.size));
     }
@@ -464,10 +445,7 @@ async fn download_send(send_id: SendId, file_id: SendFileId, t: &str) -> Option<
 
 #[put("/sends/<send_id>", data = "<data>")]
 async fn put_send(send_id: SendId, data: Json<SendData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    enforce_disable_send_policy(&headers, &conn).await?;
-
     let data: SendData = data.into_inner();
-    enforce_disable_hide_email_policy(&data, &headers, &conn).await?;
 
     let Some(mut send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await else {
         err!("Send not found", "Send send_id is invalid or does not belong to user")
@@ -520,10 +498,7 @@ async fn update_send_from_data(
     send.akey = data.key;
     send.deletion_date = data.deletion_date.naive_utc();
     send.notes = data.notes;
-    send.max_access_count = match data.max_access_count {
-        Some(m) => Some(m.into_i32()?),
-        _ => None,
-    };
+    send.max_access_count = data.max_access_count.map(|m| m.into_i32()).transpose()?;
     send.expiration_date = data.expiration_date.map(|d| d.naive_utc());
     send.hide_email = data.hide_email;
     send.disabled = data.disabled;
@@ -533,6 +508,7 @@ async fn update_send_from_data(
         send.set_password(Some(&password));
     }
 
+    enforce_send_policy(send, headers, conn).await?;
     send.save(conn).await?;
     if ut != UpdateType::None {
         nt.send_send_update(ut, send, &send.update_users_revision(conn).await, &headers.device, conn).await;
@@ -561,13 +537,12 @@ async fn delete_send(send_id: SendId, headers: Headers, conn: DbConn, nt: Notify
 
 #[put("/sends/<send_id>/remove-password")]
 async fn put_remove_password(send_id: SendId, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
-    enforce_disable_send_policy(&headers, &conn).await?;
-
     let Some(mut send) = Send::find_by_uuid_and_user(&send_id, &headers.user.uuid, &conn).await else {
         err!("Send not found", "Invalid send uuid, or does not belong to user")
     };
 
     send.set_password(None);
+    enforce_send_policy(&send, &headers, &conn).await?;
     send.save(&conn).await?;
     nt.send_send_update(
         UpdateType::SyncSendUpdate,

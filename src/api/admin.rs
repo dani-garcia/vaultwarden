@@ -1,4 +1,4 @@
-use std::{env, sync::LazyLock};
+use std::{collections::HashMap, env, sync::LazyLock};
 
 use reqwest::Method;
 use rocket::{
@@ -26,6 +26,7 @@ use crate::{
         models::{
             Attachment, Cipher, Collection, Device, Event, EventType, Group, Invitation, Membership, MembershipId,
             MembershipType, OrgPolicy, Organization, OrganizationId, SsoUser, TwoFactor, User, UserId,
+            custom_roles_enabled,
         },
     },
     error::{Error, MapResult},
@@ -124,15 +125,15 @@ impl<'r> FromRequest<'r> for IpHeader {
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         if req.headers().get_one(&CONFIG.ip_header()).is_some() {
-            Outcome::Success(IpHeader(Some(CONFIG.ip_header())))
+            Outcome::Success(Self(Some(CONFIG.ip_header())))
         } else if req.headers().get_one("X-Client-IP").is_some() {
-            Outcome::Success(IpHeader(Some(String::from("X-Client-IP"))))
+            Outcome::Success(Self(Some(String::from("X-Client-IP"))))
         } else if req.headers().get_one("X-Real-IP").is_some() {
-            Outcome::Success(IpHeader(Some(String::from("X-Real-IP"))))
+            Outcome::Success(Self(Some(String::from("X-Real-IP"))))
         } else if req.headers().get_one("X-Forwarded-For").is_some() {
-            Outcome::Success(IpHeader(Some(String::from("X-Forwarded-For"))))
+            Outcome::Success(Self(Some(String::from("X-Forwarded-For"))))
         } else {
-            Outcome::Success(IpHeader(None))
+            Outcome::Success(Self(None))
         }
     }
 }
@@ -209,7 +210,7 @@ fn post_admin_login(
 
         let cookie = Cookie::build((COOKIE_NAME, jwt))
             .path(admin_path())
-            .max_age(time::Duration::minutes(i64::from(CONFIG.admin_session_lifetime())))
+            .max_age(rocket::time::Duration::minutes(i64::from(CONFIG.admin_session_lifetime())))
             .same_site(SameSite::Strict)
             .http_only(true)
             .secure(secure.https);
@@ -256,6 +257,7 @@ struct AdminTemplateData {
     logged_in: bool,
     urlpath: String,
     sso_enabled: bool,
+    custom_roles_enabled: bool,
 }
 
 impl AdminTemplateData {
@@ -266,6 +268,7 @@ impl AdminTemplateData {
             logged_in: true,
             urlpath: CONFIG.domain_path(),
             sso_enabled: CONFIG.sso_enabled(),
+            custom_roles_enabled: custom_roles_enabled(),
         }
     }
 
@@ -388,7 +391,19 @@ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<Stri
             None => json!("Never"),
         };
 
-        usr["sso_identifier"] = json!(sso_u.map_or(String::new(), |u| u.identifier.to_string()));
+        usr["sso_identifier"] = json!(sso_u.map_or_default(|u| u.identifier.to_string()));
+
+        // The clients are shown a Manager as a Custom member, but the admin panel tells the two roles apart
+        let roles: HashMap<String, i32> = Membership::find_confirmed_by_user(&u.uuid, &conn)
+            .await
+            .into_iter()
+            .map(|member| (member.org_uuid.to_string(), member.atype))
+            .collect();
+        for org in usr["organizations"].as_array_mut().into_iter().flatten() {
+            if let Some(atype) = org["id"].as_str().and_then(|org_id| roles.get(org_id)) {
+                org["type"] = json!(atype);
+            }
+        }
 
         users_json.push(usr);
     }
@@ -430,7 +445,7 @@ async fn delete_user(user_id: UserId, token: AdminToken, conn: DbConn, nt: Notif
     if res.is_ok() {
         nt.send_logout(&user, None, &conn).await;
         if has_push_device {
-            push_logout_to_relay(&user, None);
+            push_logout_to_relay(&user, None, None);
         }
     }
 
@@ -520,7 +535,7 @@ async fn remove_2fa(user_id: UserId, token: AdminToken, conn: DbConn) -> EmptyRe
     let mut user = get_user_or_404(&user_id, &conn).await?;
     TwoFactor::delete_all_by_user(&user.uuid, &conn).await?;
     Device::clear_twofactor_remember_by_user(&user.uuid, &conn).await?;
-    two_factor::enforce_2fa_policy(&user, &ACTING_ADMIN_USER.into(), 14, &token.ip.ip, &conn).await?;
+    two_factor::enforce_2fa_policy(&user, &ACTING_ADMIN_USER.into(), 14, &token.ip.ip, true, &conn).await?;
     user.totp_recover = None;
     user.save(&conn).await
 }
@@ -565,10 +580,14 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
         err!("The specified user isn't member of the organization")
     };
 
-    let new_type = if let Some(new_type) = MembershipType::from_str(&data.user_type.into_string()) {
-        new_type as i32
-    } else {
-        err!("Invalid type")
+    let new_type = match MembershipType::from_str(&data.user_type.into_string()) {
+        // Unlike the clients, the admin panel tells the Custom and the legacy Manager role apart. Unless Custom roles
+        // are enabled, a Custom role is a Manager here as well, but an existing Custom member is kept as one.
+        Some(MembershipType::Custom) if !custom_roles_enabled() && !member_to_edit.has_type(MembershipType::Custom) => {
+            MembershipType::Manager
+        }
+        Some(new_type) => new_type,
+        None => err!("Invalid type"),
     };
 
     if member_to_edit.atype == MembershipType::Owner && new_type != MembershipType::Owner {
@@ -578,7 +597,16 @@ async fn update_membership_type(data: Json<MembershipTypeData>, token: AdminToke
         }
     }
 
-    member_to_edit.atype = new_type;
+    // A Manager only becomes a Custom member if that changes nothing they may do. Here they would keep the permissions
+    // they are shown with, the admin panel can't give up their access to all collections, so that is refused.
+    if new_type == MembershipType::Custom
+        && let Some(loss) =
+            member_to_edit.custom_role_conversion_loss(&member_to_edit.legacy_manager_permissions(), &conn).await
+    {
+        err!(loss)
+    }
+
+    member_to_edit.set_type(new_type);
     // This check is also done at api::organizations::{accept_invite, _confirm_invite, _activate_member, edit_member}, update_membership_type
     OrgPolicy::check_user_allowed(&member_to_edit, "modify", &conn).await?;
 
@@ -649,46 +677,55 @@ async fn has_http_access() -> bool {
     let Ok(req) = make_http_request(Method::HEAD, "https://github.com/dani-garcia/vaultwarden") else {
         return false;
     };
-    match req.send().await {
-        Ok(r) => r.status().is_success(),
-        _ => false,
-    }
+    req.send().await.is_ok_and(|r| r.status().is_success())
 }
 
-use cached::macros::cached;
-/// Cache this function to prevent API call rate limit. Github only allows 60 requests per hour, and we use 3 here already
-/// It will cache this function for 600 seconds (10 minutes) which should prevent the exhaustion of the rate limit
-/// Any cache will be lost if Vaultwarden is restarted
-#[cached(ttl_secs = 600, sync_writes = "default")]
 async fn get_release_info(has_http_access: bool) -> (String, String, String) {
-    // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
-    if has_http_access {
-        (
-            match get_json_api::<GitRelease>("https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest")
-                .await
-            {
-                Ok(r) => r.tag_name,
-                _ => "-".to_owned(),
-            },
-            match get_json_api::<GitCommit>("https://api.github.com/repos/dani-garcia/vaultwarden/commits/main").await {
-                Ok(mut c) => {
-                    c.sha.truncate(8);
-                    c.sha
-                }
-                _ => "-".to_owned(),
-            },
-            // Do not fetch the web-vault version when running within a container
-            // The web-vault version is embedded within the container it self, and should not be updated manually
-            match get_json_api::<GitRelease>("https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest")
-                .await
-            {
-                Ok(r) => r.tag_name.trim_start_matches('v').to_owned(),
-                _ => "-".to_owned(),
-            },
-        )
-    } else {
-        ("-".to_owned(), "-".to_owned(), "-".to_owned())
-    }
+    // Cache this function to prevent API call rate limit. Github only allows 60 requests per hour, and we use 3 here already
+    // It will cache this function for 600 seconds (10 minutes) which should prevent the exhaustion of the rate limit
+    // Any cache will be lost if Vaultwarden is restarted
+    static CACHE: LazyLock<moka::future::Cache<bool, (String, String, String)>> = LazyLock::new(|| {
+        moka::future::Cache::builder().max_capacity(2).time_to_live(std::time::Duration::from_mins(10)).build()
+    });
+
+    CACHE
+        .get_with(has_http_access, async {
+            // If the HTTP Check failed, do not even attempt to check for new versions since we were not able to connect with github.com anyway.
+            if has_http_access {
+                (
+                    match get_json_api::<GitRelease>(
+                        "https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest",
+                    )
+                    .await
+                    {
+                        Ok(r) => r.tag_name,
+                        _ => "-".to_owned(),
+                    },
+                    match get_json_api::<GitCommit>("https://api.github.com/repos/dani-garcia/vaultwarden/commits/main")
+                        .await
+                    {
+                        Ok(mut c) => {
+                            c.sha.truncate(8);
+                            c.sha
+                        }
+                        _ => "-".to_owned(),
+                    },
+                    // Do not fetch the web-vault version when running within a container
+                    // The web-vault version is embedded within the container it self, and should not be updated manually
+                    match get_json_api::<GitRelease>(
+                        "https://api.github.com/repos/dani-garcia/bw_web_builds/releases/latest",
+                    )
+                    .await
+                    {
+                        Ok(r) => r.tag_name.trim_start_matches('v').to_owned(),
+                        _ => "-".to_owned(),
+                    },
+                )
+            } else {
+                ("-".to_owned(), "-".to_owned(), "-".to_owned())
+            }
+        })
+        .await
 }
 
 async fn get_ntp_time(has_http_access: bool) -> String {
@@ -889,8 +926,7 @@ impl<'r> FromRequest<'r> for AdminToken {
             let access_token = if let Some(cookie) = cookies.get(COOKIE_NAME) {
                 cookie.value()
             } else {
-                let requested_page =
-                    request.segments::<std::path::PathBuf>(0..).unwrap_or_default().display().to_string();
+                let requested_page = request.segments::<std::path::PathBuf>(0..).unwrap_or_default();
                 // When the requested page is empty, it is `/admin`, in that case, Forward, so it will render the login page
                 // Else, return a 401 failure, which will be caught
                 if requested_page.is_empty() {

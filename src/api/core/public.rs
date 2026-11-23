@@ -156,7 +156,7 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
 
             for ext_id in &group_data.member_external_ids {
                 if let Some(member) = Membership::find_by_external_id_and_org(ext_id, &org_id, &conn).await {
-                    let mut group_user = GroupUser::new(group_uuid.clone(), member.uuid.clone());
+                    let group_user = GroupUser::new(group_uuid.clone(), member.uuid.clone());
                     group_user.save(&conn).await?;
                 }
             }
@@ -237,6 +237,6 @@ impl<'r> FromRequest<'r> for PublicToken {
             err_handler!("Token not issued for this client");
         }
 
-        Outcome::Success(PublicToken(claims.client_sub))
+        Outcome::Success(Self(claims.client_sub))
     }
 }
