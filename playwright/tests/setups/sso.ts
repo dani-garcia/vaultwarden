@@ -15,11 +15,8 @@ export async function logNewUser(
     options: { mailBuffer?: MailBuffer } = {}
 ) {
     await test.step(`Create user ${user.name}`, async () => {
-        await page.context().clearCookies();
-
         await test.step('Landing page', async () => {
             await utils.cleanLanding(page);
-
             await page.locator("input[type=email].vw-email-sso").fill(user.email);
             await page.getByRole('button', { name: /Use single sign-on/ }).click();
         });
@@ -33,26 +30,24 @@ export async function logNewUser(
 
         await test.step('Create Vault account', async () => {
             await expect(page.getByRole('heading', { name: 'Join organisation' })).toBeVisible();
-            await page.getByLabel('Master password (required)', { exact: true }).fill(user.password);
-            await page.getByLabel('Confirm master password (').fill(user.password);
+            await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).fill(user.password);
+            await page.getByRole('textbox', { name: 'Confirm master password * (' }).fill(user.password);
             await page.getByRole('button', { name: 'Create account' }).click();
         });
-
-        await utils.checkNotification(page, 'Account successfully created!');
-        await utils.checkNotification(page, 'Invitation accepted');
-
-        await utils.ignoreExtension(page);
 
         await test.step('Default vault page', async () => {
             await expect(page).toHaveTitle(/Vaultwarden Web/);
             await expect(page.getByTitle('All vaults', { exact: true })).toBeVisible();
         });
 
+        await utils.checkNotification(page, 'Account successfully created!');
+        await utils.checkNotification(page, 'Invitation accepted');
+
         if( options.mailBuffer ){
             let mailBuffer = options.mailBuffer;
             await test.step('Check emails', async () => {
-                await mailBuffer.expect((m) => m.subject === "Welcome");
                 await mailBuffer.expect((m) => m.subject.includes("New Device Logged"));
+                await mailBuffer.expect((m) => m.subject === "Welcome");
             });
         }
     });
@@ -69,16 +64,14 @@ export async function logUser(
         mailBuffer ?: MailBuffer,
         totp?: OTPAuth.TOTP,
         mail2fa?: boolean,
+        notNewDevice?: boolean,
     } = {}
 ) {
     let mailBuffer = options.mailBuffer;
 
     await test.step(`Log user ${user.email}`, async () => {
-        await page.context().clearCookies();
-
         await test.step('Landing page', async () => {
             await utils.cleanLanding(page);
-
             await page.locator("input[type=email].vw-email-sso").fill(user.email);
             await page.getByRole('button', { name: /Use single sign-on/ }).click();
         });
@@ -117,14 +110,12 @@ export async function logUser(
             await page.getByRole('button', { name: 'Unlock' }).click();
         });
 
-        await utils.ignoreExtension(page);
-
         await test.step('Default vault page', async () => {
             await expect(page).toHaveTitle(/Vaultwarden Web/);
             await expect(page.getByTitle('All vaults', { exact: true })).toBeVisible();
         });
 
-        if( mailBuffer ){
+        if( mailBuffer && !options.notNewDevice ){
             await test.step('Check email', async () => {
                 await mailBuffer.expect((m) => m.subject.includes("New Device Logged"));
             });

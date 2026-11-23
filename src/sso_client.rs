@@ -1,18 +1,18 @@
-use std::{borrow::Cow, future::Future, pin::Pin, sync::LazyLock, time::Duration};
+use std::{borrow::Cow, collections::HashSet, pin::Pin, sync::LazyLock, time::Duration};
 
 use openidconnect::{
-    AccessToken, AsyncHttpClient, AuthDisplay, AuthPrompt, AuthenticationFlow, AuthorizationCode, AuthorizationRequest,
-    ClientId, ClientSecret, CsrfToken, EmptyAdditionalClaims, EmptyExtraTokenFields, EndpointNotSet, EndpointSet,
-    HttpClientError, HttpRequest, HttpResponse, IdTokenClaims, IdTokenFields, Nonce, OAuth2TokenResponse,
-    PkceCodeChallenge, PkceCodeVerifier, RefreshToken, ResponseType, Scope, StandardErrorResponse,
+    AccessToken, AsyncHttpClient, AuthDisplay, AuthPrompt, AuthType, AuthenticationFlow, AuthorizationCode,
+    AuthorizationRequest, ClientId, ClientSecret, CsrfToken, EmptyAdditionalClaims, EmptyExtraTokenFields,
+    EndpointNotSet, EndpointSet, HttpClientError, HttpRequest, HttpResponse, IdTokenClaims, IdTokenFields, Nonce,
+    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RefreshToken, ResponseType, Scope, StandardErrorResponse,
     StandardTokenResponse,
     core::{
-        CoreAuthDisplay, CoreAuthPrompt, CoreClient, CoreErrorResponseType, CoreGenderClaim, CoreIdTokenVerifier,
-        CoreJsonWebKey, CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm, CoreProviderMetadata,
-        CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse, CoreTokenIntrospectionResponse,
-        CoreTokenResponse, CoreTokenType, CoreUserInfoClaims,
+        CoreAuthDisplay, CoreAuthPrompt, CoreClient, CoreClientAuthMethod, CoreErrorResponseType, CoreGenderClaim,
+        CoreIdTokenVerifier, CoreJsonWebKey, CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm,
+        CoreProviderMetadata, CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse,
+        CoreTokenIntrospectionResponse, CoreTokenResponse, CoreTokenType, CoreUserInfoClaims,
     },
-    http, url,
+    http,
 };
 use regex::Regex;
 use url::Url;
@@ -25,11 +25,11 @@ use crate::{
     sso::{OIDCCode, OIDCCodeChallenge, OIDCCodeVerifier, OIDCState},
 };
 
-static CLIENT_CACHE_KEY: LazyLock<String> = LazyLock::new(|| "sso-client".to_owned());
-static CLIENT_CACHE: LazyLock<moka::sync::Cache<String, Client>> = LazyLock::new(|| {
+const CLIENT_CACHE_KEY: &str = "sso-client";
+static CLIENT_CACHE: LazyLock<moka::sync::Cache<&'static str, Client>> = LazyLock::new(|| {
     moka::sync::Cache::builder()
         .max_capacity(1)
-        .time_to_live(Duration::from_secs(CONFIG.sso_client_cache_expiration()))
+        .time_to_live(Duration::from_secs(u64::from(CONFIG.sso_client_cache_expiration())))
         .build()
 });
 static REFRESH_CACHE: LazyLock<moka::future::Cache<String, Result<RefreshTokenResponse, String>>> =
@@ -71,7 +71,7 @@ pub struct OidcHttpClient {
 
 impl OidcHttpClient {
     fn new() -> Result<Self, reqwest::Error> {
-        get_reqwest_client_builder().redirect(reqwest::redirect::Policy::none()).build().map(|client| Self {
+        get_reqwest_client_builder(false).redirect(reqwest::redirect::Policy::none()).build().map(|client| Self {
             client,
         })
     }
@@ -83,7 +83,12 @@ impl<'c> AsyncHttpClient<'c> for OidcHttpClient {
 
     fn call(&'c self, request: HttpRequest) -> Self::Future {
         Box::pin(async move {
-            let response = self.client.execute(request.try_into().map_err(Box::new)?).await.map_err(Box::new)?;
+            let response = self
+                .client
+                .execute(request.try_into().map_err(Box::new)?)
+                .await
+                .inspect_err(|e| debug!("Request failed {e:?}"))
+                .map_err(Box::new)?;
 
             let mut builder = http::Response::builder().status(response.status()).version(response.version());
 
@@ -91,7 +96,11 @@ impl<'c> AsyncHttpClient<'c> for OidcHttpClient {
                 builder = builder.header(name, value);
             }
 
-            builder.body(response.bytes().await.map_err(Box::new)?.to_vec()).map_err(HttpClientError::Http)
+            let body = response.bytes().await.map_err(Box::new)?;
+            if CONFIG.sso_debug_tokens() {
+                debug!("Response body {}", String::from_utf8_lossy(&body));
+            }
+            builder.body(body.to_vec()).map_err(HttpClientError::Http)
         })
     }
 }
@@ -114,7 +123,21 @@ impl Client {
             Ok(metadata) => metadata,
         };
 
-        let base_client = CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret));
+        let auth_methods: Option<HashSet<CoreClientAuthMethod>> = provider_metadata
+            .token_endpoint_auth_methods_supported()
+            .map(|v| v.iter().map(ToOwned::to_owned).collect());
+
+        let mut base_client = CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret));
+
+        if let Some(am) = auth_methods {
+            if am.contains(&CoreClientAuthMethod::ClientSecretBasic) {
+                base_client = base_client.set_auth_type(AuthType::BasicAuth); // Default
+            } else if am.contains(&CoreClientAuthMethod::ClientSecretPost) {
+                base_client = base_client.set_auth_type(AuthType::RequestBody);
+            } else {
+                err!(format!("No supported auth_methods (only basic or request body), advertised: {am:?}"));
+            }
+        }
 
         let token_uri = if let Some(uri) = base_client.token_uri() {
             uri.clone()
@@ -133,7 +156,7 @@ impl Client {
             .set_token_uri(token_uri)
             .set_user_info_url(user_info_url);
 
-        Ok(Client {
+        Ok(Self {
             http_client,
             core_client,
         })
@@ -142,11 +165,11 @@ impl Client {
     // Simple cache to prevent recalling the discovery endpoint each time
     pub async fn cached() -> ApiResult<Self> {
         if CONFIG.sso_client_cache_expiration() > 0 {
-            match CLIENT_CACHE.get(&*CLIENT_CACHE_KEY) {
+            match CLIENT_CACHE.get(CLIENT_CACHE_KEY) {
                 Some(client) => Ok(client),
                 None => Self::get_client().await.inspect(|client| {
                     debug!("Inserting new client in cache");
-                    CLIENT_CACHE.insert(CLIENT_CACHE_KEY.clone(), client.clone());
+                    CLIENT_CACHE.insert(CLIENT_CACHE_KEY, client.clone());
                 }),
             }
         } else {
@@ -156,7 +179,7 @@ impl Client {
 
     pub fn invalidate() {
         if CONFIG.sso_client_cache_expiration() > 0 {
-            CLIENT_CACHE.invalidate(&*CLIENT_CACHE_KEY);
+            CLIENT_CACHE.invalidate(CLIENT_CACHE_KEY);
         }
     }
 
@@ -168,7 +191,7 @@ impl Client {
         binding_hash: Option<String>,
     ) -> ApiResult<(Url, SsoAuth)> {
         let scopes = CONFIG.sso_scopes_vec().into_iter().map(Scope::new);
-        let base64_state = data_encoding::BASE64.encode(state.to_string().as_bytes());
+        let base64_state = data_encoding::BASE64.encode(state.as_bytes());
 
         let client = Self::cached().await?;
         let mut auth_req = client
@@ -189,6 +212,16 @@ impl Client {
 
         let (auth_url, _, nonce) = auth_req.url();
         Ok((auth_url, SsoAuth::new(state, client_challenge, nonce.secret().clone(), redirect_uri, binding_hash)))
+    }
+
+    // Check the client's PKCE verifier against the challenge it sent when starting the flow
+    pub fn check_client_verifier(client_verifier: &OIDCCodeVerifier, sso_auth: &SsoAuth) -> EmptyResult {
+        let verifier = PkceCodeVerifier::new(client_verifier.to_string());
+        let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
+        if challenge.as_str() != &*sso_auth.client_challenge {
+            err!("PKCE client challenge failed")
+        }
+        Ok(())
     }
 
     pub async fn exchange_code(
@@ -213,15 +246,10 @@ impl Client {
 
         let mut exchange = self.core_client.exchange_code(oidc_code);
 
-        let verifier = PkceCodeVerifier::new(client_verifier.into());
         if CONFIG.sso_pkce() {
-            exchange = exchange.set_pkce_verifier(verifier);
+            exchange = exchange.set_pkce_verifier(PkceCodeVerifier::new(client_verifier.into()));
         } else {
-            let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
-            if challenge.as_str() != String::from(sso_auth.client_challenge.clone()) {
-                err!("PKCE client challenge failed")
-                // Might need to notify admin ? how ?
-            }
+            Self::check_client_verifier(&client_verifier, sso_auth)?;
         }
 
         match exchange.request_async(&self.http_client).await {
@@ -234,7 +262,7 @@ impl Client {
                 };
 
                 if CONFIG.sso_debug_tokens() {
-                    debug!("Id token: {}", id_token.to_string());
+                    debug!("Id token: {id_token}");
                     debug!("Access token: {}", token_response.access_token().secret());
                     debug!("Refresh token: {:?}", token_response.refresh_token().map(RefreshToken::secret));
                     debug!("Expiration time: {:?}", token_response.expires_in());
@@ -261,7 +289,7 @@ impl Client {
     }
 
     pub async fn check_validity(access_token: String) -> EmptyResult {
-        let client = Client::cached().await?;
+        let client = Self::cached().await?;
         match client.user_info(AccessToken::new(access_token)).await {
             Err(err) => {
                 err_silent!(format!("Failed to retrieve user info, token has probably been invalidated: {err}"))
@@ -286,7 +314,7 @@ impl Client {
     }
 
     pub async fn exchange_refresh_token(refresh_token: String) -> ApiResult<RefreshTokenResponse> {
-        let client = Client::cached().await?;
+        let client = Self::cached().await?;
 
         REFRESH_CACHE
             .get_with(refresh_token.clone(), async move { client.exchange_refresh_token_impl(refresh_token).await })

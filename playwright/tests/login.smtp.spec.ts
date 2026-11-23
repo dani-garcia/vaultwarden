@@ -41,13 +41,10 @@ test('Account creation', async ({ page }) => {
 test('Login', async ({ context, page }) => {
     const mailBuffer = mailserver.buffer(users.user1.email);
 
-    await logUser(test, page, users.user1, mailBuffer);
+    await logUser(test, page, users.user1, { mailBuffer });
 
     await test.step('verify email', async () => {
-        await page.getByText('Verify your account\'s email').click();
-        await expect(page.getByText('Verify your account\'s email')).toBeVisible();
-        await page.getByRole('button', { name: 'Send email' }).click();
-
+        await page.getByRole('button', { name: "Send email" }).click();
         await utils.checkNotification(page, 'Check your email inbox for a verification link');
 
         const verify = await mailBuffer.expect((m) => m.subject === "Verify Your Email");
@@ -78,26 +75,10 @@ test('Activate 2fa', async ({ page }) => {
 test('2fa', async ({ page }) => {
     const emails = mailserver.buffer(users.user1.email);
 
-    await test.step('login', async () => {
-        await page.goto('/');
-
-        await page.getByLabel(/Email address/).fill(users.user1.email);
-        await page.getByRole('button', { name: 'Continue' }).click();
-        await page.getByLabel('Master password').fill(users.user1.password);
-        await page.getByRole('button', { name: 'Log in with master password' }).click();
-
-        await expect(page.getByRole('heading', { name: 'Verify your Identity' })).toBeVisible();
-        const code = await retrieveEmailCode(test, page, emails);
-        await page.getByLabel(/Verification code/).fill(code);
-        await page.getByRole('button', { name: 'Continue' }).click();
-
-        await page.getByRole('button', { name: 'Add it later' }).click();
-        await page.getByRole('link', { name: 'Skip to web app' }).click();
-
-        await expect(page).toHaveTitle(/Vaults/);
-    })
-
-    await disableEmail(test, page, users.user1);
+    await logUser(test, page, users.user1, {
+        mailBuffer: emails,
+        mail2fa: true,
+    });
 
     emails.close();
 });

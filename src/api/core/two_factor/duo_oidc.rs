@@ -108,8 +108,8 @@ struct DuoClient {
 
 impl DuoClient {
     // Construct a new DuoClient
-    fn new(client_id: String, client_secret: String, api_host: String, redirect_uri: String) -> DuoClient {
-        DuoClient {
+    fn new(client_id: String, client_secret: String, api_host: String, redirect_uri: String) -> Self {
+        Self {
             client_id,
             client_secret,
             api_host,
@@ -137,7 +137,7 @@ impl DuoClient {
         match jsonwebtoken::encode(
             &Header::new(JWT_SIGNATURE_ALG),
             &jwt_payload,
-            &EncodingKey::from_secret(self.client_secret.as_bytes()),
+            &EncodingKey::from_secret(self.client_secret.as_bytes())?,
         ) {
             Ok(token) => Ok(token),
             Err(e) => err!(format!("Error encoding Duo JWT: {e:?}")),
@@ -157,10 +157,7 @@ impl DuoClient {
             Err(e) => return Err(e),
         };
 
-        let mut post_body = HashMap::new();
-        post_body.insert("client_assertion", token);
-        post_body.insert("client_id", self.client_id.clone());
-
+        let post_body = HashMap::from([("client_assertion", token), ("client_id", self.client_id.clone())]);
         let res = match make_http_request(reqwest::Method::POST, &health_check_url)?
             .header(header::USER_AGENT, "vaultwarden:Duo/2.0 (Rust)")
             .form(&post_body)
@@ -253,16 +250,14 @@ impl DuoClient {
             Err(e) => return Err(e),
         };
 
-        let mut post_body = HashMap::new();
-        post_body.insert("grant_type", String::from("authorization_code"));
-        post_body.insert("code", String::from(duo_code));
-
-        // Must be the same URL that was supplied in the authorization request for the supplied duo_code
-        post_body.insert("redirect_uri", self.redirect_uri.clone());
-
-        post_body
-            .insert("client_assertion_type", String::from("urn:ietf:params:oauth:client-assertion-type:jwt-bearer"));
-        post_body.insert("client_assertion", token);
+        let post_body = HashMap::from([
+            ("grant_type", String::from("authorization_code")),
+            ("code", String::from(duo_code)),
+            // Must be the same URL that was supplied in the authorization request for the supplied duo_code
+            ("redirect_uri", self.redirect_uri.clone()),
+            ("client_assertion_type", String::from("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")),
+            ("client_assertion", token),
+        ]);
 
         let res = match make_http_request(reqwest::Method::POST, &token_url)?
             .header(header::USER_AGENT, "vaultwarden:Duo/2.0 (Rust)")
@@ -291,7 +286,7 @@ impl DuoClient {
 
         let token_data = match jsonwebtoken::decode::<IdTokenClaims>(
             &response.id_token,
-            &DecodingKey::from_secret(self.client_secret.as_bytes()),
+            &DecodingKey::from_secret(self.client_secret.as_bytes())?,
             &validation,
         ) {
             Ok(c) => c,
@@ -383,7 +378,7 @@ pub async fn get_duo_auth_url(
     device_identifier: &DeviceId,
     conn: &DbConn,
 ) -> Result<String, Error> {
-    let (ik, sk, _, host) = get_duo_keys_email(email, conn).await?;
+    let (ik, sk, host) = get_duo_keys_email(email, conn).await?;
 
     let callback_url = match make_callback_url(client_id) {
         Ok(url) => url,
@@ -422,20 +417,16 @@ pub async fn validate_duo_login(
     conn: &DbConn,
 ) -> EmptyResult {
     // Result supplied to us by clients in the form "<authz code>|<state>"
-    let split: Vec<&str> = two_factor_token.split('|').collect();
-    if split.len() != 2 {
+    let Some((code, state)) = two_factor_token.split_once('|').filter(|(_, state)| !state.contains('|')) else {
         err!(
             "Invalid response length",
             ErrorEvent {
                 event: EventType::UserFailedLogIn2fa
             }
         );
-    }
+    };
 
-    let code = split[0];
-    let state = split[1];
-
-    let (ik, sk, _, host) = get_duo_keys_email(email, conn).await?;
+    let (ik, sk, host) = get_duo_keys_email(email, conn).await?;
 
     // Get the context by the state reported by the client. If we don't have one,
     // it means the context is either missing or expired.

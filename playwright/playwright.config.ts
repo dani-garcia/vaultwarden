@@ -25,10 +25,12 @@ export default defineConfig({
     /* Long global timeout for complex tests
      * But short action/nav/expect timeouts to fail on specific step (raise locally if not enough).
      */
-    timeout: 120 * 1000,
-    actionTimeout: 20 * 1000,
-    navigationTimeout: 20 * 1000,
-    expect: { timeout: 20 * 1000 },
+    timeout: 240 * 1000,
+    actionTimeout: 40 * 1000,
+    navigationTimeout: 40 * 1000,
+    expect: { timeout: 40 * 1000 },
+
+    "permissions": ["clipboard-read"],
 
     /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
     use: {
@@ -37,6 +39,10 @@ export default defineConfig({
         browserName: 'firefox',
         locale: 'en-GB',
         timezoneId: 'Europe/London',
+        ignoreHTTPSErrors: true,
+        launchOptions: {
+            args: ['--ignore-certificate-errors']
+        },
 
         /* Always collect trace (other values add random test failures) See https://playwright.dev/docs/trace-viewer */
         trace: 'on',

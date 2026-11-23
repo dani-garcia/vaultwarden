@@ -1,3 +1,11 @@
+#[path = "auth/two_factor.rs"]
+pub mod two_factor;
+
+#[path = "auth/send.rs"]
+pub mod send;
+pub type SendTokens = send::SendTokens;
+pub type SendHeaders = send::SendHeaders;
+
 use std::{
     env,
     net::IpAddr,
@@ -5,9 +13,11 @@ use std::{
 };
 
 use chrono::{DateTime, TimeDelta, Utc};
+use ipnet::IpNet;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, errors::ErrorKind};
 use num_traits::FromPrimitive;
 use openssl::rsa::Rsa;
+use ring::hmac;
 use serde::{de::DeserializeOwned, ser::Serialize};
 
 use rocket::{
@@ -22,9 +32,9 @@ use crate::{
     db::{
         DbConn,
         models::{
-            AttachmentId, CipherId, Collection, CollectionId, Device, DeviceId, DeviceType, EmergencyAccessId,
-            Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, OrganizationId, SendFileId,
-            SendId, User, UserId, UserStampException,
+            AttachmentId, CipherId, Collection, CollectionId, CustomPermission, Device, DeviceId, DeviceType,
+            EmergencyAccessId, Membership, MembershipId, MembershipStatus, MembershipType, OrgApiKeyId, OrganizationId,
+            SendFileId, SendId, User, UserId, custom_roles_enabled,
         },
     },
     error::Error,
@@ -33,12 +43,12 @@ use crate::{
 
 const JWT_ALGORITHM: Algorithm = Algorithm::RS256;
 
-// Limit when BitWarden consider the token as expired
-pub static BW_EXPIRATION: LazyLock<TimeDelta> = LazyLock::new(|| TimeDelta::try_minutes(5).unwrap());
+// Limit when Bitwarden consider the token as expired
+pub static BW_EXPIRATION: TimeDelta = TimeDelta::try_minutes(5).unwrap();
 
-pub static DEFAULT_REFRESH_VALIDITY: LazyLock<TimeDelta> = LazyLock::new(|| TimeDelta::try_days(30).unwrap());
-pub static MOBILE_REFRESH_VALIDITY: LazyLock<TimeDelta> = LazyLock::new(|| TimeDelta::try_days(90).unwrap());
-pub static DEFAULT_ACCESS_VALIDITY: LazyLock<TimeDelta> = LazyLock::new(|| TimeDelta::try_hours(2).unwrap());
+pub static DEFAULT_REFRESH_VALIDITY: TimeDelta = TimeDelta::try_days(30).unwrap();
+pub static MOBILE_REFRESH_VALIDITY: TimeDelta = TimeDelta::try_days(90).unwrap();
+pub static DEFAULT_ACCESS_VALIDITY: TimeDelta = TimeDelta::try_hours(2).unwrap();
 static JWT_HEADER: LazyLock<Header> = LazyLock::new(|| Header::new(JWT_ALGORITHM));
 
 pub static JWT_LOGIN_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|login", CONFIG.domain_origin()));
@@ -59,6 +69,7 @@ static JWT_2FA_REMEMBER_ISSUER: LazyLock<String> = LazyLock::new(|| format!("{}|
 
 static PRIVATE_RSA_KEY: OnceLock<EncodingKey> = OnceLock::new();
 static PUBLIC_RSA_KEY: OnceLock<DecodingKey> = OnceLock::new();
+static PRELOGIN_KDF_KEY: OnceLock<hmac::Key> = OnceLock::new();
 
 pub async fn initialize_keys() -> Result<(), Error> {
     use std::io::Error as IoError;
@@ -75,7 +86,8 @@ pub async fn initialize_keys() -> Result<(), Error> {
     };
 
     let (priv_key, priv_key_buffer) = if let Some(priv_key_buffer) = priv_key_buffer {
-        (Rsa::private_key_from_pem(priv_key_buffer.to_vec().as_slice())?, priv_key_buffer.to_vec())
+        let pem = priv_key_buffer.to_vec();
+        (Rsa::private_key_from_pem(&pem)?, pem)
     } else {
         let rsa_key = Rsa::generate(2048)?;
         let priv_key_buffer = rsa_key.private_key_to_pem()?;
@@ -93,7 +105,20 @@ pub async fn initialize_keys() -> Result<(), Error> {
     if PUBLIC_RSA_KEY.set(dec).is_err() {
         err!("PUBLIC_RSA_KEY must only be initialized once")
     }
+
+    // Derived from the RSA key, so it stays the same across restarts without storing another secret
+    let prelogin_kdf_key = hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, &priv_key_buffer), b"prelogin-kdf");
+    if PRELOGIN_KDF_KEY.set(hmac::Key::new(hmac::HMAC_SHA256, prelogin_kdf_key.as_ref())).is_err() {
+        err!("PRELOGIN_KDF_KEY must only be initialized once")
+    }
     Ok(())
+}
+
+/// Returns an index in `0..len` derived from the email, the same for every request
+pub fn prelogin_kdf_index(email: &str, len: usize) -> usize {
+    let tag = hmac::sign(PRELOGIN_KDF_KEY.wait(), email.as_bytes());
+    let tag = tag.as_ref();
+    usize::from(u16::from_be_bytes([tag[0], tag[1]])) % len
 }
 
 pub fn encode_jwt<T: Serialize>(claims: &T) -> String {
@@ -234,7 +259,7 @@ impl LoginJwtClaims {
         // let orguser: Vec<_> = orgs.iter().filter(|o| o.atype == 2).map(|o| o.org_uuid.clone()).collect();
         // let orgmanager: Vec<_> = orgs.iter().filter(|o| o.atype == 3).map(|o| o.org_uuid.clone()).collect();
 
-        if exp <= (now + *BW_EXPIRATION).timestamp() {
+        if exp <= (now + BW_EXPIRATION).timestamp() {
             warn!("Raise access_token lifetime to more than 5min.");
         }
 
@@ -247,7 +272,7 @@ impl LoginJwtClaims {
             premium: true,
             name: user.name.clone(),
             email: user.email.clone(),
-            email_verified: !CONFIG.mail_enabled() || user.verified_at.is_some(),
+            email_verified: user.verified(),
 
             // ---
             // Disabled these keys to be added to the JWT since they could cause the JWT to get too large
@@ -262,7 +287,7 @@ impl LoginJwtClaims {
             sstamp: user.security_stamp.clone(),
             device: device.uuid.clone(),
             devicetype: DeviceType::from_i32(device.atype).to_string(),
-            client_id: client_id.unwrap_or("undefined".to_owned()),
+            client_id: client_id.unwrap_or_else(|| "undefined".to_owned()),
             scope,
             amr: vec!["Application".into()],
         }
@@ -274,7 +299,7 @@ impl LoginJwtClaims {
             device,
             user,
             time_now.timestamp(),
-            (time_now + *DEFAULT_ACCESS_VALIDITY).timestamp(),
+            (time_now + DEFAULT_ACCESS_VALIDITY).timestamp(),
             auth_method.scope_vec(),
             client_id,
             time_now,
@@ -288,6 +313,17 @@ impl LoginJwtClaims {
     pub fn expires_in(&self) -> i64 {
         self.exp - Utc::now().timestamp()
     }
+}
+
+fn calculate_invite_expire_hours(now: &DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
+    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
+    let Some(hours_delta) = TimeDelta::try_hours(expire_hours) else {
+        err!("Unable to calculate time delta for invite expire hours. Check `INVITATION_EXPIRATION_HOURS`.");
+    };
+    let Some(exp) = now.checked_add_signed(hours_delta) else {
+        err!("Unable to calculate invitation expire date. Check `INVITATION_EXPIRATION_HOURS`.");
+    };
+    Ok(exp)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -313,19 +349,19 @@ pub fn generate_invite_claims(
     org_id: OrganizationId,
     member_id: MembershipId,
     invited_by_email: Option<String>,
-) -> InviteJwtClaims {
+) -> Result<InviteJwtClaims, Error> {
     let time_now = Utc::now();
-    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
-    InviteJwtClaims {
+    let exp = calculate_invite_expire_hours(&time_now)?;
+    Ok(InviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
+        exp: exp.timestamp(),
         iss: JWT_INVITE_ISSUER.to_string(),
         sub: user_id,
         email,
         org_id,
         member_id,
         invited_by_email,
-    }
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -351,19 +387,19 @@ pub fn generate_emergency_access_invite_claims(
     emer_id: EmergencyAccessId,
     grantor_name: String,
     grantor_email: String,
-) -> EmergencyAccessInviteJwtClaims {
+) -> Result<EmergencyAccessInviteJwtClaims, Error> {
     let time_now = Utc::now();
-    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
-    EmergencyAccessInviteJwtClaims {
+    let exp = calculate_invite_expire_hours(&time_now)?;
+    Ok(EmergencyAccessInviteJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
+        exp: exp.timestamp(),
         iss: JWT_EMERGENCY_ACCESS_INVITE_ISSUER.to_string(),
         sub: user_id,
         email,
         emer_id,
         grantor_name,
         grantor_email,
-    }
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -416,7 +452,7 @@ pub fn generate_file_download_claims(cipher_id: CipherId, file_id: AttachmentId)
     let time_now = Utc::now();
     FileDownloadClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_minutes(5).unwrap()).timestamp(),
+        exp: (time_now + TimeDelta::try_minutes(1).unwrap()).timestamp(),
         iss: JWT_FILE_DOWNLOAD_ISSUER.to_string(),
         sub: cipher_id,
         file_id,
@@ -468,11 +504,15 @@ pub fn generate_2fa_remember_claims(device_uuid: DeviceId, user_uuid: UserId) ->
     let time_now = Utc::now();
     TwoFactorRememberClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_days(30).unwrap()).timestamp(),
+        exp: two_factor_remember_expiration(time_now, CONFIG.two_factor_remember_days()),
         iss: JWT_2FA_REMEMBER_ISSUER.to_string(),
         sub: device_uuid,
         user_uuid,
     }
+}
+
+fn two_factor_remember_expiration(time_now: DateTime<Utc>, remember_days: i64) -> i64 {
+    (time_now + TimeDelta::try_days(remember_days).expect("TWO_FACTOR_REMEMBER_DAYS is validated")).timestamp()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -487,36 +527,53 @@ pub struct BasicJwtClaims {
     pub sub: String,
 }
 
-pub fn generate_delete_claims(uuid: String) -> BasicJwtClaims {
+impl BasicJwtClaims {
+    pub fn expires_in(&self) -> i64 {
+        self.exp - Utc::now().timestamp()
+    }
+
+    pub fn token(&self) -> String {
+        encode_jwt(&self)
+    }
+}
+
+pub fn generate_delete_claims(uuid: String) -> Result<BasicJwtClaims, Error> {
     let time_now = Utc::now();
-    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
-    BasicJwtClaims {
+    let exp = calculate_invite_expire_hours(&time_now)?;
+    Ok(BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
+        exp: exp.timestamp(),
         iss: JWT_DELETE_ISSUER.to_string(),
         sub: uuid,
-    }
+    })
 }
 
-pub fn generate_verify_email_claims(user_id: &UserId) -> BasicJwtClaims {
+pub fn generate_verify_email_claims(user_id: &UserId) -> Result<BasicJwtClaims, Error> {
     let time_now = Utc::now();
-    let expire_hours = i64::from(CONFIG.invitation_expiration_hours());
-    BasicJwtClaims {
+    let exp = calculate_invite_expire_hours(&time_now)?;
+    Ok(BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_hours(expire_hours).unwrap()).timestamp(),
+        exp: exp.timestamp(),
         iss: JWT_VERIFYEMAIL_ISSUER.to_string(),
         sub: user_id.to_string(),
-    }
+    })
 }
 
-pub fn generate_admin_claims() -> BasicJwtClaims {
+pub fn generate_admin_claims() -> Result<BasicJwtClaims, Error> {
     let time_now = Utc::now();
-    BasicJwtClaims {
+    let lifetime_minutes = i64::from(CONFIG.admin_session_lifetime());
+    let Some(minutes_delta) = TimeDelta::try_minutes(lifetime_minutes) else {
+        err!("Unable to calculate time delta for admin session lifetime. Check `ADMIN_SESSION_LIFETIME`.");
+    };
+    let Some(exp) = time_now.checked_add_signed(minutes_delta) else {
+        err!("Unable to calculate admin session lifetime. Check `ADMIN_SESSION_LIFETIME`.");
+    };
+    Ok(BasicJwtClaims {
         nbf: time_now.timestamp(),
-        exp: (time_now + TimeDelta::try_minutes(CONFIG.admin_session_lifetime()).unwrap()).timestamp(),
+        exp: exp.timestamp(),
         iss: JWT_ADMIN_ISSUER.to_string(),
         sub: "admin_panel".to_owned(),
-    }
+    })
 }
 
 pub fn generate_send_claims(send_id: &SendId, file_id: &SendFileId) -> BasicJwtClaims {
@@ -567,7 +624,7 @@ impl<'r> FromRequest<'r> for Host {
             format!("{protocol}://{host}")
         };
 
-        Outcome::Success(Host {
+        Outcome::Success(Self {
             host,
         })
     }
@@ -576,6 +633,9 @@ impl<'r> FromRequest<'r> for Host {
 pub struct ClientHeaders {
     pub device_type: i32,
     pub ip: ClientIp,
+    /// `Bitwarden-Client-Version`, `None` when missing or not a version. Unlike the [`ClientVersion`] guard, this
+    /// doesn't log an error, as not every client sends it.
+    pub client_version: Option<semver::Version>,
 }
 
 #[rocket::async_trait]
@@ -592,10 +652,13 @@ impl<'r> FromRequest<'r> for ClientHeaders {
             .get_one("device-type")
             .and_then(|d| d.parse().ok())
             .unwrap_or(DeviceType::UnknownBrowser as i32);
+        let client_version =
+            request.headers().get_one("Bitwarden-Client-Version").and_then(|v| semver::Version::parse(v).ok());
 
-        Outcome::Success(ClientHeaders {
+        Outcome::Success(Self {
             device_type,
             ip,
+            client_version,
         })
     }
 }
@@ -651,36 +714,17 @@ impl<'r> FromRequest<'r> for Headers {
         };
 
         if user.security_stamp != claims.sstamp {
-            if let Some(stamp_exception) =
-                user.stamp_exception.as_deref().and_then(|s| serde_json::from_str::<UserStampException>(s).ok())
-            {
-                let Some(current_route) = request.route().and_then(|r| r.name.as_deref()) else {
-                    err_handler!("Error getting current route for stamp exception")
-                };
+            let Some(current_route) = request.route().and_then(|r| r.name.as_deref()) else {
+                err_handler!("Error getting current route for stamp exception")
+            };
 
-                // Check if the stamp exception has expired first.
-                // Then, check if the current route matches any of the allowed routes.
-                // After that check the stamp in exception matches the one in the claims.
-                if Utc::now().timestamp() > stamp_exception.expire {
-                    // If the stamp exception has been expired remove it from the database.
-                    // This prevents checking this stamp exception for new requests.
-                    let mut user = user;
-                    user.reset_stamp_exception();
-                    if let Err(e) = user.save(&conn).await {
-                        error!("Error updating user: {e:#?}");
-                    }
-                    err_handler!("Stamp exception is expired")
-                } else if !stamp_exception.routes.contains(&current_route.to_owned()) {
-                    err_handler!("Invalid security stamp: Current route and exception route do not match")
-                } else if stamp_exception.security_stamp != claims.sstamp {
-                    err_handler!("Invalid security stamp for matched stamp exception")
-                }
-            } else {
+            // Expired exceptions are only dropped on reset; writing them back here could undo a newer reset
+            if !user.stamp_exceptions().iter().any(|e| e.allows(&claims.sstamp, current_route)) {
                 err_handler!("Invalid security stamp")
             }
         }
 
-        Outcome::Success(Headers {
+        Outcome::Success(Self {
             host,
             device,
             user,
@@ -714,6 +758,12 @@ impl OrgHeaders {
     fn is_confirmed_and_owner(&self) -> bool {
         self.membership_status == MembershipStatus::Confirmed && self.membership_type == MembershipType::Owner
     }
+    // A Custom member, while Custom roles are enabled. What they may do depends on their permissions.
+    fn is_confirmed_and_custom(&self) -> bool {
+        self.membership_status == MembershipStatus::Confirmed
+            && self.membership_type == MembershipType::Custom
+            && custom_roles_enabled()
+    }
 }
 
 // org_id is usually the second path param ("/organizations/<org_id>"),
@@ -740,7 +790,7 @@ impl<'r> FromRequest<'r> for OrgIdGuard {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         match get_org_id(request) {
-            Some(_) => Outcome::Success(OrgIdGuard),
+            Some(_) => Outcome::Success(Self),
             None => Outcome::Forward(rocket::http::Status::NotFound),
         }
     }
@@ -798,7 +848,6 @@ impl<'r> FromRequest<'r> for OrgHeaders {
 }
 
 pub struct AdminHeaders {
-    pub host: String,
     pub device: Device,
     pub user: User,
     pub membership_type: MembershipType,
@@ -814,7 +863,6 @@ impl<'r> FromRequest<'r> for AdminHeaders {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
         if headers.is_confirmed_and_admin() {
             Outcome::Success(Self {
-                host: headers.host,
                 device: headers.device,
                 user: headers.user,
                 membership_type: headers.membership_type,
@@ -826,6 +874,79 @@ impl<'r> FromRequest<'r> for AdminHeaders {
         }
     }
 }
+
+/// Generates the request guard of the routes a Custom member may use with a permission. Like AdminHeaders it lets a
+/// confirmed Owner or Admin through, and a confirmed Custom member holding the permission.
+macro_rules! permission_headers {
+    ($(#[$doc:meta])* $name:ident, $permission:expr) => {
+        $(#[$doc])*
+        #[allow(dead_code, reason = "Not every route reads every field")]
+        pub struct $name {
+            pub host: String,
+            pub device: Device,
+            pub user: User,
+            pub membership_type: MembershipType,
+            pub membership: Membership,
+            pub ip: ClientIp,
+            pub org_id: OrganizationId,
+        }
+
+        #[rocket::async_trait]
+        impl<'r> FromRequest<'r> for $name {
+            type Error = &'static str;
+
+            async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+                let headers = try_outcome!(OrgHeaders::from_request(request).await);
+                if headers.is_confirmed_and_admin() || headers.membership.has_custom_permission($permission) {
+                    Outcome::Success(Self {
+                        host: headers.host,
+                        device: headers.device,
+                        user: headers.user,
+                        membership_type: headers.membership_type,
+                        org_id: headers.membership.org_uuid.clone(),
+                        membership: headers.membership,
+                        ip: headers.ip,
+                    })
+                } else {
+                    // Forbidden as in Bitwarden's permission requirements
+                    error!(target: "auth", "The current user is missing the permission for this endpoint");
+                    Outcome::Error((rocket::http::Status::Forbidden, "You don't have permission to call this endpoint"))
+                }
+            }
+        }
+    };
+}
+
+permission_headers!(
+    /// For the routes that manage the members of an organization.
+    ManageUsersHeaders,
+    CustomPermission::ManageUsers
+);
+permission_headers!(
+    /// For the routes that manage the policies of an organization.
+    ManagePoliciesHeaders,
+    CustomPermission::ManagePolicies
+);
+permission_headers!(
+    /// For the routes that manage the groups of an organization.
+    ManageGroupsHeaders,
+    CustomPermission::ManageGroups
+);
+permission_headers!(
+    /// For the routes that read the event logs of an organization.
+    AccessEventLogsHeaders,
+    CustomPermission::AccessEventLogs
+);
+permission_headers!(
+    /// For the routes that export the vault of an organization.
+    AccessImportExportHeaders,
+    CustomPermission::AccessImportExport
+);
+permission_headers!(
+    /// For the routes that recover the accounts of the members of an organization.
+    ManageResetPasswordHeaders,
+    CustomPermission::ManageResetPassword
+);
 
 // col_id is usually the fourth path param ("/organizations/<org_id>/collections/<col_id>"),
 // but there could be cases where it is a query value.
@@ -846,62 +967,143 @@ fn get_col_id(request: &Request<'_>) -> Option<CollectionId> {
     None
 }
 
-/// The ManagerHeaders are used to check if you are at least a Manager
-/// and have access to the specific collection provided via the <col_id>/collections/collectionId.
-/// This does strict checking on the collection_id, ManagerHeadersLoose does not.
-pub struct ManagerHeaders {
-    pub host: String,
-    pub device: Device,
-    pub user: User,
-    pub ip: ClientIp,
-    pub org_id: OrganizationId,
+/// What a collection route does with its collection, which decides what a Custom member needs for it.
+#[derive(Clone, Copy)]
+pub enum CollectionAction {
+    Edit,
+    Read,
+    ReadAccess,
+    Delete,
 }
 
-#[rocket::async_trait]
-impl<'r> FromRequest<'r> for ManagerHeaders {
-    type Error = &'static str;
+/// Whether `member`, a confirmed Custom member, may `action` the collection `col_id` of their organization.
+///
+/// Deleting needs Delete any collection: the clients are told collection deletion is limited, so the manage option
+/// on a collection is no permission to delete it. Editing is open with Edit any collection, reading also with Delete
+/// any collection, and otherwise both need the manage option on the collection itself. Neither the role nor any
+/// `access_all` counts as that.
+pub async fn custom_member_may(
+    action: CollectionAction,
+    member: &Membership,
+    col_id: &CollectionId,
+    conn: &DbConn,
+) -> bool {
+    if !(member.has_type(MembershipType::Custom)
+        && member.has_status(MembershipStatus::Confirmed)
+        && custom_roles_enabled())
+    {
+        return false;
+    }
+    match action {
+        CollectionAction::Delete => member.has_custom_permission(CustomPermission::DeleteAnyCollection),
+        CollectionAction::Edit if member.can_edit_any_collection() => true,
+        // Individual access details may be read with Manage users. The separate /users route follows
+        // Bitwarden's ReadAccess operation, which does not grant that permission on its own.
+        CollectionAction::Read if member.can_view_all_collection_access_details() => true,
+        CollectionAction::ReadAccess if member.can_view_all_collections() => true,
+        CollectionAction::Edit | CollectionAction::Read | CollectionAction::ReadAccess => {
+            Collection::find_explicitly_manageable_by_user(&member.org_uuid, &member.user_uuid, conn)
+                .await
+                .contains(col_id)
+        }
+    }
+}
 
-    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.is_confirmed_and_manager() {
-            if let Some(col_id) = get_col_id(request) {
-                let Outcome::Success(conn) = DbConn::from_request(request).await else {
-                    err_handler!("Error getting DB")
-                };
+/// Checks a collection route for the collection provided via the <col_id>/collections/collectionId: a Manager, Admin
+/// or Owner needs to be able to manage the collection, a Custom member is checked for the `action`.
+async fn collection_headers(request: &Request<'_>, action: CollectionAction) -> Outcome<OrgHeaders, &'static str> {
+    let headers = try_outcome!(OrgHeaders::from_request(request).await);
+    let is_custom = headers.is_confirmed_and_custom();
+    if !headers.is_confirmed_and_manager() && !is_custom {
+        err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
+    }
 
-                if !Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await {
-                    err_handler!("The current user isn't a manager for this collection")
-                }
-            } else {
-                err_handler!("Error getting the collection id")
+    let Some(col_id) = get_col_id(request) else {
+        err_handler!("Error getting the collection id")
+    };
+    let Outcome::Success(conn) = DbConn::from_request(request).await else {
+        err_handler!("Error getting DB")
+    };
+
+    let allowed = if is_custom {
+        custom_member_may(action, &headers.membership, &col_id, &conn).await
+    } else {
+        Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await
+    };
+    if !allowed {
+        // NotFound as in Bitwarden, the web vault logs the user out on a 401
+        error!(target: "auth", "Collection not found. The current user isn't a manager for this collection");
+        return Outcome::Error((rocket::http::Status::NotFound, "Collection not found"));
+    }
+    Outcome::Success(headers)
+}
+
+macro_rules! collection_headers {
+    ($(#[$doc:meta])* $name:ident, $action:expr) => {
+        $(#[$doc])*
+        pub struct $name {
+            pub host: String,
+            pub device: Device,
+            pub user: User,
+            pub ip: ClientIp,
+            pub org_id: OrganizationId,
+        }
+
+        #[rocket::async_trait]
+        impl<'r> FromRequest<'r> for $name {
+            type Error = &'static str;
+
+            async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+                let headers = try_outcome!(collection_headers(request, $action).await);
+                Outcome::Success(Self {
+                    host: headers.host,
+                    device: headers.device,
+                    user: headers.user,
+                    ip: headers.ip,
+                    org_id: headers.membership.org_uuid,
+                })
             }
-
-            Outcome::Success(Self {
-                host: headers.host,
-                device: headers.device,
-                user: headers.user,
-                ip: headers.ip,
-                org_id: headers.membership.org_uuid,
-            })
-        } else {
-            err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
         }
-    }
+
+        impl From<$name> for Headers {
+            fn from(h: $name) -> Self {
+                Self {
+                    host: h.host,
+                    device: h.device,
+                    user: h.user,
+                    ip: h.ip,
+                }
+            }
+        }
+    };
 }
 
-impl From<ManagerHeaders> for Headers {
-    fn from(h: ManagerHeaders) -> Headers {
-        Headers {
-            host: h.host,
-            device: h.device,
-            user: h.user,
-            ip: h.ip,
-        }
-    }
-}
+collection_headers!(
+    /// The ManagerHeaders are used to check if you are at least a Manager
+    /// and have access to the specific collection provided via the <col_id>/collections/collectionId.
+    /// This does strict checking on the collection_id, ManagerHeadersLoose does not.
+    ManagerHeaders,
+    CollectionAction::Edit
+);
+collection_headers!(
+    /// The same as ManagerHeaders, for the routes which only read the collection and its access.
+    CollectionReadHeaders,
+    CollectionAction::Read
+);
+collection_headers!(
+    /// The collection's /users route has narrower access than its /details route.
+    CollectionUsersReadHeaders,
+    CollectionAction::ReadAccess
+);
+collection_headers!(
+    /// The same as ManagerHeaders, for the routes which delete the collection.
+    CollectionDeleteHeaders,
+    CollectionAction::Delete
+);
 
 /// The ManagerHeadersLoose is used when you at least need to be a Manager,
 /// but there is no collection_id sent with the request (either in the path or as form data).
+/// A Custom member is let through as well, the routes check what their permissions allow.
 pub struct ManagerHeadersLoose {
     pub host: String,
     pub device: Device,
@@ -916,7 +1118,7 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.is_confirmed_and_manager() {
+        if headers.is_confirmed_and_manager() || headers.is_confirmed_and_custom() {
             Outcome::Success(Self {
                 host: headers.host,
                 device: headers.device,
@@ -931,8 +1133,8 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
 }
 
 impl From<ManagerHeadersLoose> for Headers {
-    fn from(h: ManagerHeadersLoose) -> Headers {
-        Headers {
+    fn from(h: ManagerHeadersLoose) -> Self {
+        Self {
             host: h.host,
             device: h.device,
             user: h.user,
@@ -941,22 +1143,29 @@ impl From<ManagerHeadersLoose> for Headers {
     }
 }
 
-impl ManagerHeaders {
+impl CollectionDeleteHeaders {
     pub async fn from_loose(
         h: ManagerHeadersLoose,
         collections: &Vec<CollectionId>,
         conn: &DbConn,
-    ) -> Result<ManagerHeaders, Error> {
+    ) -> Result<Self, Error> {
+        let is_custom = h.membership.has_type(MembershipType::Custom) && custom_roles_enabled();
         for col_id in collections {
             if uuid::Uuid::parse_str(col_id.as_ref()).is_err() {
                 err!("Collection Id is malformed!");
             }
-            if !Collection::is_coll_manageable_by_user(col_id, &h.membership.user_uuid, conn).await {
+            let allowed = if is_custom {
+                Collection::find_by_uuid_and_org(col_id, &h.membership.org_uuid, conn).await.is_some()
+                    && custom_member_may(CollectionAction::Delete, &h.membership, col_id, conn).await
+            } else {
+                Collection::is_coll_manageable_by_user(col_id, &h.membership.user_uuid, conn).await
+            };
+            if !allowed {
                 err!("Collection not found", "The current user isn't a manager for this collection")
             }
         }
 
-        Ok(ManagerHeaders {
+        Ok(Self {
             host: h.host,
             device: h.device,
             user: h.user,
@@ -1021,8 +1230,8 @@ impl<'r> FromRequest<'r> for OrgMemberHeaders {
 }
 
 impl From<OrgMemberHeaders> for Headers {
-    fn from(h: OrgMemberHeaders) -> Headers {
-        Headers {
+    fn from(h: OrgMemberHeaders) -> Self {
+        Self {
             host: h.host,
             device: h.device,
             user: h.user,
@@ -1039,28 +1248,82 @@ pub struct ClientIp {
     pub ip: IpAddr,
 }
 
+/// Parses a single entry of `ip_header_trusted_proxies`, which can be a CIDR range or a plain IP.
+pub fn parse_trusted_proxy(entry: &str) -> Option<IpNet> {
+    let entry = entry.trim();
+    match entry.parse::<IpNet>() {
+        Ok(net) => Some(net),
+        // Without a prefix length it is a single address, which is a valid way to write this.
+        Err(_) => entry.parse::<IpAddr>().ok().map(IpNet::from),
+    }
+}
+
+/// The client IP header can be set by anyone able to reach us, so only accept it from a proxy we trust.
+fn ip_header_is_trusted(remote: Option<IpAddr>) -> bool {
+    let trusted = CONFIG.ip_header_trusted_proxies();
+    let trusted = trusted.trim();
+    if trusted.eq_ignore_ascii_case("all") {
+        return true;
+    }
+
+    let Some(remote) = remote else {
+        return false;
+    };
+    // A dual stack listener reports IPv4 clients as IPv4-mapped IPv6, which `is_global()` reports as
+    // non global. That is what we want when blocking outgoing requests, but here it would trust them.
+    let remote = remote.to_canonical();
+    if trusted.eq_ignore_ascii_case("local") {
+        return !crate::util::is_global(remote);
+    }
+    trusted.split(',').filter_map(parse_trusted_proxy).any(|net| net.contains(&remote))
+}
+
+/// Each proxy appends the address it received the request from to a list header (`X-Forwarded-For: client, proxy1`).
+/// Like ASP.NET's ForwardedHeaders, walk the entries of every occurrence of the header from the right and take the
+/// first one that isn't a trusted proxy. If they all are, the leftmost one is the client.
+fn client_ip_from_header(req: &Request<'_>, header: &str, is_trusted: impl Fn(IpAddr) -> bool) -> Option<IpAddr> {
+    let values: Vec<&str> = req.headers().get(header).collect();
+    client_ip_from_header_values(&values, header, is_trusted)
+}
+
+fn client_ip_from_header_values(values: &[&str], header: &str, is_trusted: impl Fn(IpAddr) -> bool) -> Option<IpAddr> {
+    let entries = values.iter().flat_map(|value| value.split(',')).rev().map(str::trim);
+
+    let mut client_ip = None;
+    for entry in entries {
+        let Ok(ip) = entry.parse() else {
+            warn!("'{header}' header is malformed: {entry}");
+            break;
+        };
+        client_ip = Some(ip);
+        if !is_trusted(ip) {
+            break;
+        }
+    }
+    client_ip
+}
+
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for ClientIp {
     type Error = ();
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let ip = if CONFIG._ip_header_enabled() {
-            req.headers().get_one(&CONFIG.ip_header()).and_then(|ip| {
-                match ip.find(',') {
-                    Some(idx) => &ip[..idx],
-                    None => ip,
-                }
-                .parse()
-                .map_err(|_| warn!("'{}' header is malformed: {ip}", CONFIG.ip_header()))
-                .ok()
-            })
+        let remote = req.remote().map(|r| r.ip());
+
+        let ip = if CONFIG._ip_header_enabled() && ip_header_is_trusted(remote) {
+            client_ip_from_header(req, &CONFIG.ip_header(), |ip| ip_header_is_trusted(Some(ip)))
         } else {
+            if CONFIG._ip_header_enabled() && req.headers().get_one(&CONFIG.ip_header()).is_some() {
+                // Log the canonical IP, which is what the user filter will need to match against
+                let remote = remote.map(|ip| ip.to_canonical());
+                debug!("Ignoring the '{}' header, {remote:?} is not a trusted proxy", CONFIG.ip_header());
+            }
             None
         };
 
-        let ip = ip.or_else(|| req.remote().map(|r| r.ip())).unwrap_or_else(|| "0.0.0.0".parse().unwrap());
+        let ip = ip.or(remote).unwrap_or_else(|| "0.0.0.0".parse().unwrap());
 
-        Outcome::Success(ClientIp {
+        Outcome::Success(Self {
             ip,
         })
     }
@@ -1090,7 +1353,7 @@ impl<'r> FromRequest<'r> for Secure {
             }
         };
 
-        Outcome::Success(Secure {
+        Outcome::Success(Self {
             https: protocol == "https",
         })
     }
@@ -1136,7 +1399,7 @@ impl<'r> FromRequest<'r> for ClientVersion {
             err_handler!("Invalid Bitwarden-Client-Version header provided")
         };
 
-        Outcome::Success(ClientVersion(version))
+        Outcome::Success(Self(version))
     }
 }
 
@@ -1152,9 +1415,9 @@ pub enum AuthMethod {
 impl AuthMethod {
     pub fn scope(&self) -> String {
         match self {
-            AuthMethod::OrgApiKey => "api.organization".to_owned(),
-            AuthMethod::UserApiKey => "api".to_owned(),
-            AuthMethod::Password | AuthMethod::Sso => "api offline_access".to_owned(),
+            Self::OrgApiKey => "api.organization".to_owned(),
+            Self::UserApiKey => "api".to_owned(),
+            Self::Password | Self::Sso => "api offline_access".to_owned(),
         }
     }
 
@@ -1167,7 +1430,7 @@ impl AuthMethod {
         match scope {
             None => err!("Missing scope"),
             Some(scope) if scope == &method_scope => Ok(method_scope),
-            Some(scope) => err!(format!("Scope ({scope}) not supported")),
+            Some(scope) => err!(format!("Scope ({}) not supported", scope.escape_debug())),
         }
     }
 }
@@ -1224,9 +1487,9 @@ impl AuthTokens {
         let access_claims = LoginJwtClaims::default(device, user, &sub, client_id);
 
         let validity = if device.is_mobile() {
-            *MOBILE_REFRESH_VALIDITY
+            MOBILE_REFRESH_VALIDITY
         } else {
-            *DEFAULT_REFRESH_VALIDITY
+            DEFAULT_REFRESH_VALIDITY
         };
 
         let refresh_claims = RefreshJwtClaims {
@@ -1253,20 +1516,8 @@ pub async fn refresh_tokens(
 ) -> ApiResult<(Device, AuthTokens)> {
     let refresh_claims = match decode_refresh(refresh_token) {
         Err(err) => {
-            error!("Failed to decode {} refresh_token: {refresh_token}: {err:?}", ip.ip);
-            //err_silent!(format!("Impossible to read refresh_token: {}", err.message()))
-
-            // If the token failed to decode, it was probably one of the old style tokens that was just a Base64 string.
-            // We can generate a claim for them for backwards compatibility. Note that the password refresh claims don't
-            // check expiration or issuer, so they're not included here.
-            RefreshJwtClaims {
-                nbf: 0,
-                exp: 0,
-                iss: String::new(),
-                sub: AuthMethod::Password,
-                device_token: refresh_token.into(),
-                token: None,
-            }
+            error!("Failed to decode refresh_token from {}: {err:?}", ip.ip);
+            err_silent!("Invalid refresh token")
         }
         Ok(claims) => claims,
     };
@@ -1297,4 +1548,53 @@ pub async fn refresh_tokens(
     };
 
     Ok((device, auth_tokens))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client_ip(values: &[&str]) -> Option<IpAddr> {
+        let is_trusted = |ip: IpAddr| match ip {
+            IpAddr::V4(v4) => v4.is_private() || v4.is_loopback(),
+            IpAddr::V6(v6) => v6.is_loopback(),
+        };
+        client_ip_from_header_values(values, "X-Forwarded-For", is_trusted)
+    }
+
+    fn ip(s: &str) -> Option<IpAddr> {
+        Some(s.parse().unwrap())
+    }
+
+    #[test]
+    fn ip_header_single_value() {
+        assert_eq!(client_ip(&["203.0.113.5"]), ip("203.0.113.5"));
+        assert_eq!(client_ip(&["10.0.0.7"]), ip("10.0.0.7"));
+        assert_eq!(client_ip(&["2001:db8::1"]), ip("2001:db8::1"));
+    }
+
+    #[test]
+    fn ip_header_uses_rightmost_untrusted_entry() {
+        // Entries already in the request come before the one the proxy appended
+        assert_eq!(client_ip(&["198.51.100.1, 203.0.113.5"]), ip("203.0.113.5"));
+        // Trusted proxies on the right are skipped
+        assert_eq!(client_ip(&["198.51.100.1, 203.0.113.5, 10.0.0.2, 127.0.0.1"]), ip("203.0.113.5"));
+        // All trusted, so the leftmost entry is the client
+        assert_eq!(client_ip(&["192.168.1.10, 10.0.0.2"]), ip("192.168.1.10"));
+    }
+
+    #[test]
+    fn ip_header_reads_every_occurrence() {
+        assert_eq!(client_ip(&["198.51.100.1", "203.0.113.5"]), ip("203.0.113.5"));
+        assert_eq!(client_ip(&["198.51.100.1", "203.0.113.5, 10.0.0.2"]), ip("203.0.113.5"));
+    }
+
+    #[test]
+    fn ip_header_malformed_entries() {
+        assert_eq!(client_ip(&[]), None);
+        assert_eq!(client_ip(&[""]), None);
+        assert_eq!(client_ip(&["203.0.113.5, not-an-ip"]), None);
+        // Stops at the malformed entry and keeps the closest proxy
+        assert_eq!(client_ip(&["not-an-ip, 10.0.0.2"]), ip("10.0.0.2"));
+    }
 }

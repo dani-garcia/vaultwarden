@@ -36,7 +36,7 @@ fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
 
     let smtp_client = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host.as_str())
         .port(CONFIG.smtp_port())
-        .timeout(Some(Duration::from_secs(CONFIG.smtp_timeout())));
+        .timeout(Some(Duration::from_secs(u64::from(CONFIG.smtp_timeout()))));
 
     // Determine security
     let smtp_client = if CONFIG.smtp_security() == *"off" {
@@ -74,8 +74,8 @@ fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
             let mut selected_mechanisms = vec![];
             for wanted_mechanism in mechanism.split(',') {
                 for m in &allowed_mechanisms {
-                    if m.to_string().to_lowercase()
-                        == wanted_mechanism.trim_matches(|c| c == '"' || c == '\'' || c == ' ').to_lowercase()
+                    if m.to_string()
+                        .eq_ignore_ascii_case(wanted_mechanism.trim_matches(|c| c == '"' || c == '\'' || c == ' '))
                     {
                         selected_mechanisms.push(*m);
                     }
@@ -127,26 +127,17 @@ fn get_text(template_name: &'static str, data: serde_json::Value) -> Result<(Str
 }
 
 fn get_template(template_name: &str, data: &serde_json::Value) -> Result<(String, String), Error> {
+    const DELIMITER: &str = "<!---------------->";
     let text = CONFIG.render_template(template_name, data)?;
-    let mut text_split = text.split("<!---------------->");
-
-    let subject = if let Some(s) = text_split.next() {
-        s.trim().to_owned()
-    } else {
-        err!("Template doesn't contain subject")
-    };
-
-    let body = if let Some(s) = text_split.next() {
-        s.trim().to_owned()
-    } else {
+    let Some((subject, body)) = text.split_once(DELIMITER) else {
         err!("Template doesn't contain body")
     };
 
-    if text_split.next().is_some() {
+    if body.contains(DELIMITER) {
         err!("Template contains more than one body");
     }
 
-    Ok((subject, body))
+    Ok((subject.trim().to_owned(), body.trim().to_owned()))
 }
 
 pub async fn send_password_hint(address: &str, hint: Option<String>) -> EmptyResult {
@@ -169,7 +160,7 @@ pub async fn send_password_hint(address: &str, hint: Option<String>) -> EmptyRes
 }
 
 pub async fn send_delete_account(address: &str, user_id: &UserId) -> EmptyResult {
-    let claims = generate_delete_claims(user_id.to_string());
+    let claims = generate_delete_claims(user_id.to_string())?;
     let delete_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -187,7 +178,7 @@ pub async fn send_delete_account(address: &str, user_id: &UserId) -> EmptyResult
 }
 
 pub async fn send_verify_email(address: &str, user_id: &UserId) -> EmptyResult {
-    let claims = generate_verify_email_claims(user_id);
+    let claims = generate_verify_email_claims(user_id)?;
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -206,7 +197,7 @@ pub async fn send_verify_email(address: &str, user_id: &UserId) -> EmptyResult {
 
 pub async fn send_register_verify_email(email: &str, token: &str) -> EmptyResult {
     let mut query = url::Url::parse("https://query.builder").unwrap();
-    query.query_pairs_mut().append_pair("email", email).append_pair("token", token);
+    query.query_pairs_mut().append_pair("email", email).append_pair("token", token).append_pair("fromEmail", "true");
     let Some(query_string) = query.query() else {
         err!("Failed to build verify URL query parameters")
     };
@@ -237,7 +228,7 @@ pub async fn send_welcome(address: &str) -> EmptyResult {
 }
 
 pub async fn send_welcome_must_verify(address: &str, user_id: &UserId) -> EmptyResult {
-    let claims = generate_verify_email_claims(user_id);
+    let claims = generate_verify_email_claims(user_id)?;
     let verify_email_token = encode_jwt(&claims);
 
     let (subject, body_html, body_text) = get_text(
@@ -292,7 +283,7 @@ pub async fn send_invite(
         org_id.clone(),
         member_id.clone(),
         invited_by_email,
-    );
+    )?;
     let invite_token = encode_jwt(&claims);
     let mut query = url::Url::parse("https://query.builder").unwrap();
     {
@@ -307,9 +298,18 @@ pub async fn send_invite(
         if CONFIG.sso_enabled() && CONFIG.sso_only() {
             query_params.append_pair("orgSsoIdentifier", &org_id);
         }
-        if user.private_key.is_some() {
-            query_params.append_pair("orgUserHasExistingUser", "true");
-        }
+
+        // The web vault requires both of these parameters to be present.
+        // If either is missing it rejects the invite client-side, before any
+        // request reaches the server, showing only "Unable to accept invitation".
+        query_params.append_pair("initOrganization", "false");
+
+        let org_user_has_existing_user = if user.private_key.is_some() {
+            "true"
+        } else {
+            "false"
+        };
+        query_params.append_pair("orgUserHasExistingUser", org_user_has_existing_user);
     }
 
     let Some(query_string) = query.query() else {
@@ -342,14 +342,14 @@ pub async fn send_emergency_access_invite(
         emer_id.clone(),
         String::from(grantor_name),
         String::from(grantor_email),
-    );
+    )?;
 
     // Build the query here to ensure proper escaping
     let mut query = url::Url::parse("https://query.builder").unwrap();
     {
         let mut query_params = query.query_pairs_mut();
         query_params
-            .append_pair("id", &emer_id.to_string())
+            .append_pair("id", emer_id.as_str())
             .append_pair("name", grantor_name)
             .append_pair("email", address)
             .append_pair("token", &encode_jwt(&claims));
@@ -522,6 +522,21 @@ pub async fn send_new_device_logged_in(address: &str, ip: &str, dt: &NaiveDateTi
     send_email(address, &subject, body_html, body_text).await
 }
 
+pub async fn send_recover_twofactor(address: &str, ip: &str, dt: &NaiveDateTime) -> EmptyResult {
+    let fmt = "%A, %B %_d, %Y at %r %Z";
+    let (subject, body_html, body_text) = get_text(
+        "email/recover_twofactor",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "ip": ip,
+            "datetime": crate::util::format_naive_datetime_local(dt, fmt),
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
 pub async fn send_incomplete_2fa_login(
     address: &str,
     ip: &str,
@@ -624,14 +639,24 @@ pub async fn send_test(address: &str) -> EmptyResult {
     send_email(address, &subject, body_html, body_text).await
 }
 
-pub async fn send_admin_reset_password(address: &str, user_name: &str, org_name: &str) -> EmptyResult {
+pub async fn send_admin_account_recovery(
+    address: &str,
+    user_name: &str,
+    org_name: &str,
+    reset_password: bool,
+    reset_2fa: bool,
+    fallback_2fa_email: bool,
+) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
-        "email/admin_reset_password",
+        "email/admin_account_recovery",
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),
             "user_name": user_name,
             "org_name": org_name,
+            "reset_password": reset_password,
+            "reset_2fa": reset_2fa,
+            "fallback_2fa_email": fallback_2fa_email,
         }),
     )?;
     send_email(address, &subject, body_html, body_text).await
@@ -704,8 +729,8 @@ async fn send_email(address: &str, subject: &str, body_html: String, body_text: 
     let smtp_from = Address::from_str(&CONFIG.smtp_from())?;
 
     let body = if CONFIG.smtp_embed_images() {
-        let logo_gray_body = Body::new(crate::api::static_files("logo-gray.png").unwrap().1.to_vec());
-        let mail_github_body = Body::new(crate::api::static_files("mail-github.png").unwrap().1.to_vec());
+        let logo_gray_body = Body::new(crate::api::STATIC_FILES["logo-gray.png"].bytes.to_vec());
+        let mail_github_body = Body::new(crate::api::STATIC_FILES["mail-github.png"].bytes.to_vec());
         MultiPart::alternative().singlepart(SinglePart::plain(body_text)).multipart(
             MultiPart::related()
                 .singlepart(SinglePart::html(body_html))

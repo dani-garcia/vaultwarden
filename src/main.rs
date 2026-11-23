@@ -2,7 +2,7 @@
 // The recursion_limit is mainly triggered by the json!() macro.
 // The more key/value pairs there are the more recursion occurs.
 // We want to keep this as low as possible!
-#![recursion_limit = "165"]
+#![recursion_limit = "192"]
 
 // When enabled use MiMalloc as malloc instead of the default malloc
 #[cfg(feature = "enable_mimalloc")]
@@ -137,9 +137,7 @@ fn parse_args() {
 
     if let Some(command) = pargs.subcommand().unwrap_or_default() {
         if command == "hash" {
-            use argon2::{
-                Algorithm::Argon2id, Argon2, ParamsBuilder, PasswordHasher, Version::V0x13, password_hash::SaltString,
-            };
+            use argon2::{Algorithm::Argon2id, Argon2, ParamsBuilder, PasswordHasher, Version::V0x13};
 
             let mut argon2_params = ParamsBuilder::new();
             let preset: Option<String> = pargs.opt_value_from_str(["-p", "--preset"]).unwrap_or_default();
@@ -172,10 +170,10 @@ fn parse_args() {
             }
 
             let argon2 = Argon2::new(Argon2id, V0x13, argon2_params.build().unwrap());
-            let salt = SaltString::encode_b64(&crypto::get_random_bytes::<32>()).unwrap();
+            let salt = crypto::get_random_bytes::<32>();
 
             let argon2_timer = tokio::time::Instant::now();
-            if let Ok(password_hash) = argon2.hash_password(password.as_bytes(), &salt) {
+            if let Ok(password_hash) = argon2.hash_password_with_salt(password.as_bytes(), &salt) {
                 println!(
                     "\n\
                     ADMIN_TOKEN='{password_hash}'\n\n\
@@ -245,22 +243,20 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         let level = caps
             .get(1)
             .and_then(|m| log::LevelFilter::from_str(m.as_str()).ok())
-            .ok_or(Error::new("Failed to parse global log level".to_owned(), ""))?;
+            .ok_or_else(|| Error::new("Failed to parse global log level".to_owned(), ""))?;
 
         let levels_override: Vec<(&str, log::LevelFilter)> = caps
             .get(2)
             .map(|m| {
                 m.as_str()
                     .split(',')
-                    .collect::<Vec<&str>>()
-                    .into_iter()
                     .filter_map(|s| match s.split_once('=') {
                         Some((log, lvl_str)) => log::LevelFilter::from_str(lvl_str).ok().map(|lvl| (log, lvl)),
                         _ => None,
                     })
                     .collect()
             })
-            .ok_or(Error::new("Failed to parse overrides".to_owned(), ""))?;
+            .ok_or_else(|| Error::new("Failed to parse overrides".to_owned(), ""))?;
 
         (level, levels_override)
     } else {
@@ -368,15 +364,14 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
     }
 
     if let Some(log_file) = CONFIG.log_file() {
-        #[cfg(windows)]
-        {
-            logger = logger.chain(fern::log_file(log_file)?);
-        }
-        #[cfg(unix)]
-        {
-            const SIGHUP: i32 = SignalKind::hangup().as_raw_value();
-            let path = Path::new(&log_file);
-            logger = logger.chain(fern::log_reopen1(path, [SIGHUP])?);
+        std::cfg_select! {
+            windows => { logger = logger.chain(fern::log_file(log_file)?); }
+            unix => {
+                const SIGHUP: i32 = SignalKind::hangup().as_raw_value();
+                let path = Path::new(&log_file);
+                logger = logger.chain(fern::log_reopen1(path, [SIGHUP])?);
+            }
+            _ => {}
         }
     }
 
@@ -396,14 +391,7 @@ fn init_logging() -> Result<log::LevelFilter, Error> {
         let thread = thread::current();
         let thread = thread.name().unwrap_or("unnamed");
 
-        let msg = match info.payload().downcast_ref::<&'static str>() {
-            Some(s) => *s,
-            None => match info.payload().downcast_ref::<String>() {
-                Some(s) => &**s,
-                None => "Box<Any>",
-            },
-        };
-
+        let msg = info.payload_as_str().unwrap_or("Box<Any>");
         let backtrace = std::backtrace::Backtrace::force_capture();
 
         match info.location() {
@@ -579,9 +567,19 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .limit("data-form", 525.megabytes()) // This needs to match the maximum allowed file size for Send
         .limit("file", 525.megabytes()); // This needs to match the maximum allowed file size for attachments
 
+    let rocket = rocket::custom(config);
+    #[cfg(feature = "unsafe_test_mode")]
+    let rocket = {
+        warn!(
+            "This build has `unsafe_test_mode`: its test seeder at /test/seeder creates accounts without any checks. \
+            Never use it outside of tests!"
+        );
+        rocket.mount([basepath, "/test/seeder"].concat(), api::test_seeder_routes())
+    };
+
     // If adding more paths here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
-    let instance = rocket::custom(config)
+    let instance = rocket
         .mount([basepath, "/"].concat(), api::web_routes())
         .mount([basepath, "/api"].concat(), api::core_routes())
         .mount([basepath, "/admin"].concat(), api::admin_routes())
@@ -597,7 +595,7 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .manage(Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS))
         .attach(util::AppHeaders())
         .attach(util::Cors())
-        .attach(util::BetterLogging(extra_debug))
+        .attach(util::BetterLogging::new(extra_debug, basepath))
         .ignite()
         .await?;
 
@@ -722,7 +720,7 @@ fn schedule_jobs(pool: db::DbPool) {
             }
 
             // Clean unused, expired Duo authentication contexts.
-            if !CONFIG.duo_context_purge_schedule().is_empty() && CONFIG._enable_duo() && !CONFIG.duo_use_iframe() {
+            if !CONFIG.duo_context_purge_schedule().is_empty() && CONFIG._enable_duo() {
                 sched.add(Job::new(CONFIG.duo_context_purge_schedule().parse().unwrap(), || {
                     runtime.spawn(purge_duo_contexts(pool.clone()));
                 }));
@@ -731,7 +729,7 @@ fn schedule_jobs(pool: db::DbPool) {
             // Cleanup the event table of records x days old.
             if CONFIG.org_events_enabled()
                 && !CONFIG.event_cleanup_schedule().is_empty()
-                && CONFIG.events_days_retain().is_some()
+                && CONFIG.events_days_retain().is_some_and(|d| d != 0)
             {
                 sched.add(Job::new(CONFIG.event_cleanup_schedule().parse().unwrap(), || {
                     runtime.spawn(api::event_cleanup_job(pool.clone()));
@@ -756,7 +754,9 @@ fn schedule_jobs(pool: db::DbPool) {
             // tick, the one that was added earlier will run first.
             loop {
                 sched.tick();
-                runtime.block_on(tokio::time::sleep(tokio::time::Duration::from_millis(CONFIG.job_poll_interval_ms())));
+                runtime.block_on(tokio::time::sleep(std::time::Duration::from_millis(u64::from(
+                    CONFIG.job_poll_interval_ms(),
+                ))));
             }
         })
         .expect("Error spawning job scheduler thread");

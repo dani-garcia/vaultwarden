@@ -15,14 +15,14 @@ macro_rules! make_error {
 
         #[derive(Debug)]
         pub struct ErrorEvent { pub event: EventType }
-        pub struct Error { message: String, kind: ErrorKind, code: u16, event: Option<ErrorEvent> }
+        pub struct Error { message: String, kind: ErrorKind, code: u16, event: Option<ErrorEvent>, silent: bool }
 
         $(impl From<$ty> for Error {
             fn from(err: $ty) -> Self { Error::from((stringify!($name), err)) }
         })+
         $(impl<S: Into<String>> From<(S, $ty)> for Error {
             fn from(val: (S, $ty)) -> Self {
-                Error { message: val.0.into(), kind: ErrorKind::$name(val.1), code: BAD_REQUEST, event: None }
+                Error { message: val.0.into(), kind: ErrorKind::$name(val.1), code: BAD_REQUEST, event: None, silent: false }
             }
         })+
         impl StdError for Error {
@@ -58,7 +58,7 @@ use serde_json::{Error as SerdeErr, Value};
 use std::io::Error as IoErr;
 use std::time::SystemTimeError as TimeErr;
 use webauthn_rs::prelude::WebauthnError as WebauthnErr;
-use yubico::yubicoerror::YubicoError as YubiErr;
+use yubico_ng::error::YubicoError as YubiErr;
 
 #[derive(Serialize)]
 pub struct Empty {}
@@ -172,6 +172,18 @@ impl Error {
     pub fn message(&self) -> &str {
         &self.message
     }
+
+    #[must_use]
+    pub fn silent(mut self) -> Self {
+        self.silent = true;
+        self
+    }
+
+    #[must_use]
+    pub fn with_silent(mut self, silent: bool) -> Self {
+        self.silent = silent;
+        self
+    }
 }
 
 pub trait MapResult<S> {
@@ -226,8 +238,7 @@ impl Serialize for ApiErrorResponse<'_> {
 
         state.serialize_field("message", self.0.message)?;
 
-        let mut validation_errors = std::collections::HashMap::with_capacity(1);
-        validation_errors.insert("", vec![self.0.message]);
+        let validation_errors = std::collections::HashMap::from([("", vec![self.0.message])]);
         state.serialize_field("validationErrors", &validation_errors)?;
 
         let error_model = ErrorModel {
@@ -309,9 +320,11 @@ use rocket::{
 
 impl Responder<'_, 'static> for Error {
     fn respond_to(self, _: &Request<'_>) -> response::Result<'static> {
-        match self.kind {
-            ErrorKind::Empty(_) | ErrorKind::Simple(_) | ErrorKind::Compact(_) => {} // Don't print the error in this situation
-            _ => error!(target: "error", "{self:#?}"),
+        if !self.silent {
+            match self.kind {
+                ErrorKind::Empty(_) | ErrorKind::Simple(_) | ErrorKind::Compact(_) => {} // Don't print the error in this situation
+                _ => error!(target: "error", "{self:#?}"),
+            }
         }
 
         let code = Status::from_code(self.code).unwrap_or(Status::BadRequest);
@@ -411,12 +424,12 @@ macro_rules! err_json {
 macro_rules! err_handler {
     ($expr:expr) => {{
         error!(target: "auth", "Unauthorized Error: {}", $expr);
-        return ::rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, $expr));
+        return ::rocket::request::Outcome::Error((::rocket::http::Status::Unauthorized, $expr));
     }};
     ($usr_msg:expr, $log_value:expr) => {{
         let usr_msg = $usr_msg;
         let log_value = $log_value;
         error!(target: "auth", "Unauthorized Error: {usr_msg}. {log_value}");
-        return ::rocket::request::Outcome::Error((rocket::http::Status::Unauthorized, usr_msg));
+        return ::rocket::request::Outcome::Error((::rocket::http::Status::Unauthorized, usr_msg));
     }};
 }

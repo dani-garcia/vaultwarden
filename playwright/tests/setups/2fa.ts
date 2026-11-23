@@ -4,6 +4,24 @@ import * as OTPAuth from "otpauth";
 
 import * as utils from '../../global-utils';
 
+export async function recoveryCodes(test: Test, page: Page, user: { name: string, password: string }): string {
+    return await test.step('Recovery code', async () => {
+        await page.getByRole('button', { name: user.name }).click();
+        await page.getByRole('menuitem', { name: 'Account settings' }).click();
+        await page.getByRole('link', { name: 'Security' }).click();
+        await page.getByRole('link', { name: 'Two-step login' }).click();
+
+        await page.getByRole('button', { name: 'View recovery code' }).click();
+        await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).fill(user.password);
+        await page.getByRole('button', { name: 'Continue' }).click();
+
+        const recovery = await page.getByRole('code').innerText();
+        await page.getByLabel('Close').click();
+
+        return recovery;
+    })
+}
+
 export async function activateTOTP(test: Test, page: Page, user: { name: string, password: string }): OTPAuth.TOTP {
     return await test.step('Activate TOTP 2FA', async () => {
         await page.getByRole('button', { name: user.name }).click();
@@ -11,16 +29,16 @@ export async function activateTOTP(test: Test, page: Page, user: { name: string,
         await page.getByRole('link', { name: 'Security' }).click();
         await page.getByRole('link', { name: 'Two-step login' }).click();
         await page.locator('bit-item').filter({ hasText: /Authenticator app/ }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').fill(user.password);
+        await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).fill(user.password);
         await page.getByRole('button', { name: 'Continue' }).click();
 
-        const secret = await page.getByLabel('Key').innerText();
+        const secret = await page.getByLabel('Key', { exact: true }).innerText();
+
         let totp = new OTPAuth.TOTP({ secret, period: 30 });
 
         await page.getByLabel(/Verification code/).fill(totp.generate());
         await page.getByRole('button', { name: 'Turn on' }).click();
         await page.getByRole('heading', { name: 'Turned on', exact: true });
-        await page.getByLabel('Close').click();
 
         return totp;
     })
@@ -33,8 +51,8 @@ export async function disableTOTP(test: Test, page: Page, user: { password: stri
         await page.getByRole('link', { name: 'Security' }).click();
         await page.getByRole('link', { name: 'Two-step login' }).click();
         await page.locator('bit-item').filter({ hasText: /Authenticator app/ }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').click();
-        await page.getByLabel('Master password (required)').fill(user.password);
+        await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).click()
+        await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).fill(user.password);
         await page.getByRole('button', { name: 'Continue' }).click();
         await page.getByRole('button', { name: 'Turn off' }).click();
         await page.getByRole('button', { name: 'Yes' }).click();
@@ -49,7 +67,7 @@ export async function activateEmail(test: Test, page: Page, user: { name: string
         await page.getByRole('link', { name: 'Security' }).click();
         await page.getByRole('link', { name: 'Two-step login' }).click();
         await page.locator('bit-item').filter({ hasText: 'Enter a code sent to your email' }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').fill(user.password);
+        await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).fill(user.password);
         await page.getByRole('button', { name: 'Continue' }).click();
         await page.getByRole('button', { name: 'Send email' }).click();
     });
@@ -81,8 +99,8 @@ export async function disableEmail(test: Test, page: Page, user: { password: str
         await page.getByRole('link', { name: 'Security' }).click();
         await page.getByRole('link', { name: 'Two-step login' }).click();
         await page.locator('bit-item').filter({ hasText: 'Email' }).getByRole('button').click();
-        await page.getByLabel('Master password (required)').click();
-        await page.getByLabel('Master password (required)').fill(user.password);
+        await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).click()
+        await page.getByRole('textbox', { name: 'Master password * (required)', exact: true }).fill(user.password);
         await page.getByRole('button', { name: 'Continue' }).click();
         await page.getByRole('button', { name: 'Turn off' }).click();
         await page.getByRole('button', { name: 'Yes' }).click();

@@ -18,9 +18,10 @@ repos:
 
   # When this version is updated, do not forget to update this in `.github/workflows/typos.yaml` too
   - repo: https://github.com/crate-ci/typos
-    rev: 37bb98842b0d8c4ffebdb75301a13db0267cef89 # v1.47.2
+    rev: 276087d9a4f06398b3e04825487805e2d7375888 # v1.52.2
     hooks:
       - id: typos
+        always_run: true
 
   - repo: local
     hooks:
@@ -37,18 +38,16 @@ repos:
         description: Test the package for errors.
         entry: cargo test
         language: system
-        args: [ "--features", "sqlite,mysql,postgresql", "--" ]
-        types_or: [ rust, file ]
-        files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
+        args: [ "--features", "sqlite,mysql,postgresql,enable_mimalloc,s3,unsafe_test_mode", "--" ]
+        types_or: [ rust, toml ] # Cargo.lock matches toml type which is intended
         pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy
         description: Lint Rust sources
         entry: cargo clippy
         language: system
-        args: [ "--features", "sqlite,mysql,postgresql", "--", "-D", "warnings" ]
-        types_or: [ rust, file ]
-        files: (Cargo.toml|Cargo.lock|rust-toolchain.toml|rustfmt.toml|.*\.rs$)
+        args: [ "--features", "sqlite,mysql,postgresql,enable_mimalloc,s3,unsafe_test_mode", "--", "-D", "warnings" ]
+        types_or: [ rust, toml ] # Cargo.lock matches toml type which is intended
         pass_filenames: false
       - id: check-docker-templates
         name: check docker templates

@@ -38,23 +38,14 @@ impl Fairing for AppHeaders {
 
     async fn on_response<'r>(&self, req: &'r Request<'_>, res: &mut Response<'r>) {
         let req_uri_path = req.uri().path();
-        let req_headers = req.headers();
 
         // Check if this connection is an Upgrade/WebSocket connection and return early
         // We do not want add any extra headers, this could cause issues with reverse proxies or CloudFlare
-        if req_uri_path.ends_with("notifications/hub") || req_uri_path.ends_with("notifications/anonymous-hub") {
-            match (req_headers.get_one("connection"), req_headers.get_one("upgrade")) {
-                (Some(c), Some(u))
-                    if c.to_lowercase().contains("upgrade") && u.to_lowercase().contains("websocket") =>
-                {
-                    // Remove headers which could cause websocket connection issues
-                    res.remove_header("X-Frame-Options");
-                    res.remove_header("X-Content-Type-Options");
-                    res.remove_header("Permissions-Policy");
-                    return;
-                }
-                (_, _) => (),
-            }
+        if res.upgrade("websocket").is_some() {
+            res.remove_header("X-Frame-Options");
+            res.remove_header("X-Content-Type-Options");
+            res.remove_header("Permissions-Policy");
+            return;
         }
 
         // NOTE: When modifying or adding security headers be sure to also update the diagnostic checks in `src/static/scripts/admin_diagnostics.js` in `checkSecurityHeaders`
@@ -151,16 +142,13 @@ pub struct Cors();
 
 impl Cors {
     fn get_header(headers: &HeaderMap<'_>, name: &str) -> String {
-        match headers.get_one(name) {
-            Some(h) => h.to_owned(),
-            _ => String::new(),
-        }
+        headers.get_one(name).map_or_default(ToOwned::to_owned)
     }
 
     // Check a request's `Origin` header against the list of allowed origins.
     // If a match exists, return it. Otherwise, return None.
     fn get_allowed_origin(headers: &HeaderMap<'_>) -> Option<String> {
-        let origin = Cors::get_header(headers, "Origin");
+        let origin = Self::get_header(headers, "Origin");
         let safari_extension_origin = "file://";
         let desktop_custom_file_origin = "bw-desktop-file://bundle";
 
@@ -188,14 +176,14 @@ impl Fairing for Cors {
     async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
         let req_headers = request.headers();
 
-        if let Some(origin) = Cors::get_allowed_origin(req_headers) {
+        if let Some(origin) = Self::get_allowed_origin(req_headers) {
             response.set_header(Header::new("Access-Control-Allow-Origin", origin));
         }
 
         // Preflight request
         if request.method() == Method::Options {
-            let req_allow_headers = Cors::get_header(req_headers, "Access-Control-Request-Headers");
-            let req_allow_method = Cors::get_header(req_headers, "Access-Control-Request-Method");
+            let req_allow_headers = Self::get_header(req_headers, "Access-Control-Request-Headers");
+            let req_allow_method = Self::get_header(req_headers, "Access-Control-Request-Method");
 
             response.set_header(Header::new("Access-Control-Allow-Methods", req_allow_method));
             response.set_header(Header::new("Access-Control-Allow-Headers", req_allow_headers));
@@ -210,11 +198,11 @@ impl Fairing for Cors {
 pub struct Cached<R> {
     response: R,
     is_immutable: bool,
-    ttl: u64,
+    ttl: u32,
 }
 
 impl<R> Cached<R> {
-    pub fn long(response: R, is_immutable: bool) -> Cached<R> {
+    pub fn long(response: R, is_immutable: bool) -> Self {
         Self {
             response,
             is_immutable,
@@ -222,7 +210,7 @@ impl<R> Cached<R> {
         }
     }
 
-    pub fn short(response: R, is_immutable: bool) -> Cached<R> {
+    pub fn short(response: R, is_immutable: bool) -> Self {
         Self {
             response,
             is_immutable,
@@ -230,7 +218,7 @@ impl<R> Cached<R> {
         }
     }
 
-    pub fn ttl(response: R, ttl: u64, is_immutable: bool) -> Cached<R> {
+    pub fn ttl(response: R, ttl: u32, is_immutable: bool) -> Self {
         Self {
             response,
             is_immutable,
@@ -251,8 +239,49 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for Cache
         res.set_raw_header("Cache-Control", cache_control_header);
 
         let time_now = Local::now();
-        let expiry_time = time_now + chrono::TimeDelta::try_seconds(self.ttl.try_into().unwrap()).unwrap();
+        let expiry_time = time_now + chrono::TimeDelta::try_seconds(self.ttl.into()).unwrap();
         res.set_raw_header("Expires", format_datetime_http(&expiry_time));
+        Ok(res)
+    }
+}
+
+pub struct EtagCached<R> {
+    response: R,
+    content_type: ContentType,
+    etag: String,
+}
+
+impl<R> EtagCached<R> {
+    /// An `etag` response should always be quoted
+    pub fn new(response: R, content_type: ContentType, etag: &str) -> Self {
+        Self {
+            response,
+            content_type,
+            etag: format!("\"{etag}\""),
+        }
+    }
+}
+
+impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for EtagCached<R> {
+    fn respond_to(self, request: &'r Request<'_>) -> response::Result<'static> {
+        // Check and validate a `If-None-Match` ETag header
+        // Multiple tags could be returned for the same URI if the browser has multiple versions cached
+        // Also, weak tags are prefixed with `W/`, but ETags are always weak, so just strip it too before comparing
+        let etag_matches = request
+            .headers()
+            .get_one("If-None-Match")
+            .is_some_and(|v| v.split(',').any(|t| t.trim().trim_start_matches("W/") == self.etag));
+
+        let mut res = if etag_matches {
+            Response::build().status(Status::NotModified).ok()?
+        } else {
+            self.response.respond_to(request)?
+        };
+
+        // Both 200 (OK) and 304 (Not Modified) need to return the Content-Type Etag and Cache-Control
+        res.set_header(self.content_type);
+        res.set_raw_header("Etag", self.etag);
+        res.set_raw_header("Cache-Control", "public, no-cache");
         Ok(res)
     }
 }
@@ -261,19 +290,69 @@ impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for Cache
 // Effectively ignores, any static file route, and the alive endpoint
 const LOGGED_ROUTES: [&str; 7] = ["/api", "/admin", "/identity", "/icons", "/attachments", "/events", "/notifications"];
 
-// Boolean is extra debug, when true, we ignore the whitelist above and also print the mounts
-pub struct BetterLogging(pub bool);
+const MAX_LOGGED_QUERY_BYTES: usize = 100;
+
+// Query values can hold secrets, like the access code of a login request, so we don't log them
+fn redact_query_values(query: &str) -> String {
+    query
+        .split('&')
+        .map(|param| match param.split_once('=') {
+            Some((name, _)) => format!("{name}=…"),
+            None => param.to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+// When extra is true, we ignore the whitelist above and also print the mounts
+pub struct BetterLogging {
+    extra: bool,
+    log_requests: bool,
+    log_response: bool,
+    domain_path: String,
+}
+
+impl BetterLogging {
+    pub fn new(extra: bool, domain_path: &str) -> Self {
+        Self {
+            extra,
+            log_requests: log_enabled!(target: "request", log::Level::Info),
+            log_response: log_enabled!(target: "response", log::Level::Info),
+            domain_path: rocket::http::RawStr::new(&domain_path).percent_decode_lossy().into_owned(),
+        }
+    }
+
+    fn log_path<'p>(&self, method: Method, path: &'p rocket::http::RawStr) -> Option<std::borrow::Cow<'p, str>> {
+        if !self.extra && method == Method::Options {
+            return None;
+        }
+        let path = path.percent_decode_lossy();
+        if self.extra {
+            return Some(path);
+        }
+        let subpath = path.strip_prefix(&self.domain_path).unwrap_or(&path);
+        LOGGED_ROUTES.iter().any(|r| subpath.starts_with(r)).then_some(path)
+    }
+}
+
 #[rocket::async_trait]
 impl Fairing for BetterLogging {
     fn info(&self) -> Info {
+        let mut kind = Kind::Liftoff;
+        if self.log_requests {
+            kind = kind | Kind::Request;
+        }
+        if self.log_response {
+            kind = kind | Kind::Response;
+        }
         Info {
             name: "Better Logging",
-            kind: Kind::Liftoff | Kind::Request | Kind::Response,
+            kind,
         }
     }
 
     async fn on_liftoff(&self, rocket: &Rocket<Orbit>) {
-        if self.0 {
+        if self.extra {
             info!(target: "routes", "Routes loaded:");
             let mut routes: Vec<_> = rocket.routes().collect();
             routes.sort_by_key(|r| r.uri.path());
@@ -297,36 +376,29 @@ impl Fairing for BetterLogging {
     }
 
     async fn on_request(&self, request: &mut Request<'_>, _data: &mut Data<'_>) {
-        let method = request.method();
-        if !self.0 && method == Method::Options {
-            return;
-        }
         let uri = request.uri();
-        let uri_path = uri.path();
-        let uri_path_str = uri_path.url_decode_lossy();
-        let uri_subpath = uri_path_str.strip_prefix(&CONFIG.domain_path()).unwrap_or(&uri_path_str);
-        if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
-            match uri.query() {
-                Some(q) => info!(target: "request", "{method} {uri_path_str}?{}", &q[..q.len().min(30)]),
-                None => info!(target: "request", "{method} {uri_path_str}"),
+        let method = request.method();
+        let Some(path) = self.log_path(method, uri.path().raw()) else {
+            return;
+        };
+        match uri.query() {
+            Some(q) => {
+                let query = redact_query_values(q.as_str());
+                let query = &query[..query.floor_char_boundary(MAX_LOGGED_QUERY_BYTES)];
+                info!(target: "request", "{method} {}?{}", path.escape_debug(), query.escape_debug());
             }
+            None => info!(target: "request", "{method} {}", path.escape_debug()),
         }
     }
 
     async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
-        if !self.0 && request.method() == Method::Options {
+        if self.log_path(request.method(), request.uri().path().raw()).is_none() {
             return;
         }
-        let uri_path = request.uri().path();
-        let uri_path_str = uri_path.url_decode_lossy();
-        let uri_subpath = uri_path_str.strip_prefix(&CONFIG.domain_path()).unwrap_or(&uri_path_str);
-        if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
-            let status = response.status();
-            if let Some(route) = request.route() {
-                info!(target: "response", "{route} => {status}");
-            } else {
-                info!(target: "response", "{status}");
-            }
+        let status = response.status();
+        match request.route() {
+            Some(r) => info!(target: "response", "{r} => {status}"),
+            None => info!(target: "response", "{status}"),
         }
     }
 }
@@ -342,7 +414,7 @@ pub fn get_display_size(size: i64) -> String {
     let mut unit_counter = 0;
 
     loop {
-        if size > 1024. {
+        if size > 1024. && unit_counter < UNITS.len() - 1 {
             size /= 1024.;
             unit_counter += 1;
         } else {
@@ -363,19 +435,19 @@ pub fn get_uuid() -> String {
 #[inline]
 pub fn upcase_first(s: &str) -> String {
     let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-    }
+    c.next().map_or_default(|f| f.to_uppercase().collect::<String>() + c.as_str())
 }
 
 #[inline]
-pub fn lcase_first(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_lowercase().collect::<String>() + c.as_str(),
+pub fn lcase_first(mut s: String) -> String {
+    // get_mut(0..1) is None if empty or if the first char is multi-byte
+    if let Some(first) = s.get_mut(0..1) {
+        first.make_ascii_lowercase();
+    } else if let Some(c) = s.chars().next() {
+        let lc: String = c.to_lowercase().collect();
+        s.replace_range(..c.len_utf8(), &lc);
     }
+    s
 }
 
 pub fn try_parse_string<S, T>(string: Option<S>) -> Option<T>
@@ -383,11 +455,7 @@ where
     S: AsRef<str>,
     T: FromStr,
 {
-    if let Some(Ok(value)) = string.map(|s| s.as_ref().parse::<T>()) {
-        Some(value)
-    } else {
-        None
-    }
+    string.and_then(|s| s.as_ref().parse::<T>().ok())
 }
 
 //
@@ -409,21 +477,35 @@ pub fn get_env_str_value(key: &str) -> Option<String> {
     }
 }
 
-pub fn get_env<V>(key: &str) -> Option<V>
+pub static INVALID_ENV_VARS: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
+
+pub fn get_env<V>(key: &'static str) -> Option<V>
 where
     V: FromStr,
 {
-    try_parse_string(get_env_str_value(key))
+    let value = get_env_str_value(key);
+    let value_is_some = value.is_some();
+    let parsed: Option<V> = try_parse_string(value);
+    if parsed.is_none() && value_is_some {
+        println!("[ERROR] `{key}` contains an invalid value for its type and is ignored, the default is used instead.");
+        INVALID_ENV_VARS.lock().unwrap().push(key);
+    }
+    parsed
 }
 
-pub fn get_env_bool(key: &str) -> Option<bool> {
+pub fn get_env_bool(key: &'static str) -> Option<bool> {
     const TRUE_VALUES: &[&str] = &["true", "t", "yes", "y", "1"];
     const FALSE_VALUES: &[&str] = &["false", "f", "no", "n", "0"];
 
-    match get_env_str_value(key) {
-        Some(val) if TRUE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(true),
-        Some(val) if FALSE_VALUES.contains(&val.to_lowercase().as_ref()) => Some(false),
-        _ => None,
+    let val = get_env_str_value(key)?;
+    if TRUE_VALUES.iter().any(|v| val.eq_ignore_ascii_case(v)) {
+        Some(true)
+    } else if FALSE_VALUES.iter().any(|v| val.eq_ignore_ascii_case(v)) {
+        Some(false)
+    } else {
+        println!("[ERROR] `{key}` contains an invalid boolean value and is ignored, the default is used instead.");
+        INVALID_ENV_VARS.lock().unwrap().push(key);
+        None
     }
 }
 
@@ -484,8 +566,8 @@ pub fn format_datetime_http(dt: &DateTime<Local>) -> String {
     expiry_time.to_rfc2822().replace("+0000", "GMT")
 }
 
-pub fn parse_date(date: &str) -> NaiveDateTime {
-    DateTime::parse_from_rfc3339(date).unwrap().naive_utc()
+pub fn parse_date(date: &str) -> Option<NaiveDateTime> {
+    DateTime::parse_from_rfc3339(date).ok().map(|dt| dt.naive_utc())
 }
 
 /// Returns true or false if an email address is valid or not
@@ -499,10 +581,7 @@ pub fn is_valid_email(email: &str) -> bool {
     let Ok(email_url) = url::Url::parse(&format!("https://{}", email.domain())) else {
         return false;
     };
-    if email_url.path().ne("/") || email_url.domain().is_none() || email_url.query().is_some() {
-        return false;
-    }
-    true
+    email_url.domain().is_some() && email_url.path() == "/" && email_url.query().is_none()
 }
 
 //
@@ -620,10 +699,12 @@ impl<'de> Visitor<'de> for LowerCaseVisitor {
 
 // Inner function to handle a special case for the 'ssn' key.
 // This key is part of the Identity Cipher (Social Security Number)
-fn process_json_key(key: &str) -> String {
-    match key.to_lowercase().as_ref() {
-        "ssn" => "ssn".into(),
-        _ => lcase_first(key),
+fn process_json_key(mut key: String) -> String {
+    if key.eq_ignore_ascii_case("ssn") {
+        key.make_ascii_lowercase();
+        key
+    } else {
+        lcase_first(key)
     }
 }
 
@@ -633,13 +714,7 @@ where
     T: From<String>,
 {
     use serde::Deserialize;
-    Ok(Option::<String>::deserialize(deserializer)?.and_then(|s| {
-        if s.is_empty() {
-            None
-        } else {
-            Some(T::from(s))
-        }
-    }))
+    Ok(Option::<String>::deserialize(deserializer)?.filter(|s| !s.is_empty()).map(T::from))
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -652,8 +727,8 @@ pub enum NumberOrString {
 impl NumberOrString {
     pub fn into_string(self) -> String {
         match self {
-            NumberOrString::Number(n) => n.to_string(),
-            NumberOrString::String(s) => s,
+            Self::Number(n) => n.to_string(),
+            Self::String(s) => s,
         }
     }
 
@@ -661,16 +736,14 @@ impl NumberOrString {
     pub fn into_i32(&self) -> Result<i32, crate::Error> {
         use std::num::ParseIntError as PIE;
         match self {
-            NumberOrString::Number(n) => {
-                if let Some(n) = n.to_i32() {
+            Self::Number(n) => {
+                if let Ok(n) = i32::try_from(*n) {
                     Ok(n)
                 } else {
                     err!("Number does not fit in i32")
                 }
             }
-            NumberOrString::String(s) => {
-                s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string()))
-            }
+            Self::String(s) => s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string())),
         }
     }
 
@@ -678,10 +751,8 @@ impl NumberOrString {
     pub fn into_i64(&self) -> Result<i64, crate::Error> {
         use std::num::ParseIntError as PIE;
         match self {
-            NumberOrString::Number(n) => Ok(*n),
-            NumberOrString::String(s) => {
-                s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string()))
-            }
+            Self::Number(n) => Ok(*n),
+            Self::String(s) => s.parse().map_err(|e: PIE| crate::Error::new("Can't convert to number", e.to_string())),
         }
     }
 }
@@ -738,50 +809,25 @@ where
 
 pub fn convert_json_key_lcase_first(src_json: Value) -> Value {
     match src_json {
-        Value::Array(elm) => {
-            let mut new_array: Vec<Value> = Vec::with_capacity(elm.len());
-
-            for obj in elm {
-                new_array.push(convert_json_key_lcase_first(obj));
+        Value::Array(mut elm) => {
+            for obj in &mut elm {
+                *obj = convert_json_key_lcase_first(obj.take());
             }
-            Value::Array(new_array)
+            Value::Array(elm)
         }
 
         Value::Object(obj) => {
             let mut json_map = JsonMap::new();
             for (key, value) in obj {
-                match (key, value) {
-                    (key, Value::Object(elm)) => {
-                        let inner_value = convert_json_key_lcase_first(Value::Object(elm));
-                        json_map.insert(process_json_key(&key), inner_value);
-                    }
-
-                    (key, Value::Array(elm)) => {
-                        let mut inner_array: Vec<Value> = Vec::with_capacity(elm.len());
-
-                        for inner_obj in elm {
-                            inner_array.push(convert_json_key_lcase_first(inner_obj));
-                        }
-
-                        json_map.insert(process_json_key(&key), Value::Array(inner_array));
-                    }
-
-                    (key, value) => {
-                        json_map.insert(process_json_key(&key), value);
-                    }
-                }
+                json_map.insert(process_json_key(key), convert_json_key_lcase_first(value));
             }
-
             Value::Object(json_map)
         }
-
         value => value,
     }
 }
 
 pub enum FeatureFlagFilter {
-    #[allow(dead_code)]
-    Unfiltered,
     ValidOnly,
     InvalidOnly,
 }
@@ -796,12 +842,17 @@ pub fn parse_experimental_client_feature_flags(
         .map(str::trim)
         .filter(|flag| !flag.is_empty())
         .filter(|flag| match filter_mode {
-            FeatureFlagFilter::Unfiltered => true,
             FeatureFlagFilter::ValidOnly => SUPPORTED_FEATURE_FLAGS.contains(flag),
             FeatureFlagFilter::InvalidOnly => !SUPPORTED_FEATURE_FLAGS.contains(flag),
         })
         .map(|flag| (flag.to_owned(), true))
         .collect()
+}
+
+/// Whether the admin enabled this supported client feature flag
+pub fn is_client_feature_flag_enabled(flag: &str) -> bool {
+    parse_experimental_client_feature_flags(&CONFIG.experimental_client_feature_flags(), &FeatureFlagFilter::ValidOnly)
+        .contains_key(flag)
 }
 
 /// TODO: This is extracted from IpAddr::is_global, which is unstable:
@@ -810,9 +861,9 @@ pub fn parse_experimental_client_feature_flags(
 // #[expect(clippy::nonminimal_bool, reason = "Mostly copy/paste from std, keep as-is")]
 #[expect(clippy::decimal_bitwise_operands, reason = "Mostly copy/paste from std, keep as-is")]
 #[cfg(any(not(feature = "unstable"), test))]
-pub fn is_global_hardcoded(ip: std::net::IpAddr) -> bool {
+pub fn is_global_hardcoded(ip: core::net::IpAddr) -> bool {
     match ip {
-        std::net::IpAddr::V4(ip) => {
+        core::net::IpAddr::V4(ip) => {
             !(ip.octets()[0] == 0 // "This network"
             || ip.is_private()
             || (ip.octets()[0] == 100 && (ip.octets()[1] & 0b1100_0000 == 0b0100_0000)) // ip.is_shared()
@@ -824,12 +875,14 @@ pub fn is_global_hardcoded(ip: std::net::IpAddr) -> bool {
                 ip.octets()[0] == 192 && ip.octets()[1] == 0 && ip.octets()[2] == 0
                 && ip.octets()[3] != 9 && ip.octets()[3] != 10
             )
+            // 6a44-relay anycast address (`192.88.99.2/32`)
+            || matches!(ip.octets(), [192, 88, 99, 2])
             || ip.is_documentation()
             || (ip.octets()[0] == 198 && (ip.octets()[1] & 0xfe) == 18) // ip.is_benchmarking()
             || (ip.octets()[0] & 240 == 240 && !ip.is_broadcast()) // ip.is_reserved()
             || ip.is_broadcast())
         }
-        std::net::IpAddr::V6(ip) => {
+        core::net::IpAddr::V6(ip) => {
             !(ip.is_unspecified()
             || ip.is_loopback()
             // IPv4-mapped Address (`::ffff:0:0/96`)
@@ -838,6 +891,8 @@ pub fn is_global_hardcoded(ip: std::net::IpAddr) -> bool {
             || matches!(ip.segments(), [0x64, 0xff9b, 1, _, _, _, _, _])
             // Discard-Only Address Block (`100::/64`)
             || matches!(ip.segments(), [0x100, 0, 0, 0, _, _, _, _])
+            // Dummy IPv6 Prefix (100:0:0:1::/64)
+            || matches!(ip.segments(), [0x100, 0, 0, 1, _, _, _, _])
             // IETF Protocol Assignments (`2001::/23`)
             || (matches!(ip.segments(), [0x2001, b, _, _, _, _, _, _] if b < 0x200)
                 && !(
@@ -845,6 +900,8 @@ pub fn is_global_hardcoded(ip: std::net::IpAddr) -> bool {
                     u128::from_be_bytes(ip.octets()) == 0x2001_0001_0000_0000_0000_0000_0000_0001
                     // Traversal Using Relays around NAT Anycast (`2001:1::2`)
                     || u128::from_be_bytes(ip.octets()) == 0x2001_0001_0000_0000_0000_0000_0000_0002
+                    // DNS-SD Service Registration Protocol Anycast (`2001:1::3`)
+                    || u128::from_be_bytes(ip.octets()) == 0x2001_0001_0000_0000_0000_0000_0000_0003
                     // AMT (`2001:3::/32`)
                     || matches!(ip.segments(), [0x2001, 3, _, _, _, _, _, _])
                     // AS112-v6 (`2001:4:112::/48`)
@@ -894,6 +951,22 @@ pub async fn save_temp_file(
     Ok(())
 }
 
+/// Whether `value` has the form of an RSA-encrypted string (types 3 to 6), the form of the account recovery key: the
+/// type and its number of `|` pieces like the clients' `UnsignedSharedKey` parser, and each piece canonical, padded
+/// base64, which is what the clients send.
+///
+/// Ref: <https://github.com/bitwarden/sdk-internal/blob/6238472451e4fa7b5c592b4b24a84e950a258957/crates/bitwarden-crypto/src/enc_string/asymmetric.rs#L85-L119>
+pub fn is_valid_rsa_encrypted_string(value: &str) -> bool {
+    let (pieces, rest) = match value.split_once('.') {
+        Some(("3" | "4", rest)) => (1, rest),
+        Some(("5" | "6", rest)) => (2, rest),
+        _ => return false,
+    };
+    let parts: Vec<&str> = rest.split('|').collect();
+    parts.len() == pieces
+        && parts.iter().all(|part| !part.is_empty() && data_encoding::BASE64.decode(part.as_bytes()).is_ok())
+}
+
 /// These are some tests to check that the implementations match
 /// The IPv4 can be all checked in 30 seconds or so and they are correct as of nightly 2023-07-17
 /// The IPV6 can't be checked in a reasonable time, so we check over a hundred billion random ones, so far correct
@@ -908,15 +981,15 @@ mod tests {
     use std::net::IpAddr;
 
     #[test]
-    #[ignore]
+    #[ignore = "exhaustive IPv4 check is too slow for the regular test suite"]
     fn test_ipv4_global() {
-        for a in 0..u8::MAX {
-            println!("Iter: {}/255", a);
-            for b in 0..u8::MAX {
-                for c in 0..u8::MAX {
-                    for d in 0..u8::MAX {
+        for a in 0..=u8::MAX {
+            println!("Iter: {a}/255");
+            for b in 0..=u8::MAX {
+                for c in 0..=u8::MAX {
+                    for d in 0..=u8::MAX {
                         let ip = IpAddr::V4(std::net::Ipv4Addr::new(a, b, c, d));
-                        assert_eq!(ip.is_global(), is_global_hardcoded(ip), "IP mismatch: {}", ip)
+                        assert_eq!(ip.is_global(), is_global_hardcoded(ip), "IP mismatch: {ip}");
                     }
                 }
             }
@@ -924,15 +997,15 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "random IPv6 check is too slow for the regular test suite"]
     fn test_ipv6_global() {
-        use rand::Rng;
+        use rand::RngExt;
 
         std::thread::scope(|s| {
             for t in 0..16 {
-                let handle = s.spawn(move || {
+                let _handle = s.spawn(move || {
                     let mut v = [0u8; 16];
-                    let mut rng = rand::thread_rng();
+                    let mut rng = rand::rng();
 
                     for i in 0..20 {
                         println!("Thread {t} Iter: {i}/50");
@@ -945,5 +1018,50 @@ mod tests {
                 });
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod query_log_tests {
+    use super::{MAX_LOGGED_QUERY_BYTES, redact_query_values};
+
+    #[test]
+    fn test_redact_query_values() {
+        assert_eq!(redact_query_values("code=SECRET"), "code=…");
+        assert_eq!(redact_query_values("code=SECRET&other=SECRET"), "code=…&other=…");
+        assert_eq!(redact_query_values("a=1&b=2&flag"), "a=…&b=…&flag");
+        assert_eq!(redact_query_values("a=b=SECRET"), "a=…");
+        assert_eq!(redact_query_values("a=1&&=SECRET"), "a=…&&=…");
+        assert_eq!(redact_query_values("a=x%26b%3DSECRET"), "a=…");
+        assert_eq!(redact_query_values("a=1;b=SECRET"), "a=…");
+        assert_eq!(redact_query_values("a=1&a=SECRET"), "a=…&a=…");
+        assert_eq!(redact_query_values(""), "");
+    }
+
+    #[test]
+    fn test_redacted_query_truncates_on_a_char_boundary() {
+        let name = "a".repeat(MAX_LOGGED_QUERY_BYTES - 1);
+        let query = redact_query_values(&format!("{name}=SECRET"));
+        assert_eq!(&query[..query.floor_char_boundary(MAX_LOGGED_QUERY_BYTES)], format!("{name}="));
+    }
+}
+
+#[cfg(test)]
+mod encrypted_string_tests {
+    use super::is_valid_rsa_encrypted_string as valid;
+
+    #[test]
+    fn rsa_encrypted_strings_are_validated() {
+        assert!(valid("3.YWJjZA=="));
+        assert!(valid("4.YWJjZA=="));
+        assert!(valid("6.YWJjZA==|YWJjZA=="));
+        assert!(!valid("2.YWJjZA==|YWJjZA==|YWJjZA=="), "symmetric type");
+        assert!(!valid("YWJjZA=="), "no type");
+        assert!(!valid("4.not base64!"));
+        assert!(!valid("4.YWJjZA==|YWJjZA=="), "one piece too many");
+        assert!(!valid("5.YWJjZA=="), "one piece too few");
+        assert!(!valid("4.YWJjZB=="), "padding bits set");
+        assert!(!valid("4."), "empty piece");
+        assert!(!valid(""));
     }
 }

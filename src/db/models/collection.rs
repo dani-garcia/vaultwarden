@@ -18,9 +18,10 @@ use macros::UuidFromParam;
 
 use super::{
     CipherId, CollectionGroup, GroupUser, Membership, MembershipId, MembershipStatus, MembershipType, OrganizationId,
-    User, UserId,
+    User, UserId, custom_roles_enabled, organization::ORG_ADMIN_ATYPES,
 };
 
+// See (v2026.7.0): https://github.com/bitwarden/server/blob/5d4461aa42cadbacfef8fe2166c5453a5c52773a/src/Core/AdminConsole/Entities/Collection.cs
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = collections)]
 #[diesel(treat_none_as_null = true)]
@@ -71,23 +72,18 @@ impl Collection {
             "id": self.uuid,
             "organizationId": self.org_uuid,
             "name": self.name,
+            // Collection types are either 0: SharedCollection or 1: DefaultUserCollection, of which we do not yet support DefaultUserCollection.
+            // See (v2026.7.0): https://github.com/bitwarden/server/blob/5d4461aa42cadbacfef8fe2166c5453a5c52773a/src/Core/AdminConsole/Enums/CollectionType.cs
+            "type": 0,
+            // This is only used together with MyItems/DefaultUserCollection, which we do not yet support.
+            "defaultUserCollectionEmail": null,
             "object": "collection",
         })
     }
 
     pub fn set_external_id(&mut self, external_id: Option<String>) {
-        //Check if external id is empty. We don't want to have
-        //empty strings in the database
-        match external_id {
-            Some(external_id) => {
-                if external_id.is_empty() {
-                    self.external_id = None;
-                } else {
-                    self.external_id = Some(external_id);
-                }
-            }
-            None => self.external_id = None,
-        }
+        // Check if external id is empty. We don't want to have empty strings in the database
+        self.external_id = external_id.filter(|e| !e.trim().is_empty());
     }
 
     pub async fn to_json_details(
@@ -103,18 +99,22 @@ impl Collection {
                 Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Manager),
                 Some(m) => {
                     // Only let a manager manage collections when the have full read/write access
+                    // A Custom member only manages a collection with the manage option
                     let is_manager = m.atype == MembershipType::Manager;
+                    let is_custom = m.has_type(MembershipType::Custom) && custom_roles_enabled();
                     if let Some(cu) = cipher_sync_data.user_collections.get(&self.uuid) {
                         (
                             cu.read_only,
                             cu.hide_passwords,
-                            is_manager && (cu.manage || (!cu.read_only && !cu.hide_passwords)),
+                            (is_manager && (cu.manage || (!cu.read_only && !cu.hide_passwords)))
+                                || (is_custom && cu.manage),
                         )
                     } else if let Some(cg) = cipher_sync_data.user_collections_groups.get(&self.uuid) {
                         (
                             cg.read_only,
                             cg.hide_passwords,
-                            is_manager && (cg.manage || (!cg.read_only && !cg.hide_passwords)),
+                            (is_manager && (cg.manage || (!cg.read_only && !cg.hide_passwords)))
+                                || (is_custom && cg.manage),
                         )
                     } else {
                         (false, false, false)
@@ -127,6 +127,17 @@ impl Collection {
                 Some(m) if m.has_full_access() => (false, false, m.atype >= MembershipType::Manager),
                 Some(m) if m.atype == MembershipType::Manager && self.is_manageable_by_user(user_uuid, conn).await => {
                     (false, false, true)
+                }
+                // A Custom member reads and writes every collection with Edit any collection in the Admin Console, but
+                // only manages a collection with the manage option on it
+                Some(m) if m.has_type(MembershipType::Custom) && custom_roles_enabled() => {
+                    let manage = self.is_explicitly_manageable_by_user(user_uuid, conn).await;
+                    if manage || m.can_edit_any_collection() {
+                        (false, false, manage)
+                    } else {
+                        let read_only = !self.is_writable_by_user(user_uuid, conn).await;
+                        (read_only, self.hide_passwords_for_user(user_uuid, conn).await, false)
+                    }
                 }
                 Some(m) => {
                     let is_manager = m.atype == MembershipType::Manager;
@@ -162,24 +173,16 @@ impl Collection {
         self.update_users_revision(conn).await;
 
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(collections::table)
+            mysql {
+                diesel::insert_into(collections::table)
                     .values(self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(collections::table)
-                            .filter(collections::uuid.eq(&self.uuid))
-                            .set(self)
-                            .execute(conn)
-                            .map_res("Error saving collection")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving collection")
+                    .map_res("Error saving collection")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(collections::table)
                     .values(self)
                     .on_conflict(collections::uuid)
@@ -369,6 +372,7 @@ impl Collection {
                             .and(collections_groups::collections_uuid.eq(collections::uuid))),
                     )
                     .filter(collections::uuid.eq(uuid))
+                    .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(
                         users_collections::collection_uuid
                             .eq(uuid)
@@ -376,7 +380,7 @@ impl Collection {
                                 // Directly accessed collection
                                 users_organizations::access_all.eq(true).or(
                                     // access_all in Organization
-                                    users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
+                                    users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin or owner
                                 ),
                             )
                             .or(
@@ -408,11 +412,12 @@ impl Collection {
                             .and(users_organizations::user_uuid.eq(user_uuid))),
                     )
                     .filter(collections::uuid.eq(uuid))
+                    .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                     .filter(users_collections::collection_uuid.eq(uuid).or(
                         // Directly accessed collection
                         users_organizations::access_all.eq(true).or(
                             // access_all in Organization
-                            users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
+                            users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin or owner
                         ),
                     ))
                     .select(collections::all_columns)
@@ -432,7 +437,8 @@ impl Collection {
                     .inner_join(
                         users_organizations::table.on(collections::org_uuid
                             .eq(users_organizations::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid.clone()))),
+                            .and(users_organizations::user_uuid.eq(user_uuid.clone()))
+                            .and(users_organizations::status.eq(MembershipStatus::Confirmed as i32))),
                     )
                     .left_join(
                         users_collections::table.on(users_collections::collection_uuid
@@ -454,7 +460,7 @@ impl Collection {
                     )
                     .filter(
                         users_organizations::atype
-                            .le(MembershipType::Admin as i32) // Org admin or owner
+                            .eq_any(ORG_ADMIN_ATYPES) // Org admin or owner
                             .or(users_organizations::access_all.eq(true)) // access_all via membership
                             .or(users_collections::collection_uuid
                                 .eq(&self.uuid) // write access given to collection
@@ -478,7 +484,8 @@ impl Collection {
                     .inner_join(
                         users_organizations::table.on(collections::org_uuid
                             .eq(users_organizations::org_uuid)
-                            .and(users_organizations::user_uuid.eq(user_uuid.clone()))),
+                            .and(users_organizations::user_uuid.eq(user_uuid.clone()))
+                            .and(users_organizations::status.eq(MembershipStatus::Confirmed as i32))),
                     )
                     .left_join(
                         users_collections::table.on(users_collections::collection_uuid
@@ -487,7 +494,7 @@ impl Collection {
                     )
                     .filter(
                         users_organizations::atype
-                            .le(MembershipType::Admin as i32) // Org admin or owner
+                            .eq_any(ORG_ADMIN_ATYPES) // Org admin or owner
                             .or(users_organizations::access_all.eq(true)) // access_all via membership
                             .or(users_collections::collection_uuid
                                 .eq(&self.uuid) // write access given to collection
@@ -529,6 +536,7 @@ impl Collection {
                         .and(collections_groups::collections_uuid.eq(collections::uuid))),
                 )
                 .filter(collections::uuid.eq(&self.uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(
                     users_collections::collection_uuid
                         .eq(&self.uuid)
@@ -537,7 +545,7 @@ impl Collection {
                             // Directly accessed collection
                             users_organizations::access_all.eq(true).or(
                                 // access_all in Organization
-                                users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
+                                users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin or owner
                             ),
                         )
                         .or(
@@ -588,6 +596,7 @@ impl Collection {
                         .and(collections_groups::collections_uuid.eq(collections::uuid))),
                 )
                 .filter(collections::uuid.eq(&uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .filter(
                     users_collections::collection_uuid
                         .eq(&uuid)
@@ -596,7 +605,7 @@ impl Collection {
                             // Directly accessed collection
                             users_organizations::access_all.eq(true).or(
                                 // access_all in Organization
-                                users_organizations::atype.le(MembershipType::Admin as i32), // Org admin or owner
+                                users_organizations::atype.eq_any(ORG_ADMIN_ATYPES), // Org admin or owner
                             ),
                         )
                         .or(
@@ -622,6 +631,65 @@ impl Collection {
 
     pub async fn is_manageable_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
         Self::is_coll_manageable_by_user(&self.uuid, user_uuid, conn).await
+    }
+
+    // Whether the user has manage access to at least one collection in the org, directly or via a
+    // group. Org-scoped counterpart of is_coll_manageable_by_user.
+    pub async fn has_manageable_collection_by_user(
+        org_uuid: &OrganizationId,
+        user_uuid: &UserId,
+        conn: &DbConn,
+    ) -> bool {
+        !Self::find_explicitly_manageable_by_user(org_uuid, user_uuid, conn).await.is_empty()
+    }
+
+    pub async fn is_explicitly_manageable_by_user(&self, user_uuid: &UserId, conn: &DbConn) -> bool {
+        Self::find_explicitly_manageable_by_user(&self.org_uuid, user_uuid, conn).await.contains(&self.uuid)
+    }
+
+    // The collections of the org the user has manage access to by the manage option, directly or via a group.
+    // Unlike is_coll_manageable_by_user, neither the role nor any access_all counts.
+    pub async fn find_explicitly_manageable_by_user(
+        org_uuid: &OrganizationId,
+        user_uuid: &UserId,
+        conn: &DbConn,
+    ) -> Vec<CollectionId> {
+        let org_uuid = org_uuid.to_string();
+        let user_uuid = user_uuid.to_string();
+        let groups_enabled = CONFIG.org_groups_enabled();
+        conn.run(move |conn| {
+            collections::table
+                .left_join(
+                    users_collections::table.on(users_collections::collection_uuid
+                        .eq(collections::uuid)
+                        .and(users_collections::user_uuid.eq(user_uuid.clone()))),
+                )
+                .left_join(
+                    users_organizations::table.on(collections::org_uuid
+                        .eq(users_organizations::org_uuid)
+                        .and(users_organizations::user_uuid.eq(user_uuid))),
+                )
+                .left_join(groups_users::table.on(groups_users::users_organizations_uuid.eq(users_organizations::uuid)))
+                .left_join(
+                    collections_groups::table.on(collections_groups::groups_uuid
+                        .eq(groups_users::groups_uuid)
+                        .and(collections_groups::collections_uuid.eq(collections::uuid))),
+                )
+                .filter(collections::org_uuid.eq(&org_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
+                .filter(
+                    users_collections::manage.eq(true).or(users_collections::user_uuid
+                        .is_null()
+                        .or(users_organizations::atype.eq(MembershipType::Manager as i32))
+                        .and(collections_groups::manage.eq(true))
+                        .and::<_, diesel::sql_types::Bool>(groups_enabled)),
+                )
+                .select(collections::uuid)
+                .distinct()
+                .load::<CollectionId>(conn)
+                .unwrap_or_default()
+        })
+        .await
     }
 }
 
@@ -681,53 +749,30 @@ impl CollectionUser {
     ) -> EmptyResult {
         User::update_uuid_revision(user_uuid, conn).await;
 
+        let values = (
+            users_collections::user_uuid.eq(user_uuid),
+            users_collections::collection_uuid.eq(collection_uuid),
+            users_collections::read_only.eq(read_only),
+            users_collections::hide_passwords.eq(hide_passwords),
+            users_collections::manage.eq(manage),
+        );
+
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(users_collections::table)
-                    .values((
-                        users_collections::user_uuid.eq(user_uuid),
-                        users_collections::collection_uuid.eq(collection_uuid),
-                        users_collections::read_only.eq(read_only),
-                        users_collections::hide_passwords.eq(hide_passwords),
-                        users_collections::manage.eq(manage),
-                    ))
-                    .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(users_collections::table)
-                            .filter(users_collections::user_uuid.eq(user_uuid))
-                            .filter(users_collections::collection_uuid.eq(collection_uuid))
-                            .set((
-                                users_collections::user_uuid.eq(user_uuid),
-                                users_collections::collection_uuid.eq(collection_uuid),
-                                users_collections::read_only.eq(read_only),
-                                users_collections::hide_passwords.eq(hide_passwords),
-                                users_collections::manage.eq(manage),
-                            ))
-                            .execute(conn)
-                            .map_res("Error adding user to collection")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error adding user to collection")
-            }
-            postgresql {
+            mysql {
                 diesel::insert_into(users_collections::table)
-                    .values((
-                        users_collections::user_uuid.eq(user_uuid),
-                        users_collections::collection_uuid.eq(collection_uuid),
-                        users_collections::read_only.eq(read_only),
-                        users_collections::hide_passwords.eq(hide_passwords),
-                        users_collections::manage.eq(manage),
-                    ))
+                    .values(values)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(values)
+                    .execute(conn)
+                    .map_res("Error adding user to collection")
+            }
+            postgresql, sqlite {
+                diesel::insert_into(users_collections::table)
+                    .values(values)
                     .on_conflict((users_collections::user_uuid, users_collections::collection_uuid))
                     .do_update()
-                    .set((
-                        users_collections::read_only.eq(read_only),
-                        users_collections::hide_passwords.eq(hide_passwords),
-                        users_collections::manage.eq(manage),
-                    ))
+                    .set(values)
                     .execute(conn)
                     .map_res("Error adding user to collection")
             }
@@ -803,10 +848,18 @@ impl CollectionUser {
         .await
     }
 
+    // Only returns the collections of organizations the user is a confirmed member of
     pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             users_collections::table
+                .inner_join(collections::table.on(collections::uuid.eq(users_collections::collection_uuid)))
+                .inner_join(
+                    users_organizations::table.on(users_organizations::org_uuid
+                        .eq(collections::org_uuid)
+                        .and(users_organizations::user_uuid.eq(users_collections::user_uuid))),
+                )
                 .filter(users_collections::user_uuid.eq(user_uuid))
+                .filter(users_organizations::status.eq(MembershipStatus::Confirmed as i32))
                 .select(users_collections::all_columns)
                 .load::<Self>(conn)
                 .expect("Error loading users_collections")
@@ -815,7 +868,7 @@ impl CollectionUser {
     }
 
     pub async fn delete_all_by_collection(collection_uuid: &CollectionId, conn: &DbConn) -> EmptyResult {
-        for collection in &CollectionUser::find_by_collection(collection_uuid, conn).await {
+        for collection in &Self::find_by_collection(collection_uuid, conn).await {
             User::update_uuid_revision(&collection.user_uuid, conn).await;
         }
 
@@ -862,19 +915,18 @@ impl CollectionCipher {
         Self::update_users_revision(collection_uuid, conn).await;
 
         db_run! { conn:
-            sqlite, mysql {
-                // Not checking for ForeignKey Constraints here.
-                // Table ciphers_collections does not have ForeignKey Constraints which would cause conflicts.
-                // This table has no constraints pointing to itself, but only to others.
-                diesel::replace_into(ciphers_collections::table)
+            mysql {
+                diesel::insert_into(ciphers_collections::table)
                     .values((
                         ciphers_collections::cipher_uuid.eq(cipher_uuid),
                         ciphers_collections::collection_uuid.eq(collection_uuid),
                     ))
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_nothing()
                     .execute(conn)
                     .map_res("Error adding cipher to collection")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(ciphers_collections::table)
                     .values((
                         ciphers_collections::cipher_uuid.eq(cipher_uuid),

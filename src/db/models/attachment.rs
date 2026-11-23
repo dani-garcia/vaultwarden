@@ -61,20 +61,37 @@ impl Attachment {
             let token = encode_jwt(&generate_file_download_claims(self.cipher_uuid.clone(), self.id.clone()));
             Ok(format!("{host}/attachments/{}/{}?token={token}", self.cipher_uuid, self.id))
         } else {
-            Ok(operator.presign_read(&self.get_file_path(), Duration::from_mins(5)).await?.uri().to_string())
+            Ok(operator.presign_read(&self.get_file_path(), Duration::from_mins(1)).await?.uri().to_string())
         }
     }
 
-    pub async fn to_json(&self, host: &str) -> Result<Value, crate::Error> {
-        Ok(json!({
+    /// The attachment as sync and the cipher responses list it. Its `url` is a leftover from the old download flow.
+    /// Clients get a signed URL from the attachment routes (`to_json_for_download`) instead, only the web vault and the
+    /// CLI read this one, as a fallback when those routes answer 404.
+    ///
+    /// Ref: <https://github.com/bitwarden/server/blob/341acc9d3d8988cec8fe05debfa6d557cf5ab749/src/Api/Vault/Models/Response/AttachmentResponseModel.cs#L24-L29>
+    pub fn to_json(&self, host: &str) -> Value {
+        self.json_with_url(&format!("{host}/attachments/{}/{}", self.cipher_uuid, self.id))
+    }
+
+    /// The attachment with a `url` the client can download it from for a short while, for the attachment routes
+    /// (`GET /ciphers/{id}/attachment/{attachmentId}`, its admin variant, the emergency access one).
+    ///
+    /// Ref: <https://github.com/bitwarden/server/blob/341acc9d3d8988cec8fe05debfa6d557cf5ab749/src/Api/Vault/Controllers/CiphersController.cs#L1699-L1717>
+    pub async fn to_json_for_download(&self, host: &str) -> Result<Value, crate::Error> {
+        Ok(self.json_with_url(&self.get_url(host).await?))
+    }
+
+    fn json_with_url(&self, url: &str) -> Value {
+        json!({
             "id": self.id,
-            "url": self.get_url(host).await?,
+            "url": url,
             "fileName": self.file_name,
             "size": self.file_size.to_string(),
             "sizeName": crate::util::get_display_size(self.file_size),
             "key": self.akey,
             "object": "attachment"
-        }))
+        })
     }
 }
 
@@ -82,24 +99,16 @@ impl Attachment {
 impl Attachment {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(attachments::table)
+            mysql {
+                diesel::insert_into(attachments::table)
                     .values(self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(attachments::table)
-                            .filter(attachments::id.eq(&self.id))
-                            .set(self)
-                            .execute(conn)
-                            .map_res("Error saving attachment")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving attachment")
+                    .map_res("Error saving attachment")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(attachments::table)
                     .values(self)
                     .on_conflict(attachments::id)
@@ -137,7 +146,7 @@ impl Attachment {
     }
 
     pub async fn delete_all_by_cipher(cipher_uuid: &CipherId, conn: &DbConn) -> EmptyResult {
-        for attachment in Attachment::find_by_cipher(cipher_uuid, conn).await {
+        for attachment in Self::find_by_cipher(cipher_uuid, conn).await {
             attachment.delete(conn).await?;
         }
         Ok(())

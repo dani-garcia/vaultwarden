@@ -1,6 +1,10 @@
+use std::path::Path;
+
 use chrono::{NaiveDateTime, Utc};
 use data_encoding::BASE64URL_NOPAD;
+use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
+use macros::{IdFromParam, UuidFromParam};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -14,7 +18,6 @@ use crate::{
 };
 
 use super::{OrganizationId, User, UserId};
-use id::SendId;
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = sends)]
@@ -55,9 +58,9 @@ pub enum SendType {
 }
 
 enum SendAuthType {
-    #[allow(dead_code)]
+    #[expect(unused, reason = "Not yet supported")]
     // Send requires email OTP verification
-    Email = 0, // Not yet supported by Vaultwarden
+    Email = 0,
     // Send requires a password
     Password = 1,
     // Send requires no auth
@@ -137,8 +140,12 @@ impl Send {
         None
     }
 
+    fn access_id(&self) -> String {
+        BASE64URL_NOPAD.encode(Uuid::parse_str(&self.uuid).unwrap_or_default().as_bytes())
+    }
+
     pub fn to_json(&self) -> Value {
-        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map_or_default(|d| d.data);
 
         // Mobile clients expect size to be a string instead of a number
         if let Some(size) = data.get("size").and_then(Value::as_i64) {
@@ -147,13 +154,13 @@ impl Send {
 
         json!({
             "id": self.uuid,
-            "accessId": BASE64URL_NOPAD.encode(Uuid::parse_str(&self.uuid).unwrap_or_default().as_bytes()),
+            "accessId": self.access_id(),
             "type": self.atype,
 
             "name": self.name,
             "notes": self.notes,
-            "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
-            "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "text": (self.atype == SendType::Text as i32).then_some(&data),
+            "file": (self.atype == SendType::File as i32).then_some(&data),
 
             "key": self.akey,
             "maxAccessCount": self.max_access_count,
@@ -161,7 +168,7 @@ impl Send {
             "password": self.password_hash.as_deref().map(|h| BASE64URL_NOPAD.encode(h)),
             "authType": if self.password_hash.is_some() { SendAuthType::Password as i32 } else { SendAuthType::None as i32 },
             "disabled": self.disabled,
-            "hideEmail": self.hide_email,
+            "hideEmail": self.hide_email.unwrap_or(false),
 
             "revisionDate": format_date(&self.revision_date),
             "expirationDate": self.expiration_date.as_ref().map(format_date),
@@ -171,7 +178,7 @@ impl Send {
     }
 
     pub async fn to_json_access(&self, conn: &DbConn) -> Value {
-        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map(|d| d.data).unwrap_or_default();
+        let mut data = serde_json::from_str::<LowerCase<Value>>(&self.data).map_or_default(|d| d.data);
 
         // Mobile clients expect size to be a string instead of a number
         if let Some(size) = data.get("size").and_then(Value::as_i64) {
@@ -179,12 +186,12 @@ impl Send {
         }
 
         json!({
-            "id": self.uuid,
+            "id": self.access_id(),
             "type": self.atype,
 
             "name": self.name,
-            "text": if self.atype == SendType::Text as i32 { Some(&data) } else { None },
-            "file": if self.atype == SendType::File as i32 { Some(&data) } else { None },
+            "text": (self.atype == SendType::Text as i32).then_some(&data),
+            "file": (self.atype == SendType::File as i32).then_some(&data),
 
             "expirationDate": self.expiration_date.as_ref().map(format_date),
             "creatorIdentifier": self.creator_identifier(conn).await,
@@ -199,24 +206,16 @@ impl Send {
         self.revision_date = Utc::now().naive_utc();
 
         db_run! { conn:
-            sqlite, mysql {
-                match diesel::replace_into(sends::table)
+            mysql {
+                diesel::insert_into(sends::table)
                     .values(&*self)
+                    .on_conflict(diesel::dsl::DuplicatedKeys)
+                    .do_update()
+                    .set(&*self)
                     .execute(conn)
-                {
-                    Ok(_) => Ok(()),
-                    // Record already exists and causes a Foreign Key Violation because replace_into() wants to delete the record first.
-                    Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)) => {
-                        diesel::update(sends::table)
-                            .filter(sends::uuid.eq(&self.uuid))
-                            .set(&*self)
-                            .execute(conn)
-                            .map_res("Error saving send")
-                    }
-                    Err(e) => Err(e.into()),
-                }.map_res("Error saving send")
+                    .map_res("Error saving send")
             }
-            postgresql {
+            postgresql, sqlite {
                 diesel::insert_into(sends::table)
                     .values(&*self)
                     .on_conflict(sends::uuid)
@@ -226,6 +225,53 @@ impl Send {
                     .map_res("Error saving send")
             }
         }
+    }
+
+    /// Registers an access, incrementing `access_count` only while below `max_access_count`.
+    /// Returns false when the limit was already reached. The check and the increment are a single
+    /// statement, otherwise concurrent accesses can both pass the check and exceed the limit.
+    pub async fn register_access(&mut self, conn: &DbConn) -> Result<bool, crate::Error> {
+        self.update_users_revision(conn).await;
+
+        let revision_date = Utc::now().naive_utc();
+        let uuid = self.uuid.clone();
+        let updated = conn
+            .run(move |conn| {
+                diesel::update(sends::table)
+                    .filter(sends::uuid.eq(uuid))
+                    .filter(
+                        sends::max_access_count
+                            .is_null()
+                            .or(sends::access_count.nullable().lt(sends::max_access_count)),
+                    )
+                    .set((sends::access_count.eq(sends::access_count + 1), sends::revision_date.eq(revision_date)))
+                    .execute(conn)
+            })
+            .await?;
+
+        if updated == 0 {
+            return Ok(false);
+        }
+
+        self.access_count += 1;
+        self.revision_date = revision_date;
+        Ok(true)
+    }
+
+    /// Whether the Send is currently within its validity window: not disabled, not past its
+    /// expiration date, and not past its deletion date. Does not consider `max_access_count`
+    /// (counted on each access) or the password.
+    pub fn is_accessible(&self) -> bool {
+        let now = Utc::now().naive_utc();
+        if self.disabled {
+            return false;
+        }
+        if let Some(expiration) = self.expiration_date
+            && now >= expiration
+        {
+            return false;
+        }
+        now < self.deletion_date
     }
 
     pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
@@ -267,19 +313,6 @@ impl Send {
         Ok(())
     }
 
-    pub async fn find_by_access_id(access_id: &str, conn: &DbConn) -> Option<Self> {
-        let Ok(uuid_vec) = BASE64URL_NOPAD.decode(access_id.as_bytes()) else {
-            return None;
-        };
-
-        let uuid = match Uuid::from_slice(&uuid_vec) {
-            Ok(u) => SendId::from(u.to_string()),
-            Err(_) => return None,
-        };
-
-        Self::find_by_uuid(&uuid, conn).await
-    }
-
     pub async fn find_by_uuid(uuid: &SendId, conn: &DbConn) -> Option<Self> {
         conn.run(move |conn| sends::table.filter(sends::uuid.eq(uuid)).first::<Self>(conn).ok()).await
     }
@@ -301,7 +334,6 @@ impl Send {
     pub async fn size_by_user(user_uuid: &UserId, conn: &DbConn) -> Option<i64> {
         #[derive(serde::Deserialize)]
         struct FileData {
-            #[serde(rename = "size", alias = "Size")]
             size: NumberOrString,
         }
 
@@ -319,13 +351,6 @@ impl Send {
         Some(total)
     }
 
-    pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
-        conn.run(move |conn| {
-            sends::table.filter(sends::organization_uuid.eq(org_uuid)).load::<Self>(conn).expect("Error loading sends")
-        })
-        .await
-    }
-
     pub async fn find_by_past_deletion_date(conn: &DbConn) -> Vec<Self> {
         let now = Utc::now().naive_utc();
         conn.run(move |conn| {
@@ -335,47 +360,39 @@ impl Send {
     }
 }
 
-// separate namespace to avoid name collision with std::marker::Send
-pub mod id {
-    use derive_more::{AsRef, Deref, Display, From};
-    use macros::{IdFromParam, UuidFromParam};
-    use std::marker::Send;
-    use std::path::Path;
+#[derive(
+    Clone,
+    Debug,
+    AsRef,
+    Deref,
+    DieselNewType,
+    Display,
+    From,
+    FromForm,
+    Hash,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    UuidFromParam,
+)]
+pub struct SendId(String);
 
-    #[derive(
-        Clone,
-        Debug,
-        AsRef,
-        Deref,
-        DieselNewType,
-        Display,
-        From,
-        FromForm,
-        Hash,
-        PartialEq,
-        Eq,
-        Serialize,
-        Deserialize,
-        UuidFromParam,
-    )]
-    pub struct SendId(String);
-
-    impl AsRef<Path> for SendId {
-        #[inline]
-        fn as_ref(&self) -> &Path {
-            Path::new(&self.0)
-        }
+impl AsRef<Path> for SendId {
+    #[inline]
+    fn as_ref(&self) -> &Path {
+        Path::new(&self.0)
     }
+}
 
-    #[derive(
-        Clone, Debug, AsRef, Deref, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize, IdFromParam,
-    )]
-    pub struct SendFileId(String);
+#[derive(
+    Clone, Debug, AsRef, Deref, Display, From, FromForm, Hash, PartialEq, Eq, Serialize, Deserialize, IdFromParam,
+)]
+pub struct SendFileId(String);
 
-    impl AsRef<Path> for SendFileId {
-        #[inline]
-        fn as_ref(&self) -> &Path {
-            Path::new(&self.0)
-        }
+impl AsRef<Path> for SendFileId {
+    #[inline]
+    fn as_ref(&self) -> &Path {
+        Path::new(&self.0)
     }
 }

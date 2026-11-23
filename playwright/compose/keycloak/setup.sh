@@ -17,7 +17,7 @@ done
 
 set -e
 
-kcadm.sh config credentials --server "http://${KC_HTTP_HOST}:${KC_HTTP_PORT}" --realm master --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD" --client admin-cli
+kcadm.sh config credentials --server "http://${KC_HTTP_HOST}:${KC_HTTP_PORT}" --realm master --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" --client admin-cli
 
 kcadm.sh create realms -s realm="$TEST_REALM" -s enabled=true -s "accessTokenLifespan=600"
 kcadm.sh create clients -r test -s "clientId=$SSO_CLIENT_ID" -s "secret=$SSO_CLIENT_SECRET" -s "redirectUris=[\"$DOMAIN/*\"]" -i
@@ -39,6 +39,6 @@ kcadm.sh create realms -s realm="$DUMMY_REALM" -s enabled=true -s "accessTokenLi
 # THEN in another terminal:
 # docker exec -it keycloakSetup-dev /bin/bash
 # export PATH=$PATH:/opt/keycloak/bin
-# kcadm.sh config credentials --server "http://${KC_HTTP_HOST}:${KC_HTTP_PORT}" --realm master --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD" --client admin-cli
+# kcadm.sh config credentials --server "http://${KC_HTTP_HOST}:${KC_HTTP_PORT}" --realm master --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" --client admin-cli
 # ENJOY
 # Doc: https://wjw465150.gitbooks.io/keycloak-documentation/content/server_admin/topics/admin-cli.html

@@ -1,6 +1,5 @@
 "use strict";
-/* eslint-env es2017, browser, jquery */
-/* global _post:readable, _delete:readable BASE_URL:readable, reload:readable, jdenticon:readable */
+/* global DataTable, _post:readable, _delete:readable, BASE_URL:readable, reload:readable, jdenticon:readable */
 
 function deleteUser(event) {
     event.preventDefault();
@@ -142,7 +141,7 @@ function inviteUser(event) {
     );
 }
 
-function resendUserInvite (event) {
+function resendUserInvite(event) {
     event.preventDefault();
     event.stopPropagation();
     const id = event.target.parentNode.dataset.vwUserUuid;
@@ -174,61 +173,41 @@ const ORG_TYPES = {
         "name": "User",
         "bg": "blue"
     },
-    "4": {
+    "3": {
         "name": "Manager",
         "bg": "green"
     },
+    "4": {
+        "name": "Custom",
+        "bg": "teal"
+    },
 };
-
-// Special sort function to sort dates in ISO format
-jQuery.extend(jQuery.fn.dataTableExt.oSort, {
-    "date-iso-pre": function(a) {
-        let x;
-        const sortDate = a.replace(/(<([^>]+)>)/gi, "").trim();
-        if (sortDate !== "") {
-            const dtParts = sortDate.split(" ");
-            const timeParts = (undefined != dtParts[1]) ? dtParts[1].split(":") : ["00", "00", "00"];
-            const dateParts = dtParts[0].split("-");
-            x = (dateParts[0] + dateParts[1] + dateParts[2] + timeParts[0] + timeParts[1] + ((undefined != timeParts[2]) ? timeParts[2] : 0)) * 1;
-            if (isNaN(x)) {
-                x = 0;
-            }
-        } else {
-            x = Infinity;
-        }
-        return x;
-    },
-
-    "date-iso-asc": function(a, b) {
-        return a - b;
-    },
-
-    "date-iso-desc": function(a, b) {
-        return b - a;
-    }
-});
 
 const userOrgTypeDialog = document.getElementById("userOrgTypeDialog");
 // Fill the form and title
-userOrgTypeDialog.addEventListener("show.bs.modal", function(event) {
+userOrgTypeDialog.addEventListener("show.bs.modal", function (event) {
     // Get shared values
     const userEmail = event.relatedTarget.parentNode.dataset.vwUserEmail;
     const userUuid = event.relatedTarget.parentNode.dataset.vwUserUuid;
     // Get org specific values
     const userOrgType = event.relatedTarget.dataset.vwOrgType;
-    const userOrgTypeName = ORG_TYPES[userOrgType]["name"];
     const orgName = event.relatedTarget.dataset.vwOrgName;
     const orgUuid = event.relatedTarget.dataset.vwOrgUuid;
 
+    document.getElementById("userOrgTypeForm").reset();
     document.getElementById("userOrgTypeDialogOrgName").textContent = orgName;
     document.getElementById("userOrgTypeDialogUserEmail").textContent = userEmail;
     document.getElementById("userOrgTypeUserUuid").value = userUuid;
     document.getElementById("userOrgTypeOrgUuid").value = orgUuid;
-    document.getElementById(`userOrgType${userOrgTypeName}`).checked = true;
+    // The Custom role can only be selected while it is enabled
+    const userOrgTypeRadio = document.getElementById(`userOrgType${ORG_TYPES[userOrgType]?.name}`);
+    if (userOrgTypeRadio) {
+        userOrgTypeRadio.checked = true;
+    }
 }, false);
 
 // Prevent accidental submission of the form with valid elements after the modal has been hidden.
-userOrgTypeDialog.addEventListener("hide.bs.modal", function() {
+userOrgTypeDialog.addEventListener("hide.bs.modal", function () {
     document.getElementById("userOrgTypeDialogOrgName").textContent = "";
     document.getElementById("userOrgTypeDialogUserEmail").textContent = "";
     document.getElementById("userOrgTypeUserUuid").value = "";
@@ -250,8 +229,8 @@ function updateUserOrgType(event) {
 
 function initUserTable() {
     // Color all the org buttons per type
-    document.querySelectorAll("button[data-vw-org-type]").forEach(function(e) {
-        const orgType = ORG_TYPES[e.dataset.vwOrgType];
+    document.querySelectorAll("button[data-vw-org-type]").forEach(function (e) {
+        const orgType = ORG_TYPES[e.dataset.vwOrgType] ?? { "name": "Unknown", "bg": "gray" };
         e.style.backgroundColor = orgType.bg;
         if (orgType.font !== undefined) {
             e.style.color = orgType.font;
@@ -286,12 +265,37 @@ function initUserTable() {
     }
 }
 
+// Special sort function to sort dates in ISO format and have anything else as 0
+DataTable.ext.type.order["date-iso-pre"] = function (a) {
+    let x;
+    const sortDate = a.replace(/(<([^>]+)>)/gi, "").trim();
+    if (sortDate !== "") {
+        const dtParts = sortDate.split(" ");
+        const timeParts = (undefined != dtParts[1]) ? dtParts[1].split(":") : ["00", "00", "00"];
+        const dateParts = dtParts[0].split("-");
+        x = (dateParts[0] + dateParts[1] + dateParts[2] + timeParts[0] + timeParts[1] + ((undefined != timeParts[2]) ? timeParts[2] : 0)) * 1;
+        if (isNaN(x)) {
+            x = 0;
+        }
+    } else {
+        x = Infinity;
+    }
+    return x;
+};
+
 // onLoad events
 document.addEventListener("DOMContentLoaded", (/*event*/) => {
-    const size = jQuery("#users-table > thead th").length;
-    const ssoOffset = size-7;
-    jQuery("#users-table").DataTable({
-        "drawCallback": function() {
+    DataTable.ext.type.detect.unshift(function (data) {
+        if (typeof data !== "string") { return null; }
+        return data.indexOf("data-sort-type=\"date-iso\"") !== -1
+            ? "date-iso"
+            : null;
+    });
+
+    const columnCount = document.getElementById("users-table").querySelectorAll("thead th").length;
+    new DataTable("#users-table", {
+        "typeDetect": true,
+        "drawCallback": function () {
             initUserTable();
         },
         "stateSave": true,
@@ -302,10 +306,7 @@ document.addEventListener("DOMContentLoaded", (/*event*/) => {
         ],
         "pageLength": -1, // Default show all
         "columnDefs": [{
-            "targets": [1 + ssoOffset, 2 + ssoOffset],
-            "type": "date-iso"
-        }, {
-            "targets": size-1,
+            "targets": columnCount - 1, // Do not include the last column into the search/order features
             "searchable": false,
             "orderable": false
         }]

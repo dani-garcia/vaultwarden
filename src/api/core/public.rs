@@ -14,7 +14,7 @@ use crate::{
     db::{
         DbConn,
         models::{
-            Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, Organization,
+            Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, OrgPolicy, Organization,
             OrganizationApiKey, OrganizationId, User,
         },
     },
@@ -58,25 +58,13 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
     let org_id = token.0;
     let data = data.into_inner();
 
+    // Like upstream, the import never removes Owners, so it doesn't revoke or restore them either.
     for user_data in &data.members {
         let mut user_created: bool = false;
         if user_data.deleted {
             // If user is marked for deletion and it exists, revoke it
             if let Some(mut member) = Membership::find_by_email_and_org(&user_data.email, &org_id, &conn).await {
-                // Only revoke a user if it is not the last confirmed owner
-                let revoked = if member.atype == MembershipType::Owner
-                    && member.status == MembershipStatus::Confirmed as i32
-                {
-                    if Membership::count_confirmed_by_org_and_type(&org_id, MembershipType::Owner, &conn).await <= 1 {
-                        warn!("Can't revoke the last owner");
-                        false
-                    } else {
-                        member.revoke()
-                    }
-                } else {
-                    member.revoke()
-                };
-
+                let revoked = member.atype != MembershipType::Owner && member.revoke();
                 let ext_modified = member.set_external_id(Some(user_data.external_id.clone()));
                 if revoked || ext_modified {
                     member.save(&conn).await?;
@@ -84,8 +72,15 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
             }
         // If user is part of the organization, restore it
         } else if let Some(mut member) = Membership::find_by_email_and_org(&user_data.email, &org_id, &conn).await {
-            let restored = member.restore();
+            let mut restored = member.atype != MembershipType::Owner && member.restore();
             let ext_modified = member.set_external_id(Some(user_data.external_id.clone()));
+            // Enforce org policies as every other restore path does.
+            // If the user is not allowed, we revoke again and continue so the external_id is still updated.
+            if restored && let Err(e) = OrgPolicy::check_user_allowed(&member, "restore", &conn).await {
+                warn!("Not restoring {}: {e:?}", user_data.email);
+                member.revoke();
+                restored = false;
+            }
             if restored || ext_modified {
                 member.save(&conn).await?;
             }
@@ -142,9 +137,13 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
 
     if CONFIG.org_groups_enabled() {
         for group_data in &data.groups {
-            let group_uuid = if let Some(group) =
+            let group_uuid = if let Some(mut group) =
                 Group::find_by_external_id_and_org(&group_data.external_id, &org_id, &conn).await
             {
+                if group.name != group_data.name {
+                    group.name = group_data.name.clone();
+                    group.save(&conn).await?;
+                }
                 group.uuid
             } else {
                 let mut group =
@@ -157,7 +156,7 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
 
             for ext_id in &group_data.member_external_ids {
                 if let Some(member) = Membership::find_by_external_id_and_org(ext_id, &org_id, &conn).await {
-                    let mut group_user = GroupUser::new(group_uuid.clone(), member.uuid.clone());
+                    let group_user = GroupUser::new(group_uuid.clone(), member.uuid.clone());
                     group_user.save(&conn).await?;
                 }
             }
@@ -173,14 +172,8 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
         for member in Membership::find_by_org(&org_id, &conn).await {
             if let Some(ref user_external_id) = member.external_id
                 && !sync_members.contains(user_external_id)
+                && member.atype != MembershipType::Owner
             {
-                if member.atype == MembershipType::Owner && member.status == MembershipStatus::Confirmed as i32 {
-                    // Removing owner, check that there is at least one other confirmed owner
-                    if Membership::count_confirmed_by_org_and_type(&org_id, MembershipType::Owner, &conn).await <= 1 {
-                        warn!("Can't delete the last owner");
-                        continue;
-                    }
-                }
                 member.delete(&conn).await?;
             }
         }
@@ -244,6 +237,6 @@ impl<'r> FromRequest<'r> for PublicToken {
             err_handler!("Token not issued for this client");
         }
 
-        Outcome::Success(PublicToken(claims.client_sub))
+        Outcome::Success(Self(claims.client_sub))
     }
 }

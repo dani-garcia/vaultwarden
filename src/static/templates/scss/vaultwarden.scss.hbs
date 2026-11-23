@@ -42,14 +42,8 @@ a[href$="/settings/sponsored-families"] {
 {{/if}}
 
 /* Hide the `Enterprise Single Sign-On` button on the login page */
-{{#if (webver ">=2025.5.1")}}
 {{#if (not sso_enabled)}}
 .vw-sso-login {
-  @extend %vw-hide;
-}
-{{/if}}
-{{else}}
-app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secondary"].\!tw-text-primary-600:nth-child(4) {
   @extend %vw-hide;
 }
 {{/if}}
@@ -59,25 +53,13 @@ app-user-layout app-password-settings app-webauthn-login-settings {
   @extend %vw-hide;
 }
 /* Hide Log in with passkey on the login page */
-{{#if (webver ">=2025.5.1")}}
 .vw-passkey-login {
   @extend %vw-hide;
 }
-{{else}}
-app-root ng-component > form > div:nth-child(1) > div > button[buttontype="secondary"].\!tw-text-primary-600:nth-child(3) {
-  @extend %vw-hide;
-}
-{{/if}}
 
 /* Hide the or text followed by the two buttons hidden above */
-{{#if (webver ">=2025.5.1")}}
 {{#if (or (not sso_enabled) sso_only)}}
 .vw-or-text {
-  @extend %vw-hide;
-}
-{{/if}}
-{{else}}
-app-root ng-component > form > div:nth-child(1) > div:nth-child(3) > div:nth-child(2) {
   @extend %vw-hide;
 }
 {{/if}}
@@ -116,10 +98,17 @@ app-security > app-two-factor-setup > form {
 }
 
 /* Hide unsupported Custom Role options */
-bit-dialog div.tw-ml-4:has(bit-form-control input),
-bit-dialog div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcontrolname*="manage"]) {
+{{#if custom_roles_enabled}}
+/* Not supported: Manage SSO */
+:is(bit-dialog, [bit-dialog]) bit-form-control:has(input[formcontrolname="manageSso"]) {
   @extend %vw-hide;
 }
+{{else}}
+:is(bit-dialog, [bit-dialog]) div.tw-ml-4:has(bit-form-control input),
+:is(bit-dialog, [bit-dialog]) div.tw-col-span-4:has(input[formcontrolname*="access"], input[formcontrolname*="manage"]) {
+  @extend %vw-hide;
+}
+{{/if}}
 
 /* Change collapsed menu icon to Vaultwarden */
 bit-nav-logo bit-nav-item a:before {
@@ -154,16 +143,9 @@ ng-dropdown-panel div.ng-dropdown-panel-items div:has(> [title="DuckDuckGo"]) {
   take a while for the change to take effect. To avoid the button appearing
   when it shouldn't, we'll keep this style in place for a couple of versions */
 /* Hide the register link on the login screen */
-{{#if (webver "<2025.3.0")}}
-app-login form div + div + div + div + hr,
-app-login form div + div + div + div + hr + p {
-  @extend %vw-hide;
-}
-{{else}}
 app-root a[routerlink="/signup"] {
   @extend %vw-hide;
 }
-{{/if}}
 {{/if}}
 
 {{#if remember_2fa_disabled}}
@@ -217,6 +199,13 @@ auth-input-password > form > bit-form-field:nth-child(4) {
 {{else}}
 .vw-password-hint {
 {{/if}}
+  @extend %vw-hide;
+}
+{{/unless}}
+
+{{#unless email_change_allowed}}
+/* Hide the whole `Change email` section, including its heading, if not allowed */
+div:has(> app-change-email) {
   @extend %vw-hide;
 }
 {{/unless}}

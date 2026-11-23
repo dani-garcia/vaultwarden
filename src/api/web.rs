@@ -1,10 +1,14 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::{Arc, LazyLock, RwLock},
+};
 
 use rocket::{
     Catcher, Route,
     fs::NamedFile,
     http::ContentType,
-    response::{Redirect, content::RawCss as Css, content::RawHtml as Html},
+    response::{Redirect, content::RawHtml as Html},
     serde::json::Json,
 };
 use serde_json::Value;
@@ -13,12 +17,13 @@ use crate::{
     CONFIG,
     api::{ApiResult, EmptyResult, core::now},
     auth::decode_file_download,
+    crypto::sha256_hex,
     db::{
         DbConn,
-        models::{AttachmentId, CipherId},
+        models::{AttachmentId, CipherId, custom_roles_enabled},
     },
     error::Error,
-    util::Cached,
+    util::{Cached, EtagCached},
 };
 
 pub fn routes() -> Vec<Route> {
@@ -63,9 +68,30 @@ fn not_found() -> ApiResult<Html<String>> {
     Ok(Html(text))
 }
 
+struct CssCache {
+    css: String,
+    etag: String,
+}
+
+static CSS_CACHE: RwLock<Option<Arc<CssCache>>> = RwLock::new(None);
+
+pub fn invalidate_css_cache() {
+    *CSS_CACHE.write().unwrap() = None;
+}
+
 #[get("/css/vaultwarden.css")]
-fn vaultwarden_css() -> Cached<Css<String>> {
+fn vaultwarden_css() -> EtagCached<String> {
+    // If reload_templates is false, and we already have the CSS Cached, return this
+    if !CONFIG.reload_templates()
+        && let Some(cached) = CSS_CACHE.read().unwrap().as_ref()
+    {
+        return EtagCached::new(cached.css.clone(), ContentType::CSS, &cached.etag);
+    }
+
+    // Else, there is either no cache, or reload_templates is true and we need to rebuild the CSS
     let css_options = json!({
+        "custom_roles_enabled": custom_roles_enabled(),
+        "email_change_allowed": CONFIG.email_change_allowed(),
         "emergency_access_allowed": CONFIG.emergency_access_allowed(),
         "load_user_scss": true,
         "mail_2fa_enabled": CONFIG._enable_email_2fa(),
@@ -112,8 +138,18 @@ fn vaultwarden_css() -> Cached<Css<String>> {
         }
     };
 
-    // Cache for one day should be enough and not too much
-    Cached::ttl(Css(css), 86_400, false)
+    let etag = sha256_hex(css.as_bytes());
+    let cached = Arc::new(CssCache {
+        css,
+        etag,
+    });
+
+    if !CONFIG.reload_templates() {
+        *CSS_CACHE.write().unwrap() = Some(Arc::clone(&cached));
+    }
+
+    // Etag Caching will let the browser send us an etag to verify and send new content if needed
+    EtagCached::new(cached.css.clone(), ContentType::CSS, &cached.etag)
 }
 
 #[get("/")]
@@ -222,7 +258,7 @@ fn alive_head(_conn: DbConn) -> EmptyResult {
 // This endpoint/function is used during development and development only.
 // It allows to easily develop the admin interface by always loading the files from disk instead from a slice of bytes
 // This will only be active during a debug build and only when `RELOAD_TEMPLATES` is set to `true`
-// NOTE: Do not forget to add any new files added to the `static_files` function below!
+// NOTE: Do not forget to add any new files added to the `STATIC_FILES` HashMap below!
 #[cfg(debug_assertions)]
 #[get("/vw_static/<filename>", rank = 1)]
 pub async fn static_files_dev(filename: PathBuf) -> Option<NamedFile> {
@@ -242,35 +278,61 @@ pub async fn static_files_dev(filename: PathBuf) -> Option<NamedFile> {
     None
 }
 
+pub struct StaticFile {
+    pub content_type: ContentType,
+    pub bytes: &'static [u8],
+    pub etag: String,
+}
+
+pub static STATIC_FILES: LazyLock<HashMap<&'static str, StaticFile>> = LazyLock::new(|| {
+    [
+        ("404.png", ContentType::PNG, &include_bytes!("../static/images/404.png")[..]),
+        ("mail-github.png", ContentType::PNG, &include_bytes!("../static/images/mail-github.png")[..]),
+        ("logo-gray.png", ContentType::PNG, &include_bytes!("../static/images/logo-gray.png")[..]),
+        ("error-x.svg", ContentType::SVG, &include_bytes!("../static/images/error-x.svg")[..]),
+        ("hibp.png", ContentType::PNG, &include_bytes!("../static/images/hibp.png")[..]),
+        ("vaultwarden-icon.png", ContentType::PNG, &include_bytes!("../static/images/vaultwarden-icon.png")[..]),
+        ("vaultwarden-favicon.png", ContentType::PNG, &include_bytes!("../static/images/vaultwarden-favicon.png")[..]),
+        ("404.css", ContentType::CSS, &include_bytes!("../static/scripts/404.css")[..]),
+        ("admin.css", ContentType::CSS, &include_bytes!("../static/scripts/admin.css")[..]),
+        ("admin.js", ContentType::JavaScript, &include_bytes!("../static/scripts/admin.js")[..]),
+        ("admin_settings.js", ContentType::JavaScript, &include_bytes!("../static/scripts/admin_settings.js")[..]),
+        ("admin_users.js", ContentType::JavaScript, &include_bytes!("../static/scripts/admin_users.js")[..]),
+        (
+            "admin_organizations.js",
+            ContentType::JavaScript,
+            &include_bytes!("../static/scripts/admin_organizations.js")[..],
+        ),
+        (
+            "admin_diagnostics.js",
+            ContentType::JavaScript,
+            &include_bytes!("../static/scripts/admin_diagnostics.js")[..],
+        ),
+        ("bootstrap.css", ContentType::CSS, &include_bytes!("../static/scripts/bootstrap.css")[..]),
+        ("bootstrap.bundle.js", ContentType::JavaScript, &include_bytes!("../static/scripts/bootstrap.bundle.js")[..]),
+        ("jdenticon-3.3.0.js", ContentType::JavaScript, &include_bytes!("../static/scripts/jdenticon-3.3.0.js")[..]),
+        ("datatables.js", ContentType::JavaScript, &include_bytes!("../static/scripts/datatables.js")[..]),
+        ("datatables.css", ContentType::CSS, &include_bytes!("../static/scripts/datatables.css")[..]),
+    ]
+    .into_iter()
+    .map(|(name, content_type, bytes)| {
+        (
+            name,
+            StaticFile {
+                content_type,
+                bytes,
+                etag: sha256_hex(bytes),
+            },
+        )
+    })
+    .collect()
+});
+
 #[get("/vw_static/<filename>", rank = 2)]
-pub fn static_files(filename: &str) -> Result<(ContentType, &'static [u8]), Error> {
-    match filename {
-        "404.png" => Ok((ContentType::PNG, include_bytes!("../static/images/404.png"))),
-        "mail-github.png" => Ok((ContentType::PNG, include_bytes!("../static/images/mail-github.png"))),
-        "logo-gray.png" => Ok((ContentType::PNG, include_bytes!("../static/images/logo-gray.png"))),
-        "error-x.svg" => Ok((ContentType::SVG, include_bytes!("../static/images/error-x.svg"))),
-        "hibp.png" => Ok((ContentType::PNG, include_bytes!("../static/images/hibp.png"))),
-        "vaultwarden-icon.png" => Ok((ContentType::PNG, include_bytes!("../static/images/vaultwarden-icon.png"))),
-        "vaultwarden-favicon.png" => Ok((ContentType::PNG, include_bytes!("../static/images/vaultwarden-favicon.png"))),
-        "404.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/404.css"))),
-        "admin.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/admin.css"))),
-        "admin.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin.js"))),
-        "admin_settings.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_settings.js"))),
-        "admin_users.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_users.js"))),
-        "admin_organizations.js" => {
-            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_organizations.js")))
-        }
-        "admin_diagnostics.js" => {
-            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/admin_diagnostics.js")))
-        }
-        "bootstrap.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/bootstrap.css"))),
-        "bootstrap.bundle.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap.bundle.js"))),
-        "jdenticon-3.3.0.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jdenticon-3.3.0.js"))),
-        "datatables.js" => Ok((ContentType::JavaScript, include_bytes!("../static/scripts/datatables.js"))),
-        "datatables.css" => Ok((ContentType::CSS, include_bytes!("../static/scripts/datatables.css"))),
-        "jquery-4.0.0.slim.js" => {
-            Ok((ContentType::JavaScript, include_bytes!("../static/scripts/jquery-4.0.0.slim.js")))
-        }
-        _ => err!(format!("Static file not found: {filename}")),
+pub fn static_files(filename: &str) -> Result<EtagCached<&'static [u8]>, Error> {
+    if let Some(file) = STATIC_FILES.get(filename) {
+        Ok(EtagCached::new(file.bytes, file.content_type.clone(), &file.etag))
+    } else {
+        err!(format!("Static file not found: {}", filename.escape_debug()))
     }
 }

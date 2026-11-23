@@ -14,6 +14,8 @@ pub use ciphers::{CipherData, CipherSyncData, CipherSyncType, purge_trashed_ciph
 pub use emergency_access::{emergency_notification_reminder_job, emergency_request_timeout_job};
 pub use events::{event_cleanup_job, log_event, log_user_event};
 pub use sends::purge_sends;
+#[cfg(feature = "unsafe_test_mode")]
+pub use {ciphers::seed_cipher, sends::seed_send};
 
 use reqwest::Method;
 use rocket::{Catcher, Route, serde::json::Json, serde::json::Value};
@@ -228,14 +230,17 @@ fn config() -> Json<Value> {
         // Version history:
         // - Individual cipher key encryption: 2024.2.0
         // - Mobile app support for MasterPasswordUnlockData: 2025.8.0
-        "version": "2025.12.0",
+        "version": "2026.6.0",
         "gitHash": option_env!("GIT_REV"),
         "server": {
           "name": "Vaultwarden",
           "url": "https://github.com/dani-garcia/vaultwarden"
         },
         "settings": {
-            "disableUserRegistration": CONFIG.is_signup_disabled()
+            "disableUserRegistration": CONFIG.is_signup_disabled(),
+            // When enabled, this setting signals to clients that onboarding interstitials
+            // (post-login welcome dialogs, extension install prompts, setup extension redirects, and premium upsell modals) should be suppressed
+            "suppressOnboardingInterstitials": CONFIG.client_suppress_onboarding(),
         },
         "environment": {
           "vault": domain,
@@ -244,6 +249,7 @@ fn config() -> Json<Value> {
           "notifications": format!("{domain}/notifications"),
           "sso": "",
           "cloudRegion": null,
+          "fillAssistRules": CONFIG.fill_assist_rules_url(),
         },
         // Bitwarden uses this for the self-hosted servers to indicate the default push technology
         "push": {
@@ -251,6 +257,10 @@ fn config() -> Json<Value> {
           "vapidPublicKey": null
         },
         "featureStates": feature_states,
+        // Not supported right now
+        // Used for by clients to learn if the server requires extra work to establish a connection.
+        // See: https://github.com/bitwarden/server/pull/6892 | https://github.com/bitwarden/server/commit/52955d1860b4dfb905f67bbe39d9b10bbd61ded0
+        "communication": null,
         "object": "config",
     }))
 }

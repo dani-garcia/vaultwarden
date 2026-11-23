@@ -1,9 +1,10 @@
 use std::{
     net::IpAddr,
     sync::{Arc, LazyLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
+use bytes::Bytes;
 use chrono::{NaiveDateTime, Utc};
 use rmpv::Value;
 use rocket::{Route, futures::StreamExt};
@@ -33,8 +34,21 @@ pub static WS_USERS: LazyLock<Arc<WebSocketUsers>> = LazyLock::new(|| {
 pub static WS_ANONYMOUS_SUBSCRIPTIONS: LazyLock<Arc<AnonymousWebSocketSubscriptions>> = LazyLock::new(|| {
     Arc::new(AnonymousWebSocketSubscriptions {
         map: Arc::new(dashmap::DashMap::new()),
+        connections: Arc::new(dashmap::DashMap::new()),
     })
 });
+
+/// The anonymous hub needs no authentication, so bound how much a single client can hold open.
+/// One connection is needed per pending login request, several at once are only expected behind NAT.
+const MAX_ANONYMOUS_CONNECTIONS_PER_IP: u32 = 25;
+
+/// How often a Ping is sent to the client.
+const WS_PING_INTERVAL: Duration = Duration::from_secs(15);
+
+/// Close the connection if nothing, not even a Pong, was received from the client for this long.
+/// Otherwise half-open connections (client gone without a FIN, e.g. behind a proxy or NAT) are kept forever.
+/// Same as the default `ClientTimeoutInterval` of ASP.NET Core SignalR, which the official server uses.
+const WS_CLIENT_TIMEOUT: Duration = Duration::from_secs(30);
 
 static NOTIFICATIONS_DISABLED: LazyLock<bool> = LazyLock::new(|| !CONFIG.enable_websocket() && !CONFIG.push_enabled());
 
@@ -82,14 +96,21 @@ impl Drop for WSEntryMapGuard {
 struct WSAnonymousEntryMapGuard {
     subscriptions: Arc<AnonymousWebSocketSubscriptions>,
     token: String,
+    entry_uuid: uuid::Uuid,
     addr: IpAddr,
 }
 
 impl WSAnonymousEntryMapGuard {
-    fn new(subscriptions: Arc<AnonymousWebSocketSubscriptions>, token: String, addr: IpAddr) -> Self {
+    fn new(
+        subscriptions: Arc<AnonymousWebSocketSubscriptions>,
+        token: String,
+        entry_uuid: uuid::Uuid,
+        addr: IpAddr,
+    ) -> Self {
         Self {
             subscriptions,
             token,
+            entry_uuid,
             addr,
         }
     }
@@ -98,7 +119,11 @@ impl WSAnonymousEntryMapGuard {
 impl Drop for WSAnonymousEntryMapGuard {
     fn drop(&mut self) {
         info!("Closing WS connection from {}", self.addr);
-        self.subscriptions.map.remove(&self.token);
+        if let Some(mut entry) = self.subscriptions.map.get_mut(&self.token) {
+            entry.retain(|(uuid, _)| uuid != &self.entry_uuid);
+        }
+        self.subscriptions.map.remove_if(&self.token, |_, senders| senders.is_empty());
+        self.subscriptions.release(self.addr);
     }
 }
 
@@ -140,12 +165,16 @@ fn websockets_hub<'r>(
         rocket_ws::Stream! { ws => {
             let mut ws = ws;
             let _guard = guard;
-            let mut interval = tokio::time::interval(Duration::from_secs(15));
+            let mut interval = tokio::time::interval(WS_PING_INTERVAL);
+            let mut last_received = Instant::now();
             loop {
                 tokio::select! {
                     res = ws.next() =>  {
                         match res {
                             Some(Ok(message)) => {
+                                // Any message, including a Pong, means the client is still there
+                                last_received = Instant::now();
+
                                 match message {
                                     // Respond to any pings
                                     Message::Ping(ping) => yield Message::Pong(ping),
@@ -179,7 +208,13 @@ fn websockets_hub<'r>(
                         }
                     }
 
-                    _ = interval.tick() => yield Message::Ping(create_ping())
+                    _ = interval.tick() => {
+                        // The client stopped responding without closing the connection, drop it
+                        if last_received.elapsed() > WS_CLIENT_TIMEOUT {
+                            break;
+                        }
+                        yield Message::Ping(PING);
+                    }
                 }
             }
         }}
@@ -194,24 +229,35 @@ fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> R
     let (mut rx, guard) = {
         let subscriptions = Arc::clone(&WS_ANONYMOUS_SUBSCRIPTIONS);
 
-        // Add a channel to send messages to this client to the map
+        if !subscriptions.try_reserve(ip.ip) {
+            err_code!("Too many connections", 429)
+        }
+
+        // Add a channel to send messages to this client to the map.
+        // Clients reconnect with the same token while a login request is still pending, so keep
+        // every subscriber instead of replacing, otherwise the older one takes the newer one down.
         let (tx, rx) = tokio::sync::mpsc::channel::<Message>(100);
-        subscriptions.map.insert(token.clone(), tx);
+        let entry_uuid = uuid::Uuid::new_v4();
+        subscriptions.map.entry(token.clone()).or_default().push((entry_uuid, tx));
 
         // Once the guard goes out of scope, the connection will have been closed and the entry will be deleted from the map
-        (rx, WSAnonymousEntryMapGuard::new(subscriptions, token, ip.ip))
+        (rx, WSAnonymousEntryMapGuard::new(subscriptions, token, entry_uuid, ip.ip))
     };
 
     Ok({
         rocket_ws::Stream! { ws => {
             let mut ws = ws;
             let _guard = guard;
-            let mut interval = tokio::time::interval(Duration::from_secs(15));
+            let mut interval = tokio::time::interval(WS_PING_INTERVAL);
+            let mut last_received = Instant::now();
             loop {
                 tokio::select! {
                     res = ws.next() =>  {
                         match res {
                             Some(Ok(message)) => {
+                                // Any message, including a Pong, means the client is still there
+                                last_received = Instant::now();
+
                                 match message {
                                     // Respond to any pings
                                     Message::Ping(ping) => yield Message::Pong(ping),
@@ -245,7 +291,13 @@ fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> R
                         }
                     }
 
-                    _ = interval.tick() => yield Message::Ping(create_ping())
+                    _ = interval.tick() => {
+                        // The client stopped responding without closing the connection, drop it
+                        if last_received.elapsed() > WS_CLIENT_TIMEOUT {
+                            break;
+                        }
+                        yield Message::Ping(PING);
+                    }
                 }
             }
         }}
@@ -256,7 +308,7 @@ fn anonymous_websockets_hub<'r>(ws: WebSocket, token: String, ip: ClientIp) -> R
 // Websockets server
 //
 
-fn serialize(val: &Value) -> Vec<u8> {
+fn serialize(val: &Value) -> Bytes {
     use rmpv::encode::write_value;
 
     let mut buf = Vec::new();
@@ -284,7 +336,7 @@ fn serialize(val: &Value) -> Vec<u8> {
     }
 
     len_buf.append(&mut buf);
-    len_buf
+    len_buf.into()
 }
 
 fn serialize_date(date: NaiveDateTime) -> Value {
@@ -307,7 +359,8 @@ fn convert_option<T: Into<Value>>(option: Option<T>) -> Value {
 }
 
 const RECORD_SEPARATOR: u8 = 0x1e;
-const INITIAL_RESPONSE: [u8; 3] = [0x7b, 0x7d, RECORD_SEPARATOR]; // {, }, <RS>
+const INITIAL_RESPONSE: Bytes = Bytes::from_static(&[0x7b, 0x7d, RECORD_SEPARATOR]); // {, }, <RS>
+const PING: Bytes = Bytes::from_static(&[0x02, 0x91, 0x06]);
 
 #[derive(Deserialize, Copy, Clone, Eq, PartialEq)]
 struct InitialMessage<'a> {
@@ -328,10 +381,10 @@ pub struct WebSocketUsers {
 }
 
 impl WebSocketUsers {
-    async fn send_update(&self, user_id: &UserId, data: &[u8]) {
+    async fn send_update(&self, user_id: &UserId, data: &Bytes) {
         if let Some(user) = self.map.get(user_id.as_ref()).map(|v| v.clone()) {
             for (_, sender) in &user {
-                if let Err(e) = sender.send(Message::binary(data)).await {
+                if let Err(e) = sender.send(Message::binary(data.clone())).await {
                     error!("Error sending WS update {e}");
                 }
             }
@@ -360,23 +413,34 @@ impl WebSocketUsers {
     }
 
     pub async fn send_logout(&self, user: &User, acting_device: Option<&Device>, conn: &DbConn) {
+        self.send_logout_with_reason(user, acting_device, None, conn).await;
+    }
+
+    /// A logout that clients may handle differently depending on `reason`
+    pub async fn send_logout_with_reason(
+        &self,
+        user: &User,
+        acting_device: Option<&Device>,
+        reason: Option<LogOutReason>,
+        conn: &DbConn,
+    ) {
         // Skip any processing if both WebSockets and Push are not active
         if *NOTIFICATIONS_DISABLED {
             return;
         }
-        let acting_device_id = acting_device.map(|d| d.uuid.clone());
-        let data = create_update(
-            vec![("UserId".into(), user.uuid.to_string().into()), ("Date".into(), serialize_date(user.updated_at))],
-            UpdateType::LogOut,
-            acting_device_id,
-        );
+        let mut payload =
+            vec![("UserId".into(), user.uuid.to_string().into()), ("Date".into(), serialize_date(user.updated_at))];
+        if let Some(reason) = reason {
+            payload.push(("Reason".into(), (reason as i32).into()));
+        }
+        let data = create_update(payload, UpdateType::LogOut, acting_device.map(|d| &d.uuid));
 
         if CONFIG.enable_websocket() {
             self.send_update(&user.uuid, &data).await;
         }
 
         if CONFIG.push_enabled() {
-            push_logout(user, acting_device, conn).await;
+            push_logout(user, acting_device, reason, conn).await;
         }
     }
 
@@ -392,7 +456,7 @@ impl WebSocketUsers {
                 ("RevisionDate".into(), serialize_date(folder.updated_at)),
             ],
             ut,
-            Some(device.uuid.clone()),
+            Some(&device.uuid),
         );
 
         if CONFIG.enable_websocket() {
@@ -439,7 +503,7 @@ impl WebSocketUsers {
                 ("RevisionDate".into(), revision_date),
             ],
             ut,
-            Some(device.uuid.clone()), // Acting device id (unique device/app uuid)
+            Some(&device.uuid), // Acting device id (unique device/app uuid)
         );
 
         if CONFIG.enable_websocket() {
@@ -495,7 +559,7 @@ impl WebSocketUsers {
         let data = create_update(
             vec![("Id".into(), auth_request_uuid.to_owned().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequest,
-            Some(device.uuid.clone()),
+            Some(&device.uuid),
         );
         if CONFIG.enable_websocket() {
             self.send_update(user_id, &data).await;
@@ -520,7 +584,7 @@ impl WebSocketUsers {
         let data = create_update(
             vec![("Id".into(), auth_request_id.to_string().into()), ("UserId".into(), user_id.to_string().into())],
             UpdateType::AuthRequestResponse,
-            Some(device.uuid.clone()),
+            Some(&device.uuid),
         );
         if CONFIG.enable_websocket() {
             self.send_update(user_id, &data).await;
@@ -534,15 +598,41 @@ impl WebSocketUsers {
 
 #[derive(Clone)]
 pub struct AnonymousWebSocketSubscriptions {
-    map: Arc<dashmap::DashMap<String, Sender<Message>>>,
+    map: Arc<dashmap::DashMap<String, Vec<UserSenders>>>,
+    connections: Arc<dashmap::DashMap<IpAddr, u32>>,
 }
 
 impl AnonymousWebSocketSubscriptions {
-    async fn send_update(&self, token: &str, data: &[u8]) {
-        if let Some(sender) = self.map.get(token).map(|v| v.clone())
-            && let Err(e) = sender.send(Message::binary(data)).await
-        {
-            error!("Error sending WS update {e}");
+    /// Takes a connection slot for this address, returns false when it already reached the limit.
+    fn try_reserve(&self, addr: IpAddr) -> bool {
+        let mut count = self.connections.entry(addr).or_insert(0);
+        if *count >= MAX_ANONYMOUS_CONNECTIONS_PER_IP {
+            return false;
+        }
+        *count += 1;
+        true
+    }
+
+    /// Releases a slot taken by `try_reserve`.
+    fn release(&self, addr: IpAddr) {
+        let empty = self.connections.get_mut(&addr).is_some_and(|mut c| {
+            *c = c.saturating_sub(1);
+            *c == 0
+        });
+
+        // Only remove once the guard above is dropped, otherwise this deadlocks.
+        if empty {
+            self.connections.remove_if(&addr, |_, count| *count == 0);
+        }
+    }
+
+    async fn send_update(&self, token: &str, data: &Bytes) {
+        // Clone the senders so the map isn't kept locked while sending.
+        let senders = self.map.get(token).map_or_default(|v| v.clone());
+        for (_, sender) in senders {
+            if let Err(e) = sender.send(Message::binary(data.clone())).await {
+                error!("Error sending WS update {e}");
+            }
         }
     }
 
@@ -574,7 +664,7 @@ impl AnonymousWebSocketSubscriptions {
     ]
 ]
 */
-fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id: Option<DeviceId>) -> Vec<u8> {
+fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id: Option<&DeviceId>) -> Bytes {
     use rmpv::Value as V;
 
     let value = V::Array(vec![
@@ -592,7 +682,7 @@ fn create_update(payload: Vec<(Value, Value)>, ut: UpdateType, acting_device_id:
     serialize(&value)
 }
 
-fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: &UserId) -> Vec<u8> {
+fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id: &UserId) -> Bytes {
     use rmpv::Value as V;
 
     let value = V::Array(vec![
@@ -613,8 +703,12 @@ fn create_anonymous_update(payload: Vec<(Value, Value)>, ut: UpdateType, user_id
     serialize(&value)
 }
 
-fn create_ping() -> Vec<u8> {
-    serialize(&Value::Array(vec![6.into()]))
+/// Why a logout was pushed, absent for a plain one. `KdfChange` isn't sent yet.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/9030c42bf7d8f9ac2ff9fee85c39588d5eb81499/src/Core/Enums/PushNotificationLogOutReason.cs#L3-L7>
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum LogOutReason {
+    KeyRotation = 1,
 }
 
 // https://github.com/bitwarden/server/blob/375af7c43b10d9da03525d41452f95de3f921541/src/Core/Enums/PushType.cs
