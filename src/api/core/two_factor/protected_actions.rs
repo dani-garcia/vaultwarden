@@ -128,23 +128,24 @@ pub async fn validate_protected_action_otp(
         .await
         .map_res("Protected action token not found, try sending the code again or restart the process")?;
     let mut pa_data = ProtectedActionData::from_json(&pa.data)?;
-    pa_data.add_attempt();
-    pa.data = pa_data.to_json();
 
     // Fail after x attempts if the token has been used too many times.
     // Don't delete it, as we use it to keep track of attempts.
-    if pa_data.attempts >= CONFIG.email_attempts_limit() {
+    if pa_data.attempts >= u64::from(CONFIG.email_attempts_limit()) {
         err!("Token has expired")
     }
 
     // Check if the token has expired (Using the email 2fa expiration time)
-    let max_time = CONFIG.email_expiration_time().cast_signed();
+    let max_time = i64::from(CONFIG.email_expiration_time());
     if pa_data.time_since_sent().num_seconds() > max_time {
         pa.delete(conn).await?;
         err!("Token has expired")
     }
 
     if !crypto::ct_eq(&pa_data.token, otp) {
+        pa_data.add_attempt();
+        pa.data = pa_data.to_json();
+
         pa.save(conn).await?;
         err!("Token is invalid")
     }

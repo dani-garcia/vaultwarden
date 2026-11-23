@@ -37,7 +37,7 @@ impl TwoFactorIncomplete {
         ip: &ClientIp,
         conn: &DbConn,
     ) -> EmptyResult {
-        if CONFIG.incomplete_2fa_time_limit() <= 0 || !CONFIG.mail_enabled() {
+        if CONFIG.incomplete_2fa_time_limit() == 0 || !CONFIG.mail_enabled() {
             return Ok(());
         }
 
@@ -66,7 +66,7 @@ impl TwoFactorIncomplete {
     }
 
     pub async fn mark_complete(user_uuid: &UserId, device_uuid: &DeviceId, conn: &DbConn) -> EmptyResult {
-        if CONFIG.incomplete_2fa_time_limit() <= 0 || !CONFIG.mail_enabled() {
+        if CONFIG.incomplete_2fa_time_limit() == 0 || !CONFIG.mail_enabled() {
             return Ok(());
         }
 
