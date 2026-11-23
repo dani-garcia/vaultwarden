@@ -21,7 +21,7 @@ mod user_signature_key_pair;
 
 pub use self::archive::Archive;
 pub use self::attachment::{Attachment, AttachmentId};
-pub use self::auth_request::{AuthRequest, AuthRequestId};
+pub use self::auth_request::{AuthRequest, AuthRequestId, AuthRequestType};
 pub use self::cipher::{Cipher, CipherAccessScope, CipherId, RepromptType, is_data_blob_encrypted};
 pub use self::collection::{Collection, CollectionCipher, CollectionId, CollectionUser};
 pub use self::device::{Device, DeviceId, DeviceType, DeviceWithAuthRequest, PushId};
