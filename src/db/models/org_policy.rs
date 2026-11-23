@@ -31,7 +31,7 @@ pub struct OrgPolicy {
     pub revision_date: NaiveDateTime,
 }
 
-// https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Enums/PolicyType.cs
+// https://github.com/bitwarden/server/blob/b0f5bc64436a2457e1e8898e65c7e9e40ba94d7a/src/Core/AdminConsole/Enums/PolicyType.cs
 #[derive(Copy, Clone, Eq, PartialEq, num_derive::FromPrimitive)]
 pub enum OrgPolicyType {
     TwoFactorAuthentication = 0,
@@ -57,6 +57,7 @@ pub enum OrgPolicyType {
     OrganizationUserNotification = 20,
     SendControls = 21,
     FillAssist = 22,
+    AutotypeGaPolicy = 23,
 }
 
 // https://github.com/bitwarden/server/blob/9ebe16587175b1c0e9208f84397bb75d0d595510/src/Core/AdminConsole/Models/Data/Organizations/Policies/SendOptionsPolicyData.cs#L5
