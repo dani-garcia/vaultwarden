@@ -23,8 +23,8 @@ use crate::{
         models::{
             AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
             EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, KeyId, Membership,
-            MembershipId, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, SignatureAlgorithm,
-            User, UserId, UserKdfType, UserSignatureKeyPair,
+            MembershipId, MembershipStatus, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId,
+            SignatureAlgorithm, User, UserId, UserKdfType, UserSignatureKeyPair,
         },
     },
     mail,
@@ -713,6 +713,12 @@ async fn post_set_password(data: Json<Value>, headers: Headers, conn: DbConn) ->
         err!("The field MasterPasswordHint must be a string with a maximum length of 50.")
     }
     let mut user = headers.user;
+    let default_org_id = crate::sso::default_organization_id()?;
+    let enroll_in_default_organization = matches!(
+        (data.org_identifier.as_deref(), default_org_id.as_ref()),
+        (Some(identifier), Some(org_id))
+            if identifier == crate::sso::FAKE_SSO_IDENTIFIER || identifier == org_id.as_ref()
+    );
 
     if user.private_key.is_some() || !user.password_hash.is_empty() {
         err!("Account already initialized, cannot set password")
@@ -768,6 +774,7 @@ async fn post_set_password(data: Json<Value>, headers: Headers, conn: DbConn) ->
     }
 
     if let Some(identifier) = data.org_identifier
+        && !enroll_in_default_organization
         && identifier != crate::sso::FAKE_SSO_IDENTIFIER
         && identifier != crate::api::admin::FAKE_ADMIN_UUID
     {
@@ -782,10 +789,18 @@ async fn post_set_password(data: Json<Value>, headers: Headers, conn: DbConn) ->
         accept_org_invite(&user, membership, None, &conn).await?;
     }
 
-    if CONFIG.mail_enabled() {
+    // Check the default organization enrollment before anything is saved, so a refused enrollment
+    // does not leave an initialized account behind which can not join the organization anymore.
+    let default_org_enrollment = match default_org_id.as_ref() {
+        Some(org_id) if enroll_in_default_organization => {
+            prepare_sso_default_organization_enrollment(&user, org_id, &conn).await?
+        }
+        _ => None,
+    };
+
+    let mail_enabled = CONFIG.mail_enabled();
+    if mail_enabled {
         mail::send_welcome(&user.email.to_lowercase()).await?;
-    } else {
-        Membership::accept_user_invitations(&user.uuid, &conn).await?;
     }
 
     log_user_event(EventType::UserChangedPassword, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
@@ -796,9 +811,72 @@ async fn post_set_password(data: Json<Value>, headers: Headers, conn: DbConn) ->
     }
     user.save(&conn).await?;
 
+    if let Some((member_id, org)) = default_org_enrollment {
+        accept_sso_default_organization_invite(&user, &member_id, org, &conn).await?;
+    }
+
+    // Accept any remaining invitations only after the default organization policy checks above.
+    if !mail_enabled {
+        Membership::accept_user_invitations(&user.uuid, &conn).await?;
+    }
+
     Ok(Json(json!({
       "object": "set-password",
     })))
+}
+
+/// Returns the pending invitation to the default organization if the user is allowed to accept it.
+/// Users without a pending invitation are not enrolled, e.g. accounts which existed before the setting was enabled
+/// or members which were removed or revoked in the meantime.
+async fn prepare_sso_default_organization_enrollment(
+    user: &User,
+    org_id: &OrganizationId,
+    conn: &DbConn,
+) -> ApiResult<Option<(MembershipId, Organization)>> {
+    let Some(mut membership) = Membership::find_by_user_and_org(&user.uuid, org_id, conn).await else {
+        return Ok(None);
+    };
+    if membership.status != MembershipStatus::Invited as i32 {
+        return Ok(None);
+    }
+
+    let Some(org) = Organization::find_by_uuid(org_id, conn).await else {
+        err!("The organization configured in `SSO_DEFAULT_ORGANIZATION_UUID` does not exist")
+    };
+
+    // The policies are only checked for members which accepted the invitation
+    membership.status = MembershipStatus::Accepted as i32;
+    OrgPolicy::check_user_allowed(&membership, "join", conn).await?;
+
+    Ok(Some((membership.uuid, org)))
+}
+
+async fn accept_sso_default_organization_invite(
+    user: &User,
+    member_id: &MembershipId,
+    org: Organization,
+    conn: &DbConn,
+) -> EmptyResult {
+    // Load the invitation again, it may have been changed, revoked or removed while the password was saved
+    let Some(mut membership) = Membership::find_by_uuid_and_org(member_id, &org.uuid, conn).await else {
+        return Ok(());
+    };
+    if membership.status != MembershipStatus::Invited as i32 {
+        return Ok(());
+    }
+
+    membership.status = MembershipStatus::Accepted as i32;
+    membership.save(conn).await?;
+
+    if CONFIG.mail_enabled() {
+        let address = membership.invited_by_email.unwrap_or(org.billing_email);
+        if let Err(e) = mail::send_invite_accepted(&user.email, &address, &org.name).await {
+            error!("Error sending default organization enrollment notification: {e:#?}");
+        }
+    }
+
+    info!("Added SSO user {} to default organization {} pending confirmation", user.uuid, org.uuid);
+    Ok(())
 }
 
 #[get("/accounts/profile")]

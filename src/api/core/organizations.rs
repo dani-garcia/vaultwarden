@@ -344,6 +344,21 @@ async fn get_user_collections(headers: Headers, conn: DbConn) -> Json<Value> {
 // The returned `Id` will then be passed to `get_master_password_policy` which will mainly ignore it
 #[get("/organizations/<identifier>/auto-enroll-status")]
 async fn get_auto_enroll_status(identifier: &str, headers: Headers, conn: DbConn) -> JsonResult {
+    // The default organization is returned as SSO identifier to everybody, but only its members can read its policies.
+    // For anybody else the client would get a 401 on `get_master_password_policy` and log the user out.
+    if let Some(org_id) = crate::sso::default_organization_id()?
+        && identifier == org_id.as_ref()
+        && Membership::find_by_user_and_org(&headers.user.uuid, &org_id, &conn)
+            .await
+            .is_none_or(|member| member.status < MembershipStatus::Invited as i32)
+    {
+        return Ok(Json(json!({
+            "id": FAKE_SSO_IDENTIFIER,
+            "identifier": FAKE_SSO_IDENTIFIER,
+            "resetPasswordEnabled": false,
+        })));
+    }
+
     let org = if identifier == FAKE_SSO_IDENTIFIER {
         match Membership::find_main_user_org(&headers.user.uuid, &conn).await {
             Some(member) => Organization::find_by_uuid(&member.org_uuid, &conn).await,
@@ -975,18 +990,18 @@ async fn get_assigned_org_details(data: OrgIdData, headers: Headers, conn: DbCon
     })))
 }
 
-// Returning a Domain/Organization here allow to prefill it and prevent prompting the user
-// So we return a dummy value, since we only support a single SSO integration, and do not use the response anywhere
-// In use since `v2025.6.0`, appears to use only the first `organizationIdentifier`
+// Return the configured default organization so its policies apply during SSO enrollment; otherwise return a dummy.
+// In use since `v2025.6.0`; clients appear to use only the first `organizationIdentifier`.
 #[post("/organizations/domain/sso/verified")]
 fn get_org_domain_sso_verified() -> JsonResult {
-    // Always return a dummy value, no matter if SSO is enabled or not
+    let organization_identifier = crate::sso::default_organization_id()?
+        .map_or_else(|| FAKE_SSO_IDENTIFIER.to_owned(), |org_id| org_id.to_string());
+
     Ok(Json(json!({
         "object": "list",
         "data": [{
-            "organizationIdentifier": FAKE_SSO_IDENTIFIER,
-            // These appear to be unused
-            "organizationName": FAKE_SSO_IDENTIFIER,
+            "organizationIdentifier": organization_identifier,
+            "organizationName": organization_identifier,
             "domainName": CONFIG.domain()
         }],
         "continuationToken": null
