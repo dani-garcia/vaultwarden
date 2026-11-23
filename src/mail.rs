@@ -74,8 +74,8 @@ fn smtp_transport() -> AsyncSmtpTransport<Tokio1Executor> {
             let mut selected_mechanisms = vec![];
             for wanted_mechanism in mechanism.split(',') {
                 for m in &allowed_mechanisms {
-                    if m.to_string().to_lowercase()
-                        == wanted_mechanism.trim_matches(|c| c == '"' || c == '\'' || c == ' ').to_lowercase()
+                    if m.to_string()
+                        .eq_ignore_ascii_case(wanted_mechanism.trim_matches(|c| c == '"' || c == '\'' || c == ' '))
                     {
                         selected_mechanisms.push(*m);
                     }
@@ -127,26 +127,17 @@ fn get_text(template_name: &'static str, data: serde_json::Value) -> Result<(Str
 }
 
 fn get_template(template_name: &str, data: &serde_json::Value) -> Result<(String, String), Error> {
+    const DELIMITER: &str = "<!---------------->";
     let text = CONFIG.render_template(template_name, data)?;
-    let mut text_split = text.split("<!---------------->");
-
-    let subject = if let Some(s) = text_split.next() {
-        s.trim().to_owned()
-    } else {
-        err!("Template doesn't contain subject")
-    };
-
-    let body = if let Some(s) = text_split.next() {
-        s.trim().to_owned()
-    } else {
+    let Some((subject, body)) = text.split_once(DELIMITER) else {
         err!("Template doesn't contain body")
     };
 
-    if text_split.next().is_some() {
+    if body.contains(DELIMITER) {
         err!("Template contains more than one body");
     }
 
-    Ok((subject, body))
+    Ok((subject.trim().to_owned(), body.trim().to_owned()))
 }
 
 pub async fn send_password_hint(address: &str, hint: Option<String>) -> EmptyResult {
@@ -358,7 +349,7 @@ pub async fn send_emergency_access_invite(
     {
         let mut query_params = query.query_pairs_mut();
         query_params
-            .append_pair("id", &emer_id.to_string())
+            .append_pair("id", emer_id.as_str())
             .append_pair("name", grantor_name)
             .append_pair("email", address)
             .append_pair("token", &encode_jwt(&claims));

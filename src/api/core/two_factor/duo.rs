@@ -32,8 +32,8 @@ enum DuoStatus {
 impl DuoStatus {
     fn data(self) -> Option<DuoData> {
         match self {
-            DuoStatus::Global(data) | DuoStatus::User(data) => Some(data),
-            DuoStatus::Disabled(_) => None,
+            Self::Global(data) | Self::User(data) => Some(data),
+            Self::Disabled(_) => None,
         }
     }
 }
@@ -43,9 +43,9 @@ const DISABLED_MESSAGE_DEFAULT: &str = "<To use the global Duo keys, please leav
 #[post("/two-factor/get-duo", data = "<data>")]
 async fn get_duo(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, false, &conn).await?;
+    data.validate(&mut user, false, &conn).await?;
 
     let (enabled, duo) = match get_user_duo_data(&user.uuid, &conn).await {
         DuoStatus::Global(_) => (true, Some(DuoData::secret())),

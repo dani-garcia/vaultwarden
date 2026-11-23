@@ -161,13 +161,9 @@ pub fn should_block_host<S: AsRef<str>>(host: &Host<S>) -> Result<(), CustomHttp
         });
     }
 
-    if should_block_address_regex(&host_str) {
-        return Err(CustomHttpClientError::Blocked {
-            domain: host_str,
-        });
-    }
-
-    Ok(())
+    (!should_block_address_regex(&host_str)).ok_or(CustomHttpClientError::Blocked {
+        domain: host_str,
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -211,7 +207,7 @@ impl CustomHttpClientError {
 
         while let Some(err) = source {
             source = err.source();
-            if let Some(err) = err.downcast_ref::<CustomHttpClientError>() {
+            if let Some(err) = err.downcast_ref::<Self>() {
                 return Some(err);
             }
         }
@@ -258,7 +254,7 @@ impl CustomDns {
     fn instance(enforce_block: bool) -> Self {
         static INSTANCE: LazyLock<Arc<CustomDnsResolver>> = LazyLock::new(CustomDnsResolver::new);
 
-        CustomDns {
+        Self {
             enforce_block,
             resolver: Arc::clone(&*INSTANCE),
         }
@@ -409,7 +405,7 @@ pub(crate) mod aws {
                 Ok(HttpResponse::new(status, bytes.into()))
             };
 
-            HttpConnectorFuture::new(Box::pin(future))
+            HttpConnectorFuture::new(future)
         }
     }
 
@@ -419,7 +415,7 @@ pub(crate) mod aws {
             _settings: &HttpConnectorSettings,
             _components: &RuntimeComponents,
         ) -> SharedHttpConnector {
-            SharedHttpConnector::new(AwsReqwestConnector {
+            SharedHttpConnector::new(Self {
                 client: self.client.clone(),
             })
         }
@@ -430,8 +426,10 @@ pub(crate) mod aws {
 mod tests {
     use super::*;
     use crate::util::is_global_hardcoded;
-    use std::net::{Ipv4Addr, Ipv6Addr};
-    use url::Host;
+    use std::{
+        assert_matches,
+        net::{Ipv4Addr, Ipv6Addr},
+    };
 
     // ===
     // IPv4 numeric-format normalization
@@ -535,19 +533,19 @@ mod tests {
     #[test]
     fn get_valid_host_normalizes_decimal_int() {
         let h = get_valid_host("2130706433").expect("valid");
-        assert!(matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::LOCALHOST));
+        assert_matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::LOCALHOST);
     }
 
     #[test]
     fn get_valid_host_normalizes_hex() {
         let h = get_valid_host("0x7f000001").expect("valid");
-        assert!(matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::LOCALHOST));
+        assert_matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::LOCALHOST);
     }
 
     #[test]
     fn get_valid_host_normalizes_octal() {
         let h = get_valid_host("017700000001").expect("valid");
-        assert!(matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::LOCALHOST));
+        assert_matches!(h, Host::Ipv4(ip) if ip == Ipv4Addr::LOCALHOST);
     }
 
     // ===

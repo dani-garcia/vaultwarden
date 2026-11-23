@@ -2,10 +2,12 @@ use chrono::{NaiveDateTime, TimeDelta, Utc};
 use derive_more::{AsRef, Deref, Display, From};
 use diesel::prelude::*;
 use serde_json::Value;
+use std::cmp;
 
 use crate::{
     CONFIG,
     api::EmptyResult,
+    auth::DEFAULT_ACCESS_VALIDITY,
     crypto,
     db::{
         DbConn,
@@ -20,7 +22,7 @@ use macros::UuidFromParam;
 
 use super::{
     AuthRequest, Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor,
-    TwoFactorIncomplete,
+    TwoFactorIncomplete, UserSignatureKeyPair,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
@@ -72,6 +74,13 @@ pub struct User {
     pub external_id: Option<String>, // Todo: Needs to be removed in the future, this is not used anymore.
 
     pub key_id: Option<KeyId>,
+
+    // The v2 state: all set, with a `user_signature_key_pairs` row, or none, see `User::is_v2`
+    pub signed_public_key: Option<String>,
+    pub security_state: Option<String>,
+    pub security_version: Option<i32>,
+    /// JSON `{"wrappedUserKey1", "wrappedUserKey2"}` for sessions that still hold the v1 user key. Opaque to us.
+    pub v2_upgrade_token: Option<String>,
 }
 
 #[derive(Identifiable, Queryable, Insertable)]
@@ -100,17 +109,31 @@ enum UserStatus {
     _Disabled = 2,
 }
 
+/// A previous security stamp that is still accepted, until `expire`.
 #[derive(Serialize, Deserialize)]
 pub struct UserStampException {
-    pub routes: Vec<String>,
+    /// The routes the stamp is still accepted on, or `None` for any route.
+    pub routes: Option<Vec<String>>,
     pub security_stamp: String,
     pub expire: i64,
+}
+
+impl UserStampException {
+    pub fn is_expired(&self) -> bool {
+        Utc::now().timestamp() > self.expire
+    }
+
+    /// Whether this exception lets a token carrying `security_stamp` through on `route`.
+    pub fn allows(&self, security_stamp: &str, route: &str) -> bool {
+        !self.is_expired()
+            && self.security_stamp == security_stamp
+            && self.routes.as_ref().is_none_or(|routes| routes.iter().any(|r| r == route))
+    }
 }
 
 /// Local methods
 impl User {
     pub const CLIENT_KDF_TYPE_DEFAULT: i32 = UserKdfType::Pbkdf2 as i32;
-    pub const CLIENT_KDF_ITER_DEFAULT: i32 = 600_000;
 
     pub fn new(email: &str, name: Option<String>) -> Self {
         let now = Utc::now().naive_utc();
@@ -124,7 +147,7 @@ impl User {
             verified_at: None,
             last_verifying_at: None,
             login_verify_count: 0,
-            name: name.unwrap_or(email.clone()),
+            name: name.unwrap_or_else(|| email.clone()),
             email,
             akey: String::new(),
             email_new: None,
@@ -148,7 +171,7 @@ impl User {
             excluded_globals: "[]".to_owned(),
 
             client_kdf_type: Self::CLIENT_KDF_TYPE_DEFAULT,
-            client_kdf_iter: Self::CLIENT_KDF_ITER_DEFAULT,
+            client_kdf_iter: CONFIG.client_kdf_iter(),
             client_kdf_memory: None,
             client_kdf_parallelism: None,
 
@@ -159,7 +182,29 @@ impl User {
             external_id: None, // Todo: Needs to be removed in the future, this is not used anymore.
 
             key_id: None,
+
+            signed_public_key: None,
+            security_state: None,
+            security_version: None,
+            v2_upgrade_token: None,
         }
+    }
+
+    pub fn is_v2(&self) -> bool {
+        self.signed_public_key.is_some() && self.security_state.is_some() && self.security_version.is_some()
+    }
+
+    /// Upstream's `HasV2Encryption`: a private key wrapped as `CoseEncrypt0B64` (type 7) and security version 2.
+    /// Upstream only uses it to decide which accounts need a v2-capable client.
+    ///
+    /// Ref: <https://github.com/bitwarden/server/blob/8da186ad73f80d37157fe6fd42323e4284e83ec1/src/Core/Entities/User.cs#L245-L278>
+    pub fn has_v2_encryption(&self) -> bool {
+        self.security_version == Some(2)
+            && self
+                .private_key
+                .as_deref()
+                .and_then(|private_key| private_key.split_once('.'))
+                .is_some_and(|(enc_type, _)| enc_type.parse::<u8>() == Ok(7))
     }
 
     pub fn check_valid_password(&self, password: &str) -> bool {
@@ -171,20 +216,17 @@ impl User {
         )
     }
 
+    /// Upstream's `GetMasterPasswordSalt`: there is no separate salt, so the normalized email
     pub fn master_password_salt(&self) -> String {
         self.email.trim().to_lowercase()
     }
 
     pub fn check_valid_recovery_code(&self, recovery_code: &str) -> bool {
-        if let Some(ref totp_recover) = self.totp_recover {
-            crypto::ct_eq(recovery_code, totp_recover.to_lowercase())
-        } else {
-            false
-        }
+        self.totp_recover.as_ref().is_some_and(|c| crypto::ct_eq(recovery_code, c.to_lowercase()))
     }
 
     pub fn check_valid_api_key(&self, key: &str) -> bool {
-        matches!(self.api_key, Some(ref api_key) if crypto::ct_eq(api_key, key))
+        self.api_key.as_ref().is_some_and(|k| crypto::ct_eq(key, k))
     }
 
     /// Set the password hash generated
@@ -206,6 +248,7 @@ impl User {
         allow_next_route: Option<Vec<String>>,
         conn: &DbConn,
     ) -> EmptyResult {
+        self.password_iterations = cmp::max(self.password_iterations, CONFIG.password_iterations());
         self.password_hash =
             crypto::hash_password(password.as_bytes(), &self.salt, self.password_iterations.cast_unsigned());
 
@@ -225,7 +268,30 @@ impl User {
 
     pub async fn reset_security_stamp(&mut self, conn: &DbConn) -> EmptyResult {
         self.security_stamp = get_uuid();
+        // Keeps the unexpired route exceptions, set for the stamp being replaced, and drops a rotation's grace
+        let mut exceptions = self.stamp_exceptions();
+        exceptions.retain(|e| e.routes.is_some() && !e.is_expired());
+        self.set_stamp_exceptions(&exceptions);
         Device::rotate_refresh_tokens_by_user(&self.uuid, conn).await?;
+        Ok(())
+    }
+
+    /// Resets the stamp but lets issued access tokens run out, as upstream only checks it on refresh.
+    pub async fn reset_security_stamp_after_key_rotation(&mut self, conn: &DbConn) -> EmptyResult {
+        let previous_stamp = self.security_stamp.clone();
+        let mut grace: Vec<UserStampException> =
+            self.stamp_exceptions().into_iter().filter(|e| e.routes.is_none() && !e.is_expired()).collect();
+
+        self.reset_security_stamp(conn).await?;
+
+        grace.push(UserStampException {
+            routes: None,
+            security_stamp: previous_stamp,
+            expire: (Utc::now() + DEFAULT_ACCESS_VALIDITY).timestamp(),
+        });
+        let mut exceptions = self.stamp_exceptions();
+        exceptions.extend(grace);
+        self.set_stamp_exceptions(&exceptions);
         Ok(())
     }
 
@@ -237,17 +303,30 @@ impl User {
     ///   After these 2 minutes this stamp will expire.
     ///
     pub fn set_stamp_exception(&mut self, route_exception: Vec<String>) {
-        let stamp_exception = UserStampException {
-            routes: route_exception,
+        self.set_stamp_exceptions(&[UserStampException {
+            routes: Some(route_exception),
             security_stamp: self.security_stamp.clone(),
             expire: (Utc::now() + TimeDelta::try_minutes(2).unwrap()).timestamp(),
-        };
-        self.stamp_exception = Some(serde_json::to_string(&stamp_exception).unwrap_or_default());
+        }]);
     }
 
-    /// Resets the stamp_exception to prevent re-use of the previous security-stamp
-    pub fn reset_stamp_exception(&mut self) {
-        self.stamp_exception = None;
+    /// The previous security stamps that are still accepted, expired ones included.
+    pub fn stamp_exceptions(&self) -> Vec<UserStampException> {
+        let Some(stored) = self.stamp_exception.as_deref() else {
+            return Vec::new();
+        };
+        // Before key rotations kept sessions alive, only a single route exception was stored.
+        serde_json::from_str::<Vec<UserStampException>>(stored)
+            .or_else(|_| serde_json::from_str::<UserStampException>(stored).map(|e| vec![e]))
+            .unwrap_or_default()
+    }
+
+    fn set_stamp_exceptions(&mut self, exceptions: &[UserStampException]) {
+        self.stamp_exception = if exceptions.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&exceptions).unwrap_or_default())
+        };
     }
 
     pub fn display_name(&self) -> &str {
@@ -266,23 +345,60 @@ impl User {
         !CONFIG.mail_enabled() || self.verified_at.is_some()
     }
 
+    async fn v2_signature_key_pair(&self, conn: &DbConn) -> Option<UserSignatureKeyPair> {
+        if !self.is_v2() {
+            return None;
+        }
+        UserSignatureKeyPair::find_by_user(&self.uuid, conn).await
+    }
+
     /// The `accountKeys` object (upstream's `PrivateKeysResponseModel`), null without a key pair
-    pub fn account_keys_json(&self) -> Value {
+    pub async fn account_keys_json(&self, conn: &DbConn) -> Value {
         if self.private_key.is_some() {
+            let (signed_public_key, signature_key_pair, security_state) = match self.v2_signature_key_pair(conn).await {
+                Some(key_pair) => (
+                    json!(self.signed_public_key),
+                    key_pair.to_json(),
+                    json!({
+                        "securityState": self.security_state,
+                        "securityVersion": self.security_version,
+                    }),
+                ),
+                None => (Value::Null, Value::Null, Value::Null),
+            };
+
             json!({
                 "publicKeyEncryptionKeyPair": {
                     "wrappedPrivateKey": self.private_key,
                     "publicKey": self.public_key,
-                    "signedPublicKey": null,
+                    "signedPublicKey": signed_public_key,
                     "object": "publicKeyEncryptionKeyPair",
                 },
-                "securityState": null,
-                "signatureKeyPair": null,
+                "securityState": security_state,
+                "signatureKeyPair": signature_key_pair,
                 "object": "privateKeys"
             })
         } else {
             Value::Null
         }
+    }
+
+    pub async fn public_keys_json(&self, conn: &DbConn) -> Value {
+        let (signed_public_key, verifying_key) = match self.v2_signature_key_pair(conn).await {
+            Some(key_pair) => (json!(self.signed_public_key), json!(key_pair.verifying_key)),
+            None => (Value::Null, Value::Null),
+        };
+
+        json!({
+            "publicKey": self.public_key,
+            "signedPublicKey": signed_public_key,
+            "verifyingKey": verifying_key,
+            "object": "publicKeys"
+        })
+    }
+
+    pub fn v2_upgrade_token_json(&self) -> Option<Value> {
+        self.v2_upgrade_token.as_ref().and_then(|token| serde_json::from_str(token).ok())
     }
 
     pub async fn to_json(&self, conn: &DbConn) -> Value {
@@ -305,7 +421,7 @@ impl User {
             UserStatus::Enabled
         };
 
-        let account_keys = self.account_keys_json();
+        let account_keys = self.account_keys_json(conn).await;
 
         json!({
             "_status": status as i32,
@@ -362,6 +478,34 @@ impl User {
         }
     }
 
+    pub async fn check_persist_kdf_upgrade(&mut self, pwd_hash: &str, conn: &DbConn) -> EmptyResult {
+        if self.password_iterations < CONFIG.password_iterations() {
+            let old_iteration = self.password_iterations;
+            let old_hash = self.password_hash.clone();
+
+            self.set_password(pwd_hash, None, false, None, conn).await?;
+
+            conn.run(move |conn| {
+                diesel::update(
+                    users::table
+                        .filter(users::uuid.eq(&self.uuid))
+                        .filter(users::password_iterations.eq(old_iteration))
+                        .filter(users::password_hash.eq(old_hash)),
+                )
+                .set((
+                    users::updated_at.eq(Utc::now().naive_utc()),
+                    users::password_iterations.eq(&self.password_iterations),
+                    users::password_hash.eq(&self.password_hash),
+                ))
+                .execute(conn)
+                .map_res("Error updating user KDF iterations")
+            })
+            .await
+        } else {
+            Ok(())
+        }
+    }
+
     pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
         for member in Membership::find_confirmed_by_user(&self.uuid, conn).await {
             if member.atype == MembershipType::Owner
@@ -382,6 +526,7 @@ impl User {
         Device::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactor::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn).await?;
+        UserSignatureKeyPair::delete_all_by_user(&self.uuid, conn).await?;
         Invitation::take(&self.email, conn).await; // Delete invitation if any
 
         conn.run(move |conn| {
@@ -553,24 +698,25 @@ impl Invitation {
 pub struct UserId(String);
 
 #[derive(
-    Clone,
-    Debug,
-    DieselNewType,
-    FromForm,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    AsRef,
-    Deref,
-    Display,
-    From,
-    UuidFromParam,
+    Clone, Debug, DieselNewType, FromForm, PartialEq, Eq, Hash, Serialize, AsRef, Deref, Display, From, UuidFromParam,
 )]
 #[deref(forward)]
 #[from(forward)]
 pub struct KeyId(String);
+
+/// Like upstream, a key id is 32 lowercase hex characters. Key ids are compared as strings, so one in any other
+/// format would never match the id the clients send.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/8da186ad73f80d37157fe6fd42323e4284e83ec1/src/Core/KeyManagement/Models/Data/KeyId.cs#L20-L42>
+impl<'de> serde::Deserialize<'de> for KeyId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let key_id = String::deserialize(deserializer)?;
+        if key_id.len() != 32 || !key_id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+            return Err(serde::de::Error::custom("Key id must be 32 lowercase hex characters"));
+        }
+        Ok(Self(key_id))
+    }
+}
 
 impl SsoUser {
     pub async fn save(&self, conn: &DbConn) -> EmptyResult {
@@ -623,5 +769,67 @@ impl SsoUser {
                 .map_res("Error deleting sso user")
         })
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_key_id_format() {
+        let key_id: KeyId = serde_json::from_str(r#""0123456789abcdef0123456789abcdef""#).unwrap();
+        assert_eq!(key_id.as_ref(), "0123456789abcdef0123456789abcdef");
+
+        for invalid in ["", "0123456789ABCDEF0123456789ABCDEF", "0123456789abcdef", "0123456789abcdef0123456789abcdeg"]
+        {
+            assert!(serde_json::from_str::<KeyId>(&format!("\"{invalid}\"")).is_err(), "{invalid:?}");
+        }
+
+        // An absent key id stays optional
+        assert_eq!(serde_json::from_str::<Option<KeyId>>("null").unwrap(), None);
+    }
+
+    #[test]
+    fn test_has_v2_encryption() {
+        // User::new loads CONFIG; isolate it from the DNS bootstrap test and filesystem configuration.
+        if std::env::var_os("VAULTWARDEN_ISOLATED_CONFIG_TEST").is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", std::thread::current().name().unwrap(), "--nocapture"])
+                .env("VAULTWARDEN_ISOLATED_CONFIG_TEST", "1")
+                .env("DATABASE_URL", "sqlite://:memory:")
+                // Keep a local `.env` out of the tests, such as SMTP settings that would send mail.
+                .env(
+                    "ENV_FILE",
+                    if cfg!(windows) {
+                        "NUL"
+                    } else {
+                        "/dev/null"
+                    },
+                )
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let user = |private_key: Option<&str>, security_version: Option<i32>| {
+            let mut user = User::new("user@example.com", None);
+            user.private_key = private_key.map(String::from);
+            user.security_version = security_version;
+            user
+        };
+
+        assert!(user(Some("7.cose"), Some(2)).has_v2_encryption());
+        assert!(!user(Some("7.cose"), Some(1)).has_v2_encryption());
+        assert!(!user(Some("7.cose"), None).has_v2_encryption());
+        assert!(!user(Some("2.iv|data|mac"), Some(2)).has_v2_encryption());
+        assert!(!user(Some("7"), Some(2)).has_v2_encryption());
+        assert!(!user(None, Some(2)).has_v2_encryption());
     }
 }
