@@ -23,7 +23,7 @@ pub use self::archive::Archive;
 pub use self::attachment::{Attachment, AttachmentId};
 pub use self::auth_request::{AuthRequest, AuthRequestId};
 pub use self::cipher::{Cipher, CipherAccessScope, CipherId, RepromptType, is_data_blob_encrypted};
-pub use self::collection::{Collection, CollectionCipher, CollectionId, CollectionUser};
+pub use self::collection::{Collection, CollectionCipher, CollectionId, CollectionMembership, CollectionUser};
 pub use self::device::{Device, DeviceId, DeviceType, DeviceWithAuthRequest, PushId};
 pub use self::emergency_access::{
     EMERGENCY_ACCESS_TIMEOUT_RANGE, EmergencyAccess, EmergencyAccessId, EmergencyAccessStatus, EmergencyAccessType,

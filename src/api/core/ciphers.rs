@@ -22,8 +22,8 @@ use crate::{
         models::{
             Archive, Attachment, AttachmentId, Cipher, CipherAccessScope, CipherId, Collection, CollectionCipher,
             CollectionGroup, CollectionId, CollectionUser, CustomPermission, EventType, Favorite, Folder, FolderCipher,
-            FolderId, Group, KeyId, Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType,
-            Send, User, UserId, is_data_blob_encrypted,
+            FolderId, KeyId, Membership, MembershipType, OrgPolicy, OrgPolicyType, OrganizationId, RepromptType, Send,
+            User, UserId, is_data_blob_encrypted,
         },
     },
     util::{NumberOrString, deser_opt_nonempty_str, save_temp_file},
@@ -2736,7 +2736,6 @@ pub struct CipherSyncData {
     pub members: HashMap<OrganizationId, Membership>,
     pub user_collections: HashMap<CollectionId, CollectionUser>,
     pub user_collections_groups: HashMap<CollectionId, CollectionGroup>,
-    pub user_group_full_access_for_organizations: HashSet<OrganizationId>,
 }
 
 #[derive(Eq, PartialEq)]
@@ -2822,13 +2821,6 @@ impl CipherSyncData {
             HashMap::new()
         };
 
-        // Get all organizations that the given user has full access to via group assignment
-        let user_group_full_access_for_organizations: HashSet<OrganizationId> = if CONFIG.org_groups_enabled() {
-            Group::get_orgs_by_user_with_full_access(user_id, conn).await.into_iter().collect()
-        } else {
-            HashSet::new()
-        };
-
         Self {
             cipher_attachments,
             cipher_folders,
@@ -2838,7 +2830,6 @@ impl CipherSyncData {
             members,
             user_collections,
             user_collections_groups,
-            user_group_full_access_for_organizations,
         }
     }
 }
@@ -2948,19 +2939,16 @@ mod custom_role_tests {
             for request in [None, Some(false)] {
                 assert_eq!(CipherAccessScope::requested(request), CipherAccessScope::User);
             }
-            for (role, status, all, allowed) in [
-                (MembershipType::User, 2, false, false),
-                (MembershipType::Custom, 2, false, false),
-                (MembershipType::Manager, 2, false, false),
-                (MembershipType::Manager, 2, true, true),
-                (MembershipType::Owner, 2, false, true),
-                (MembershipType::Admin, 2, false, true),
-                (MembershipType::Admin, 1, false, false),
-                (MembershipType::Admin, -126, false, false),
+            for (role, status, allowed) in [
+                (MembershipType::User, 2, false),
+                (MembershipType::Custom, 2, false),
+                (MembershipType::Owner, 2, true),
+                (MembershipType::Admin, 2, true),
+                (MembershipType::Admin, 1, false),
+                (MembershipType::Admin, -126, false),
             ] {
                 member.set_type(role);
                 member.status = status;
-                member.access_all = all;
                 member.save(&conn).await.unwrap();
                 assert_eq!(
                     CipherAccessScope::for_member(Some(&member)),
@@ -2972,10 +2960,12 @@ mod custom_role_tests {
                 );
                 for org_id in [&org.uuid, &foreign.uuid] {
                     cipher.organization_uuid = Some(org_id.clone());
+                    // Like Bitwarden, an Owner or Admin only reaches a cipher they aren't assigned to on the
+                    // administrative routes
                     for scope in [CipherAccessScope::User, admin_scope] {
                         assert_eq!(
                             cipher.is_write_accessible_to_user(&user.uuid, scope, &conn).await,
-                            allowed && org_id == &org.uuid
+                            allowed && org_id == &org.uuid && scope == admin_scope
                         );
                     }
                 }

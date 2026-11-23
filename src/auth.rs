@@ -752,9 +752,6 @@ impl OrgHeaders {
     fn is_confirmed_and_admin(&self) -> bool {
         self.membership_status == MembershipStatus::Confirmed && self.membership_type >= MembershipType::Admin
     }
-    fn is_confirmed_and_manager(&self) -> bool {
-        self.membership_status == MembershipStatus::Confirmed && self.membership_type >= MembershipType::Manager
-    }
     fn is_confirmed_and_owner(&self) -> bool {
         self.membership_status == MembershipStatus::Confirmed && self.membership_type == MembershipType::Owner
     }
@@ -976,23 +973,21 @@ pub enum CollectionAction {
     Delete,
 }
 
-/// Whether `member`, a confirmed Custom member, may `action` the collection `col_id` of their organization.
+/// Whether `member` may `action` the collection `col_id` of their organization, like upstream's
+/// BulkCollectionAuthorizationHandler: an Owner or Admin every collection, a Custom member as their permissions allow,
+/// and every confirmed member the collections they manage with the manage option.
 ///
 /// Deleting needs Delete any collection: the clients are told collection deletion is limited, so the manage option
 /// on a collection is no permission to delete it. Editing is open with Edit any collection, reading also with Delete
-/// any collection, and otherwise both need the manage option on the collection itself. Neither the role nor any
-/// `access_all` counts as that.
-pub async fn custom_member_may(
-    action: CollectionAction,
-    member: &Membership,
-    col_id: &CollectionId,
-    conn: &DbConn,
-) -> bool {
-    if !(member.has_type(MembershipType::Custom)
-        && member.has_status(MembershipStatus::Confirmed)
-        && custom_roles_enabled())
+/// any collection, and otherwise both need the manage option on the collection itself.
+pub async fn member_may(action: CollectionAction, member: &Membership, col_id: &CollectionId, conn: &DbConn) -> bool {
+    if !member.has_status(MembershipStatus::Confirmed)
+        || Collection::find_by_uuid_and_org(col_id, &member.org_uuid, conn).await.is_none()
     {
         return false;
+    }
+    if member.has_full_access() {
+        return true;
     }
     match action {
         CollectionAction::Delete => member.has_custom_permission(CustomPermission::DeleteAnyCollection),
@@ -1009,13 +1004,12 @@ pub async fn custom_member_may(
     }
 }
 
-/// Checks a collection route for the collection provided via the <col_id>/collections/collectionId: a Manager, Admin
-/// or Owner needs to be able to manage the collection, a Custom member is checked for the `action`.
+/// Checks a collection route for the collection provided via the <col_id>/collections/collectionId: the confirmed
+/// member must be allowed the `action` on it.
 async fn collection_headers(request: &Request<'_>, action: CollectionAction) -> Outcome<OrgHeaders, &'static str> {
     let headers = try_outcome!(OrgHeaders::from_request(request).await);
-    let is_custom = headers.is_confirmed_and_custom();
-    if !headers.is_confirmed_and_manager() && !is_custom {
-        err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
+    if headers.membership_status != MembershipStatus::Confirmed {
+        err_handler!("You need to be a confirmed member of the organization to call this endpoint")
     }
 
     let Some(col_id) = get_col_id(request) else {
@@ -1025,12 +1019,7 @@ async fn collection_headers(request: &Request<'_>, action: CollectionAction) -> 
         err_handler!("Error getting DB")
     };
 
-    let allowed = if is_custom {
-        custom_member_may(action, &headers.membership, &col_id, &conn).await
-    } else {
-        Collection::is_coll_manageable_by_user(&col_id, &headers.membership.user_uuid, &conn).await
-    };
-    if !allowed {
+    if !member_may(action, &headers.membership, &col_id, &conn).await {
         // NotFound as in Bitwarden, the web vault logs the user out on a 401
         error!(target: "auth", "Collection not found. The current user isn't a manager for this collection");
         return Outcome::Error((rocket::http::Status::NotFound, "Collection not found"));
@@ -1079,9 +1068,8 @@ macro_rules! collection_headers {
 }
 
 collection_headers!(
-    /// The ManagerHeaders are used to check if you are at least a Manager
-    /// and have access to the specific collection provided via the <col_id>/collections/collectionId.
-    /// This does strict checking on the collection_id, ManagerHeadersLoose does not.
+    /// The ManagerHeaders are used to check if you may manage the specific collection provided via the
+    /// <col_id>/collections/collectionId. This does strict checking on the collection_id, ManagerHeadersLoose does not.
     ManagerHeaders,
     CollectionAction::Edit
 );
@@ -1101,9 +1089,9 @@ collection_headers!(
     CollectionAction::Delete
 );
 
-/// The ManagerHeadersLoose is used when you at least need to be a Manager,
-/// but there is no collection_id sent with the request (either in the path or as form data).
-/// A Custom member is let through as well, the routes check what their permissions allow.
+/// The ManagerHeadersLoose is used when you need to be an Admin or Owner, a Custom member, or to manage at least one
+/// collection, but there is no collection_id sent with the request (either in the path or as form data). The routes
+/// check what the member may do.
 pub struct ManagerHeadersLoose {
     pub host: String,
     pub device: Device,
@@ -1118,7 +1106,16 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let headers = try_outcome!(OrgHeaders::from_request(request).await);
-        if headers.is_confirmed_and_manager() || headers.is_confirmed_and_custom() {
+        let allowed = headers.is_confirmed_and_admin()
+            || headers.is_confirmed_and_custom()
+            || (headers.membership_status == MembershipStatus::Confirmed && {
+                let Outcome::Success(conn) = DbConn::from_request(request).await else {
+                    err_handler!("Error getting DB")
+                };
+                Collection::has_manageable_collection_by_user(&headers.membership.org_uuid, &headers.user.uuid, &conn)
+                    .await
+            });
+        if allowed {
             Outcome::Success(Self {
                 host: headers.host,
                 device: headers.device,
@@ -1127,7 +1124,7 @@ impl<'r> FromRequest<'r> for ManagerHeadersLoose {
                 ip: headers.ip,
             })
         } else {
-            err_handler!("You need to be a Manager, Admin or Owner to call this endpoint")
+            err_handler!("You need to be an Admin or Owner, or to manage a collection, to call this endpoint")
         }
     }
 }
@@ -1149,18 +1146,11 @@ impl CollectionDeleteHeaders {
         collections: &Vec<CollectionId>,
         conn: &DbConn,
     ) -> Result<Self, Error> {
-        let is_custom = h.membership.has_type(MembershipType::Custom) && custom_roles_enabled();
         for col_id in collections {
             if uuid::Uuid::parse_str(col_id.as_ref()).is_err() {
                 err!("Collection Id is malformed!");
             }
-            let allowed = if is_custom {
-                Collection::find_by_uuid_and_org(col_id, &h.membership.org_uuid, conn).await.is_some()
-                    && custom_member_may(CollectionAction::Delete, &h.membership, col_id, conn).await
-            } else {
-                Collection::is_coll_manageable_by_user(col_id, &h.membership.user_uuid, conn).await
-            };
-            if !allowed {
+            if !member_may(CollectionAction::Delete, &h.membership, col_id, conn).await {
                 err!("Collection not found", "The current user isn't a manager for this collection")
             }
         }

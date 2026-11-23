@@ -637,17 +637,24 @@ pub mod test_db {
         });
     }
 
+    /// Runs the pending migrations older than `version`.
+    fn migrate_until(conn: &mut SqliteConnection, version: &str) {
+        for migration in conn.pending_migrations(MIGRATIONS).unwrap() {
+            if migration.name().version().to_string() == version {
+                break;
+            }
+            conn.run_migration(&migration).unwrap();
+        }
+    }
+
+    const REMOVE_ACCESS_ALL: &str = "20261115140000";
+
     #[test]
     fn custom_role_migration_preserves_memberships_and_guards_downgrade() {
         use super::schema::users_organizations::dsl::*;
         use diesel::{migration::MigrationSource, prelude::*};
         let mut conn = SqliteConnection::establish(":memory:").unwrap();
-        for migration in conn.pending_migrations(MIGRATIONS).unwrap() {
-            if migration.name().version().to_string() == "20261010120000" {
-                break;
-            }
-            conn.run_migration(&migration).unwrap();
-        }
+        migrate_until(&mut conn, "20261010120000");
         conn.batch_execute(
             "PRAGMA foreign_keys=OFF;
             INSERT INTO organizations (uuid,name,billing_email) VALUES ('org','Org','a@b');
@@ -658,13 +665,13 @@ pub mod test_db {
         .unwrap();
         let rows = |conn: &mut SqliteConnection| {
             users_organizations
-                .select((uuid, user_uuid, org_uuid, access_all, akey, status, atype))
+                .select((uuid, user_uuid, org_uuid, akey, status, atype))
                 .order(uuid)
-                .load::<(String, String, String, bool, String, i32, i32)>(conn)
+                .load::<(String, String, String, String, i32, i32)>(conn)
                 .unwrap()
         };
         let before = rows(&mut conn);
-        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        migrate_until(&mut conn, REMOVE_ACCESS_ALL);
         assert_eq!(rows(&mut conn), before);
         let grants = |conn: &mut SqliteConnection| {
             diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>(
@@ -695,9 +702,127 @@ pub mod test_db {
             .unwrap();
         conn.revert_migration(&*migration).unwrap();
         assert!(diesel::sql_query("SELECT manage_users FROM users_organizations").execute(&mut conn).is_err());
-        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        migrate_until(&mut conn, REMOVE_ACCESS_ALL);
         assert_eq!(grants(&mut conn), 0);
         assert_eq!(rows(&mut conn), before);
+    }
+
+    #[test]
+    fn access_all_migration_assigns_collections_and_turns_managers_into_users() {
+        use super::schema::{collections_groups, users_collections, users_organizations};
+        use diesel::{migration::MigrationSource, prelude::*};
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        migrate_until(&mut conn, REMOVE_ACCESS_ALL);
+        // Users: o Owner and a Admin with access to all collections, u User, m Manager who is also a User of the other
+        // organization, ma Manager with access to all collections, mg Manager through groups, mx Manager assigned read
+        // only who manages the same collection through a group. Group gall has access to all collections. Each
+        // membership's uuid is "m-" and the user's, so that mixing the two up fails.
+        conn.batch_execute(
+            "PRAGMA foreign_keys=OFF;
+            INSERT INTO organizations (uuid,name,billing_email) VALUES ('org','Org','a@b'), ('other','Other','a@b');
+            INSERT INTO collections (uuid,org_uuid,name) VALUES ('c1','org','C1'), ('c2','org','C2'), ('c3','other','C3');
+            INSERT INTO users_organizations (uuid,user_uuid,org_uuid,access_all,akey,status,atype) VALUES
+            ('m-o','o','org',TRUE,'key',2,0), ('m-a','a','org',TRUE,'key',2,1), ('m-u','u','org',FALSE,'key',2,2),
+            ('m-m','m','org',FALSE,'key',2,3), ('m-m2','m','other',FALSE,'key',2,2),
+            ('m-ma','ma','org',TRUE,'key',0,3), ('m-mg','mg','org',FALSE,'key',2,3), ('m-mx','mx','org',FALSE,'key',2,3);
+            INSERT INTO users_collections (user_uuid,collection_uuid,read_only,hide_passwords,manage) VALUES
+            ('a','c1',TRUE,TRUE,TRUE), ('u','c1',TRUE,FALSE,FALSE), ('m','c1',FALSE,FALSE,FALSE),
+            ('m','c2',TRUE,FALSE,FALSE), ('m','c3',FALSE,FALSE,FALSE), ('mx','c1',TRUE,FALSE,FALSE);
+            INSERT INTO groups (uuid,organizations_uuid,name,access_all,creation_date,revision_date) VALUES
+            ('gall','org','All',TRUE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+            ('g1','org','G1',FALSE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+            ('g2','org','G2',FALSE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+            ('g3','org','G3',FALSE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+            INSERT INTO groups_users (groups_uuid,users_organizations_uuid) VALUES
+            ('gall','m-u'), ('g1','m-mg'), ('g2','m-mg'), ('g3','m-mx');
+            INSERT INTO collections_groups (collections_uuid,groups_uuid,read_only,hide_passwords,manage) VALUES
+            ('c1','gall',TRUE,TRUE,FALSE), ('c2','g1',FALSE,FALSE,FALSE), ('c1','g2',TRUE,FALSE,FALSE),
+            ('c1','g3',FALSE,FALSE,TRUE);",
+        )
+        .unwrap();
+        let state = |conn: &mut SqliteConnection| {
+            let users = users_collections::table
+                .select((
+                    users_collections::user_uuid,
+                    users_collections::collection_uuid,
+                    users_collections::read_only,
+                    users_collections::hide_passwords,
+                    users_collections::manage,
+                ))
+                .order((users_collections::user_uuid, users_collections::collection_uuid))
+                .load::<(String, String, bool, bool, bool)>(conn)
+                .unwrap();
+            let groups = collections_groups::table
+                .select((
+                    collections_groups::groups_uuid,
+                    collections_groups::collections_uuid,
+                    collections_groups::read_only,
+                    collections_groups::hide_passwords,
+                    collections_groups::manage,
+                ))
+                .order((collections_groups::groups_uuid, collections_groups::collections_uuid))
+                .load::<(String, String, bool, bool, bool)>(conn)
+                .unwrap();
+            let roles = users_organizations::table
+                .select((users_organizations::uuid, users_organizations::atype))
+                .order(users_organizations::uuid)
+                .load::<(String, i32)>(conn)
+                .unwrap();
+            (users, groups, roles)
+        };
+        let row = |a: &str, b: &str, ro, hp, mn| (a.to_owned(), b.to_owned(), ro, hp, mn);
+        let expected = (
+            vec![
+                // The Owner and Admin read and write every collection of their organization, keeping manage
+                row("a", "c1", false, false, true),
+                row("a", "c2", false, false, false),
+                // As in Bitwarden, the Managers manage every collection they are assigned to, read only or not, and
+                // those of their groups too. Their assignments in the other organization stay as they are.
+                row("m", "c1", false, false, true),
+                row("m", "c2", false, false, true),
+                row("m", "c3", false, false, false),
+                row("ma", "c1", false, false, true),
+                row("ma", "c2", false, false, true),
+                row("mg", "c1", false, false, true),
+                row("mg", "c2", false, false, true),
+                row("mx", "c1", false, false, true),
+                row("o", "c1", false, false, false),
+                row("o", "c2", false, false, false),
+                // Other members keep what they have
+                row("u", "c1", true, false, false),
+            ],
+            vec![
+                row("g1", "c2", false, false, false),
+                row("g2", "c1", true, false, false),
+                row("g3", "c1", false, false, true),
+                row("gall", "c1", false, false, false),
+                row("gall", "c2", false, false, false),
+            ],
+            [("m-a", 1), ("m-m", 2), ("m-m2", 2), ("m-ma", 2), ("m-mg", 2), ("m-mx", 2), ("m-o", 0), ("m-u", 2)]
+                .map(|(m, t)| (m.to_owned(), t))
+                .to_vec(),
+        );
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        assert_eq!(state(&mut conn), expected);
+        for table in ["users_organizations", "groups"] {
+            assert!(diesel::sql_query(format!("SELECT access_all FROM {table}")).execute(&mut conn).is_err());
+        }
+
+        // A downgrade gives Owners and Admins their access to all collections back, an upgrade again changes nothing
+        let migration = MigrationSource::<diesel::sqlite::Sqlite>::migrations(&MIGRATIONS)
+            .unwrap()
+            .into_iter()
+            .find(|m| m.name().version().to_string() == REMOVE_ACCESS_ALL)
+            .unwrap();
+        conn.revert_migration(&*migration).unwrap();
+        let full = diesel::select(diesel::dsl::sql::<diesel::sql_types::Text>(
+            "(SELECT group_concat(uuid) FROM (SELECT uuid FROM users_organizations WHERE access_all ORDER BY uuid))",
+        ))
+        .get_result::<String>(&mut conn)
+        .unwrap();
+        assert_eq!(full, "m-a,m-o");
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        assert_eq!(state(&mut conn), expected);
     }
 
     use super::models::{Collection, CustomPermission, Membership, MembershipType, Organization, OrganizationId, User};
@@ -771,7 +896,7 @@ pub mod test_db {
         use super::models::{Cipher, CipherAccessScope, CollectionCipher, CollectionUser, test_flag};
         use crate::{
             api::core::{CipherSyncData, CipherSyncType},
-            auth::{CollectionAction, custom_member_may},
+            auth::{CollectionAction, member_may},
         };
         run(async |db| {
             let conn = db.conn();
@@ -801,8 +926,8 @@ pub mod test_db {
             cipher.organization_uuid = Some(org.uuid.clone());
             member.set_custom_permissions(&std::collections::HashSet::new());
             member.save(&conn).await.unwrap();
-            let sql=format!("INSERT INTO groups (uuid,organizations_uuid,name,access_all,creation_date,revision_date)
-                VALUES ('g','{}','Group',FALSE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+            let sql=format!("INSERT INTO groups (uuid,organizations_uuid,name,creation_date,revision_date)
+                VALUES ('g','{}','Group',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
                 INSERT INTO groups_users (groups_uuid,users_organizations_uuid) VALUES ('g','{}');
                 INSERT INTO collections_groups (collections_uuid,groups_uuid,read_only,hide_passwords,manage) VALUES ('{}','g',FALSE,FALSE,TRUE);",
                 org.uuid,member.uuid,collection.uuid);
@@ -811,7 +936,7 @@ pub mod test_db {
                 member.status = status;
                 member.save(&conn).await.unwrap();
                 let allowed = status == 2 && crate::CONFIG.org_groups_enabled();
-                assert_eq!(custom_member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await, allowed);
+                assert_eq!(member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await, allowed);
                 let sync = CipherSyncData::new(&user.uuid, CipherSyncType::User, &conn).await;
                 for cached in [None, Some(&sync)] {
                     assert_eq!(
@@ -826,7 +951,125 @@ pub mod test_db {
             member.status = 2;
             member.save(&conn).await.unwrap();
             CollectionUser::save(&user.uuid, &collection.uuid, false, false, true, &conn).await.unwrap();
-            assert!(custom_member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await);
+            assert!(member_may(CollectionAction::Edit, &member, &collection.uuid, &conn).await);
+        });
+    }
+
+    #[test]
+    fn collections_are_managed_by_role_or_manage_option_within_the_organization() {
+        use super::models::CollectionUser;
+        use crate::auth::{CollectionAction, member_may};
+        run(async |db| {
+            let conn = db.conn();
+            let org = organization(&conn).await;
+            let foreign = organization(&conn).await;
+            let managed = collection(&conn, &org.uuid).await;
+            let assigned = collection(&conn, &org.uuid).await;
+            let other = collection(&conn, &foreign.uuid).await;
+            let (_, admin) = member(&conn, &org.uuid, MembershipType::Admin, &[]).await;
+            let (user, mut manager_member) = member(&conn, &org.uuid, MembershipType::User, &[]).await;
+            CollectionUser::save(&user.uuid, &managed.uuid, false, false, true, &conn).await.unwrap();
+            CollectionUser::save(&user.uuid, &assigned.uuid, false, false, false, &conn).await.unwrap();
+            for action in [CollectionAction::Edit, CollectionAction::Read, CollectionAction::ReadAccess] {
+                // A member manages the collection with the manage option, an Admin every one of their organization
+                assert!(member_may(action, &manager_member, &managed.uuid, &conn).await);
+                assert!(!member_may(action, &manager_member, &assigned.uuid, &conn).await);
+                assert!(member_may(action, &admin, &assigned.uuid, &conn).await);
+                assert!(!member_may(action, &admin, &other.uuid, &conn).await);
+            }
+            // Collection deletion is limited to those who may delete any collection
+            assert!(!member_may(CollectionAction::Delete, &manager_member, &managed.uuid, &conn).await);
+            assert!(member_may(CollectionAction::Delete, &admin, &managed.uuid, &conn).await);
+            // Only while confirmed
+            manager_member.status = 1;
+            manager_member.save(&conn).await.unwrap();
+            assert!(!member_may(CollectionAction::Edit, &manager_member, &managed.uuid, &conn).await);
+            assert!(!Collection::has_manageable_collection_by_user(&org.uuid, &user.uuid, &conn).await);
+            manager_member.status = 2;
+            manager_member.save(&conn).await.unwrap();
+            assert!(Collection::has_manageable_collection_by_user(&org.uuid, &user.uuid, &conn).await);
+        });
+    }
+
+    #[test]
+    fn owners_and_admins_only_reach_every_cipher_on_the_administrative_routes() {
+        use super::models::{
+            Cipher, CipherAccessScope, CollectionCipher, CollectionGroup, CollectionUser, Group, GroupUser,
+        };
+        use crate::api::core::{CipherSyncData, CipherSyncType};
+        run(async |db| {
+            let conn = db.conn();
+            let org = organization(&conn).await;
+            let assigned = collection(&conn, &org.uuid).await;
+            let unassigned = collection(&conn, &org.uuid).await;
+            let (user, admin) = member(&conn, &org.uuid, MembershipType::Admin, &[]).await;
+            // The Admin may only view the items of one collection, without their passwords
+            CollectionUser::save(&user.uuid, &assigned.uuid, true, true, false, &conn).await.unwrap();
+            let mut ciphers = Vec::new();
+            for collection in [&assigned, &unassigned] {
+                let mut cipher = Cipher::new(2);
+                cipher.name = "Cipher".into();
+                cipher.organization_uuid = Some(org.uuid.clone());
+                cipher.save(&conn).await.unwrap();
+                CollectionCipher::save(&cipher.uuid, &collection.uuid, &conn).await.unwrap();
+                ciphers.push(cipher);
+            }
+
+            // Like Bitwarden, their own vault has what they are assigned, with the access they are assigned
+            let sync = CipherSyncData::new(&user.uuid, CipherSyncType::User, &conn).await;
+            for cached in [None, Some(&sync)] {
+                let own = ciphers[0].get_access_restrictions(&user.uuid, CipherAccessScope::User, cached, &conn).await;
+                assert_eq!(own, Some((true, true, false)));
+                let other =
+                    ciphers[1].get_access_restrictions(&user.uuid, CipherAccessScope::User, cached, &conn).await;
+                assert_eq!(other, None);
+                let details = assigned.to_json_details(&user.uuid, cached, &conn).await;
+                assert_eq!(
+                    (&details["readOnly"], &details["hidePasswords"], &details["manage"]),
+                    (&json!(true), &json!(true), &json!(false))
+                );
+            }
+            // A collection they aren't assigned to has neither restrictions nor the manage option in the details
+            let details = unassigned.to_json_details(&user.uuid, None, &conn).await;
+            assert_eq!(
+                (&details["readOnly"], &details["hidePasswords"], &details["manage"]),
+                (&json!(false), &json!(false), &json!(false))
+            );
+            assert!(Collection::is_assigned(&admin, &assigned.uuid, &conn).await);
+            assert!(!Collection::is_assigned(&admin, &unassigned.uuid, &conn).await);
+            assert!(!assigned.is_writable_by_user(&user.uuid, &conn).await);
+            assert!(!unassigned.is_writable_by_user(&user.uuid, &conn).await);
+            let user_collections =
+                ciphers[1].get_admin_collections(user.uuid.clone(), CipherAccessScope::User, &conn).await;
+            assert_eq!(user_collections, Vec::new());
+
+            // Every cipher of the organization only on the administrative routes
+            for cipher in &ciphers {
+                let admin_access =
+                    cipher.get_access_restrictions(&user.uuid, CipherAccessScope::OrganizationAdmin, None, &conn).await;
+                assert_eq!(admin_access, Some((false, false, true)));
+            }
+            let admin_collections =
+                ciphers[1].get_admin_collections(user.uuid.clone(), CipherAccessScope::OrganizationAdmin, &conn).await;
+            assert_eq!(admin_collections, vec![unassigned.uuid.clone()]);
+
+            // A group with more access doesn't override their own assignment, like in Bitwarden, but counts for the rest
+            if crate::CONFIG.org_groups_enabled() {
+                let mut group = Group::new(org.uuid.clone(), "Group".into(), None);
+                group.save(&conn).await.unwrap();
+                GroupUser::new(group.uuid.clone(), admin.uuid.clone()).save(&conn).await.unwrap();
+                for (collection, manage) in [(&assigned, true), (&unassigned, false)] {
+                    CollectionGroup::new(collection.uuid.clone(), group.uuid.clone(), false, false, manage)
+                        .save(&org.uuid, &conn)
+                        .await
+                        .unwrap();
+                }
+                assert_eq!(assigned.assigned_access(&admin, &conn).await, Some((true, true, false)));
+                assert!(!assigned.is_writable_by_user(&user.uuid, &conn).await);
+                assert_eq!(unassigned.assigned_access(&admin, &conn).await, Some((false, false, false)));
+                assert!(unassigned.is_writable_by_user(&user.uuid, &conn).await);
+                assert!(Collection::is_assigned(&admin, &unassigned.uuid, &conn).await);
+            }
         });
     }
 }
