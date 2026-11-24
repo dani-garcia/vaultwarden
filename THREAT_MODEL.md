@@ -81,6 +81,7 @@ These are intended behavior or outside this model. Several match upstream Bitwar
 - Attacks that need a missing or misconfigured reverse proxy, such as one not sending `X-Forwarded-Proto` (it decides the admin cookie's `Secure` flag).
 - Attacks that need another component to break its own specification, such as a NAT64 translator that forwards the `64:ff9b::/96` prefix to private addresses, against RFC 6052.
 - Outbound requests to the SSO provider, Yubico server or S3 endpoint the operator configures, which skip the outbound filter and can be on the internal network.
+- Requests sent through an outbound proxy (`HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY`). The proxy resolves names itself, so `HTTP_REQUEST_BLOCK_NON_GLOBAL_IPS` can't check where they go. Configure the proxy so it can't reach anything sensitive, or so it blocks internal addresses.
 - File permissions in the data folder. Host security belongs to the operator.
 - Attacks that need physical access to a user's device.
 - Self-exploitation, where someone can only affect their own account, such as self-XSS or weak KDF settings they choose.

@@ -811,6 +811,7 @@ impl Membership {
             "useResetPassword": CONFIG.mail_enabled(),
             "ssoBound": false, // Not supported
             "useSso": false, // Not supported
+            "ssoEnabled": false,
             "useKeyConnector": false,
             "useSecretsManager": false, // Not supported (Not AGPLv3 Licensed)
             "usePasswordManager": true,
@@ -824,6 +825,7 @@ impl Membership {
             "useOrganizationDomains": false, // Not supported (Linked to SSO)
             "usePam": false, // Not supported
             "usePhishingBlocker": false,
+            "useAutomaticUserConfirmation": false,
 
             "organizationUserId": self.uuid,
             "providerId": null,
@@ -831,6 +833,7 @@ impl Membership {
             "providerType": null,
             "familySponsorshipFriendlyName": null,
             "familySponsorshipAvailable": false,
+            "isAdminInitiated": false,
             "productTierType": 3, // Enterprise tier
             "keyConnectorEnabled": false,
             "keyConnectorUrl": null,
@@ -838,6 +841,7 @@ impl Membership {
             "familySponsorshipValidUntil": null,
             "familySponsorshipToDelete": null,
             "accessSecretsManager": false,
+            "accessPam": false,
             // limit collection creation to managers with access_all permission to prevent issues
             "limitCollectionCreation": self.atype < MembershipType::Manager || !self.access_all,
             "limitCollectionDeletion": true,
@@ -905,7 +909,7 @@ impl Membership {
                         "id": cu.collection_uuid,
                         "readOnly": cu.read_only,
                         "hidePasswords": cu.hide_passwords,
-                        "manage": cu.manage || (self.atype == MembershipType::Manager && !cu.read_only && !cu.hide_passwords),
+                        "manage": cu.manage,
                     })
                 })
                 .collect()

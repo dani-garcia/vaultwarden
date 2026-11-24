@@ -42,9 +42,17 @@ test('Invite users', async ({ page }) => {
     await createAccount(test, page, users.user1, mail1Buffer);
 
     await orgs.create(test, page, 'Test');
+    await orgs.policies(test, page, 'Test');
+
+    // Account recovery requires the Single organisation policy (ENFORCE_SINGLE_ORG_WITH_RESET_PW_POLICY)
+    await test.step(`Set single organisation`, async () => {
+        await page.getByRole('button', { name: 'Single organisation' }).click();
+        await page.getByRole('checkbox', { name: 'Turn on' }).or(page.getByRole('switch', { name: 'Enable policy' })).check({ force: true });
+        await page.getByRole('button', { name: 'Save' }).click();
+        await utils.checkNotification(page, 'Edited policy Single organisation');
+    });
 
     await test.step(`Set account recovery`, async () => {
-        await orgs.policies(test, page, 'Test');
         await page.getByRole('button', { name: 'Account recovery' }).click();
         await page.getByRole('checkbox', { name: 'Turn on' }).check();
         await page.getByRole('checkbox', { name: 'Automatically enroll new' }).check();

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{NaiveDateTime, Utc};
+
 use rocket::{
     Route,
     form::{Form, FromForm},
@@ -12,7 +13,7 @@ use serde_json::Value;
 
 use crate::{
     CONFIG,
-    api::{self, ApiResult, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType, core::log_event},
+    api::{self, EmptyResult, JsonResult, Notify, PasswordOrOtpData, UpdateType, core::log_event},
     auth::ClientVersion,
     auth::{Headers, OrgIdGuard, OwnerHeaders},
     config::PathType,
@@ -842,7 +843,7 @@ pub async fn seed_cipher(
     user_id: &UserId,
     folder_ids: &HashMap<FolderId, FolderId>,
     conn: &DbConn,
-) -> ApiResult<CipherId> {
+) -> api::ApiResult<CipherId> {
     // Not in the request model, but a trashed cipher has to stay trashed
     let deleted_at = encrypted.get("deletedDate").and_then(Value::as_str).map(parse_seed_date).transpose()?;
     let mut data: CipherData = serde_json::from_value(encrypted)?;
@@ -889,7 +890,7 @@ pub async fn seed_cipher(
 }
 
 #[cfg(feature = "unsafe_test_mode")]
-fn parse_seed_date(date: &str) -> ApiResult<NaiveDateTime> {
+fn parse_seed_date(date: &str) -> api::ApiResult<NaiveDateTime> {
     match chrono::DateTime::parse_from_rfc3339(date) {
         Ok(date) => Ok(date.naive_utc()),
         Err(e) => err!(format!("Invalid date {}: {e}", date.escape_debug())),
@@ -1518,6 +1519,13 @@ async fn share_cipher_by_uuid(
                 false,
             )
             .await?;
+            // The moved attachments now count against the organization's limit
+            if transfer_cipher {
+                let moved: i64 = Attachment::find_by_cipher(&cipher.uuid, conn).await.iter().map(|a| a.file_size).sum();
+                if moved > 0 {
+                    check_attachment_space(&cipher, moved, moved, conn).await?;
+                }
+            }
             for col_id in &shared_to_collections {
                 CollectionCipher::save(&cipher.uuid, col_id, conn).await?;
             }
@@ -1619,17 +1627,17 @@ enum FileUploadType {
     // Azure = 1, // only used upstream
 }
 
-/// Remaining attachment storage in bytes for the cipher's owner, `None` when unlimited.
-/// `size_adjust` credits a v2 attachment whose record already counts as used.
-async fn attachment_size_limit(cipher: &Cipher, size_adjust: i64, conn: &DbConn) -> ApiResult<Option<i64>> {
+/// Fails when `size` more bytes don't fit in the attachment storage of the cipher's owner.
+/// `size_adjust` credits bytes already counted as used, such as a v2 attachment's reserved record.
+async fn check_attachment_space(cipher: &Cipher, size: i64, size_adjust: i64, conn: &DbConn) -> EmptyResult {
     let (limit_kb, already_used) = if let Some(ref user_id) = cipher.user_uuid {
         let Some(limit_kb) = CONFIG.user_attachment_limit() else {
-            return Ok(None);
+            return Ok(());
         };
         (limit_kb, Attachment::size_by_user(user_id, conn).await)
     } else if let Some(ref org_id) = cipher.organization_uuid {
         let Some(limit_kb) = CONFIG.org_attachment_limit() else {
-            return Ok(None);
+            return Ok(());
         };
         (limit_kb, Attachment::size_by_org(org_id, conn).await)
     } else {
@@ -1649,8 +1657,11 @@ async fn attachment_size_limit(cipher: &Cipher, size_adjust: i64, conn: &DbConn)
     if left <= 0 {
         err!("Attachment storage limit reached! Delete some attachments to free up space")
     }
+    if size > left {
+        err!("Attachment storage limit exceeded with this file");
+    }
 
-    Ok(Some(left))
+    Ok(())
 }
 
 /// v2 API for creating an attachment associated with a cipher.
@@ -1688,11 +1699,7 @@ async fn post_attachment_v2(
         err!("Max file size is 525 MB.")
     }
 
-    if let Some(size_limit) = attachment_size_limit(&cipher, 0, &conn).await?
-        && file_size > size_limit
-    {
-        err!("Attachment storage limit exceeded with this file");
-    }
+    check_attachment_space(&cipher, file_size, 0, &conn).await?;
 
     let attachment_id = crypto::generate_attachment_id();
     let attachment =
@@ -1762,11 +1769,7 @@ async fn save_attachment(
         Some(a) => a.file_size, // v2 API
     };
 
-    if let Some(size_limit) = attachment_size_limit(&cipher, size_adjust, &conn).await?
-        && size > size_limit
-    {
-        err!("Attachment storage limit exceeded with this file");
-    }
+    check_attachment_space(&cipher, size, size_adjust, &conn).await?;
 
     let file_id = match &attachment {
         Some(attachment) => attachment.id.clone(), // v2 API
