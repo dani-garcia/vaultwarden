@@ -7,22 +7,24 @@ use rocket::{
     serde::json::Json,
 };
 
+use serde_json::Value;
+
 use crate::{
     CONFIG,
-    api::EmptyResult,
+    api::{EmptyResult, JsonResult},
     auth,
     db::{
         DbConn,
         models::{
-            Group, GroupUser, Invitation, Membership, MembershipStatus, MembershipType, OrgPolicy, Organization,
-            OrganizationApiKey, OrganizationId, User,
+            Collection, CollectionGroup, CollectionId, Group, GroupId, GroupUser, Invitation, Membership,
+            MembershipStatus, MembershipType, OrgPolicy, Organization, OrganizationApiKey, OrganizationId, User,
         },
     },
     mail,
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![ldap_import]
+    routes![ldap_import, get_groups, get_group, get_group_member_ids, get_collections, get_collection, put_collection]
 }
 
 #[derive(Deserialize)]
@@ -180,6 +182,178 @@ async fn ldap_import(data: Json<OrgImportData>, token: PublicToken, conn: DbConn
     }
 
     Ok(())
+}
+
+// Groups and collections, as in Bitwarden's public API (`/public/groups`, `/public/collections`):
+// https://github.com/bitwarden/server/blob/main/src/Api/AdminConsole/Public/Controllers/GroupsController.cs
+// https://github.com/bitwarden/server/blob/main/src/Api/AdminConsole/Public/Controllers/CollectionsController.cs
+// Same response shapes, so tools written for Bitwarden's organization API key work here too.
+
+fn check_groups_enabled() -> EmptyResult {
+    if !CONFIG.org_groups_enabled() {
+        err!("Group support is disabled");
+    }
+    Ok(())
+}
+
+fn association_json(id: &impl serde::Serialize, read_only: bool, hide_passwords: bool, manage: bool) -> Value {
+    json!({
+        "id": id,
+        "readOnly": read_only,
+        "hidePasswords": hide_passwords,
+        "manage": manage,
+    })
+}
+
+async fn public_group_json(group: &Group, conn: &DbConn) -> Value {
+    let collections: Vec<Value> = CollectionGroup::find_by_group(&group.uuid, &group.organizations_uuid, conn)
+        .await
+        .iter()
+        .map(|cg| association_json(&cg.collections_uuid, cg.read_only, cg.hide_passwords, cg.manage))
+        .collect();
+    json!({
+        "object": "group",
+        "id": group.uuid,
+        "name": group.name,
+        "externalId": group.external_id,
+        "collections": collections,
+    })
+}
+
+async fn public_collection_json(collection: &Collection, conn: &DbConn) -> Value {
+    let groups: Vec<Value> = if CONFIG.org_groups_enabled() {
+        CollectionGroup::find_by_collection(&collection.uuid, conn)
+            .await
+            .iter()
+            .map(|cg| association_json(&cg.groups_uuid, cg.read_only, cg.hide_passwords, cg.manage))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    json!({
+        "object": "collection",
+        "id": collection.uuid,
+        "externalId": collection.external_id,
+        "groups": groups,
+    })
+}
+
+#[get("/public/groups")]
+async fn get_groups(token: PublicToken, conn: DbConn) -> JsonResult {
+    check_groups_enabled()?;
+    let mut data = Vec::new();
+    for group in Group::find_by_organization(&token.0, &conn).await {
+        data.push(public_group_json(&group, &conn).await);
+    }
+    Ok(Json(json!({
+        "object": "list",
+        "data": data,
+    })))
+}
+
+#[get("/public/groups/<group_id>")]
+async fn get_group(group_id: GroupId, token: PublicToken, conn: DbConn) -> JsonResult {
+    check_groups_enabled()?;
+    let Some(group) = Group::find_by_uuid_and_org(&group_id, &token.0, &conn).await else {
+        err_code!("Group not found", "Group does not exist or does not belong to this organization", 404)
+    };
+    Ok(Json(public_group_json(&group, &conn).await))
+}
+
+#[get("/public/groups/<group_id>/member-ids")]
+async fn get_group_member_ids(group_id: GroupId, token: PublicToken, conn: DbConn) -> JsonResult {
+    check_groups_enabled()?;
+    if Group::find_by_uuid_and_org(&group_id, &token.0, &conn).await.is_none() {
+        err_code!("Group not found", "Group does not exist or does not belong to this organization", 404)
+    }
+    let member_ids: Vec<Value> = GroupUser::find_by_group(&group_id, &token.0, &conn)
+        .await
+        .iter()
+        .map(|gu| json!(gu.users_organizations_uuid))
+        .collect();
+    Ok(Json(Value::Array(member_ids)))
+}
+
+#[get("/public/collections")]
+async fn get_collections(token: PublicToken, conn: DbConn) -> JsonResult {
+    let mut data = Vec::new();
+    for collection in Collection::find_by_organization(&token.0, &conn).await {
+        data.push(public_collection_json(&collection, &conn).await);
+    }
+    Ok(Json(json!({
+        "object": "list",
+        "data": data,
+    })))
+}
+
+#[get("/public/collections/<col_id>")]
+async fn get_collection(col_id: CollectionId, token: PublicToken, conn: DbConn) -> JsonResult {
+    let Some(collection) = Collection::find_by_uuid_and_org(&col_id, &token.0, &conn).await else {
+        err_code!("Collection not found", "Collection does not exist or does not belong to this organization", 404)
+    };
+    Ok(Json(public_collection_json(&collection, &conn).await))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicCollectionGroupData {
+    id: GroupId,
+    read_only: bool,
+    #[serde(default)]
+    hide_passwords: bool,
+    #[serde(default)]
+    manage: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicCollectionUpdateData {
+    external_id: Option<String>,
+    groups: Option<Vec<PublicCollectionGroupData>>,
+}
+
+// Sets the collection's external id and, when `groups` is given, replaces its group access. The name (encrypted
+// with the organization key) and the access of individual members are left as they are, as in Bitwarden.
+#[put("/public/collections/<col_id>", data = "<data>")]
+async fn put_collection(
+    col_id: CollectionId,
+    data: Json<PublicCollectionUpdateData>,
+    token: PublicToken,
+    conn: DbConn,
+) -> JsonResult {
+    let org_id = token.0;
+    let data = data.into_inner();
+    let Some(mut collection) = Collection::find_by_uuid_and_org(&col_id, &org_id, &conn).await else {
+        err_code!("Collection not found", "Collection does not exist or does not belong to this organization", 404)
+    };
+
+    if let Some(groups) = &data.groups {
+        check_groups_enabled()?;
+        // Validate every group first, so a bad id changes nothing.
+        let mut seen = HashSet::new();
+        for group in groups {
+            if !seen.insert(group.id.clone()) {
+                err!("Duplicate group in the request");
+            }
+            if Group::find_by_uuid_and_org(&group.id, &org_id, &conn).await.is_none() {
+                err!("Group not found", "Group does not exist or does not belong to this organization");
+            }
+        }
+    }
+
+    collection.external_id = data.external_id.filter(|e| !e.trim().is_empty());
+    collection.save(&conn).await?;
+
+    if let Some(groups) = data.groups {
+        CollectionGroup::delete_all_by_collection(&col_id, &org_id, &conn).await?;
+        for group in groups {
+            CollectionGroup::new(col_id.clone(), group.id, group.read_only, group.hide_passwords, group.manage)
+                .save(&org_id, &conn)
+                .await?;
+        }
+    }
+
+    Ok(Json(public_collection_json(&collection, &conn).await))
 }
 
 pub struct PublicToken(OrganizationId);
