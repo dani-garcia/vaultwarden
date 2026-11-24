@@ -995,11 +995,7 @@ impl CollectionMembership {
             "id": self.membership_uuid,
             "readOnly": self.read_only,
             "hidePasswords": self.hide_passwords,
-            "manage": membership_type >= MembershipType::Admin
-                || self.manage
-                || (membership_type == MembershipType::Manager
-                    && !self.read_only
-                    && !self.hide_passwords),
+            "manage": membership_type >= MembershipType::Admin || self.manage,
         })
     }
 }

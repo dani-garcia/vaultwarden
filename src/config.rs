@@ -736,6 +736,7 @@ make_config! {
         /// running on the same host or container network), the string "all" to accept it from anywhere,
         /// or a comma separated list of IPs and CIDR ranges. For a list header like X-Forwarded-For, the
         /// client IP is the rightmost address that isn't a trusted proxy, so list every proxy in the chain.
+        /// "local" also trusts 6to4, Teredo and local-use NAT64 addresses, which can carry clients from anywhere.
         ip_header_trusted_proxies: String, true, def,    "local".to_owned();
         /// Icon service |> The predefined icon services are: internal, bitwarden, duckduckgo, google.
         /// To specify a custom icon service, set a URL template with exactly one instance of `{}`,
@@ -770,7 +771,8 @@ make_config! {
         /// Useful to hide other servers in the local network. Check the WIKI for more details
         http_request_block_regex:   String, true,   option;
         /// Block non global IPs |> Enabling this will cause the internal HTTP client to refuse to connect to any non global IP address.
-        /// Useful to secure your internal environment: See https://en.wikipedia.org/wiki/Reserved_IP_addresses for a list of IPs which it will block
+        /// Useful to secure your internal environment: See https://en.wikipedia.org/wiki/Reserved_IP_addresses for a list of IPs which it will block.
+        /// Requests through an outbound proxy (HTTP_PROXY, HTTPS_PROXY or ALL_PROXY) aren't checked, because the proxy resolves the names.
         http_request_block_non_global_ips:  bool,   true,   auto, |c| c.icon_blacklist_non_global_ips;
 
         /// Disable Two-Factor remember |> Enabling this would force the users to use a second factor to login every time.
@@ -870,7 +872,7 @@ make_config! {
         /// Enforce Single Org with Reset Password Policy |> Enforce that the Single Org policy is enabled before setting the Reset Password policy
         /// Bitwarden enforces this by default. In Vaultwarden we encouraged to use multiple organizations because groups were not available.
         /// Setting this to true will enforce the Single Org Policy to be enabled before you can enable the Reset Password policy.
-        enforce_single_org_with_reset_pw_policy: bool, false, def, false;
+        enforce_single_org_with_reset_pw_policy: bool, false, def, true;
 
         /// Prefer IPv6 (AAAA) resolving |> This settings configures the DNS resolver to resolve IPv6 first, and if not available try IPv4
         /// This could be useful in IPv6 only environments.

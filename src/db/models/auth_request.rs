@@ -4,6 +4,7 @@ use diesel::prelude::*;
 use serde_json::Value;
 
 use crate::{
+    CONFIG,
     api::{ApiResult, EmptyResult},
     crypto::ct_eq,
     db::{DbConn, schema::auth_requests},
@@ -12,7 +13,7 @@ use crate::{
 };
 use macros::UuidFromParam;
 
-use super::{DeviceId, OrganizationId, UserId};
+use super::{DeviceId, DeviceType, OrganizationId, UserId};
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Deserialize, Serialize)]
 #[diesel(table_name = auth_requests)]
@@ -71,6 +72,24 @@ impl AuthRequest {
             response_date: None,
             authentication_date: None,
         }
+    }
+
+    pub fn to_json(&self) -> Value {
+        json!({
+            "id": self.uuid,
+            "publicKey": self.public_key,
+            "requestDeviceIdentifier": self.request_device_identifier,
+            "requestDeviceTypeValue": self.device_type,
+            "requestDeviceType": DeviceType::from_i32(self.device_type).to_string(),
+            "requestIpAddress": self.request_ip,
+            "key": self.enc_key,
+            "masterPasswordHash": self.master_password_hash,
+            "creationDate": format_date(&self.creation_date),
+            "responseDate": self.response_date.as_ref().map(format_date),
+            "requestApproved": self.approved.unwrap_or(false),
+            "origin": CONFIG.domain_origin(),
+            "object": "auth-request"
+        })
     }
 
     pub fn to_json_for_pending_device(&self) -> Value {

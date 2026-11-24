@@ -120,11 +120,12 @@ struct OrgData {
     plan_type: NumberOrString,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OrganizationUpdateData {
     billing_email: String,
     name: String,
+    keys: Option<OrgKeyData>,
 }
 
 #[derive(Deserialize)]
@@ -160,18 +161,24 @@ impl FullCollectionData {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CollectionGroupData {
+    #[serde(default)]
     hide_passwords: bool,
     id: GroupId,
+    #[serde(default)]
     read_only: bool,
+    #[serde(default)]
     manage: bool,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CollectionMembershipData {
+    #[serde(default)]
     hide_passwords: bool,
     id: MembershipId,
+    #[serde(default)]
     read_only: bool,
+    #[serde(default)]
     manage: bool,
 }
 
@@ -308,6 +315,16 @@ async fn put_organization(
 
     org.name = data.name;
     org.billing_email = data.billing_email.to_lowercase();
+
+    if let Some(keys) = data.keys
+        && !keys.public_key.trim().is_empty()
+        && !keys.encrypted_private_key.trim().is_empty()
+        && org.public_key.as_deref().is_none_or(|k| k.trim().is_empty())
+        && org.private_key.as_deref().is_none_or(|k| k.trim().is_empty())
+    {
+        org.public_key = Some(keys.public_key);
+        org.private_key = Some(keys.encrypted_private_key);
+    }
 
     org.save(&conn).await?;
 
@@ -2294,7 +2311,9 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
         // Only act on existing cipher uuid's
         // Do not abort the operation just ignore it, it could be a cipher was just deleted for example
         if let Some(cipher) = Cipher::find_by_uuid_and_org(cipher_id, &data.organization_id, &conn).await
-            && cipher.is_write_accessible_to_user(&headers.user.uuid, CipherAccessScope::OrganizationAdmin, &conn).await
+            && cipher
+                .is_in_editable_collection_by_user(&headers.user.uuid, CipherAccessScope::OrganizationAdmin, &conn)
+                .await
         {
             // When selecting a specific collection from the left filter list, and use the bulk option, you can remove an item from that collection
             // In these cases the client will call this endpoint twice, once for adding the new collections and a second for deleting.
@@ -2344,9 +2363,15 @@ async fn list_policies_token(org_id: OrganizationId, token: &str, conn: DbConn) 
         return Ok(Json(json!({})));
     }
 
-    // TODO: We receive the invite token as ?token=<>, validate it contains the org id
+    let Some(member) = Membership::find_by_uuid_and_org(&invite.member_id, &org_id, &conn).await else {
+        err!("Organization not found", "The invited membership no longer exists")
+    };
+    if member.user_uuid != invite.sub || member.status != MembershipStatus::Invited as i32 {
+        err!("Organization not found", "The membership is not a pending invitation of this user")
+    }
+
     let policies = OrgPolicy::find_by_org(&org_id, &conn).await;
-    let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
+    let policies_json: Vec<Value> = policies.iter().filter(|p| p.enabled).map(OrgPolicy::to_json).collect();
 
     Ok(Json(json!({
         "data": policies_json,
@@ -2462,7 +2487,6 @@ async fn put_policy(
     // Vaultwarden encouraged to use multiple orgs instead of groups because groups were not available in the past
     // Now that groups are available we can enforce this option when wanted.
     // We put this behind a config option to prevent breaking current installation.
-    // Maybe we want to enable this by default in the future, but currently it is disabled by default.
     if CONFIG.enforce_single_org_with_reset_pw_policy() {
         if pol_type_enum == OrgPolicyType::ResetPassword && data.enabled {
             let single_org_policy_enabled = OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::SingleOrg, &conn)
@@ -3000,8 +3024,11 @@ impl GroupRequest {
 #[serde(rename_all = "camelCase")]
 struct CollectionData {
     id: CollectionId,
+    #[serde(default)]
     read_only: bool,
+    #[serde(default)]
     hide_passwords: bool,
+    #[serde(default)]
     manage: bool,
 }
 
