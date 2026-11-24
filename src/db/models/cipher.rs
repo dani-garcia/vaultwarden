@@ -172,7 +172,7 @@ impl Cipher {
             }
             if let Err(e) = cipher.validate_type_data(is_blob) {
                 validation_errors
-                    .insert(format!("Ciphers[{index}].Type"), serde_json::to_value([e.message()]).unwrap());
+                    .insert(format!("Ciphers[{index}].{}", e.field), serde_json::to_value([e.message]).unwrap());
             }
 
             // Validate the password history if it contains `null` values and if so, return a warning
@@ -518,16 +518,25 @@ impl Cipher {
         // This breaks at least the native mobile client if invalid
         // The only way to fix this is by setting type_data_json to `null`
         // Opening this ssh-key in the mobile client will probably crash the client, but you can edit, save and afterwards delete it
-        if self.atype == 5
-            && (type_data_json["keyFingerprint"].as_str().is_none_or(str::is_empty)
-                || type_data_json["privateKey"].as_str().is_none_or(str::is_empty)
-                || type_data_json["publicKey"].as_str().is_none_or(str::is_empty))
+        if self.atype == 5 && type_data_json.as_object().is_none_or(|key| Self::first_invalid_ssh_key_field(key).is_some())
         {
             warn!("Error parsing ssh-key, mandatory fields are invalid for {}", self.uuid);
             type_data_json = Value::Null;
         }
 
         type_data_json
+    }
+
+    pub(crate) fn first_invalid_ssh_key_field(key: &serde_json::Map<String, Value>) -> Option<&'static str> {
+        [
+            ("privateKey", "PrivateKey", "SshKey.PrivateKey"),
+            ("publicKey", "PublicKey", "SshKey.PublicKey"),
+            ("keyFingerprint", "KeyFingerprint", "SshKey.KeyFingerprint"),
+        ]
+        .into_iter()
+        .find_map(|(camel, pascal, field)| {
+            key.get(camel).or_else(|| key.get(pascal)).and_then(Value::as_str).is_none_or(str::is_empty).then_some(field)
+        })
     }
 
     pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<UserId> {

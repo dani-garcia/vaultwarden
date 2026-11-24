@@ -401,7 +401,7 @@ impl CipherData {
     }
 
     /// Saving's last checks: a known type, and its data unless it's a blob.
-    pub fn validate_type_data(&self, is_blob: bool) -> EmptyResult {
+    pub fn validate_type_data(&self, is_blob: bool) -> Result<(), CipherValidationError> {
         let type_data = match self.r#type {
             1 => &self.login,
             2 => &self.secure_note,
@@ -411,10 +411,32 @@ impl CipherData {
             6 => &self.bank_account,
             7 => &self.drivers_license,
             8 => &self.passport,
-            _ => err!("Invalid type"),
+            _ => {
+                return Err(CipherValidationError {
+                    field: "Type",
+                    message: "Invalid type".into(),
+                });
+            }
         };
-        if !is_blob && type_data.is_none() {
-            err!("Data missing")
+        if is_blob {
+            return Ok(());
+        }
+        if self.r#type == 5 {
+            let key = type_data.as_ref().and_then(Value::as_object).ok_or_else(|| CipherValidationError {
+                field: "SshKey",
+                message: "The SshKey field must be an object.".into(),
+            })?;
+            if let Some(field) = Cipher::first_invalid_ssh_key_field(key) {
+                return Err(CipherValidationError {
+                    field,
+                    message: format!("The {field} field must be a non-empty string."),
+                });
+            }
+        } else if type_data.is_none() {
+            return Err(CipherValidationError {
+                field: "Type",
+                message: "Data missing".into(),
+            });
         }
         Ok(())
     }
@@ -2844,6 +2866,40 @@ impl CipherSyncData {
             user_group_full_access_for_organizations,
         }
     }
+}
+
+#[cfg(all(test, sqlite))]
+#[test]
+fn validate_ssh_key_fields() {
+    crate::db::test_db::run(async |_| {
+        let mut cipher: CipherData = serde_json::from_value(json!({"type": 5, "name": "key"})).unwrap();
+        for (key, field) in [
+            (json!([]), "SshKey"),
+            (json!({}), "SshKey.PrivateKey"),
+            (json!({"privateKey": "", "publicKey": "p", "keyFingerprint": "f"}), "SshKey.PrivateKey"),
+            (json!({"privateKey": "k", "publicKey": null, "keyFingerprint": null}), "SshKey.PublicKey"),
+            (json!({"privateKey": "k", "publicKey": "p", "keyFingerprint": null}), "SshKey.KeyFingerprint"),
+            (json!({"privateKey": "k", "publicKey": 1}), "SshKey.PublicKey"),
+        ] {
+            cipher.ssh_key = Some(key);
+            let error = cipher.validate_type_data(false).unwrap_err();
+            assert_eq!(error.field, field);
+            let error_json = Cipher::validate_cipher_data(std::slice::from_ref(&cipher)).unwrap_err().to_string();
+            let response: Value = serde_json::from_str(&error_json).unwrap();
+            assert_eq!(response["validationErrors"][format!("Ciphers[0].{field}")], json!([error.message]));
+        }
+        for key in [
+            json!({"privateKey": "k", "publicKey": "p", "keyFingerprint": "f"}),
+            json!({"PrivateKey": "k", "PublicKey": "p", "KeyFingerprint": "f"}),
+        ] {
+            cipher.ssh_key = Some(key);
+            cipher.validate_type_data(false).unwrap();
+            Cipher::validate_cipher_data(std::slice::from_ref(&cipher)).unwrap();
+        }
+        cipher.ssh_key = None;
+        cipher.data = Some(json!({"format_version": 2}).to_string());
+        Cipher::validate_cipher_data(&[cipher]).unwrap();
+    });
 }
 
 #[cfg(all(test, sqlite))]
