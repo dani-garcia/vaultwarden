@@ -1571,6 +1571,7 @@ pub const SUPPORTED_FEATURE_FLAGS: &[&str] = &[
     "pm-31885-send-controls",
     // Vault Team
     "pm-32009-new-item-types",
+    "pm-20558-migrate-myvault-to-myitems",
 ];
 
 #[derive(Clone, Copy, Serialize)]

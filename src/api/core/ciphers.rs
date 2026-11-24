@@ -281,7 +281,31 @@ async fn cipher_json_for_scope(
         CipherAccessScope::User => {
             cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, conn).await
         }
-        CipherAccessScope::OrganizationAdmin => cipher.to_json_org_admin(&headers.host, &headers.user.uuid, conn).await,
+        CipherAccessScope::OrganizationAdmin => {
+            let mut response = cipher.to_json_org_admin(&headers.host, &headers.user.uuid, conn).await?;
+            add_my_items_collection_ids(&mut response, cipher, headers, conn).await;
+            Ok(response)
+        }
+    }
+}
+
+/// Like upstream's administrative cipher responses, those to members with organization-wide cipher authority also
+/// list the members' My Items collections the cipher is in, which they don't see otherwise.
+async fn add_my_items_collection_ids(response: &mut Value, cipher: &Cipher, headers: &Headers, conn: &DbConn) {
+    let Some(org_uuid) = &cipher.organization_uuid else {
+        return;
+    };
+    let member = Membership::find_confirmed_by_user_and_org(&headers.user.uuid, org_uuid, conn).await;
+    if CipherAccessScope::for_member(member.as_ref()) != CipherAccessScope::OrganizationAdmin {
+        return;
+    }
+    if let Some(collection_ids) = response["collectionIds"].as_array_mut() {
+        for my_items in CollectionCipher::find_my_items_of_cipher(&cipher.uuid, conn).await {
+            let my_items = json!(my_items);
+            if !collection_ids.contains(&my_items) {
+                collection_ids.push(my_items);
+            }
+        }
     }
 }
 
@@ -926,33 +950,12 @@ async fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbC
     // TODO: See if we can optimize the whole cipher adding/importing and prevent duplicate code and checks.
     Cipher::validate_cipher_data(&data.ciphers)?;
 
-    // Read and create the folders
-    let existing_folders: HashSet<Option<FolderId>> =
-        Folder::find_by_user(&headers.user.uuid, &conn).await.into_iter().map(|f| Some(f.uuid)).collect();
-    let mut folders: Vec<FolderId> = Vec::with_capacity(data.folders.len());
-    for folder in data.folders {
-        let folder_id = if existing_folders.contains(&folder.id) {
-            folder.id.unwrap()
-        } else {
-            let mut new_folder = Folder::new(headers.user.uuid.clone(), folder.name);
-            new_folder.save(&conn).await?;
-            new_folder.uuid
-        };
-
-        folders.push(folder_id);
-    }
-
-    // Read the relations between folders and ciphers
-    // Ciphers can only be in one folder at the same time
-    let mut relations_map = HashMap::with_capacity(data.folder_relationships.len());
-    for relation in data.folder_relationships {
-        relations_map.insert(relation.key, relation.value);
-    }
+    let relations = data.folder_relationships.into_iter().map(|r| (r.key, r.value));
+    let cipher_folders = import_folders(data.folders, relations, &headers.user.uuid, &conn).await?;
 
     // Read and create the ciphers
     for (index, mut cipher_data) in data.ciphers.into_iter().enumerate() {
-        let folder_id = relations_map.get(&index).and_then(|i| folders.get(*i).cloned());
-        cipher_data.folder_id = folder_id;
+        cipher_data.folder_id = cipher_folders.get(&index).cloned();
         // A personal import always creates personal ciphers, the organization ID is ignored instead of rejected
         // Upstream: https://github.com/bitwarden/server/blob/b06b81c1fb33ce9c9872b96397ba2b4d879b66af/src/Api/Tools/Controllers/ImportCiphersController.cs#L58
         cipher_data.organization_id = None;
@@ -967,6 +970,32 @@ async fn post_ciphers_import(data: Json<ImportData>, headers: Headers, conn: DbC
     nt.send_user_update(UpdateType::SyncVault, &user, headers.device.push_uuid.as_ref(), &conn).await;
 
     Ok(())
+}
+
+/// Creates the imported folders the user doesn't have yet and returns the folder of each imported cipher, by index.
+/// `relations` are the (cipher index, folder index) pairs of the import, a cipher can only be in one folder.
+pub async fn import_folders(
+    folders: Vec<FolderData>,
+    relations: impl Iterator<Item = (usize, usize)>,
+    user_id: &UserId,
+    conn: &DbConn,
+) -> Result<HashMap<usize, FolderId>, crate::Error> {
+    let existing_folders: HashSet<Option<FolderId>> =
+        Folder::find_by_user(user_id, conn).await.into_iter().map(|f| Some(f.uuid)).collect();
+    let mut folder_ids: Vec<FolderId> = Vec::with_capacity(folders.len());
+    for folder in folders {
+        let folder_id = if existing_folders.contains(&folder.id) {
+            folder.id.unwrap()
+        } else {
+            let mut new_folder = Folder::new(user_id.clone(), folder.name);
+            new_folder.save(conn).await?;
+            new_folder.uuid
+        };
+
+        folder_ids.push(folder_id);
+    }
+
+    Ok(relations.filter_map(|(cipher, folder)| Some((cipher, folder_ids.get(folder)?.clone()))).collect())
 }
 
 /// Called when an org admin modifies an existing org cipher.
@@ -1196,6 +1225,14 @@ async fn update_collections_by_scope(
             let Some(org_uuid) = cipher.organization_uuid.clone() else {
                 err!("Cipher is not owned by an organization")
             };
+            // Like upstream's `SaveCollectionsAsync`, on both routes: another member's personal cipher, one that is
+            // only in their My Items collection, may not be shared, even by an admin
+            if CollectionCipher::find_my_items_owners_if_only(&cipher.uuid, &conn)
+                .await
+                .is_some_and(|owners| owners.iter().any(|owner| owner != &headers.user.uuid))
+            {
+                err_code!("Resource not found", "Cannot share another member's My Items", Status::NotFound.code)
+            }
             let posted = HashSet::<CollectionId>::from_iter(data.collection_ids);
             let current = HashSet::<CollectionId>::from_iter(match scope {
                 CipherAccessScope::User => cipher.get_collections(headers.user.uuid.clone(), &conn).await,
@@ -1214,15 +1251,41 @@ async fn update_collections_by_scope(
                     err!("Invalid collection ID provided")
                 }
             }
+            // The My Items rule looks at every collection the user sees the cipher in, not only the writable ones
+            let visible = HashSet::<CollectionId>::from_iter(
+                cipher.get_accessible_collections(headers.user.uuid.clone(), &conn).await,
+            );
+            // Only looked up when the cipher is to be added to a My Items collection
+            let mut cipher_my_items = None;
             let mut changes = Vec::new();
+            let mut adds_my_items = false;
             for id in posted.symmetric_difference(&current) {
                 let Some(collection) = Collection::find_by_uuid_and_org(id, &org_uuid, &conn).await else {
                     err!("Invalid collection ID provided")
                 };
+                // Like upstream, the administrative route never adds to or removes from a My Items collection. The
+                // admin console doesn't list them, so it never sends the one of the acting member either.
+                if scope == CipherAccessScope::OrganizationAdmin && collection.is_default_user_collection() {
+                    continue;
+                }
                 if !admin_edit_any && !collection.is_writable_by_user(&headers.user.uuid, &conn).await {
                     err!("No rights to modify the collection")
                 }
-                changes.push((collection.uuid, posted.contains(id)));
+                let add = posted.contains(id);
+                if add && collection.is_default_user_collection() {
+                    let my_items = match cipher_my_items.take() {
+                        Some(my_items) => my_items,
+                        None => CollectionCipher::find_my_items_of_cipher(&cipher.uuid, &conn).await,
+                    };
+                    collection.check_cipher_assignment(&visible, cipher_my_items.insert(my_items))?;
+                    adds_my_items = true;
+                }
+                changes.push((collection.uuid, add));
+            }
+            // Moved into a My Items collection, an unassigned cipher is taken away from the members with
+            // organization-wide access, which the revisions of the changed collections don't cover, so they sync too
+            if adds_my_items {
+                cipher.update_users_revision(&conn).await;
             }
             // Every ID and permission has been checked. A database error rolls back links and revisions.
             for (id, add) in changes {
@@ -1261,7 +1324,9 @@ async fn update_collections_by_scope(
             cipher.to_json(&headers.host, &headers.user.uuid, None, CipherSyncType::User, &conn).await?
         }
         CipherAccessScope::OrganizationAdmin => {
-            cipher.to_json_org_admin_collections(&headers.host, &headers.user.uuid, &conn).await?
+            let mut response = cipher.to_json_org_admin_collections(&headers.host, &headers.user.uuid, &conn).await?;
+            add_my_items_collection_ids(&mut response, &cipher, &headers, &conn).await;
+            response
         }
     };
     Ok(Json(response))
@@ -1491,6 +1556,14 @@ async fn share_cipher_by_uuid(
                 if response_scope == CipherAccessScope::OrganizationAdmin && !admin_edit_any {
                     err!("Cipher is not write accessible")
                 }
+                let (current_collections, cipher_my_items) = if cipher.organization_uuid.is_some() {
+                    (
+                        HashSet::from_iter(cipher.get_accessible_collections(headers.user.uuid.clone(), conn).await),
+                        CollectionCipher::find_my_items_of_cipher(&cipher.uuid, conn).await,
+                    )
+                } else {
+                    (HashSet::new(), HashSet::new())
+                };
                 for col_id in HashSet::<CollectionId>::from_iter(data.collection_ids) {
                     let Some(collection) = Collection::find_by_uuid_and_org(&col_id, organization_id, conn).await
                     else {
@@ -1499,6 +1572,7 @@ async fn share_cipher_by_uuid(
                     if !admin_edit_any && !collection.is_writable_by_user(&headers.user.uuid, conn).await {
                         err!("No rights to modify the collection")
                     }
+                    collection.check_cipher_assignment(&current_collections, &cipher_my_items)?;
                     shared_to_collections.push(collection.uuid);
                 }
             }
@@ -2311,7 +2385,7 @@ async fn purge_org_vault(
 
     match Membership::find_confirmed_by_user_and_org(&user.uuid, &organization.org_id, &conn).await {
         Some(member) if member.atype == MembershipType::Owner => {
-            Cipher::delete_all_by_organization(&organization.org_id, &conn).await?;
+            Cipher::purge_organization(&organization.org_id, &conn).await?;
             nt.send_user_update(UpdateType::SyncVault, &user, headers.device.push_uuid.as_ref(), &conn).await;
 
             log_event(
@@ -2425,19 +2499,14 @@ async fn delete_cipher_by_uuid(
             )
             .await;
         }
+    } else if *delete_options == CipherDeleteOptions::HardSingle {
+        // Before the deletion removes the collections that decide who has to sync: without them, the cipher would
+        // count as unassigned and reach everybody with organization-wide access, also for My Items.
+        let user_ids = cipher.update_users_revision(conn).await;
+        cipher.delete(conn).await?;
+        nt.send_cipher_update(UpdateType::SyncLoginDelete, &cipher, &user_ids, &headers.device, None, conn).await;
     } else {
         cipher.delete(conn).await?;
-        if *delete_options == CipherDeleteOptions::HardSingle {
-            nt.send_cipher_update(
-                UpdateType::SyncLoginDelete,
-                &cipher,
-                &cipher.update_users_revision(conn).await,
-                &headers.device,
-                None,
-                conn,
-            )
-            .await;
-        }
     }
 
     if let Some(org_id) = cipher.organization_uuid {
@@ -2740,6 +2809,7 @@ pub struct CipherSyncData {
     pub user_collections: HashMap<CollectionId, CollectionUser>,
     pub user_collections_groups: HashMap<CollectionId, CollectionGroup>,
     pub user_group_full_access_for_organizations: HashSet<OrganizationId>,
+    pub my_items_only_ciphers: HashSet<CipherId>,
 }
 
 #[derive(Eq, PartialEq)]
@@ -2790,7 +2860,7 @@ impl CipherSyncData {
         }
 
         // Generate a HashMap with the Cipher UUID as key and one or more Collection UUID's
-        let user_cipher_collections = Cipher::get_collections_with_cipher_by_user(user_id.clone(), conn).await;
+        let user_cipher_collections = Cipher::get_collections_with_cipher_by_user(user_id.clone(), None, conn).await;
         let mut cipher_collections: HashMap<CipherId, Vec<CollectionId>> =
             HashMap::with_capacity(user_cipher_collections.len());
         for (cipher, collection) in user_cipher_collections {
@@ -2832,6 +2902,20 @@ impl CipherSyncData {
             HashSet::new()
         };
 
+        // Only organization-wide access has to leave out the items stored only in a member's My Items, and only
+        // the user's vault checks the access restrictions at all
+        let my_items_only_ciphers = match sync_type {
+            CipherSyncType::User => {
+                let full_access_orgs = members
+                    .values()
+                    .filter(|m| m.has_full_access() || user_group_full_access_for_organizations.contains(&m.org_uuid))
+                    .map(|m| m.org_uuid.clone())
+                    .collect();
+                CollectionCipher::find_my_items_only_by_orgs(full_access_orgs, conn).await
+            }
+            CipherSyncType::Organization => HashSet::new(),
+        };
+
         Self {
             cipher_attachments,
             cipher_folders,
@@ -2842,6 +2926,7 @@ impl CipherSyncData {
             user_collections,
             user_collections_groups,
             user_group_full_access_for_organizations,
+            my_items_only_ciphers,
         }
     }
 }
