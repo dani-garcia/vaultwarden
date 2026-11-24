@@ -26,7 +26,7 @@ test('Password', async ({ context, page }, testInfo: TestInfo) => {
     await logUser(test, page, users.user1);
 
     await test.step('Create password entry', async () => {
-        await page.getByRole('button', { name: 'New item' }).click();
+        await page.getByRole('button', { name: /^(New|Add) item$/ }).click();
         await page.getByRole('textbox', { name: 'Item name * (required)' }).fill(label);
         await page.getByRole('textbox', { name: 'Username' }).fill(users.user1.name);
         await page.getByRole('textbox', { name: 'Password' }).fill(users.user1.password);
@@ -71,7 +71,7 @@ test('SSH Key', async ({ context, page }, testInfo: TestInfo) => {
     await logUser(test, page, users.user1);
 
     const privateKey = await test.step('Create key entry', async () => {
-        await page.getByRole('button', { name: 'New', exact: true }).click();
+        await page.getByRole('button', { name: /^(New|Add)$/ }).click();
         await page.getByRole('menuitem', { name: 'SSH key' }).click();
         await page.getByRole('textbox', { name: 'Item name * (required)' }).fill('Test SSH key');
         await page.getByRole('button', { name: 'Save' }).click();

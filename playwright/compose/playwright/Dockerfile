@@ -1,4 +1,4 @@
-FROM docker.io/library/debian:trixie-slim
+FROM docker.io/library/node:26-trixie-slim
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -19,8 +19,6 @@ RUN apt-get update \
         git \
         libmariadb-dev-compat \
         libpq5 \
-        nodejs \
-        npm \
         openssl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -36,5 +34,5 @@ COPY compose ./compose
 COPY *.ts test.env ./
 COPY tests ./tests
 
-ENTRYPOINT ["/usr/bin/npx", "playwright"]
+ENTRYPOINT ["/usr/local/bin/npx", "playwright"]
 CMD ["test"]

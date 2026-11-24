@@ -65,7 +65,7 @@ services:
   Mariadb:
     profiles: ["playwright"]
     container_name: playwright_mariadb
-    image: mariadb:12.2.2
+    image: mariadb:12.3.3
     env_file: test.env
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
@@ -77,7 +77,7 @@ services:
   Mysql:
     profiles: ["playwright"]
     container_name: playwright_mysql
-    image: mysql:9.7.0
+    image: mysql:9.7.4
     env_file: test.env
     healthcheck:
       test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
@@ -89,7 +89,7 @@ services:
   Postgres:
     profiles: ["playwright"]
     container_name: playwright_postgres
-    image: postgres:18.4
+    image: postgres:18.7
     env_file: test.env
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
@@ -101,7 +101,7 @@ services:
   Maildev:
     profiles: ["vaultwarden", "maildev"]
     container_name: maildev
-    image: timshel/maildev:3.2.19
+    image: timshel/maildev:3.3.8
     ports:
       - ${SMTP_PORT}:1025
       - 1080:1080
@@ -109,7 +109,7 @@ services:
   Keycloak:
     profiles: ["keycloak", "vaultwarden"]
     container_name: keycloak-${ENV:-dev}
-    image: quay.io/keycloak/keycloak:26.6.2
+    image: quay.io/keycloak/keycloak:26.8.2
     network_mode: "host"
     command:
       - start-dev
@@ -124,7 +124,7 @@ services:
       context: compose/keycloak
       dockerfile: Dockerfile
       args:
-        KEYCLOAK_VERSION: 26.6.2
+        KEYCLOAK_VERSION: 26.8.2
     depends_on:
       - Keycloak
     restart: "no"

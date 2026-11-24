@@ -107,6 +107,8 @@ jobs:
             rustup target add wasm32-unknown-unknown
             rustup component add rust-src
           fi
+          # rust-cache keys on every installed toolchain, so the runner image's stable would change the key on each image update
+          rustup toolchain uninstall stable
 
       # One cache per SDK source, so that neither restores the other's.
       # Only save caches on main to save cache space.

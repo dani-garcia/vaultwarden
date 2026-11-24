@@ -120,6 +120,9 @@ jobs:
           # Set as the default toolchain
           rustup default "${RUST_TOOLCHAIN}"
 
+          # rust-cache keys on every installed toolchain, so the runner image's stable would change the key on each image update
+          rustup toolchain uninstall stable
+
       # Show environment
       - name: "Show environment"
         run: |

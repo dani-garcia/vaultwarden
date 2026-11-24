@@ -47,14 +47,14 @@ test('Invite users', async ({ page }) => {
     // Account recovery requires the Single organisation policy (ENFORCE_SINGLE_ORG_WITH_RESET_PW_POLICY)
     await test.step(`Set single organisation`, async () => {
         await page.getByRole('button', { name: 'Single organisation' }).click();
-        await page.getByRole('checkbox', { name: 'Turn on' }).or(page.getByRole('switch', { name: 'Enable policy' })).check({ force: true });
+        await orgs.enablePolicy(page);
         await page.getByRole('button', { name: 'Save' }).click();
         await utils.checkNotification(page, 'Edited policy Single organisation');
     });
 
     await test.step(`Set account recovery`, async () => {
         await page.getByRole('button', { name: 'Account recovery' }).click();
-        await page.getByRole('checkbox', { name: 'Turn on' }).check();
+        await orgs.enablePolicy(page);
         await page.getByRole('checkbox', { name: 'Automatically enroll new' }).check();
         await page.getByRole('button', { name: 'Save' }).click();
         await utils.checkNotification(page, 'Edited policy Account recovery');

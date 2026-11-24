@@ -24,12 +24,16 @@ test('Change Key settings', async ({ page }) => {
         await page.getByRole('link', { name: 'Security' }).click();
         await page.getByRole('link', { name: 'Keys' }).click();
 
+        // V2 accounts (pm-27278-v2-password-registration) register with Argon2id, V1 ones with PBKDF2
+        await page.locator('.ng-arrow-wrapper').click();
+        await page.getByRole('option', { name: 'PBKDF2 SHA-256' }).click();
+
         await page.getByRole('spinbutton', { name: 'KDF iterations * (required)'}).fill('700000');
 
         await page.getByRole('button', { name: 'Update encryption settings' }).click();
         await page.getByRole('textbox', { name: 'Master password * (required)' }).fill(users.user1.password);
         await page.getByRole('button', { name: 'Update settings' }).click();
-        await page.getByRole('heading', { name: 'Log in' }).click();
+        await kdfChanged(test, page);
     });
 
     await logUser(test, page, users.user1);
@@ -49,8 +53,21 @@ test('Change Key settings', async ({ page }) => {
         await page.getByRole('button', { name: 'Update encryption settings' }).click();
         await page.getByRole('textbox', { name: 'Master password * (required)' }).fill(users.user1.password);
         await page.getByRole('button', { name: 'Update settings' }).click();
-        await page.getByRole('heading', { name: 'Log in' }).click();
+        await kdfChanged(test, page);
     });
 
     await logUser(test, page, users.user1);
 });
+
+// Before web vault 2026.10 a KDF change logged the user out, with "Please log back in." in the toast.
+async function kdfChanged(test, page: Page) {
+    const toast = page.locator('bit-toast', { hasText: 'Encryption key settings changed' });
+    await expect(toast).toBeVisible();
+    const loggedOut = await toast.filter({ hasText: 'Please log back in' }).count() > 0;
+    await utils.checkNotification(page, 'Encryption key settings changed');
+    if (loggedOut) {
+        await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
+    } else {
+        await utils.logout(test, page, users.user1);
+    }
+}

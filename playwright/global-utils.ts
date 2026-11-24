@@ -221,13 +221,15 @@ export async function restartVault(page: Page, testInfo: TestInfo, env, resetDB:
 }
 
 export async function checkNotification(page: Page, hasText: string) {
-    await expect(page.locator('bit-toast', { hasText })).toBeVisible();
+    const toast = page.locator('bit-toast', { hasText });
+    await expect(toast).toBeVisible();
+    // An open dialog marks the toasts aria-hidden and covers them: find the button by CSS and dispatch the click.
     try {
-        await page.locator('bit-toast', { hasText }).getByRole('button', { name: 'Close' }).click({force: true, timeout: 10_000});
+        await toast.locator('button[aria-label="Close"]').dispatchEvent('click', undefined, { timeout: 5_000 });
     } catch (error) {
         console.log(`Closing notification failed but it should now be invisible (${error})`);
     }
-    await expect(page.locator('bit-toast', { hasText })).toHaveCount(0);
+    await expect(toast).toHaveCount(0);
 }
 
 export async function cleanLanding(page: Page) {

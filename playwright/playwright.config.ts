@@ -26,14 +26,15 @@ export default defineConfig({
      * But short action/nav/expect timeouts to fail on specific step (raise locally if not enough).
      */
     timeout: 240 * 1000,
-    actionTimeout: 40 * 1000,
-    navigationTimeout: 40 * 1000,
     expect: { timeout: 40 * 1000 },
 
     "permissions": ["clipboard-read"],
 
     /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
     use: {
+        actionTimeout: 40 * 1000,
+        navigationTimeout: 40 * 1000,
+
         /* Base URL to use in actions like `await page.goto('/')`. */
         baseURL: process.env.DOMAIN,
         browserName: 'firefox',

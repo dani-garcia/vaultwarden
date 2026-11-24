@@ -21,7 +21,7 @@ test('Send', async ({ browser, page }) => {
         await page.getByRole('link', { name: 'Send' }).click();
         await expect(page.locator('#main-content').getByText('Send', { exact: true })).toBeVisible();
 
-        await page.getByRole('button', { name: 'New Send', exact: true }).click();
+        await page.getByRole('button', { name: /^(New|Create) Send$/ }).click();
         await page.getByRole('menuitem', { name: 'Text' }).click();
 
         await page.getByRole('textbox', { name: 'Send name * (required)' }).fill('Test');
@@ -46,7 +46,7 @@ test('Send', async ({ browser, page }) => {
         await page.getByRole('link', { name: 'Send' }).click();
         await expect(page.locator('#main-content').getByText('Send', { exact: true })).toBeVisible();
 
-        await page.getByRole('button', { name: 'New' }).click();
+        await page.getByRole('button', { name: /\b(New|Create)$/ }).click();
         await page.getByRole('menuitem', { name: 'Text' }).click();
 
         await page.getByRole('textbox', { name: 'Send name * (required)' }).fill('Password');
