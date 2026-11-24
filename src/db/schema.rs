@@ -223,6 +223,7 @@ table! {
         security_state -> Nullable<Text>,
         security_version -> Nullable<Integer>,
         v2_upgrade_token -> Nullable<Text>,
+        verify_devices -> Bool,
     }
 }
 

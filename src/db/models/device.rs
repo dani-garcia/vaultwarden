@@ -201,6 +201,20 @@ impl Device {
         result
     }
 
+    /// A lightweight existence check avoids loading every registered device on login.
+    pub async fn has_any_by_user(user_uuid: &UserId, conn: &DbConn) -> bool {
+        conn.run(move |conn| {
+            devices::table
+                .filter(devices::user_uuid.eq(user_uuid))
+                .select(devices::uuid)
+                .first::<DeviceId>(conn)
+                .optional()
+                .expect("Error checking whether user has devices")
+                .is_some()
+        })
+        .await
+    }
+
     pub async fn find_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             devices::table.filter(devices::user_uuid.eq(user_uuid)).load::<Self>(conn).expect("Error loading devices")

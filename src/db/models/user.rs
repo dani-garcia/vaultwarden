@@ -81,6 +81,8 @@ pub struct User {
     pub security_version: Option<i32>,
     /// JSON `{"wrappedUserKey1", "wrappedUserKey2"}` for sessions that still hold the v1 user key. Opaque to us.
     pub v2_upgrade_token: Option<String>,
+    /// Verify a new device via an emailed code, when `NEW_DEVICE_VERIFICATION` is enabled.
+    pub verify_devices: bool,
 }
 
 #[derive(Identifiable, Queryable, Insertable)]
@@ -187,6 +189,7 @@ impl User {
             security_state: None,
             security_version: None,
             v2_upgrade_token: None,
+            verify_devices: true,
         }
     }
 
@@ -445,6 +448,7 @@ impl User {
             "avatarColor": self.avatar_color,
             "usesKeyConnector": false,
             "creationDate": format_date(&self.created_at),
+            "verifyDevices": self.verify_devices,
             "object": "profile",
         })
     }
