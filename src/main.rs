@@ -586,7 +586,14 @@ async fn launch_rocket(pool: db::DbPool, extra_debug: bool) -> Result<(), Error>
         .mount([basepath, "/events"].concat(), api::core_events_routes())
         .mount([basepath, "/identity"].concat(), api::identity_routes())
         .mount([basepath, "/icons"].concat(), api::icons_routes())
-        .mount([basepath, "/notifications"].concat(), api::notifications_routes())
+        .mount([basepath, "/notifications"].concat(), api::notifications_routes());
+    // Apple associated-domains and related-origins are origin-root only.
+    let instance = if api::should_mount_origin_root_well_known(basepath) {
+        instance.mount("/", api::well_known_routes())
+    } else {
+        instance
+    };
+    let instance = instance
         .register([basepath, "/"].concat(), api::web_catchers())
         .register([basepath, "/api"].concat(), api::core_catchers())
         .register([basepath, "/admin"].concat(), api::admin_catchers())

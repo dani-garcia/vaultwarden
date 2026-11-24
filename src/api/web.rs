@@ -29,17 +29,17 @@ use crate::{
 pub fn routes() -> Vec<Route> {
     // If adding more routes here, consider also adding them to
     // crate::utils::LOGGED_ROUTES to make sure they appear in the log
-    let mut routes = routes![attachments, alive, alive_head, static_files];
+    let mut routes = routes![
+        attachments,
+        alive,
+        alive_head,
+        static_files,
+        app_id,
+        apple_app_site_association,
+        webauthn_related_origins
+    ];
     if CONFIG.web_vault_enabled() {
-        routes.append(&mut routes![
-            web_index,
-            web_index_direct,
-            web_index_head,
-            app_id,
-            apple_app_site_association,
-            web_files,
-            vaultwarden_css
-        ]);
+        routes.append(&mut routes![web_index, web_index_direct, web_index_head, web_files, vaultwarden_css]);
     }
 
     #[cfg(debug_assertions)]
@@ -207,22 +207,44 @@ fn app_id() -> Cached<(ContentType, Json<Value>)> {
     )
 }
 
+fn aasa_document() -> Value {
+    json!({
+        "webcredentials": {
+            "apps": [
+                "LTZ2PFU5D6.com.8bit.bitwarden",
+                "LTZ2PFU5D6.com.8bit.bitwarden.beta",
+                "LTZ2PFU5D6.com.8bit.bitwarden.autofill"
+            ]
+        }
+    })
+}
+
+fn related_origins_document(origin: &str) -> Value {
+    json!({
+        "origins": [origin]
+    })
+}
+
 #[get("/.well-known/apple-app-site-association")]
 fn apple_app_site_association() -> Cached<(ContentType, Json<Value>)> {
-    Cached::long(
-        (
-            ContentType::JSON,
-            Json(json!({
-                "webcredentials": {
-                    "apps": [
-                        "LTZ2PFU5D6.com.8bit.bitwarden",
-                        "LTZ2PFU5D6.com.8bit.bitwarden.beta"
-                    ]
-                }
-            })),
-        ),
-        true,
-    )
+    Cached::long((ContentType::JSON, Json(aasa_document())), true)
+}
+
+/// W3C Related Origin Requests. iOS Autofill fetches this when
+/// `pm-30529-webauthn-related-origins` is on.
+#[get("/.well-known/webauthn")]
+fn webauthn_related_origins() -> Cached<(ContentType, Json<Value>)> {
+    Cached::long((ContentType::JSON, Json(related_origins_document(&CONFIG.domain_origin()))), true)
+}
+
+/// Origin-root well-known for Apple AASA / related-origins when DOMAIN has a path prefix.
+pub fn well_known_routes() -> Vec<Route> {
+    routes![apple_app_site_association, webauthn_related_origins]
+}
+
+/// Apple only fetches `/.well-known/*` at the origin root. Dual-mount when DOMAIN has a path.
+pub fn should_mount_origin_root_well_known(basepath: &str) -> bool {
+    !basepath.is_empty()
 }
 
 #[get("/<p..>", rank = 10)] // Only match this if the other routes don't match
@@ -334,5 +356,51 @@ pub fn static_files(filename: &str) -> Result<EtagCached<&'static [u8]>, Error> 
         Ok(EtagCached::new(file.bytes, file.content_type.clone(), &file.etag))
     } else {
         err!(format!("Static file not found: {}", filename.escape_debug()))
+    }
+}
+
+#[cfg(test)]
+mod ios_autofill_sim {
+    use super::*;
+    use rocket::{http::Status, local::blocking::Client};
+
+    fn well_known_client() -> Client {
+        Client::tracked(rocket::build().mount("/", well_known_routes())).expect("rocket well-known client")
+    }
+
+    #[test]
+    fn aasa_includes_autofill_extension() {
+        let document = aasa_document();
+        let apps = document["webcredentials"]["apps"].as_array().expect("apps");
+        assert!(apps.iter().any(|app| app == "LTZ2PFU5D6.com.8bit.bitwarden.autofill"));
+    }
+
+    #[test]
+    fn related_origins_lists_the_vault_origin() {
+        let document = related_origins_document("https://vault.example.com/vw");
+        assert_eq!(document["origins"], json!(["https://vault.example.com/vw"]));
+    }
+
+    #[test]
+    fn origin_root_mount_when_domain_has_path() {
+        assert!(should_mount_origin_root_well_known("/vw"));
+        assert!(!should_mount_origin_root_well_known(""));
+    }
+
+    #[test]
+    fn aasa_http_includes_autofill_app_id() {
+        let client = well_known_client();
+        let res = client.get("/.well-known/apple-app-site-association").dispatch();
+        assert_eq!(res.status(), Status::Ok);
+        let body: Value = res.into_json().expect("aasa json");
+        let apps = body["webcredentials"]["apps"].as_array().expect("apps");
+        assert!(apps.iter().any(|app| app == "LTZ2PFU5D6.com.8bit.bitwarden.autofill"));
+    }
+
+    #[test]
+    fn well_known_routes_cover_aasa_and_webauthn() {
+        let uris: Vec<String> = well_known_routes().iter().map(|route| format!("{}", route.uri)).collect();
+        assert!(uris.iter().any(|uri| uri.contains("apple-app-site-association")));
+        assert!(uris.iter().any(|uri| uri.contains("/.well-known/webauthn")));
     }
 }

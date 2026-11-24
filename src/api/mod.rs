@@ -35,6 +35,8 @@ pub use crate::api::{
     },
     web::catchers as web_catchers,
     web::routes as web_routes,
+    web::should_mount_origin_root_well_known,
+    web::well_known_routes,
     web::{STATIC_FILES, invalidate_css_cache},
 };
 use crate::{
