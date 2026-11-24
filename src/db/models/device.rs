@@ -238,6 +238,17 @@ impl Device {
         .await
     }
 
+    pub async fn find_last_active_by_all_users(conn: &DbConn) -> Vec<(UserId, Option<NaiveDateTime>)> {
+        conn.run(move |conn| {
+            devices::table
+                .group_by(devices::user_uuid)
+                .select((devices::user_uuid, diesel::dsl::max(devices::updated_at)))
+                .load::<(UserId, Option<NaiveDateTime>)>(conn)
+                .unwrap_or_default()
+        })
+        .await
+    }
+
     pub async fn find_push_devices_by_user(user_uuid: &UserId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             devices::table

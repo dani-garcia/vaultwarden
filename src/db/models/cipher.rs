@@ -1090,6 +1090,18 @@ impl Cipher {
         .await
     }
 
+    pub async fn count_owned_by_all_users(conn: &DbConn) -> Vec<(UserId, i64)> {
+        conn.run(move |conn| {
+            ciphers::table
+                .filter(ciphers::user_uuid.is_not_null())
+                .group_by(ciphers::user_uuid)
+                .select((ciphers::user_uuid.assume_not_null(), diesel::dsl::count_star()))
+                .load::<(UserId, i64)>(conn)
+                .unwrap_or_default()
+        })
+        .await
+    }
+
     pub async fn find_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> Vec<Self> {
         conn.run(move |conn| {
             ciphers::table
