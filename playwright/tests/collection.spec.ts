@@ -21,7 +21,7 @@ test('Create', async ({ page }) => {
     await orgs.create(test, page, 'New organisation');
 
     await test.step('Create Collection', async () => {
-        await page.getByRole('button', { name: 'New', exact: true }).click();
+        await page.getByRole('button', { name: /^(New|Add)$/ }).click();
         await page.getByRole('menuitem', { name: 'Collection' }).click();
         await page.getByRole('textbox', { name: 'Name * (required)', exact: true }).fill('RandomCollec');
         await page.getByRole('button', { name: 'Save' }).click();

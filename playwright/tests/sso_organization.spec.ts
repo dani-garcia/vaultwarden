@@ -55,9 +55,9 @@ test('Activate password policy', async ({ page }) => {
 
     await test.step(`Set master password policy`, async () => {
         await page.getByRole('button', { name: 'Master password requirements' }).click();
-        await page.getByRole('checkbox', { name: 'Turn on' }).check();
+        await orgs.enablePolicy(page);
         await page.getByRole('checkbox', { name: 'Require existing members to' }).check();
-        await page.getByRole('spinbutton', { name: 'Minimum length' }).fill('42');
+        await page.getByRole('spinbutton', { name: /^Minimum (character )?length/ }).fill('42');
         await page.getByRole('button', { name: 'Save' }).click();
         await utils.checkNotification(page, 'Edited policy Master password requirements.');
     });
