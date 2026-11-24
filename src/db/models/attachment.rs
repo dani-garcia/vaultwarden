@@ -197,6 +197,34 @@ impl Attachment {
         .await
     }
 
+    /// Returns the amount and total size of the attachments per user, for every user who has at least one
+    pub async fn count_and_size_by_all_users(conn: &DbConn) -> Vec<(UserId, i64, i64)> {
+        conn.run(move |conn| {
+            attachments::table
+                .inner_join(ciphers::table.on(ciphers::uuid.eq(attachments::cipher_uuid)))
+                .filter(ciphers::user_uuid.is_not_null())
+                .group_by(ciphers::user_uuid)
+                .select((
+                    ciphers::user_uuid.assume_not_null(),
+                    diesel::dsl::count_star(),
+                    diesel::dsl::sum(attachments::file_size),
+                ))
+                .load::<(UserId, i64, Option<BigDecimal>)>(conn)
+                .expect("Error loading attachment count and size per user")
+                .into_iter()
+                .map(|(user_uuid, count, size)| {
+                    let size = match size.map(|s| s.to_i64()) {
+                        Some(Some(s)) => s,
+                        Some(None) => i64::MAX,
+                        None => 0,
+                    };
+                    (user_uuid, count, size)
+                })
+                .collect()
+        })
+        .await
+    }
+
     pub async fn size_by_org(org_uuid: &OrganizationId, conn: &DbConn) -> i64 {
         conn.run(move |conn| {
             let result: Option<BigDecimal> = attachments::table

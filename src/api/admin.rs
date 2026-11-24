@@ -378,16 +378,31 @@ async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
 #[get("/users/overview")]
 async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
     let users = User::get_all(&conn).await;
+
+    // Load these counts for all users at once, instead of running these queries for every single user
+    let cipher_counts: HashMap<UserId, i64> = Cipher::count_owned_by_all_users(&conn).await.into_iter().collect();
+    let attachments: HashMap<UserId, (i64, i64)> = Attachment::count_and_size_by_all_users(&conn)
+        .await
+        .into_iter()
+        .map(|(user_uuid, count, size)| (user_uuid, (count, size)))
+        .collect();
+    let last_active: HashMap<UserId, chrono::NaiveDateTime> = Device::find_last_active_by_all_users(&conn)
+        .await
+        .into_iter()
+        .filter_map(|(user_uuid, last_active)| Some((user_uuid, last_active?)))
+        .collect();
+
     let mut users_json = Vec::with_capacity(users.len());
     for (u, sso_u) in users {
         let mut usr = u.to_json(&conn).await;
-        usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, &conn).await);
-        usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &conn).await);
-        usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, &conn).await));
+        let (attachment_count, attachment_size) = attachments.get(&u.uuid).copied().unwrap_or_default();
+        usr["cipher_count"] = json!(cipher_counts.get(&u.uuid).copied().unwrap_or_default());
+        usr["attachment_count"] = json!(attachment_count);
+        usr["attachment_size"] = json!(get_display_size(attachment_size));
         usr["user_enabled"] = json!(u.enabled);
         usr["created_at"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
-        usr["last_active"] = match u.last_active(&conn).await {
-            Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
+        usr["last_active"] = match last_active.get(&u.uuid) {
+            Some(dt) => json!(format_naive_datetime_local(dt, DT_FMT)),
             None => json!("Never"),
         };
 
