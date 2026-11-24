@@ -13,7 +13,7 @@ use crate::{
     CONFIG,
     api::{
         AnonymousNotify, ApiResult, EmptyResult, JsonResult, LogOutReason, Notify, PasswordOrOtpData,
-        core::{accept_org_invite, log_user_event, two_factor::email},
+        core::{accept_org_invite, accept_user_invitations, log_user_event, two_factor::email},
         master_password_policy, push_logout_to_relay, register_push_device, unregister_push_device,
     },
     auth::{ClientHeaders, ClientIp, Headers, decode_delete, decode_invite, decode_verify_email},
@@ -491,7 +491,7 @@ async fn is_email_2fa_required(member_id: Option<MembershipId>, conn: &DbConn) -
     false
 }
 
-pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
+pub async fn register(data: Json<RegisterData>, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     let data: RegisterData = data.into_inner();
     let email = data.email.to_lowercase();
 
@@ -591,7 +591,7 @@ pub async fn register(data: Json<RegisterData>, conn: DbConn) -> JsonResult {
                     err!("Registration email does not match invite email")
                 }
             } else if Invitation::take(&email, &conn).await {
-                Membership::accept_user_invitations(&user.uuid, &conn).await?;
+                accept_user_invitations(&user.uuid, &conn, &nt).await?;
                 user
             } else if CONFIG.is_signup_allowed(&email)
                 || (CONFIG.emergency_access_allowed()
@@ -703,7 +703,7 @@ fn validate_set_password_shape(body: &Value) -> EmptyResult {
 }
 
 #[post("/accounts/set-password", data = "<data>")]
-async fn post_set_password(data: Json<Value>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn post_set_password(data: Json<Value>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     let data = data.into_inner();
     validate_set_password_shape(&data)?;
     let Ok(data) = serde_json::from_value::<SetPasswordData>(data) else {
@@ -779,13 +779,13 @@ async fn post_set_password(data: Json<Value>, headers: Headers, conn: DbConn) ->
             err!("Failed to retrieve the invitation")
         };
 
-        accept_org_invite(&user, membership, None, &conn).await?;
+        accept_org_invite(&user, membership, None, &conn, &nt).await?;
     }
 
     if CONFIG.mail_enabled() {
         mail::send_welcome(&user.email.to_lowercase()).await?;
     } else {
-        Membership::accept_user_invitations(&user.uuid, &conn).await?;
+        accept_user_invitations(&user.uuid, &conn, &nt).await?;
     }
 
     log_user_event(EventType::UserChangedPassword, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
