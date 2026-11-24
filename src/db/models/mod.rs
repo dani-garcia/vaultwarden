@@ -32,7 +32,9 @@ pub use self::event::{Event, EventType};
 pub use self::favorite::Favorite;
 pub use self::folder::{Folder, FolderCipher, FolderId};
 pub use self::group::{CollectionGroup, Group, GroupId, GroupUser};
-pub use self::org_policy::{FillAssistPolicyData, OrgPolicy, OrgPolicyId, OrgPolicyType};
+pub use self::org_policy::{
+    FillAssistPolicyData, MaximumVaultTimeoutPolicyData, OrgPolicy, OrgPolicyId, OrgPolicyType,
+};
 #[cfg(all(test, sqlite))]
 pub(crate) use self::organization::test_flag;
 pub use self::organization::{

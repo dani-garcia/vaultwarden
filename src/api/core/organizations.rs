@@ -22,9 +22,9 @@ use crate::{
         models::{
             Cipher, CipherAccessScope, CipherId, Collection, CollectionCipher, CollectionGroup, CollectionId,
             CollectionUser, CustomPermission, Device, EventType, FillAssistPolicyData, Group, GroupId, GroupUser,
-            Invitation, KeyId, Membership, MembershipId, MembershipStatus, MembershipType, OrgPolicy, OrgPolicyType,
-            Organization, OrganizationApiKey, OrganizationId, TwoFactor, TwoFactorType, User, UserId,
-            custom_roles_enabled,
+            Invitation, KeyId, MaximumVaultTimeoutPolicyData, Membership, MembershipId, MembershipStatus,
+            MembershipType, OrgPolicy, OrgPolicyType, Organization, OrganizationApiKey, OrganizationId, TwoFactor,
+            TwoFactorType, User, UserId, custom_roles_enabled,
         },
     },
     mail,
@@ -2454,11 +2454,33 @@ async fn put_policy(
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let data: PolicyData = data.into_inner().policy;
+    let mut data: PolicyData = data.into_inner().policy;
 
     let Some(pol_type_enum) = OrgPolicyType::from_i32(pol_type) else {
         err!("Invalid or unsupported policy type")
     };
+
+    if pol_type_enum == OrgPolicyType::MaximumVaultTimeout && data.enabled {
+        if !OrgPolicy::is_enabled(&org_id, OrgPolicyType::SingleOrg, &conn).await {
+            err!("Single Organization policy is not enabled. It is mandatory for this policy to be enabled.")
+        }
+
+        let Some(timeout_data) = data.data.take() else {
+            err!("Vault Timeout policy data is required.")
+        };
+        let mut timeout_data: MaximumVaultTimeoutPolicyData = serde_json::from_value(timeout_data)?;
+        if let Err(message) = timeout_data.validate_and_normalize() {
+            err!(message)
+        }
+        data.data = Some(serde_json::to_value(timeout_data)?);
+    }
+
+    if pol_type_enum == OrgPolicyType::SingleOrg
+        && !data.enabled
+        && OrgPolicy::is_enabled(&org_id, OrgPolicyType::MaximumVaultTimeout, &conn).await
+    {
+        err!("Vault Timeout policy is enabled. It is not allowed to disable this policy.")
+    }
 
     let current_policy = OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await;
     let is_currently_enabled = current_policy.as_ref().is_some_and(|policy| policy.enabled);
@@ -2488,25 +2510,19 @@ async fn put_policy(
     // Now that groups are available we can enforce this option when wanted.
     // We put this behind a config option to prevent breaking current installation.
     if CONFIG.enforce_single_org_with_reset_pw_policy() {
-        if pol_type_enum == OrgPolicyType::ResetPassword && data.enabled {
-            let single_org_policy_enabled = OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::SingleOrg, &conn)
-                .await
-                .is_some_and(|p| p.enabled);
-
-            if !single_org_policy_enabled {
-                err!("Single Organization policy is not enabled. It is mandatory for this policy to be enabled.")
-            }
+        if pol_type_enum == OrgPolicyType::ResetPassword
+            && data.enabled
+            && !OrgPolicy::is_enabled(&org_id, OrgPolicyType::SingleOrg, &conn).await
+        {
+            err!("Single Organization policy is not enabled. It is mandatory for this policy to be enabled.")
         }
 
         // Also prevent the Single Org Policy to be disabled if the Reset Password policy is enabled
-        if pol_type_enum == OrgPolicyType::SingleOrg && !data.enabled {
-            let reset_pw_policy_enabled = OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::ResetPassword, &conn)
-                .await
-                .is_some_and(|p| p.enabled);
-
-            if reset_pw_policy_enabled {
-                err!("Account recovery policy is enabled. It is not allowed to disable this policy.")
-            }
+        if pol_type_enum == OrgPolicyType::SingleOrg
+            && !data.enabled
+            && OrgPolicy::is_enabled(&org_id, OrgPolicyType::ResetPassword, &conn).await
+        {
+            err!("Account recovery policy is enabled. It is not allowed to disable this policy.")
         }
     }
 
