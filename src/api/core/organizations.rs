@@ -2449,6 +2449,7 @@ async fn put_policy(
     pol_type: i32,
     data: Json<PutPolicy>,
     headers: ManagePoliciesHeaders,
+    nt: Notify<'_>,
     conn: DbConn,
 ) -> JsonResult {
     if org_id != headers.org_id {
@@ -2482,6 +2483,15 @@ async fn put_policy(
             err!("Turn off the Activate fill assist policy because it requires the Single organization policy.")
         }
     }
+
+    // Collect the members before applying the policy, since enabling the TwoFactorAuthentication or
+    // SingleOrg policy revokes members below, and those clients need to know about the change too.
+    let member_ids: Vec<UserId> = Membership::find_by_org(&org_id, &conn)
+        .await
+        .into_iter()
+        .filter(|m| m.has_status(MembershipStatus::Confirmed))
+        .map(|m| m.user_uuid)
+        .collect();
 
     // Bitwarden only allows the Reset Password policy when Single Org policy is enabled
     // Vaultwarden encouraged to use multiple orgs instead of groups because groups were not available in the past
@@ -2585,6 +2595,9 @@ async fn put_policy(
     .await;
 
     OrgPolicy::sync_send_policies(&policy, &conn).await?;
+
+    // Let the members sync, so the new policy applies without waiting for the next periodic sync
+    nt.send_policy_update(&policy, &member_ids, &conn).await;
 
     Ok(Json(policy.to_json()))
 }
@@ -3992,6 +4005,8 @@ mod tests {
     #[cfg(sqlite)]
     #[test]
     fn enabling_policy_exempts_actor_and_admin_and_revokes_only_on_transition() {
+        use crate::api::notifications::{WS_USERS, WebSocketUsers};
+        use std::sync::Arc;
         test_db::run(async |db| {
             let conn = db.conn();
             for policy in [OrgPolicyType::TwoFactorAuthentication, OrgPolicyType::SingleOrg] {
@@ -4017,6 +4032,8 @@ mod tests {
                         ip: headers.ip,
                         org_id: headers.org_id,
                     };
+                    let rocket = rocket::build().manage(Arc::clone(&WS_USERS));
+                    let notify = rocket.state::<Arc<WebSocketUsers>>().unwrap();
                     put_policy(
                         org.uuid.clone(),
                         policy as i32,
@@ -4027,6 +4044,7 @@ mod tests {
                             },
                         }),
                         headers,
+                        notify.into(),
                         db.conn(),
                     )
                     .await
