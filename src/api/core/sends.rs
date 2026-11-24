@@ -10,12 +10,12 @@ use serde_json::Value;
 
 use crate::{
     CONFIG,
-    api::{ApiResult, EmptyResult, JsonResult, Notify, UpdateType},
-    auth::{Headers, Host, SendHeaders},
+    api::{ApiResult, EmptyResult, JsonResult, Notify, UpdateType, core::log_send_event},
+    auth::{ClientHeaders, Headers, Host, SendHeaders},
     config::PathType,
     db::{
         DbConn, DbPool,
-        models::{Device, OrgPolicy, Send, SendFileId, SendId, SendType, UserId},
+        models::{Device, DeviceType, EventType, OrgPolicy, Send, SendFileId, SendId, SendType, UserId},
     },
     util::{NumberOrString, save_temp_file},
 };
@@ -59,9 +59,37 @@ pub fn routes() -> Vec<rocket::Route> {
 pub async fn purge_sends(pool: DbPool) {
     debug!("Purging sends");
     if let Ok(conn) = pool.get().await {
-        Send::purge(&conn).await;
+        // Like upstream's `DeleteSendsJob`, the deletions are logged, as done by the server
+        for send in Send::find_by_past_deletion_date(&conn).await {
+            if send.delete(&conn).await.is_ok() {
+                let event_type = send_event_type(&send, EventType::SendDeletedText, EventType::SendDeletedFile);
+                log_send_event(event_type, &send, DeviceType::Server as i32, None, &conn).await;
+            }
+        }
     } else {
         error!("Failed to get DB connection while purging sends");
+    }
+}
+
+/// The event type upstream logs for a change of this Send: `text` for a text Send, `file` for a file Send.
+fn send_event_type(send: &Send, text: EventType, file: EventType) -> EventType {
+    if send.atype == SendType::File as i32 {
+        file
+    } else {
+        text
+    }
+}
+
+/// Upstream logs which protection a new Send has. Sends with email verification are not supported.
+fn send_created_event_type(send: &Send) -> EventType {
+    if send.password_hash.is_some() {
+        send_event_type(
+            send,
+            EventType::SendCreatedTextWithPasswordProtection,
+            EventType::SendCreatedFileWithPasswordProtection,
+        )
+    } else {
+        send_event_type(send, EventType::SendCreatedText, EventType::SendCreatedFile)
     }
 }
 
@@ -198,6 +226,7 @@ async fn post_send(data: Json<SendData>, headers: Headers, conn: DbConn, nt: Not
         &conn,
     )
     .await;
+    log_send_event(send_created_event_type(&send), &send, headers.device.atype, Some(&headers.ip.ip), &conn).await;
 
     Ok(Json(send.to_json()))
 }
@@ -260,6 +289,8 @@ async fn post_send_file_v2(data: Json<SendData>, headers: Headers, conn: DbConn)
     o.insert(String::from("sizeName"), Value::String(crate::util::get_display_size(file_length)));
     send.data = serde_json::to_string(&data_value)?;
     send.save(&conn).await?;
+    // Like upstream, the creation is logged here, and not again when the file is uploaded
+    log_send_event(send_created_event_type(&send), &send, headers.device.atype, Some(&headers.ip.ip), &conn).await;
 
     Ok(Json(json!({
         "fileUploadType": 0, // 0 == Direct | 1 == Azure
@@ -323,12 +354,28 @@ async fn post_send_file_v2_data(
         err!("Send file does not match send data.", format!("Expected id {} got {file_id}", send_data.id));
     }
 
-    let size = data.data.len();
-    if size != send_data.size {
-        err!("Send file size does not match.", format!("Expected a file size of {} got {size}", send_data.size));
+    let file_path = format!("{send_id}/{file_id}");
+
+    // Like upstream, checked first, so that another upload can't delete a Send whose file was uploaded
+    if CONFIG.opendal_operator_for_path_type(&PathType::Sends)?.exists(&file_path).await? {
+        err!("File has already been uploaded.")
     }
 
-    let file_path = format!("{send_id}/{file_id}");
+    let size = data.data.len();
+    if size != send_data.size {
+        // Like upstream, a file of another size than announced deletes its Send, which is logged
+        send.delete(&conn).await?;
+        nt.send_send_update(
+            UpdateType::SyncSendDelete,
+            &send,
+            &send.update_users_revision(&conn).await,
+            &headers.device,
+            &conn,
+        )
+        .await;
+        log_send_event(EventType::SendDeletedFile, &send, headers.device.atype, Some(&headers.ip.ip), &conn).await;
+        err!("Send file size does not match.", format!("Expected a file size of {} got {size}", send_data.size));
+    }
 
     save_temp_file(&PathType::Sends, &file_path, data.data, false).await?;
 
@@ -345,16 +392,19 @@ async fn post_send_file_v2_data(
 }
 
 #[post("/sends/access")]
-async fn post_access(headers: SendHeaders, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+async fn post_access(headers: SendHeaders, client: ClientHeaders, conn: DbConn, nt: Notify<'_>) -> JsonResult {
     let Some(mut send) = Send::find_by_uuid(&headers.send_id, &conn).await else {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     };
     if !send.is_accessible() {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
-    // Files are incremented during the download
-    if send.atype == SendType::Text as i32 && !send.register_access(&conn).await? {
-        err_code!(SEND_INACCESSIBLE_MSG, 404)
+    // Files are incremented and logged during the download, like upstream
+    if send.atype == SendType::Text as i32 {
+        if !send.register_access(&conn).await? {
+            err_code!(SEND_INACCESSIBLE_MSG, 404)
+        }
+        log_send_event(EventType::SendAccessedText, &send, client.device_type, Some(&client.ip.ip), &conn).await;
     }
     process_access(send, conn, nt).await
 }
@@ -376,6 +426,7 @@ async fn process_access(send: Send, conn: DbConn, nt: Notify<'_>) -> JsonResult 
 async fn post_access_file(
     file_id: SendFileId,
     headers: SendHeaders,
+    client: ClientHeaders,
     host: Host,
     conn: DbConn,
     nt: Notify<'_>,
@@ -390,7 +441,7 @@ async fn post_access_file(
     if !send.register_access(&conn).await? {
         err_code!(SEND_INACCESSIBLE_MSG, 404)
     }
-    process_access_file(send, file_id, host, conn, nt).await
+    process_access_file(send, file_id, host, client, conn, nt).await
 }
 
 fn check_send_file_id(send: &Send, file_id: &SendFileId) -> EmptyResult {
@@ -403,7 +454,14 @@ fn check_send_file_id(send: &Send, file_id: &SendFileId) -> EmptyResult {
     }
 }
 
-async fn process_access_file(send: Send, file_id: SendFileId, host: Host, conn: DbConn, nt: Notify<'_>) -> JsonResult {
+async fn process_access_file(
+    send: Send,
+    file_id: SendFileId,
+    host: Host,
+    client: ClientHeaders,
+    conn: DbConn,
+    nt: Notify<'_>,
+) -> JsonResult {
     nt.send_send_update(
         UpdateType::SyncSendUpdate,
         &send,
@@ -413,10 +471,14 @@ async fn process_access_file(send: Send, file_id: SendFileId, host: Host, conn: 
     )
     .await;
 
+    let url = download_url(&host, &send.uuid, &file_id).await?;
+    // Upstream logs it once the download URL was created, not when the file is downloaded with it
+    log_send_event(EventType::SendAccessedFile, &send, client.device_type, Some(&client.ip.ip), &conn).await;
+
     Ok(Json(json!({
         "object": "send-fileDownload",
         "id": file_id,
-        "url": download_url(&host, &send.uuid, &file_id).await?,
+        "url": url,
     })))
 }
 
@@ -456,6 +518,8 @@ async fn put_send(send_id: SendId, data: Json<SendData>, headers: Headers, conn:
     }
 
     update_send_from_data(&mut send, data, &headers, &conn, &nt, UpdateType::SyncSendUpdate).await?;
+    let event_type = send_event_type(&send, EventType::SendEditedText, EventType::SendEditedFile);
+    log_send_event(event_type, &send, headers.device.atype, Some(&headers.ip.ip), &conn).await;
 
     Ok(Json(send.to_json()))
 }
@@ -531,6 +595,8 @@ async fn delete_send(send_id: SendId, headers: Headers, conn: DbConn, nt: Notify
         &conn,
     )
     .await;
+    let event_type = send_event_type(&send, EventType::SendDeletedText, EventType::SendDeletedFile);
+    log_send_event(event_type, &send, headers.device.atype, Some(&headers.ip.ip), &conn).await;
 
     Ok(())
 }
@@ -552,6 +618,8 @@ async fn put_remove_password(send_id: SendId, headers: Headers, conn: DbConn, nt
         &conn,
     )
     .await;
+    let event_type = send_event_type(&send, EventType::SendEditedText, EventType::SendEditedFile);
+    log_send_event(event_type, &send, headers.device.atype, Some(&headers.ip.ip), &conn).await;
 
     Ok(Json(send.to_json()))
 }

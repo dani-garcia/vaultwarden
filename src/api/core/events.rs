@@ -12,7 +12,7 @@ use crate::{
         DbConn, DbPool,
         models::{
             Cipher, CipherAccessScope, CipherId, CustomPermission, Event, EventType, Membership, MembershipId,
-            MembershipType, OrganizationId, UserId,
+            MembershipType, OrganizationId, Send, SendId, UserId,
         },
     },
     error::MapResult,
@@ -22,7 +22,7 @@ use crate::{
 /// ###############################################################################################################
 /// /api routes
 pub fn routes() -> Vec<Route> {
-    routes![get_org_events, get_cipher_events, get_user_events,]
+    routes![get_org_events, get_cipher_events, get_send_events, get_user_events,]
 }
 
 #[derive(FromForm)]
@@ -89,6 +89,39 @@ async fn get_cipher_events(cipher_id: CipherId, data: EventRange, headers: Heade
         let (start_date, end_date) = data.date_range()?;
 
         Event::find_by_cipher_uuid(&cipher_id, &org_id, &start_date, &end_date, &conn)
+            .await
+            .iter()
+            .map(Event::to_json)
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    Ok(Json(json!({
+        "data": events_json,
+        "object": "list",
+        "continuationToken": get_continuation_token(&events_json),
+    })))
+}
+
+// Upstream: https://github.com/bitwarden/server/blob/9c109b6b4/src/Api/Dirt/Controllers/EventsController.cs#L130
+#[get("/organizations/<org_id>/sends/<send_id>/events?<data..>")]
+async fn get_send_events(
+    org_id: OrganizationId,
+    send_id: SendId,
+    data: EventRange,
+    headers: AccessEventLogsHeaders,
+    conn: DbConn,
+) -> JsonResult {
+    if org_id != headers.org_id {
+        err!("Organization not found", "Organization id's do not match");
+    }
+    // Return an empty vec when org events are disabled.
+    // This prevents client errors
+    let events_json: Vec<Value> = if CONFIG.org_events_enabled() {
+        let (start_date, end_date) = data.date_range()?;
+
+        Event::find_by_org_and_send(&org_id, &send_id, &start_date, &end_date, &conn)
             .await
             .iter()
             .map(Event::to_json)
@@ -358,6 +391,44 @@ async fn log_event_impl(
     event.device_type = Some(device_type);
     event.ip_address = Some(ip.to_string());
     event.save(conn).await.unwrap_or(());
+}
+
+/// Logs an event of a Send, like upstream's `LogSendEventAsync`: one for its owner, and one in every organization the
+/// owner is a confirmed member of. `ip` is `None` when no request caused it, like the purge of expired Sends.
+/// Upstream: https://github.com/bitwarden/server/blob/9c109b6b4/src/Core/Dirt/Services/Implementations/EventService.cs#L714
+pub async fn log_send_event(event_type: EventType, send: &Send, device_type: i32, ip: Option<&IpAddr>, conn: &DbConn) {
+    // Upstream only logs the events of Sends owned by a user
+    let Some(owner) = &send.user_uuid else {
+        return;
+    };
+    if !CONFIG.org_events_enabled() {
+        return;
+    }
+    // Whoever accesses a Send is not known, so the organizations don't get an acting user for it, unlike for the
+    // owner's own changes. Upstream does credit the owner on the event without an organization.
+    let org_act_user = match event_type {
+        EventType::SendAccessedText | EventType::SendAccessedFile => None,
+        _ => Some(owner.clone()),
+    };
+    let new_event = |org_uuid: Option<OrganizationId>, act_user_uuid: Option<UserId>| {
+        let mut event = Event::new(event_type as i32, None);
+        event.user_uuid = Some(owner.clone());
+        event.org_uuid = org_uuid;
+        event.act_user_uuid = act_user_uuid;
+        event.send_uuid = Some(send.uuid.clone());
+        event.device_type = Some(device_type);
+        event.ip_address = ip.map(ToString::to_string);
+        event
+    };
+
+    let memberships = Membership::find_confirmed_by_user(owner, conn).await;
+    let mut events: Vec<Event> = Vec::with_capacity(memberships.len() + 1); // An event per org and one without an org
+    events.push(new_event(None, Some(owner.clone())));
+    for membership in memberships {
+        events.push(new_event(Some(membership.org_uuid), org_act_user.clone()));
+    }
+
+    Event::save_user_event(events, conn).await.unwrap_or(());
 }
 
 pub async fn event_cleanup_job(pool: DbPool) {
