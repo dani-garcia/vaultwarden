@@ -12,7 +12,7 @@ use crate::{
     error::MapResult,
 };
 
-use super::{CipherId, CollectionId, GroupId, MembershipId, OrgPolicyId, OrganizationId, UserId};
+use super::{CipherId, CollectionId, GroupId, MembershipId, OrgPolicyId, OrganizationId, SendId, UserId};
 
 // https://bitwarden.com/help/event-logs/
 
@@ -41,6 +41,7 @@ pub struct Event {
     pub provider_uuid: Option<String>,
     pub provider_user_uuid: Option<String>,
     pub provider_org_uuid: Option<String>,
+    pub send_uuid: Option<SendId>,
 }
 
 // Upstream enum: https://github.com/bitwarden/server/blob/v2026.6.2/src/Core/Dirt/Enums/EventType.cs
@@ -146,6 +147,26 @@ pub enum EventType {
     // OrganizationDomainNotVerified = 2003, // Not supported
 
     // SecretRetrieved = 2100, // Not supported
+
+    // Send
+    SendCreatedText = 2500,
+    // SendCreatedTextWithEmailVerification = 2501, // Not supported
+    SendCreatedTextWithPasswordProtection = 2502,
+    SendCreatedFile = 2503,
+    // SendCreatedFileWithEmailVerification = 2504, // Not supported
+    SendCreatedFileWithPasswordProtection = 2505,
+    SendEditedText = 2506,
+    SendEditedFile = 2507,
+    SendDeletedText = 2508,
+    SendDeletedFile = 2509,
+    SendAccessedText = 2510,
+    SendAccessedFile = 2511,
+    // SendPolicyDisabled = 2512, // Not supported, the Send controls policy doesn't disable existing Sends
+    // SendPolicyEnabled = 2513, // Not supported, the Send controls policy doesn't disable existing Sends
+    // SendCreatedItem = 2514, // Not supported
+    // SendEditedItem = 2515, // Not supported
+    // SendDeletedItem = 2516, // Not supported
+    // SendAccessedItem = 2517, // Not supported
 }
 
 /// Local methods
@@ -169,6 +190,7 @@ impl Event {
             provider_uuid: None,
             provider_user_uuid: None,
             provider_org_uuid: None,
+            send_uuid: None,
         }
     }
 
@@ -191,6 +213,7 @@ impl Event {
             "providerId": self.provider_uuid,
             "providerUserId": self.provider_user_uuid,
             "providerOrganizationId": self.provider_org_uuid,
+            "sendId": self.send_uuid,
             // "installationId": null, // Not supported
         })
     }
@@ -311,10 +334,15 @@ impl Event {
                 .filter(event::org_uuid.eq(org_uuid))
                 .filter(event::event_date.between(start, end))
                 .filter(
-                    event::org_user_uuid
-                        .eq(member_uuid)
-                        .or(event::user_uuid.eq(users_organizations::user_uuid.nullable()))
-                        .or(event::act_user_uuid.eq(users_organizations::user_uuid.nullable())),
+                    event::act_user_uuid.eq(users_organizations::user_uuid.nullable()).or(
+                        // Like upstream, Send events are only listed for whoever did them, so not the accesses to
+                        // the member's own Sends
+                        event::send_uuid.is_null().and(
+                            event::org_user_uuid
+                                .eq(member_uuid)
+                                .or(event::user_uuid.eq(users_organizations::user_uuid.nullable())),
+                        ),
+                    ),
                 )
                 .select(event::all_columns)
                 .order_by(event::event_date.desc())
@@ -335,6 +363,27 @@ impl Event {
         conn.run(move |conn| {
             event::table
                 .filter(event::cipher_uuid.eq(cipher_uuid))
+                .filter(event::org_uuid.eq(org_uuid))
+                .filter(event::event_date.between(start, end))
+                .order_by(event::event_date.desc())
+                .limit(Self::PAGE_SIZE)
+                .load::<Self>(conn)
+                .expect("Error filtering events")
+        })
+        .await
+    }
+
+    // Upstream SQL: https://github.com/bitwarden/server/blob/9c109b6b4/src/Sql/dbo/Dirt/Stored%20Procedures/Event_ReadPageBySendId.sql
+    pub async fn find_by_org_and_send(
+        org_uuid: &OrganizationId,
+        send_uuid: &SendId,
+        start: &NaiveDateTime,
+        end: &NaiveDateTime,
+        conn: &DbConn,
+    ) -> Vec<Self> {
+        conn.run(move |conn| {
+            event::table
+                .filter(event::send_uuid.eq(send_uuid))
                 .filter(event::org_uuid.eq(org_uuid))
                 .filter(event::event_date.between(start, end))
                 .order_by(event::event_date.desc())

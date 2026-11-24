@@ -289,12 +289,6 @@ impl Send {
     }
 
     /// Purge all sends that are past their deletion date.
-    pub async fn purge(conn: &DbConn) {
-        for send in Self::find_by_past_deletion_date(conn).await {
-            send.delete(conn).await.ok();
-        }
-    }
-
     pub async fn update_users_revision(&self, conn: &DbConn) -> Vec<UserId> {
         let mut user_uuids = Vec::new();
         if let Some(user_uuid) = &self.user_uuid {

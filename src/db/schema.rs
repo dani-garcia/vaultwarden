@@ -76,6 +76,7 @@ table! {
         provider_uuid -> Nullable<Text>,
         provider_user_uuid -> Nullable<Text>,
         provider_org_uuid -> Nullable<Text>,
+        send_uuid -> Nullable<Text>,
     }
 }
 
