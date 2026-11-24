@@ -779,6 +779,9 @@ make_config! {
         /// Two-Factor remember duration |> Number of days before a remembered Two-Factor login expires (min: 1, max: 90).
         two_factor_remember_days: i64,  true,   def,    30;
 
+        /// Enable WebAuthn 2FA prefer user verification |> Sets user verification to preferred instead of discouraged, improving compatibility with some security keys.
+        webauthn_2fa_prefer_user_verification: bool, true, def, false;
+
         /// Disable authenticator time drifted codes to be valid |> Enabling this only allows the current TOTP code to be valid
         /// TOTP codes of the previous and next 30 seconds will be invalid.
         authenticator_disable_time_drift: bool, true, def, false;
