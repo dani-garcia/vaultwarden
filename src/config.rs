@@ -788,6 +788,11 @@ make_config! {
         /// TOTP codes of the previous and next 30 seconds will be invalid.
         authenticator_disable_time_drift: bool, true, def, false;
 
+        /// Passkey login extra origins |> Origins that may log in with a passkey besides the vault and the official Chromium
+        /// extensions (Chrome Web Store, Edge and Opera add-ons), separated by commas. For Bitwarden clients with an origin
+        /// of their own, such as a self-built extension (`chrome-extension://<id>`) or an app (`android:apk-key-hash:<hash>`).
+        passkey_login_extra_origins:  String, true,   def,    String::new();
+
         /// Customize the enabled feature flags on the clients |> This is a comma separated list of feature flags to enable.
         experimental_client_feature_flags: String, false, def, String::new();
 
@@ -1114,6 +1119,18 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
     let whitelist = &cfg.signups_domains_whitelist;
     if !whitelist.is_empty() && whitelist.split(',').any(|d| d.trim().is_empty()) {
         err!("`SIGNUPS_DOMAINS_WHITELIST` contains empty tokens");
+    }
+
+    for origin in cfg.passkey_login_extra_origins.split(',').map(str::trim).filter(|o| !o.is_empty()) {
+        // A scheme and host (and port), or an opaque one for apps, without a path, query or fragment
+        let valid = Url::parse(origin.trim_end_matches('/')).is_ok_and(|url| {
+            url.query().is_none()
+                && url.fragment().is_none()
+                && (url.cannot_be_a_base() || url.path() == "/" || url.path().is_empty())
+        });
+        if !valid {
+            err!(format!("`PASSKEY_LOGIN_EXTRA_ORIGINS` contains an invalid origin: {origin}"));
+        }
     }
 
     let org_creation_users = cfg.org_creation_users.trim().to_lowercase();

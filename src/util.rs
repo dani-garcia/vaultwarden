@@ -969,6 +969,25 @@ pub fn is_valid_rsa_encrypted_string(value: &str) -> bool {
         && parts.iter().all(|part| !part.is_empty() && data_encoding::BASE64.decode(part.as_bytes()).is_ok())
 }
 
+/// Whether `value` has the form of a key wrapped by a symmetric key: AES-CBC-HMAC (type 2, a 16-byte IV, the
+/// ciphertext and a 32-byte MAC) or COSE (type 7, one piece), each piece canonical, padded base64.
+///
+/// Ref: <https://github.com/bitwarden/server/blob/341acc9d3d8988cec8fe05debfa6d557cf5ab749/src/Core/Utilities/EncryptedStringAttribute.cs#L19-L29>
+pub fn is_valid_symmetric_encrypted_string(value: &str) -> bool {
+    let (lengths, rest): (&[Option<usize>], &str) = match value.split_once('.') {
+        Some(("2", rest)) => (&[Some(16), None, Some(32)], rest),
+        Some(("7", rest)) => (&[None], rest),
+        _ => return false,
+    };
+    let parts: Vec<&str> = rest.split('|').collect();
+    parts.len() == lengths.len()
+        && parts.iter().zip(lengths).all(|(part, length)| {
+            data_encoding::BASE64
+                .decode(part.as_bytes())
+                .is_ok_and(|bytes| !bytes.is_empty() && length.is_none_or(|length| bytes.len() == length))
+        })
+}
+
 /// These are some tests to check that the implementations match
 /// The IPv4 can be all checked in 30 seconds or so and they are correct as of nightly 2023-07-17
 /// The IPV6 can't be checked in a reasonable time, so we check over a hundred billion random ones, so far correct

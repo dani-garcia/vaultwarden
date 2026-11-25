@@ -204,6 +204,9 @@ async fn sync(data: SyncData, headers: Headers, client_version: Option<ClientVer
     if let Some(v2_upgrade_token) = headers.user.v2_upgrade_token_json() {
         user_decryption["v2UpgradeToken"] = v2_upgrade_token;
     }
+    if let Some(prf_options) = super::webauthn_login::sync_prf_options(&headers.user.uuid, &conn).await {
+        user_decryption["webAuthnPrfOptions"] = prf_options;
+    }
 
     Ok(Json(json!({
         "profile": user_json,

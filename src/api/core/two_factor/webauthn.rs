@@ -203,7 +203,7 @@ struct EnableWebauthnData {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RegisterPublicKeyCredentialCopy {
+pub struct RegisterPublicKeyCredentialCopy {
     pub id: String,
     pub raw_id: Base64UrlSafeData,
     pub response: AuthenticatorAttestationResponseRawCopy,
@@ -242,6 +242,7 @@ pub struct PublicKeyCredentialCopy {
     pub id: String,
     pub raw_id: Base64UrlSafeData,
     pub response: AuthenticatorAssertionResponseRawCopy,
+    #[serde(default)]
     pub extensions: AuthenticationExtensionsClientOutputs,
     pub r#type: String,
 }

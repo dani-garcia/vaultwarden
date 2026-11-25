@@ -22,7 +22,7 @@ use macros::UuidFromParam;
 
 use super::{
     AuthRequest, Cipher, Device, EmergencyAccess, Favorite, Folder, Membership, MembershipType, TwoFactor,
-    TwoFactorIncomplete, UserSignatureKeyPair,
+    TwoFactorIncomplete, UserSignatureKeyPair, WebauthnCredential,
 };
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
@@ -527,6 +527,7 @@ impl User {
         TwoFactor::delete_all_by_user(&self.uuid, conn).await?;
         TwoFactorIncomplete::delete_all_by_user(&self.uuid, conn).await?;
         UserSignatureKeyPair::delete_all_by_user(&self.uuid, conn).await?;
+        WebauthnCredential::delete_all_by_user(&self.uuid, conn).await?;
         Invitation::take(&self.email, conn).await; // Delete invitation if any
 
         conn.run(move |conn| {
