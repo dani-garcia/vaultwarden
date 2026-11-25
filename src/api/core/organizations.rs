@@ -120,11 +120,12 @@ struct OrgData {
     plan_type: NumberOrString,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OrganizationUpdateData {
     billing_email: String,
     name: String,
+    keys: Option<OrgKeyData>,
 }
 
 #[derive(Deserialize)]
@@ -160,18 +161,24 @@ impl FullCollectionData {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CollectionGroupData {
+    #[serde(default)]
     hide_passwords: bool,
     id: GroupId,
+    #[serde(default)]
     read_only: bool,
+    #[serde(default)]
     manage: bool,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CollectionMembershipData {
+    #[serde(default)]
     hide_passwords: bool,
     id: MembershipId,
+    #[serde(default)]
     read_only: bool,
+    #[serde(default)]
     manage: bool,
 }
 
@@ -235,12 +242,14 @@ async fn delete_organization(
     headers: OwnerHeaders,
     conn: DbConn,
 ) -> EmptyResult {
+    let mut user = headers.user;
+
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
     let data: PasswordOrOtpData = data.into_inner();
 
-    data.validate(&headers.user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     match Organization::find_by_uuid(&org_id, &conn).await {
         None => err!("Organization not found"),
@@ -306,6 +315,16 @@ async fn put_organization(
 
     org.name = data.name;
     org.billing_email = data.billing_email.to_lowercase();
+
+    if let Some(keys) = data.keys
+        && !keys.public_key.trim().is_empty()
+        && !keys.encrypted_private_key.trim().is_empty()
+        && org.public_key.as_deref().is_none_or(|k| k.trim().is_empty())
+        && org.private_key.as_deref().is_none_or(|k| k.trim().is_empty())
+    {
+        org.public_key = Some(keys.public_key);
+        org.private_key = Some(keys.encrypted_private_key);
+    }
 
     org.save(&conn).await?;
 
@@ -2292,7 +2311,9 @@ async fn post_bulk_collections(data: Json<BulkCollectionsData>, headers: Headers
         // Only act on existing cipher uuid's
         // Do not abort the operation just ignore it, it could be a cipher was just deleted for example
         if let Some(cipher) = Cipher::find_by_uuid_and_org(cipher_id, &data.organization_id, &conn).await
-            && cipher.is_write_accessible_to_user(&headers.user.uuid, CipherAccessScope::OrganizationAdmin, &conn).await
+            && cipher
+                .is_in_editable_collection_by_user(&headers.user.uuid, CipherAccessScope::OrganizationAdmin, &conn)
+                .await
         {
             // When selecting a specific collection from the left filter list, and use the bulk option, you can remove an item from that collection
             // In these cases the client will call this endpoint twice, once for adding the new collections and a second for deleting.
@@ -2316,7 +2337,10 @@ async fn list_policies(org_id: OrganizationId, headers: ManagePoliciesHeaders, c
     if org_id != headers.org_id {
         err!("Organization not found", "Organization id's do not match");
     }
-    let policies = OrgPolicy::find_by_org(&org_id, &conn).await;
+    let mut policies = OrgPolicy::find_by_org(&org_id, &conn).await;
+    if !policies.iter().any(|p| p.has_type(OrgPolicyType::SendControls)) {
+        policies.push(OrgPolicy::synthesize_send_controls(&org_id, &policies));
+    }
     let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
 
     Ok(Json(json!({
@@ -2339,9 +2363,15 @@ async fn list_policies_token(org_id: OrganizationId, token: &str, conn: DbConn) 
         return Ok(Json(json!({})));
     }
 
-    // TODO: We receive the invite token as ?token=<>, validate it contains the org id
+    let Some(member) = Membership::find_by_uuid_and_org(&invite.member_id, &org_id, &conn).await else {
+        err!("Organization not found", "The invited membership no longer exists")
+    };
+    if member.user_uuid != invite.sub || member.status != MembershipStatus::Invited as i32 {
+        err!("Organization not found", "The membership is not a pending invitation of this user")
+    }
+
     let policies = OrgPolicy::find_by_org(&org_id, &conn).await;
-    let policies_json: Vec<Value> = policies.iter().map(OrgPolicy::to_json).collect();
+    let policies_json: Vec<Value> = policies.iter().filter(|p| p.enabled).map(OrgPolicy::to_json).collect();
 
     Ok(Json(json!({
         "data": policies_json,
@@ -2387,9 +2417,13 @@ async fn get_policy(org_id: OrganizationId, pol_type: i32, headers: ManagePolici
         err!("Invalid or unsupported policy type")
     };
 
-    let policy = OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn)
-        .await
-        .unwrap_or_else(|| OrgPolicy::new(org_id.clone(), pol_type_enum, false, "null".to_owned()));
+    let policy = match OrgPolicy::find_by_org_and_type(&org_id, pol_type_enum, &conn).await {
+        Some(p) => p,
+        None if pol_type_enum == OrgPolicyType::SendControls => {
+            OrgPolicy::synthesize_send_controls(&org_id, &OrgPolicy::find_by_org(&org_id, &conn).await)
+        }
+        None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "null".to_owned()),
+    };
 
     Ok(Json(policy.to_json()))
 }
@@ -2453,7 +2487,6 @@ async fn put_policy(
     // Vaultwarden encouraged to use multiple orgs instead of groups because groups were not available in the past
     // Now that groups are available we can enforce this option when wanted.
     // We put this behind a config option to prevent breaking current installation.
-    // Maybe we want to enable this by default in the future, but currently it is disabled by default.
     if CONFIG.enforce_single_org_with_reset_pw_policy() {
         if pol_type_enum == OrgPolicyType::ResetPassword && data.enabled {
             let single_org_policy_enabled = OrgPolicy::find_by_org_and_type(&org_id, OrgPolicyType::SingleOrg, &conn)
@@ -2529,13 +2562,15 @@ async fn put_policy(
             .await?;
     }
 
+    let policy_data = OrgPolicy::send_policy_data(pol_type_enum, data.data)?;
+
     let mut policy = match current_policy {
         Some(p) => p,
         None => OrgPolicy::new(org_id.clone(), pol_type_enum, false, "{}".to_owned()),
     };
 
     policy.enabled = data.enabled;
-    policy.data = serde_json::to_string(&data.data)?;
+    policy.data = serde_json::to_string(&policy_data)?;
     policy.save(&conn).await?;
 
     log_event(
@@ -2548,6 +2583,8 @@ async fn put_policy(
         &conn,
     )
     .await;
+
+    OrgPolicy::sync_send_policies(&policy, &conn).await?;
 
     Ok(Json(policy.to_json()))
 }
@@ -2987,8 +3024,11 @@ impl GroupRequest {
 #[serde(rename_all = "camelCase")]
 struct CollectionData {
     id: CollectionId,
+    #[serde(default)]
     read_only: bool,
+    #[serde(default)]
     hide_passwords: bool,
+    #[serde(default)]
     manage: bool,
 }
 
@@ -3707,11 +3747,12 @@ async fn put_reset_password_enrollment(
     data: Json<OrganizationUserResetPasswordEnrollmentRequest>,
     conn: DbConn,
 ) -> EmptyResult {
-    if user_id != headers.user.uuid {
+    let mut membership = headers.membership;
+    let mut user = headers.user;
+
+    if user_id != user.uuid {
         err!("User to enroll isn't member of required organization", "The user_id and acting user do not match");
     }
-
-    let mut membership = headers.membership;
 
     check_reset_password_applicable(&org_id, &conn).await?;
 
@@ -3727,7 +3768,7 @@ async fn put_reset_password_enrollment(
             master_password_hash: reset_request.master_password_hash,
             otp: reset_request.otp,
         }
-        .validate(&headers.user, true, &conn)
+        .validate(&mut user, true, &conn)
         .await?;
     }
 
@@ -3743,8 +3784,7 @@ async fn put_reset_password_enrollment(
         EventType::OrganizationUserResetPasswordWithdraw
     };
 
-    log_event(event_type, &membership.uuid, &org_id, &headers.user.uuid, headers.device.atype, &headers.ip.ip, &conn)
-        .await;
+    log_event(event_type, &membership.uuid, &org_id, &user.uuid, headers.device.atype, &headers.ip.ip, &conn).await;
 
     Ok(())
 }
@@ -3778,10 +3818,10 @@ async fn api_key(
         err!("Organization not found", "Organization id's do not match");
     }
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
     // Validate the owner users password/otp
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     let org_api_key = if let Some(mut org_api_key) = OrganizationApiKey::find_by_org_uuid(org_id, &conn).await {
         if rotate {

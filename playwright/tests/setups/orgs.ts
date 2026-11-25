@@ -29,6 +29,11 @@ export async function policies(test, page: Page, name: string) {
     });
 }
 
+// Web vault 2026.10 replaced the "Turn on" checkbox with an "Enable policy" switch, whose thumb covers the input.
+export async function enablePolicy(page: Page) {
+    await page.getByRole('checkbox', { name: 'Turn on' }).or(page.getByRole('switch', { name: 'Enable policy' })).check({ force: true });
+}
+
 export async function members(test, page: Page, name: string) {
     await test.step(`Navigate to ${name} members`, async () => {
         await page.locator('a').filter({ hasText: 'Admin Console' }).first().click();
@@ -46,13 +51,19 @@ export async function invite(test, page: Page, name: string, email: string) {
         await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
         await page.getByRole('button', { name: 'Invite member' }).click();
         await page.getByRole('textbox', { name: 'Email * (required)', exact: true }).fill(email);
-        await page.getByRole('tab', { name: 'Collections' }).click();
-        await page.getByRole('combobox', { name: 'Permission' }).click();
+        // Web vault 2026.10 moved collections from a tab into "More settings" and renamed Save to Invite.
+        const moreSettings = page.getByRole('button', { name: 'More settings' });
+        if (await moreSettings.count() > 0) {
+            await moreSettings.click();
+        } else {
+            await page.getByRole('tab', { name: 'Collections' }).click();
+        }
+        await page.getByTestId('permission').getByRole('combobox').click();
         await page.getByText('Edit items', { exact: true }).click();
-        await page.getByRole('combobox', { name: 'Select collections' }).click();
+        await page.getByRole('combobox', { name: /^(Select collections|Collections)/ }).click();
         await page.getByLabel('Options List').getByText('Default collection').click();
         await page.getByRole('columnheader', { name: 'Collection', exact: true }).click();
-        await page.getByRole('button', { name: 'Save' }).click();
+        await page.getByRole('button', { name: /^(Save|Invite)$/ }).click();
         await utils.checkNotification(page, 'User(s) invited');
     });
 }

@@ -246,14 +246,13 @@ impl Client {
 
         let mut exchange = self.core_client.exchange_code(oidc_code);
 
+        Self::check_client_verifier(&client_verifier, sso_auth)?;
         if CONFIG.sso_pkce() {
             exchange = exchange.set_pkce_verifier(PkceCodeVerifier::new(client_verifier.into()));
-        } else {
-            Self::check_client_verifier(&client_verifier, sso_auth)?;
         }
 
         match exchange.request_async(&self.http_client).await {
-            Err(err) => err!(format!("Failed to contact token endpoint: {:?}", err)),
+            Err(err) => err!(format!("Failed to contact token endpoint: {err}")),
             Ok(token_response) => {
                 let oidc_nonce = Nonce::new(sso_auth.nonce.clone());
 

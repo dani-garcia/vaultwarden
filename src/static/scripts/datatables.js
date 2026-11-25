@@ -4,13 +4,13 @@
  *
  * To rebuild or modify this file with the latest versions of the included
  * software please visit:
- *   https://datatables.net/download/#bs5/dt-3.1.4
+ *   https://datatables.net/download/#bs5/dt-3.1.5
  *
  * Included libraries:
- *   DataTables 3.1.4
+ *   DataTables 3.1.5
  */
 
-/*! DataTables 3.1.4
+/*! DataTables 3.1.5
  * Copyright (c) SpryMedia Ltd - datatables.net/license
  */
 
@@ -22,9 +22,6 @@
 		});
 	}
 	else if (typeof exports === 'object') {
-		// CommonJS
-		var cjsRequires = function (root) {		};
-
 		if (typeof window === 'undefined') {
 			module.exports = function (root) {
 				if (! root) {
@@ -32,13 +29,11 @@
 					// root. This will give an error otherwise
 					root = window;
 				}
-
-				cjsRequires(root);
+				
 				return factory(root, root.document);
 			};
 		}
 		else {
-			cjsRequires(window);
 			module.exports = factory(window, window.document);
 		}
 	}
@@ -276,7 +271,7 @@ function dom(input) {
  * @returns true if an HTML element was passed in
  */
 function element(input) {
-    return typeof input === 'object' && input.nodeName;
+    return input && typeof input === 'object' && input.nodeName;
 }
 /**
  * Check if a value is empty or not. Note that a string with `-` is considered
@@ -767,7 +762,7 @@ function ajax(optionsIn) {
                 // noop
             }
         }
-        if (statusText === 'success') {
+        if (statusText === 'success' || statusText === 'nocontent') {
             callback(options.success, responseData, statusText, xhr);
         }
         else {
@@ -8720,7 +8715,7 @@ const ext = {
     /**
      * DataTables build type (expanded by the download builder)
      */
-    builder: 'bs5/dt-3.1.4',
+    builder: 'bs5/dt-3.1.5',
     /**
      * Buttons. For use with the Buttons extension for DataTables. This is
      * defined here so other extensions can define buttons regardless of load
@@ -8866,7 +8861,7 @@ const ext = {
      * Software version
      *  @type string
      */
-    version: '3.1.4'
+    version: '3.1.5'
 };
 //
 // Backwards compatibility. Alias to pre 1.10 Hungarian notation counter parts
@@ -9535,8 +9530,10 @@ register('ready()', function (fn) {
             fn.call(api);
         }
         else {
-            this.on('init.dt.DT', function () {
-                fn.call(api);
+            this.on('init.dt.DT', function (e, s) {
+                if (ctx.includes(s)) {
+                    fn.call(api);
+                }
             });
         }
     });
@@ -10803,20 +10800,25 @@ function selectRows(settings, selector, opts) {
             }
         }
         // ID selector. Want to always be able to select rows by id, regardless
-        // of if the tr element has been created or not, so can't rely upon
-        // jQuery here - hence a custom implementation. This does not match
-        // Sizzle's fast selector or HTML4 - in HTML5 the ID can be anything,
-        // but to select it using a CSS selector engine (like Sizzle or
-        // querySelect) it would need to need to be escaped for some characters.
-        // DataTables simplifies this for row selectors since you can select
-        // only a row. A # indicates an id any anything that follows is the id -
-        // unescaped.
+        // of if the tr element has been created or not, so can't rely upon the
+        // DOM here - hence a custom implementation. In HTML5 the ID can be
+        // anything, but to select it using a CSS selector engine it would need
+        // to need to be escaped for some characters. DataTables simplifies this
+        // for row selectors since you can select only a row. A # indicates an
+        // id any anything that follows is the id - unescaped.
         if (typeof sel === 'string') {
             if (sel.charAt(0) === '#') {
                 // get row index from id
                 var rowObj = settings.ids[sel.replace(/^#/, '')];
                 if (rowObj !== undefined) {
                     return [rowObj.idx];
+                }
+                // If it was a basic ID selector, and it didn't match, in the
+                // above, then return here, as it won't match at all. Note that
+                // this check is slightly less restrictive than CSS IDs, in that
+                // it allows a leading digit or dash to be used.
+                if (sel.match(/^#[a-zA-Z0-9_-]*$/)) {
+                    return [];
                 }
                 // need to fall through to selector in case there is DOM id that
                 // matches
@@ -12506,19 +12508,22 @@ const DataTable = function (selector, options) {
     if (factory(selector, options)) {
         return DataTable;
     }
-    // Allow access to the API from the core class
-    this.api = () => {
-        return new Api(selector);
-    };
     // Backwards compatibility with this "class" being exposed as
     // `$().dataTable()`. We can't simply provide that as a wrapper, as there
     // are properties on this class which are expected to be exposed.
     if (typeof this.jquery === 'string') {
+        let els = this.toArray();
         // Typescript doesn't like the `return api` from the constructor, but is
         // it valid Javascript, and allows backwards compatibility, hence the any
-        new DataTable(this.toArray(), selector); // note argument shift
+        new DataTable(els, selector); // note argument shift
+        // jQuery specific api method
+        this.api = () => new Api(els);
         return this;
     }
+    // Allow access to the API from the core class
+    this.api = () => {
+        return new Api(selector);
+    };
     var emptyInit = options === undefined;
     let tableEls = Dom.s(selector);
     let len = tableEls.count();
@@ -12963,13 +12968,6 @@ return DataTable;
 		});
 	}
 	else if (typeof exports === 'object') {
-		// CommonJS
-		var cjsRequires = function (root) {
-			if (! root.DataTable) {
-				require('datatables.net')(root);
-			}
-		};
-
 		if (typeof window === 'undefined') {
 			module.exports = function (root) {
 				if (! root) {
@@ -12977,14 +12975,20 @@ return DataTable;
 					// root. This will give an error otherwise
 					root = window;
 				}
+				
+				var DataTable = root.DataTable ?
+					root.DataTable :
+					require('datatables.net')(root);
 
-				cjsRequires(root);
-				return factory(root, root.document, root.DataTable);
+				return factory(root, root.document, DataTable);
 			};
 		}
 		else {
-			cjsRequires(window);
-			module.exports = factory(window, window.document, window.DataTable);
+			var DataTable = window.DataTable ?
+				window.DataTable :
+				require('datatables.net');
+
+			module.exports = factory(window, window.document, DataTable);
 		}
 	}
 	else {

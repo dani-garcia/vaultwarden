@@ -147,7 +147,7 @@ impl Cors {
 
     // Check a request's `Origin` header against the list of allowed origins.
     // If a match exists, return it. Otherwise, return None.
-    fn get_allowed_origin(headers: &HeaderMap<'_>) -> Option<String> {
+    fn get_allowed_origin(headers: &HeaderMap<'_>, allow_sso: bool) -> Option<String> {
         let origin = Self::get_header(headers, "Origin");
         let safari_extension_origin = "file://";
         let desktop_custom_file_origin = "bw-desktop-file://bundle";
@@ -155,7 +155,7 @@ impl Cors {
         if origin == CONFIG.domain_origin()
             || origin == safari_extension_origin
             || origin == desktop_custom_file_origin
-            || (CONFIG.sso_enabled() && origin == CONFIG.sso_authority())
+            || (allow_sso && CONFIG.sso_enabled() && origin == CONFIG.sso_authority())
         {
             Some(origin)
         } else {
@@ -175,8 +175,10 @@ impl Fairing for Cors {
 
     async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
         let req_headers = request.headers();
+        // The admin panel authenticates with a cookie, so the SSO provider's pages must not reach it
+        let allow_sso = !request.uri().path().as_str().starts_with(&format!("{}/admin", CONFIG.domain_path()));
 
-        if let Some(origin) = Self::get_allowed_origin(req_headers) {
+        if let Some(origin) = Self::get_allowed_origin(req_headers, allow_sso) {
             response.set_header(Header::new("Access-Control-Allow-Origin", origin));
         }
 

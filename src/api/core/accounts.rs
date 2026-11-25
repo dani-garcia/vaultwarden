@@ -21,10 +21,10 @@ use crate::{
     db::{
         DbConn, DbPool,
         models::{
-            AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceType, DeviceWithAuthRequest,
-            EmergencyAccess, EmergencyAccessId, EventType, Folder, FolderId, Invitation, KeyId, Membership,
-            MembershipId, OrgPolicy, OrgPolicyType, Organization, OrganizationId, Send, SendId, SignatureAlgorithm,
-            User, UserId, UserKdfType, UserSignatureKeyPair, WebauthnCredential,
+            AuthRequest, AuthRequestId, Cipher, CipherId, Device, DeviceId, DeviceWithAuthRequest, EmergencyAccess,
+            EmergencyAccessId, EventType, Folder, FolderId, Invitation, KeyId, Membership, MembershipId, OrgPolicy,
+            OrgPolicyType, Organization, OrganizationId, Send, SendId, SignatureAlgorithm, User, UserId, UserKdfType,
+            UserSignatureKeyPair, WebauthnCredential,
         },
     },
     mail,
@@ -909,7 +909,9 @@ async fn get_keys(headers: Headers, conn: DbConn) -> JsonResult {
 #[serde(rename_all = "camelCase")]
 struct PostKeysData {
     // Required like upstream, even next to `accountKeys`
+    #[serde(alias = "PublicKey")]
     public_key: Option<String>,
+    #[serde(alias = "EncryptedPrivateKey")]
     encrypted_private_key: Option<String>,
     account_keys: Option<AccountKeysData>,
     // The id of the user key these account keys belong to, only honored for v2 `accountKeys`
@@ -1039,8 +1041,8 @@ async fn post_password(data: Json<ChangePassData>, headers: Headers, conn: DbCon
 }
 
 fn set_kdf_data(user: &mut User, data: &KDFData) -> EmptyResult {
-    if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < 100_000 {
-        err!("PBKDF2 KDF iterations must be at least 100000.")
+    if data.kdf == UserKdfType::Pbkdf2 as i32 && data.kdf_iterations < CONFIG.client_kdf_iter() {
+        err!(format!("PBKDF2 KDF iterations must be at least {}.", CONFIG.client_kdf_iter()))
     }
 
     if data.kdf == UserKdfType::Argon2id as i32 {
@@ -1885,7 +1887,7 @@ async fn post_sstamp(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbCo
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     user.reset_security_stamp(&conn).await?;
     let save_result = user.save(&conn).await;
@@ -2143,9 +2145,9 @@ async fn post_delete_account(
 #[delete("/accounts", data = "<data>")]
 async fn delete_account(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn, nt: Notify<'_>) -> EmptyResult {
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
+    let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     // The devices are deleted together with the user, so check for push devices beforehand
     let has_push_device = CONFIG.push_enabled() && Device::check_user_has_push_device(&user.uuid, &conn).await;
@@ -2226,15 +2228,15 @@ fn unknown_email_kdf(email: &str) -> (i32, i32, Option<i32>, Option<i32>) {
     const PBKDF2: i32 = UserKdfType::Pbkdf2 as i32;
     const ARGON2ID: i32 = UserKdfType::Argon2id as i32;
     // Same list as upstream, the default is in it twice to give it more weight
-    const KDF_SETTINGS: [(i32, i32, Option<i32>, Option<i32>); 6] = [
-        (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
-        (User::CLIENT_KDF_TYPE_DEFAULT, User::CLIENT_KDF_ITER_DEFAULT, None, None),
+    let kdf_settings: [(i32, i32, Option<i32>, Option<i32>); 6] = [
+        (User::CLIENT_KDF_TYPE_DEFAULT, CONFIG.client_kdf_iter(), None, None),
+        (User::CLIENT_KDF_TYPE_DEFAULT, CONFIG.client_kdf_iter(), None, None),
         (PBKDF2, 100_000, None, None),
         (PBKDF2, 5_000, None, None),
         (ARGON2ID, 3, Some(64), Some(4)),
         (ARGON2ID, 6, Some(32), Some(4)),
     ];
-    KDF_SETTINGS[crate::auth::prelogin_kdf_index(email, KDF_SETTINGS.len())]
+    kdf_settings[crate::auth::prelogin_kdf_index(email, kdf_settings.len())]
 }
 
 pub async fn prelogin(data: Json<PreloginData>, ip: ClientIp, conn: DbConn) -> JsonResult {
@@ -2271,19 +2273,6 @@ struct SecretVerificationRequest {
     master_password_hash: String,
 }
 
-// Change the KDF Iterations if necessary
-pub async fn kdf_upgrade(user: &mut User, pwd_hash: &str, conn: &DbConn) -> ApiResult<()> {
-    if user.password_iterations < CONFIG.password_iterations() {
-        user.password_iterations = CONFIG.password_iterations();
-        user.set_password(pwd_hash, None, false, None, conn).await?;
-
-        if let Err(e) = user.save(conn).await {
-            error!("Error updating user: {e:#?}");
-        }
-    }
-    Ok(())
-}
-
 #[post("/accounts/verify-password", data = "<data>")]
 async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: SecretVerificationRequest = data.into_inner();
@@ -2293,7 +2282,7 @@ async fn verify_password(data: Json<SecretVerificationRequest>, headers: Headers
         err!("Invalid password")
     }
 
-    kdf_upgrade(&mut user, &data.master_password_hash, &conn).await?;
+    user.check_persist_kdf_upgrade(&data.master_password_hash, &conn).await?;
 
     Ok(Json(master_password_policy(&user, &conn).await))
 }
@@ -2302,7 +2291,7 @@ async fn update_api_key(data: Json<PasswordOrOtpData>, rotate: bool, headers: He
     let data: PasswordOrOtpData = data.into_inner();
     let mut user = headers.user;
 
-    data.validate(&user, true, &conn).await?;
+    data.validate(&mut user, true, &conn).await?;
 
     if rotate || user.api_key.is_none() {
         user.api_key = Some(crypto::generate_api_key());
@@ -2527,19 +2516,7 @@ async fn post_auth_request(
     )
     .await;
 
-    Ok(Json(json!({
-        "id": auth_request.uuid,
-        "publicKey": auth_request.public_key,
-        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-        "requestIpAddress": auth_request.request_ip,
-        "key": null,
-        "masterPasswordHash": null,
-        "creationDate": format_date(&auth_request.creation_date),
-        "responseDate": null,
-        "requestApproved": false,
-        "origin": CONFIG.domain_origin(),
-        "object": "auth-request"
-    })))
+    Ok(Json(auth_request.to_json()))
 }
 
 #[get("/auth-requests/<auth_request_id>")]
@@ -2549,21 +2526,7 @@ async fn get_auth_request(auth_request_id: AuthRequestId, headers: Headers, conn
         err!("AuthRequest doesn't exist", "Record not found or user uuid does not match")
     };
 
-    let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
-
-    Ok(Json(json!({
-        "id": &auth_request_id,
-        "publicKey": auth_request.public_key,
-        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-        "requestIpAddress": auth_request.request_ip,
-        "key": auth_request.enc_key,
-        "masterPasswordHash": auth_request.master_password_hash,
-        "creationDate": format_date(&auth_request.creation_date),
-        "responseDate": response_date_utc,
-        "requestApproved": auth_request.approved,
-        "origin": CONFIG.domain_origin(),
-        "object":"auth-request"
-    })))
+    Ok(Json(auth_request.to_json()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -2598,15 +2561,14 @@ async fn put_auth_request(
         err!("An authentication request with the same device already exists")
     }
 
-    let response_date = Utc::now().naive_utc();
-    let response_date_utc = format_date(&response_date);
+    // Set the date now so that the response returns it
+    auth_request.response_date = Some(Utc::now().naive_utc());
 
     if data.request_approved {
         auth_request.approved = Some(data.request_approved);
         auth_request.enc_key = Some(data.key);
         auth_request.master_password_hash = data.master_password_hash;
         auth_request.response_device_id = Some(data.device_identifier.clone());
-        auth_request.response_date = Some(response_date);
         auth_request.save(&conn).await?;
 
         ant.send_auth_response(&auth_request.user_uuid, &auth_request.uuid).await;
@@ -2633,19 +2595,7 @@ async fn put_auth_request(
         .await;
     }
 
-    Ok(Json(json!({
-        "id": &auth_request_id,
-        "publicKey": auth_request.public_key,
-        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-        "requestIpAddress": auth_request.request_ip,
-        "key": auth_request.enc_key,
-        "masterPasswordHash": auth_request.master_password_hash,
-        "creationDate": format_date(&auth_request.creation_date),
-        "responseDate": response_date_utc,
-        "requestApproved": auth_request.approved,
-        "origin": CONFIG.domain_origin(),
-        "object":"auth-request"
-    })))
+    Ok(Json(auth_request.to_json()))
 }
 
 #[get("/auth-requests/<auth_request_id>/response?<code>")]
@@ -2668,21 +2618,7 @@ async fn get_auth_request_response(
         err!("AuthRequest doesn't exist", "Invalid device, IP or code")
     }
 
-    let response_date_utc = auth_request.response_date.map(|response_date| format_date(&response_date));
-
-    Ok(Json(json!({
-        "id": &auth_request_id,
-        "publicKey": auth_request.public_key,
-        "requestDeviceType": DeviceType::from_i32(auth_request.device_type).to_string(),
-        "requestIpAddress": auth_request.request_ip,
-        "key": auth_request.enc_key,
-        "masterPasswordHash": auth_request.master_password_hash,
-        "creationDate": format_date(&auth_request.creation_date),
-        "responseDate": response_date_utc,
-        "requestApproved": auth_request.approved,
-        "origin": CONFIG.domain_origin(),
-        "object":"auth-request"
-    })))
+    Ok(Json(auth_request.to_json()))
 }
 
 // Now unused but not yet removed
@@ -2700,23 +2636,8 @@ async fn get_auth_requests_pending(headers: Headers, conn: DbConn) -> JsonResult
         "data": auth_requests
             .iter()
             .filter(|request| request.approved.is_none())
-            .map(|request| {
-            let response_date_utc = request.response_date.map(|response_date| format_date(&response_date));
-
-            json!({
-                "id": request.uuid,
-                "publicKey": request.public_key,
-                "requestDeviceType": DeviceType::from_i32(request.device_type).to_string(),
-                "requestIpAddress": request.request_ip,
-                "key": request.enc_key,
-                "masterPasswordHash": request.master_password_hash,
-                "creationDate": format_date(&request.creation_date),
-                "responseDate": response_date_utc,
-                "requestApproved": request.approved,
-                "origin": CONFIG.domain_origin(),
-                "object":"auth-request"
-            })
-        }).collect::<Vec<Value>>(),
+            .map(AuthRequest::to_json)
+            .collect::<Vec<Value>>(),
         "continuationToken": null,
         "object": "list"
     })))

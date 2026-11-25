@@ -258,8 +258,8 @@ async fn get_api_webauthn(headers: Headers, conn: DbConn) -> Json<Value> {
 async fn post_attestation_options(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     check_passkey_creation_allowed()?;
     let data: PasswordOrOtpData = data.into_inner();
-    let user = headers.user;
-    data.validate(&user, true, &conn).await?;
+    let mut user = headers.user;
+    data.validate(&mut user, true, &conn).await?;
 
     let exclude = WebauthnCredential::find_by_user(&user.uuid, &conn)
         .await
@@ -299,9 +299,10 @@ async fn post_attestation_options(data: Json<PasswordOrOtpData>, headers: Header
 async fn post_assertion_options(data: Json<PasswordOrOtpData>, headers: Headers, conn: DbConn) -> JsonResult {
     check_webauthn_supported()?;
     let data: PasswordOrOtpData = data.into_inner();
-    data.validate(&headers.user, true, &conn).await?;
+    let mut user = headers.user;
+    data.validate(&mut user, true, &conn).await?;
 
-    assertion_options(TokenScope::UpdateKeySet, Some(&headers.user.uuid))
+    assertion_options(TokenScope::UpdateKeySet, Some(&user.uuid))
 }
 
 #[derive(Deserialize)]
@@ -401,9 +402,10 @@ async fn delete_credential(
     conn: DbConn,
 ) -> EmptyResult {
     let data: PasswordOrOtpData = data.into_inner();
-    data.validate(&headers.user, true, &conn).await?;
+    let mut user = headers.user;
+    data.validate(&mut user, true, &conn).await?;
 
-    if !WebauthnCredential::delete_by_uuid_and_user(&id, &headers.user.uuid, &conn).await? {
+    if !WebauthnCredential::delete_by_uuid_and_user(&id, &user.uuid, &conn).await? {
         err_code!("Credential not found.", Status::NotFound.code)
     }
     Ok(())
