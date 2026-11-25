@@ -388,3 +388,87 @@ pub struct DeviceId(String);
 
 #[derive(Clone, Debug, DieselNewType, Display, From, FromForm, Serialize, Deserialize, UuidFromParam)]
 pub struct PushId(pub String);
+
+#[cfg(test)]
+mod tests {
+    use super::{Device, DeviceId, DeviceType, UserId};
+
+    #[test]
+    fn from_i32_maps_every_known_client_value() {
+        let expected = [
+            (0, DeviceType::Android),
+            (1, DeviceType::Ios),
+            (2, DeviceType::ChromeExtension),
+            (3, DeviceType::FirefoxExtension),
+            (4, DeviceType::OperaExtension),
+            (5, DeviceType::EdgeExtension),
+            (6, DeviceType::WindowsDesktop),
+            (7, DeviceType::MacOsDesktop),
+            (8, DeviceType::LinuxDesktop),
+            (9, DeviceType::ChromeBrowser),
+            (10, DeviceType::FirefoxBrowser),
+            (11, DeviceType::OperaBrowser),
+            (12, DeviceType::EdgeBrowser),
+            (13, DeviceType::IEBrowser),
+            (14, DeviceType::UnknownBrowser),
+            (15, DeviceType::AndroidAmazon),
+            (16, DeviceType::Uwp),
+            (17, DeviceType::SafariBrowser),
+            (18, DeviceType::VivaldiBrowser),
+            (19, DeviceType::VivaldiExtension),
+            (20, DeviceType::SafariExtension),
+            (21, DeviceType::Sdk),
+            (22, DeviceType::Server),
+            (23, DeviceType::WindowsCLI),
+            (24, DeviceType::MacOsCLI),
+            (25, DeviceType::LinuxCLI),
+            (26, DeviceType::DuckDuckGoBrowser),
+        ];
+        for (value, expected) in expected {
+            assert_eq!(DeviceType::from_i32(value) as i32, expected as i32);
+        }
+    }
+
+    #[test]
+    fn from_i32_maps_unknown_values_to_unknown_browser() {
+        for value in [27, i32::MAX, -1, i32::MIN] {
+            assert_eq!(DeviceType::from_i32(value) as i32, DeviceType::UnknownBrowser as i32);
+        }
+    }
+
+    fn device(atype: i32) -> Device {
+        Device::new(
+            DeviceId::from("5da58ede-b403-432f-8be9-3dd4a2589d74".to_string()),
+            UserId::from("6b15dcbb-b0ee-4060-8e2b-9f4e3d989836".to_string()),
+            "Test device".into(),
+            atype,
+        )
+    }
+
+    #[test]
+    fn a_freshly_registered_device_is_new_and_becomes_stale() {
+        assert!(device(9).is_new());
+
+        let mut dev = device(9);
+        dev.updated_at += chrono::TimeDelta::seconds(1);
+        assert!(!dev.is_new());
+    }
+
+    #[test]
+    fn devices_are_categorized_by_type() {
+        for atype in [23, 24, 25] {
+            assert!(device(atype).is_cli(), "atype {atype} should be a CLI");
+            assert!(!device(atype).is_mobile());
+        }
+        for atype in [0, 1] {
+            assert!(device(atype).is_mobile(), "atype {atype} should be mobile");
+            assert!(device(atype).is_push_device(), "atype {atype} should be a push device");
+            assert!(!device(atype).is_cli());
+        }
+        // Desktop browsers are neither CLI nor mobile nor push devices
+        let desktop = device(9);
+        assert!(!desktop.is_cli());
+        assert!(!desktop.is_mobile());
+        assert!(!desktop.is_push_device());
+    }
+}
