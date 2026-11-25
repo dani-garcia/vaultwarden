@@ -10,6 +10,7 @@ use diesel::{
 };
 
 use crate::{
+    CONFIG,
     api::EmptyResult,
     db::{DbConn, DbPool, schema::sso_auth},
     error::MapResult,
@@ -35,9 +36,130 @@ pub struct OIDCAuthenticatedUser {
     pub email: String,
     pub email_verified: Option<bool>,
     pub user_name: Option<String>,
+    pub acr: Option<String>,
+    pub amr: Option<Vec<String>>,
+}
+
+impl OIDCAuthenticatedUser {
+    pub fn should_skip_2fa(&self) -> bool {
+        let skip_mode = CONFIG.sso_2fa_skip();
+        let acr = CONFIG.sso_2fa_acr();
+        let amr_values = CONFIG.sso_2fa_amr_vec();
+
+        Self::should_skip_2fa_with(&skip_mode, self.acr.as_deref(), self.amr.as_deref(), &acr, &amr_values)
+    }
+
+    fn should_skip_2fa_with(
+        skip_mode: &str,
+        user_acr: Option<&str>,
+        user_amr: Option<&[String]>,
+        configured_acr: &str,
+        configured_amr: &[String],
+    ) -> bool {
+        match skip_mode {
+            "true" => true,
+            "auto" => {
+                (!configured_acr.is_empty() && user_acr == Some(configured_acr))
+                    || user_amr.is_some_and(|methods| {
+                        methods.iter().any(|method| {
+                            configured_amr.contains(method)
+                                && (method != "otp" || methods.iter().any(|other| other == "pwd"))
+                        })
+                    })
+            }
+            _ => false,
+        }
+    }
 }
 
 impl_FromToSqlText!(OIDCAuthenticatedUser);
+
+#[cfg(test)]
+mod tests {
+    use super::OIDCAuthenticatedUser;
+
+    #[test]
+    fn two_factor_skip_modes_are_respected() {
+        assert!(!OIDCAuthenticatedUser::should_skip_2fa_with("false", None, None, "mfa", &[]));
+        assert!(OIDCAuthenticatedUser::should_skip_2fa_with("true", None, None, "", &[]));
+        assert!(!OIDCAuthenticatedUser::should_skip_2fa_with("invalid", Some("mfa"), None, "mfa", &[]));
+    }
+
+    #[test]
+    fn auto_mode_matches_configured_acr_exactly() {
+        assert!(OIDCAuthenticatedUser::should_skip_2fa_with(
+            "auto",
+            Some("urn:example:mfa"),
+            None,
+            "urn:example:mfa",
+            &[]
+        ));
+        assert!(!OIDCAuthenticatedUser::should_skip_2fa_with(
+            "auto",
+            Some("urn:example:loa:2"),
+            None,
+            "urn:example:mfa",
+            &[]
+        ));
+        assert!(!OIDCAuthenticatedUser::should_skip_2fa_with(
+            "auto",
+            Some("URN:EXAMPLE:MFA"),
+            None,
+            "urn:example:mfa",
+            &[]
+        ));
+    }
+
+    #[test]
+    fn auto_mode_matches_configured_amr_exactly() {
+        let accepted_amr = vec!["mfa".to_owned()];
+        let otp_only_amr = vec!["otp".to_owned()];
+        let password_and_otp_amr = vec!["pwd".to_owned(), "otp".to_owned()];
+
+        assert!(OIDCAuthenticatedUser::should_skip_2fa_with("auto", None, Some(&accepted_amr), "", &accepted_amr));
+        assert!(!OIDCAuthenticatedUser::should_skip_2fa_with(
+            "auto",
+            None,
+            Some(&otp_only_amr),
+            "",
+            &["otp".to_owned()]
+        ));
+        assert!(OIDCAuthenticatedUser::should_skip_2fa_with(
+            "auto",
+            None,
+            Some(&password_and_otp_amr),
+            "",
+            &["otp".to_owned()]
+        ));
+        assert!(!OIDCAuthenticatedUser::should_skip_2fa_with("auto", None, None, "", &accepted_amr));
+    }
+
+    #[test]
+    fn auto_mode_matches_configured_passwordless_methods() {
+        let passkey_amr = vec!["webauthn".to_owned()];
+
+        assert!(OIDCAuthenticatedUser::should_skip_2fa_with(
+            "auto",
+            None,
+            Some(&passkey_amr),
+            "",
+            &["fido2".to_owned(), "webauthn".to_owned(), "hwk".to_owned()]
+        ));
+    }
+
+    #[test]
+    fn empty_configured_claims_do_not_skip_two_factor() {
+        let returned_amr = vec!["mfa".to_owned()];
+
+        assert!(!OIDCAuthenticatedUser::should_skip_2fa_with(
+            "auto",
+            Some("urn:example:mfa"),
+            Some(&returned_amr),
+            "",
+            &[]
+        ));
+    }
+}
 
 #[derive(Identifiable, Queryable, Insertable, AsChangeset, Selectable)]
 #[diesel(table_name = sso_auth)]
