@@ -391,7 +391,7 @@ pub struct PushId(pub String);
 
 #[cfg(test)]
 mod tests {
-    use super::DeviceType;
+    use super::{Device, DeviceId, DeviceType, UserId};
 
     #[test]
     fn from_i32_maps_every_known_client_value() {
@@ -434,5 +434,41 @@ mod tests {
         for value in [27, i32::MAX, -1, i32::MIN] {
             assert_eq!(DeviceType::from_i32(value) as i32, DeviceType::UnknownBrowser as i32);
         }
+    }
+
+    fn device(atype: i32) -> Device {
+        Device::new(
+            DeviceId::from("5da58ede-b403-432f-8be9-3dd4a2589d74".to_string()),
+            UserId::from("6b15dcbb-b0ee-4060-8e2b-9f4e3d989836".to_string()),
+            "Test device".into(),
+            atype,
+        )
+    }
+
+    #[test]
+    fn a_freshly_registered_device_is_new_and_becomes_stale() {
+        assert!(device(9).is_new());
+
+        let mut dev = device(9);
+        dev.updated_at += chrono::TimeDelta::seconds(1);
+        assert!(!dev.is_new());
+    }
+
+    #[test]
+    fn devices_are_categorized_by_type() {
+        for atype in [23, 24, 25] {
+            assert!(device(atype).is_cli(), "atype {atype} should be a CLI");
+            assert!(!device(atype).is_mobile());
+        }
+        for atype in [0, 1] {
+            assert!(device(atype).is_mobile(), "atype {atype} should be mobile");
+            assert!(device(atype).is_push_device(), "atype {atype} should be a push device");
+            assert!(!device(atype).is_cli());
+        }
+        // Desktop browsers are neither CLI nor mobile nor push devices
+        let desktop = device(9);
+        assert!(!desktop.is_cli());
+        assert!(!desktop.is_mobile());
+        assert!(!desktop.is_push_device());
     }
 }

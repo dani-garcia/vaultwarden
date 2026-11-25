@@ -1943,3 +1943,343 @@ handlebars::handlebars_helper!(webver: | web_vault_version: String |
 handlebars::handlebars_helper!(vwver: | vw_version: String |
     semver::VersionReq::parse(&vw_version).expect("Invalid Vaultwarden version compare string").matches(&VW_VERSION)
 );
+
+#[cfg(test)]
+mod validate_config_tests {
+    use super::{ConfigItems, validate_config};
+
+    fn valid_config() -> ConfigItems {
+        ConfigItems {
+            database_url: "sqlite://db.sqlite3".into(),
+            database_max_conns: 5,
+            database_min_conns: 1,
+            database_timeout: 30,
+            database_idle_timeout: 30,
+            password_iterations: 600_000,
+            domain: "https://vault.example.net".into(),
+            fill_assist_rules_url: "https://fill.example.net".into(),
+            icon_service: "internal".into(),
+            icon_redirect_code: 302,
+            invitation_expiration_hours: 48,
+            two_factor_remember_days: 7,
+            login_ratelimit_seconds: 60,
+            login_ratelimit_max_burst: 10,
+            admin_ratelimit_seconds: 300,
+            admin_ratelimit_max_burst: 3,
+            unauthenticated_ratelimit_seconds: 15,
+            unauthenticated_ratelimit_max_burst: 10,
+            ..ConfigItems::default()
+        }
+    }
+
+    #[test]
+    fn accepts_a_valid_config() {
+        let res = validate_config(&valid_config(), true);
+        assert!(res.is_ok(), "err: {res:?}");
+        assert!(validate_config(&valid_config(), false).is_ok());
+    }
+
+    #[test]
+    fn enforces_the_password_iteration_floor() {
+        let mut cfg = valid_config();
+        cfg.password_iterations = 99_999;
+        assert!(validate_config(&cfg, true).is_err());
+
+        cfg.password_iterations = 100_000;
+        assert!(validate_config(&cfg, true).is_ok());
+    }
+
+    #[test]
+    fn enforces_database_connection_bounds() {
+        for set_bad in [(0, 0), (257, 1), (5, 0), (5, 6)] {
+            let mut cfg = valid_config();
+            cfg.database_max_conns = set_bad.0;
+            cfg.database_min_conns = set_bad.1;
+            assert!(validate_config(&cfg, true).is_err(), "{set_bad:?}");
+        }
+
+        let mut cfg = valid_config();
+        cfg.database_max_conns = 256;
+        cfg.database_min_conns = 1;
+        assert!(validate_config(&cfg, true).is_ok());
+    }
+
+    #[test]
+    fn enforces_database_timeouts() {
+        let mut cfg = valid_config();
+        cfg.database_timeout = 0;
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg.database_idle_timeout = 0;
+        assert!(validate_config(&cfg, true).is_err());
+    }
+
+    #[test]
+    fn domain_requires_a_protocol_ignoring_case() {
+        let mut cfg = valid_config();
+        cfg.domain = "vault.example.net".into();
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg.domain = "HTTPS://vault.example.net".into();
+        assert!(validate_config(&cfg, true).is_ok());
+    }
+
+    #[test]
+    fn trusted_proxies_must_be_ips_or_cidrs_or_keywords() {
+        for (value, expected_ok) in [
+            ("10.0.0.0/8, 192.168.1.1", true),
+            ("10.0.0.0/8,,", true),
+            ("198.51.100.256", false),
+            ("example.com", false),
+            ("ALL", true),
+            ("Local", true),
+        ] {
+            let mut cfg = valid_config();
+            cfg.ip_header_trusted_proxies = value.into();
+            assert_eq!(validate_config(&cfg, true).is_ok(), expected_ok, "{value}");
+        }
+    }
+
+    #[test]
+    fn signup_whitelist_needs_no_empty_tokens() {
+        let mut cfg = valid_config();
+        cfg.signups_domains_whitelist = "example.com,example.org".into();
+        assert!(validate_config(&cfg, true).is_ok());
+
+        let mut cfg = valid_config();
+        cfg.signups_domains_whitelist = "example.com,,example.org".into();
+        assert!(validate_config(&cfg, true).is_err());
+    }
+
+    #[test]
+    fn org_creation_users_accepts_keywords_and_emails_only() {
+        for (value, expected_ok) in [
+            ("", true),
+            ("all", true),
+            ("None", true),
+            ("user@example.com,other@example.org", true),
+            ("USER@example.com", true),
+            ("userexample.com", false),
+        ] {
+            let mut cfg = valid_config();
+            cfg.org_creation_users = value.into();
+            assert_eq!(validate_config(&cfg, true).is_ok(), expected_ok, "{value}");
+        }
+    }
+
+    #[test]
+    fn unrecognized_feature_flags_reject_only_on_update() {
+        let mut cfg = valid_config();
+        cfg.experimental_client_feature_flags = "ssh-agent-v2, made-up-flag".into();
+
+        // A startup run only warns
+        assert!(validate_config(&cfg, false).is_ok());
+        // A reload (update) rejects
+        assert!(validate_config(&cfg, true).is_err());
+
+        cfg.experimental_client_feature_flags = "ssh-agent-v2".into();
+        assert!(validate_config(&cfg, true).is_ok());
+    }
+
+    #[test]
+    fn push_needs_installation_credentials_and_https_uris() {
+        let mut cfg = valid_config();
+        cfg.push_enabled = true;
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg.push_enabled = true;
+        cfg.push_installation_id = "id".into();
+        cfg.push_installation_key = "key".into();
+        cfg.push_relay_uri = "http://push.example.net".into();
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg.push_enabled = true;
+        cfg.push_installation_id = "id".into();
+        cfg.push_installation_key = "key".into();
+        cfg.push_relay_uri = "https://push.example.net".into();
+        cfg.push_identity_uri = "http://identity.example.net".into();
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg.push_enabled = true;
+        cfg.push_installation_id = "id".into();
+        cfg.push_installation_key = "key".into();
+        cfg.push_relay_uri = "https://push.example.net".into();
+        cfg.push_identity_uri = "https://identity.example.net".into();
+        assert!(validate_config(&cfg, true).is_ok());
+    }
+
+    #[test]
+    fn all_duo_options_have_to_be_set_together() {
+        let mut cfg = valid_config();
+        cfg._enable_duo = true;
+        cfg.duo_host = Some("host".into());
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg._enable_duo = true;
+        cfg.duo_host = Some("host".into());
+        cfg.duo_ikey = Some("ikey".into());
+        cfg.duo_skey = Some("skey".into());
+        assert!(validate_config(&cfg, true).is_ok());
+    }
+
+    #[test]
+    fn yubico_options_complement_each_other() {
+        let mut cfg = valid_config();
+        cfg._enable_yubico = true;
+        cfg.yubico_client_id = Some("client-id".into());
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg._enable_yubico = true;
+        cfg.yubico_client_id = Some("client-id".into());
+        cfg.yubico_secret_key = Some("secret-key".into());
+        assert!(validate_config(&cfg, true).is_ok());
+    }
+
+    #[test]
+    fn smtp_security_must_be_a_supported_option() {
+        for (value, expected_ok) in
+            [("off", true), ("starttls", true), ("force_tls", true), ("tls", false), ("", false)]
+        {
+            let mut cfg = valid_config();
+            cfg._enable_smtp = true;
+            cfg.smtp_security = value.into();
+            assert_eq!(validate_config(&cfg, true).is_ok(), expected_ok, "{value}");
+        }
+    }
+
+    #[test]
+    fn smtp_host_and_from_are_always_a_pair() {
+        let mut cfg = valid_config();
+        cfg._enable_smtp = true;
+        cfg.smtp_security = "off".into();
+        cfg.smtp_host = Some("smtp.example.net".into());
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg._enable_smtp = true;
+        cfg.smtp_security = "off".into();
+        cfg.smtp_host = Some("smtp.example.net".into());
+        cfg.smtp_from = "no-reply@example.net".into();
+        assert!(validate_config(&cfg, true).is_ok());
+
+        let mut cfg = valid_config();
+        cfg._enable_smtp = true;
+        cfg.smtp_security = "off".into();
+        cfg.smtp_from = "no-reply@example.net".into();
+        assert!(validate_config(&cfg, true).is_err());
+
+        // The username and password need to be set together as well
+        let mut cfg = valid_config();
+        cfg._enable_smtp = true;
+        cfg.smtp_security = "off".into();
+        cfg.smtp_host = Some("smtp.example.net".into());
+        cfg.smtp_from = "no-reply@example.net".into();
+        cfg.smtp_username = Some("user".into());
+        assert!(validate_config(&cfg, true).is_err());
+
+        cfg.smtp_password = Some("password".into());
+        assert!(validate_config(&cfg, true).is_ok());
+    }
+
+    #[test]
+    fn email_2fa_needs_a_mail_transport_and_optionally_flags() {
+        let mut cfg = valid_config();
+        cfg._enable_email_2fa = true;
+        cfg.email_token_size = 6;
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg.email_2fa_enforce_on_verified_invite = true;
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg.email_2fa_auto_fallback = true;
+        assert!(validate_config(&cfg, true).is_err());
+    }
+
+    #[test]
+    fn http_request_block_regex_must_compile() {
+        let mut cfg = valid_config();
+        cfg.http_request_block_regex = Some("[unclosed".into());
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg.http_request_block_regex = Some("^/attachments/.*$".into());
+        assert!(validate_config(&cfg, true).is_ok());
+    }
+
+    #[test]
+    fn attachment_limits_cannot_be_negative() {
+        let mut cfg = valid_config();
+        cfg.user_attachment_limit = Some(-1);
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg.org_attachment_limit = Some(-1);
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg.user_send_limit = Some(-1);
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg.user_attachment_limit = Some(0);
+        assert!(validate_config(&cfg, true).is_ok());
+    }
+
+    #[test]
+    fn icon_service_accepts_names_or_templated_urls() {
+        for (value, expected_ok) in [
+            ("internal", true),
+            ("bitwarden", true),
+            ("duckduckgo", true),
+            ("google", true),
+            ("https://icons.example.net/{}/icon.png", true),
+            ("https://icons.example.net/icon.png", false),
+            ("icons.example.net/{}/icon.png", false),
+            ("https://icons.example.net/{}/icon/{}", false),
+            ("ftp://icons.example.net/{}", false),
+        ] {
+            let mut cfg = valid_config();
+            cfg.icon_service = value.into();
+            assert_eq!(validate_config(&cfg, true).is_ok(), expected_ok, "{value}");
+        }
+    }
+
+    #[test]
+    fn icon_redirect_code_must_be_a_permanent_or_temporary_redirect() {
+        for (value, expected_ok) in [(301, true), (302, true), (307, true), (308, true), (303, false), (200, false)] {
+            let mut cfg = valid_config();
+            cfg.icon_redirect_code = value;
+            assert_eq!(validate_config(&cfg, true).is_ok(), expected_ok, "{value}");
+        }
+    }
+
+    #[test]
+    fn purge_schedules_and_durations_have_bounds() {
+        let mut cfg = valid_config();
+        cfg.invitation_expiration_hours = 0;
+        assert!(validate_config(&cfg, true).is_err());
+
+        for (value, expected_ok) in [(0, false), (1, true), (90, true), (91, false)] {
+            let mut cfg = valid_config();
+            cfg.two_factor_remember_days = value;
+            assert_eq!(validate_config(&cfg, true).is_ok(), expected_ok, "{value}");
+        }
+
+        let mut cfg = valid_config();
+        cfg.send_purge_schedule = "not a cron".into();
+        assert!(validate_config(&cfg, true).is_err());
+
+        let mut cfg = valid_config();
+        cfg.send_purge_schedule = "0 30 9 * * *".into();
+        assert!(validate_config(&cfg, true).is_ok());
+    }
+}

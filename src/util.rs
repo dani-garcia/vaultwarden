@@ -1087,3 +1087,111 @@ mod display_size_tests {
         assert_eq!(get_display_size(i64::MAX), "8192.00 PB");
     }
 }
+
+#[cfg(test)]
+mod is_global_hardcoded_tests {
+    use super::is_global_hardcoded as is_global;
+    use core::net::IpAddr;
+
+    fn ip(value: &str) -> IpAddr {
+        value.parse().unwrap()
+    }
+
+    #[test]
+    fn publicly_routable_addresses_are_global() {
+        assert!(is_global(ip("8.8.8.8")));
+        assert!(is_global(ip("1.1.1.1")));
+        assert!(is_global(ip("2606:4700::1111")));
+        assert!(is_global(ip("2620:fe::fe")));
+        // Just outside the special ranges on both sides
+        assert!(is_global(ip("100.63.0.1")));
+        assert!(is_global(ip("100.128.0.1")));
+        assert!(is_global(ip("198.20.0.1")));
+        // Anycast and special-use addresses inside 2001::/23 that are documented globally reachable
+        assert!(is_global(ip("2001:1::1")));
+        assert!(is_global(ip("2001:1::2")));
+        assert!(is_global(ip("2001:1::3")));
+        assert!(is_global(ip("2001:3::1")));
+        assert!(is_global(ip("2001:4:112::1")));
+        assert!(is_global(ip("2001:20::1")));
+        assert!(is_global(ip("2001:30::1")));
+    }
+
+    #[test]
+    fn special_purpose_ipv4_ranges_are_not_global() {
+        for not_global in [
+            "0.0.0.1",         // this network
+            "10.0.0.1",        // private
+            "172.16.0.1",      // private
+            "192.168.1.1",     // private
+            "100.64.0.1",      // shared (CGNAT)
+            "127.0.0.1",       // loopback
+            "169.254.1.1",     // link-local
+            "192.0.0.1",       // reserved for future protocols
+            "192.88.99.2",     // 6a44 relay anycast
+            "203.0.113.1",     // documentation
+            "198.18.0.1",      // benchmarking
+            "240.0.0.1",       // reserved
+            "255.255.255.255", // broadcast
+        ] {
+            assert!(!is_global(ip(not_global)), "{not_global} should not be global");
+        }
+        // The two globally reachable addresses inside 192.0.0.0/24 stay global
+        assert!(is_global(ip("192.0.0.9")));
+        assert!(is_global(ip("192.0.0.10")));
+    }
+
+    #[test]
+    fn special_purpose_ipv6_ranges_are_not_global() {
+        for not_global in [
+            "::",                 // unspecified
+            "::1",                // loopback
+            "::ffff:192.168.1.1", // IPv4-mapped
+            "::ffff:8.8.8.8",     // IPv4-mapped, even when embedded is global
+            "64:ff9b:1::1",       // IPv4-IPv6 translation
+            "100::1",             // discard-only prefix
+            "100:0:0:1::1",       // dummy IPv6 prefix
+            "2002::1",            // 6to4
+            "2001:db8::1",        // documentation
+            "2001:1::4",          // IETF protocol assignments, not one of the globally reachable anycast exceptions
+            "3fff:1::1",          // documentation
+            "5f00::1",            // SRv6 SIDs
+            "fc00::1",            // unique-local
+            "fd12::1",            // unique-local
+            "fe80::1",            // link-local
+        ] {
+            assert!(!is_global(ip(not_global)), "{not_global} should not be global");
+        }
+    }
+}
+
+#[cfg(test)]
+mod experimental_feature_flags_tests {
+    use super::{FeatureFlagFilter, parse_experimental_client_feature_flags};
+
+    fn flags(input: &str, filter: &FeatureFlagFilter) -> Vec<String> {
+        let mut flags = parse_experimental_client_feature_flags(input, filter).into_keys().collect::<Vec<_>>();
+        flags.sort();
+        flags
+    }
+
+    #[test]
+    fn parses_valid_flags_and_ignores_empty_entries() {
+        assert_eq!(
+            flags("ssh-agent-v2,, pm-32009-new-item-types ,,", &FeatureFlagFilter::ValidOnly),
+            ["pm-32009-new-item-types", "ssh-agent-v2"]
+        );
+    }
+
+    #[test]
+    fn filters_to_whether_the_flag_is_supported() {
+        assert_eq!(flags("ssh-agent-v2, made-up-flag", &FeatureFlagFilter::ValidOnly), ["ssh-agent-v2"]);
+        assert_eq!(flags("ssh-agent-v2, made-up-flag", &FeatureFlagFilter::InvalidOnly), ["made-up-flag"]);
+    }
+
+    #[test]
+    fn empty_input_yields_no_flags() {
+        assert!(flags("", &FeatureFlagFilter::ValidOnly).is_empty());
+        assert!(flags("", &FeatureFlagFilter::InvalidOnly).is_empty());
+    }
+}

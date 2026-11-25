@@ -833,3 +833,43 @@ impl Emitter for FaviconEmitter {
     fn set_force_quirks(&mut self) {}
     fn set_self_closing(&mut self) {}
 }
+
+#[cfg(test)]
+mod tests {
+    use super::get_icon_type;
+
+    #[test]
+    fn detects_image_magic_bytes() {
+        assert_eq!(get_icon_type(b"\x89PNG\x0d\x0a\x1a\x0a\x00\x00\x00\x00"), Some("png"));
+        assert_eq!(get_icon_type(b"\x00\x00\x01\x00\x01\x00\x10\x10"), Some("x-icon"));
+        assert_eq!(get_icon_type(b"RIFF\x24\x00\x00\x00WEBPVP8 "), Some("webp"));
+        assert_eq!(get_icon_type(b"\xff\xd8\xff\xc0\x00\x14"), Some("jpeg"));
+        assert_eq!(get_icon_type(b"GIF87a\x00\x00"), Some("gif"));
+        assert_eq!(get_icon_type(b"GIF89a\x00\x00"), Some("gif"));
+        assert_eq!(get_icon_type(b"BM\x36\x00\x00\x00\x00\x00\x00\x00"), Some("bmp"));
+        assert_eq!(get_icon_type(b"<svg width=\"1\"></svg>"), Some("svg+xml"));
+    }
+
+    #[test]
+    fn detects_svg_after_an_xml_declaration() {
+        // Case insensitive within the first kilobyte
+        assert_eq!(get_icon_type(b"<?xml version=\"1.0\"?><svg/>"), Some("svg+xml"));
+        assert_eq!(get_icon_type(b"<?xml version='1.0'?><SVG xmlns=\"ns\"/>"), Some("svg+xml"));
+        // An XML declaration without an svg tag is not an icon
+        assert_eq!(get_icon_type(b"<?xml version=\"1.0\"?><html/>"), None);
+    }
+
+    #[test]
+    fn rejects_incomplete_signatures() {
+        // ICO with a zero directory entry count
+        assert_eq!(get_icon_type(b"\x00\x00\x01\x00\x00\x00\x0a"), None);
+        // JPEG with a marker below 0xC0
+        assert_eq!(get_icon_type(b"\xff\xd8\xff\x00\x11\x22"), None);
+        // RIFF container that is not WebP
+        assert_eq!(get_icon_type(b"RIFF\x24\x00\x00\x00WAVEfmt "), None);
+        // GIF with an unknown version
+        assert_eq!(get_icon_type(b"GIF88a\x00\x00"), None);
+        assert_eq!(get_icon_type(b""), None);
+        assert_eq!(get_icon_type(b"<!DOCTYPE html><html>"), None);
+    }
+}
