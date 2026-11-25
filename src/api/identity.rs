@@ -478,29 +478,8 @@ async fn password_login(
         kdf_upgrade(&mut user, password, conn).await?;
     }
 
-    let now = Utc::now().naive_utc();
-
     if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
-        if user
-            .last_verifying_at
-            .is_none_or(|d| now.signed_duration_since(d).num_seconds() > i64::from(CONFIG.signups_verify_resend_time()))
-        {
-            let resend_limit = i32::from(CONFIG.signups_verify_resend_limit());
-            if resend_limit == 0 || user.login_verify_count < resend_limit {
-                // We want to send another email verification if we require signups to verify
-                // their email address, and we haven't sent them a reminder in a while...
-                user.last_verifying_at = Some(now);
-                user.login_verify_count += 1;
-
-                if let Err(e) = user.save(conn).await {
-                    error!("Error updating user: {e:#?}");
-                }
-
-                if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
-                    error!("Error auto-sending email verification email: {e:#?}");
-                }
-            }
-        }
+        resend_verify_email(&mut user, conn).await;
 
         // We still want the login to fail until they actually verified the email address
         err!(
@@ -548,7 +527,7 @@ async fn passkey_login(
         err!("Passkey login is not available")
     }
 
-    let (user, credential) = webauthn_login::assert_login(
+    let (mut user, credential) = webauthn_login::assert_login(
         data.token.as_deref().unwrap_or_default(),
         data.device_response.as_deref().unwrap_or_default(),
         &ip.ip,
@@ -573,9 +552,11 @@ async fn passkey_login(
     check_client_version(&user, client_header)?;
 
     if user.verified_at.is_none() && CONFIG.mail_enabled() && CONFIG.signups_verify() {
+        resend_verify_email(&mut user, conn).await;
+
         err!(
             "Please verify your email before trying again.",
-            format!("IP: {}. Username: {log_username}.", ip.ip),
+            format!("IP: {}. Username: {}.", ip.ip, user.email.escape_debug()),
             ErrorEvent {
                 event: EventType::UserFailedLogIn
             }
@@ -596,6 +577,30 @@ async fn passkey_login(
         result.0["UserDecryptionOptions"]["WebAuthnPrfOption"] = prf_option;
     }
     Ok(result)
+}
+
+/// For a login refused because the email isn't verified yet: sends another verification email, at most once per
+/// `SIGNUPS_VERIFY_RESEND_TIME` and `SIGNUPS_VERIFY_RESEND_LIMIT` times in all (0 for no limit).
+async fn resend_verify_email(user: &mut User, conn: &DbConn) {
+    let now = Utc::now().naive_utc();
+    if user
+        .last_verifying_at
+        .is_none_or(|d| now.signed_duration_since(d).num_seconds() > i64::from(CONFIG.signups_verify_resend_time()))
+    {
+        let resend_limit = i32::from(CONFIG.signups_verify_resend_limit());
+        if resend_limit == 0 || user.login_verify_count < resend_limit {
+            user.last_verifying_at = Some(now);
+            user.login_verify_count += 1;
+
+            if let Err(e) = user.save(conn).await {
+                error!("Error updating user: {e:#?}");
+            }
+
+            if let Err(e) = mail::send_verify_email(&user.email, &user.uuid).await {
+                error!("Error auto-sending email verification email: {e:#?}");
+            }
+        }
+    }
 }
 
 /// Like upstream's `ClientVersionValidator`, every login needs the `Bitwarden-Client-Version` header, and a V2 account
