@@ -95,10 +95,9 @@ pub async fn initialize_keys() -> Result<(), Error> {
         info!("Private key '{}' created correctly", CONFIG.private_rsa_key());
         (rsa_key, priv_key_buffer)
     };
-    let pub_key_buffer = priv_key.public_key_to_pem()?;
 
-    let enc = EncodingKey::from_rsa_pem(&priv_key_buffer)?;
-    let dec: DecodingKey = DecodingKey::from_rsa_pem(&pub_key_buffer)?;
+    let enc = EncodingKey::from_rsa_der(&priv_key.private_key_to_der()?);
+    let dec = DecodingKey::from_rsa_der(&priv_key.public_key_to_der_pkcs1()?);
     if PRIVATE_RSA_KEY.set(enc).is_err() {
         err!("PRIVATE_RSA_KEY must only be initialized once")
     }
