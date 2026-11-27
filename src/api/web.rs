@@ -117,10 +117,8 @@ fn vaultwarden_css() -> EtagCached<String> {
         }
     };
 
-    let css = match grass_compiler::from_string(
-        scss,
-        &grass_compiler::Options::default().style(grass_compiler::OutputStyle::Compressed),
-    ) {
+    let options = sasso_core::Options::default().with_style(sasso_core::OutputStyle::Compressed);
+    let css = match sasso_core::compile(&scss, &options) {
         Ok(css) => css,
         Err(e) => {
             // Something went wrong compiling the scss. Use the fallback
@@ -130,11 +128,7 @@ fn vaultwarden_css() -> EtagCached<String> {
             let scss = CONFIG
                 .render_fallback_template("scss/vaultwarden.scss", &css_options)
                 .expect("Fallback scss/vaultwarden.scss.hbs to render");
-            grass_compiler::from_string(
-                scss,
-                &grass_compiler::Options::default().style(grass_compiler::OutputStyle::Compressed),
-            )
-            .expect("SCSS to compile")
+            sasso_core::compile(&scss, &options).expect("SCSS to compile")
         }
     };
 

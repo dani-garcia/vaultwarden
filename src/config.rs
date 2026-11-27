@@ -1264,7 +1264,7 @@ fn validate_config(cfg: &ConfigItems, on_update: bool) -> Result<(), Error> {
                     }
 
                     #[cfg(unix)]
-                    if nix::unistd::access(&path, nix::unistd::AccessFlags::X_OK).is_err() {
+                    if !which::sys::Sys::is_valid_executable(&which::sys::RealSys, &path).unwrap_or(false) {
                         err!(format!("sendmail command at `{path:?}` isn't executable"));
                     }
                 }
